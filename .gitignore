@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+.turbo/
+cdk.out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Prisma
+prisma/migrations/
+
+# AWS CDK
+cdk.out/
+*.d.ts
+*.js.map
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+coverage/
+
+# PWA
+**/public/sw.js
+**/public/workbox-*.js
+**/public/worker-*.js
+**/public/fallback-*.js
+
+# TypeScript
+*.tsbuildinfo

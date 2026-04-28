@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --charcoal: #2C2C2C;
+    --white: #FFFFFF;
+    --cta-from: #00B4D8;
+    --cta-to: #7B2FBE;
+    --surface: #F8F8F8;
+    --border: #E5E5E5;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Roboto', sans-serif;
+    color: var(--charcoal);
+    background-color: var(--surface);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    color: var(--charcoal);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3
+           bg-cta-gradient text-white font-heading font-semibold
+           rounded-xl transition-all duration-200
+           hover:opacity-90 hover:shadow-glow active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3
+           bg-white text-charcoal font-heading font-semibold
+           rounded-xl border border-border transition-all duration-200
+           hover:bg-surface hover:border-cta-from active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-charcoal font-medium rounded-lg transition-all duration-200
+           hover:bg-surface active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-card p-6 transition-shadow duration-200;
+  }
+
+  .card-hover {
+    @apply card hover:shadow-card-hover cursor-pointer;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-white border border-border rounded-xl
+           font-sans text-charcoal placeholder-gray-400
+           focus:outline-none focus:ring-2 focus:ring-cta-from focus:border-transparent
+           transition-all duration-200;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  .badge-success {
+    @apply badge bg-emerald-100 text-emerald-700;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-100 text-amber-700;
+  }
+
+  .badge-error {
+    @apply badge bg-red-100 text-red-600;
+  }
+
+  .badge-info {
+    @apply badge bg-blue-100 text-blue-700;
+  }
+
+  .badge-pending {
+    @apply badge bg-purple-100 text-purple-700;
+  }
+
+  .badge-locked {
+    @apply badge bg-gray-100 text-gray-500;
+  }
+
+  .progress-bar {
+    @apply h-2 bg-border rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-cta-gradient rounded-full transition-all duration-500;
+  }
+
+  .gradient-text {
+    @apply bg-cta-gradient bg-clip-text text-transparent;
+  }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl font-medium
+           text-gray-500 transition-all duration-200
+           hover:bg-surface hover:text-charcoal;
+  }
+
+  .nav-item-active {
+    @apply nav-item bg-surface text-charcoal
+           border-l-[3px] border-cta-from;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 2px;
+  }
+}

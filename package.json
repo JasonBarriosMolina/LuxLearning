@@ -1,0 +1,23 @@
+{
+  "name": "lux-learning",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*",
+    "infrastructure/cdk"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "db:generate": "npm run db:generate --workspace=services/api",
+    "db:migrate": "npm run db:migrate --workspace=services/api",
+    "db:seed": "npm run db:seed --workspace=services/api",
+    "cdk:synth": "npm run synth --workspace=infrastructure/cdk",
+    "cdk:deploy": "npm run deploy --workspace=infrastructure/cdk"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

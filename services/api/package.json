@@ -1,0 +1,36 @@
+{
+  "name": "@lux/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.600.0",
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-ses": "^3.600.0",
+    "@aws-sdk/client-sqs": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@lux/types": "*",
+    "@neondatabase/serverless": "^0.9.4",
+    "@prisma/adapter-neon": "^5.15.0",
+    "@prisma/client": "^5.15.0",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "jose": "^5.6.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.11",
+    "prisma": "^5.15.0",
+    "tsx": "^4.15.7",
+    "typescript": "^5.5.2"
+  }
+}

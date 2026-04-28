@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npm init *)",
+      "Bash(git --version)",
+      "Bash(aws --version)",
+      "Bash(aws sts *)",
+      "Bash(vercel --version)",
+      "Bash(npx vercel *)",
+      "Bash(aws configure *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

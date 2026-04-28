@@ -1,0 +1,64 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String
+  imageUrl    String?
+  isActive    Boolean  @default(false)
+  isPilot     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  modules     Module[]
+}
+
+model Module {
+  id           String     @id @default(cuid())
+  courseId     String
+  order        Int
+  title        String
+  description  String
+  duration     String
+  passingScore Int
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons      Lesson[]
+  questions    Question[]
+
+  @@unique([courseId, order])
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  moduleId  String
+  order     Int
+  title     String
+  duration  String
+  youtubeId String
+  imageUrl  String?
+  points    String[]
+  tip       String
+  module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, order])
+}
+
+model Question {
+  id           String   @id @default(cuid())
+  moduleId     String
+  order        Int
+  text         String
+  options      String[]
+  correctIndex Int
+  module       Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, order])
+}
