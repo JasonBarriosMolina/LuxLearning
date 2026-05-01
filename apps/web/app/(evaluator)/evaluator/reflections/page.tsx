@@ -20,9 +20,10 @@ const STATUS_FILTERS: Array<{ label: string; value: ReflectionStatus | 'ALL' }> 
 
 const DEADLINE_HOURS = 48;
 
-function getTimeRemaining(submittedAt: string): { label: string; urgent: boolean; overdue: boolean } {
-  const submitted = new Date(submittedAt).getTime();
-  const deadline = submitted + DEADLINE_HOURS * 60 * 60 * 1000;
+function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: string; urgent: boolean; overdue: boolean } {
+  const deadline = deadlineIso
+    ? new Date(deadlineIso).getTime()
+    : new Date(submittedAt).getTime() + DEADLINE_HOURS * 60 * 60 * 1000;
   const now = Date.now();
   const diffMs = deadline - now;
 
@@ -73,7 +74,7 @@ export default function EvaluatorReflectionsPage() {
   const pendingCount = reflections.filter((r) => r.status === 'PENDING_EVAL').length;
   const urgentCount = reflections.filter((r) => {
     if (r.status !== 'PENDING_EVAL') return false;
-    const t = getTimeRemaining(r.submittedAt);
+    const t = getTimeRemaining(r.submittedAt, (r as any).deadline);
     return t.urgent;
   }).length;
 
@@ -161,7 +162,7 @@ export default function EvaluatorReflectionsPage() {
           {/* Rows */}
           <div className="divide-y divide-border">
             {filtered.map((r) => {
-              const timeInfo = r.status === 'PENDING_EVAL' ? getTimeRemaining(r.submittedAt) : null;
+              const timeInfo = r.status === 'PENDING_EVAL' ? getTimeRemaining(r.submittedAt, (r as any).deadline) : null;
               const studentDisplay = r.studentName ?? r.userId;
 
               return (

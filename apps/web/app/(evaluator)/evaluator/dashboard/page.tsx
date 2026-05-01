@@ -23,8 +23,10 @@ type EnrichedReflection = Reflection & {
 
 const DEADLINE_HOURS = 48;
 
-function getTimeRemaining(submittedAt: string): { label: string; urgent: boolean; overdue: boolean } {
-  const deadline = new Date(submittedAt).getTime() + DEADLINE_HOURS * 3600 * 1000;
+function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: string; urgent: boolean; overdue: boolean } {
+  const deadline = deadlineIso
+    ? new Date(deadlineIso).getTime()
+    : new Date(submittedAt).getTime() + DEADLINE_HOURS * 3600 * 1000;
   const diff = deadline - Date.now();
   if (diff <= 0) return { label: 'Vencido', urgent: true, overdue: true };
   const h = Math.floor(diff / 3600000);
@@ -294,7 +296,7 @@ export default function EvaluatorDashboardPage() {
           </div>
           <div className="space-y-2">
             {urgent.map((r) => {
-              const tr = getTimeRemaining(r.submittedAt);
+              const tr = getTimeRemaining(r.submittedAt, (r as any).deadline);
               return (
                 <Link
                   key={`${r.userId}-${r.moduleId}`}
@@ -361,7 +363,7 @@ export default function EvaluatorDashboardPage() {
                     <span />
                   </div>
                   {pending.map((r) => {
-                    const tr = getTimeRemaining(r.submittedAt);
+                    const tr = getTimeRemaining(r.submittedAt, (r as any).deadline);
                     const key = `${r.userId}-${r.moduleId}`;
                     return (
                       <div

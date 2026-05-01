@@ -72,6 +72,10 @@ export const api = {
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
     students: () => request('/evaluator/students'),
+    aiFeedback: (text: string, moduleTitle?: string) =>
+      request<any>('/evaluator/ai-feedback', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
+    quizAudit: (userId: string, moduleId: string) =>
+      request<any>(`/evaluator/quiz-audit?userId=${encodeURIComponent(userId)}&moduleId=${encodeURIComponent(moduleId)}`),
   },
 
   notifications: {

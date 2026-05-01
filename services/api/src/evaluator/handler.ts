@@ -1,10 +1,13 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
-import { getPendingReflections, getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate } from '../shared/db-dynamo';
+import { getPendingReflections, getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 import { createId } from '@paralleldrive/cuid2';
+
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -442,6 +445,97 @@ export const handler = async (event: Event) => {
       });
 
       return ok({ students, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
+    }
+
+    // POST /evaluator/ai-feedback — generate 5 feedback suggestions via Bedrock
+    if (method === 'POST' && path === '/evaluator/ai-feedback') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
+      if (!text) return badRequest('text is required');
+
+      const prompt = `Eres un evaluador experto en desarrollo personal y aprendizaje. Se te ha presentado la siguiente reflexión de un estudiante del módulo "${moduleTitle ?? 'del curso'}".
+
+REFLEXIÓN:
+"""
+${text.slice(0, 3000)}
+"""
+
+Genera exactamente 5 comentarios de feedback constructivo y específico para esta reflexión. Cada comentario debe:
+- Ser concreto y referirse al contenido real de la reflexión
+- Ser entre 1-2 oraciones
+- Alternar entre aspectos positivos y áreas de mejora
+- Estar en español
+
+Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
+{
+  "suggestions": [
+    "Comentario 1",
+    "Comentario 2",
+    "Comentario 3",
+    "Comentario 4",
+    "Comentario 5"
+  ]
+}`;
+
+      try {
+        const response = await bedrock.send(new InvokeModelCommand({
+          modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        }));
+
+        const raw = JSON.parse(new TextDecoder().decode(response.body));
+        const content = raw.content?.[0]?.text ?? '';
+        // Extract JSON from the response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return serverError('AI response format error');
+        const parsed = JSON.parse(jsonMatch[0]);
+        return ok({ suggestions: parsed.suggestions ?? [] });
+      } catch (aiErr) {
+        console.error('[Evaluator] Bedrock AI feedback error:', aiErr);
+        return serverError('AI feedback generation failed');
+      }
+    }
+
+    // GET /evaluator/quiz-audit?userId=X&moduleId=Y — quiz answers for a student
+    if (method === 'GET' && path === '/evaluator/quiz-audit') {
+      const qs = event.queryStringParameters ?? {};
+      const { userId: studentId, moduleId } = qs as { userId?: string; moduleId?: string };
+      if (!studentId || !moduleId) return badRequest('userId and moduleId are required');
+
+      const [attempts, module] = await Promise.all([
+        getQuizAttempts(studentId, moduleId),
+        getPrismaClient().module.findUnique({
+          where: { id: moduleId },
+          include: { questions: { orderBy: { order: 'asc' } } },
+        }),
+      ]);
+
+      if (!module) return notFound('Module not found');
+
+      // Enrich each attempt with question details
+      const enrichedAttempts = attempts.map((attempt) => ({
+        ...attempt,
+        results: module.questions.map((q, i) => ({
+          questionText: q.text,
+          options: q.options,
+          selectedIndex: attempt.answers?.[i] ?? -1,
+          correctIndex: q.correctIndex,
+          isCorrect: attempt.answers?.[i] === q.correctIndex,
+        })),
+      }));
+
+      return ok({
+        attempts: enrichedAttempts,
+        passingScore: module.passingScore,
+        moduleTitle: module.title,
+        totalQuestions: module.questions.length,
+      });
     }
 
     return badRequest('Unknown route');

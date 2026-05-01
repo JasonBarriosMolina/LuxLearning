@@ -66,6 +66,8 @@ export const handler = async (event: Event) => {
       if (!unlocked) return forbidden('Module is locked');
 
       // Save reflection with PENDING_AI status
+      const submittedAt = new Date().toISOString();
+      const deadline = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
       const reflection = {
         userId,
         studentEmail,
@@ -73,7 +75,8 @@ export const handler = async (event: Event) => {
         text,
         wordCount,
         status: 'PENDING_AI' as const,
-        submittedAt: new Date().toISOString(),
+        submittedAt,
+        deadline,
       };
 
       await saveReflection(reflection);

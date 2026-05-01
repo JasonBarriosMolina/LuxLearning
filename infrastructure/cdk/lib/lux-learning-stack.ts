@@ -293,6 +293,14 @@ export class LuxLearningStack extends cdk.Stack {
       resources: [userPool.userPoolArn],
     }));
 
+    evaluatorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
+    }));
+
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         'cognito-idp:ListUsers',
@@ -378,6 +386,8 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/reflections',        apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/review', apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/students',           apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/ai-feedback',        apigwv2.HttpMethod.POST, evaluatorFn);
+    addRoute('/evaluator/quiz-audit',         apigwv2.HttpMethod.GET,  evaluatorFn);
 
     // Admin — Content Management
     addRoute('/admin/courses',                        apigwv2.HttpMethod.GET,    adminFn);

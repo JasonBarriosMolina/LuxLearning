@@ -82,6 +82,7 @@ export interface Reflection {
   status: ReflectionStatus;
   evaluatorFeedback?: string;
   submittedAt: string;
+  deadline?: string;   // ISO — submittedAt + 48h, set at submission time
   analyzedAt?: string;
   reviewedAt?: string;
 }
