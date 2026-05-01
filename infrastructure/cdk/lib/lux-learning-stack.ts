@@ -80,6 +80,16 @@ export class LuxLearningStack extends cdk.Stack {
       },
     });
 
+    // VAPID keys for Web Push (private key must stay out of CloudFormation template)
+    const vapidSecret = new secretsmanager.Secret(this, 'VapidSecret', {
+      secretName: 'lux/vapid',
+      description: 'VAPID keypair for Web Push notifications',
+      secretObjectValue: {
+        VAPID_PUBLIC_KEY:  cdk.SecretValue.unsafePlainText('BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw'),
+        VAPID_PRIVATE_KEY: cdk.SecretValue.unsafePlainText('SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo'),
+      },
+    });
+
     // ─── DynamoDB Tables ──────────────────────────────────────────────────────
 
     const lessonProgressTable = new dynamodb.Table(this, 'LessonProgress', {
@@ -191,8 +201,9 @@ export class LuxLearningStack extends cdk.Stack {
       SES_FROM_EMAIL: 'noreply@luxlearning.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning.vercel.app',
-      VAPID_PUBLIC_KEY: 'BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw',
-      VAPID_PRIVATE_KEY: 'SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo',
+      // VAPID keys resolved from Secrets Manager at deploy time (not visible in CF template)
+      VAPID_PUBLIC_KEY:  '{{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PUBLIC_KEY}}',
+      VAPID_PRIVATE_KEY: '{{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PRIVATE_KEY}}',
       VAPID_EMAIL: 'mailto:admin@luxlearning.com',
       PRISMA_QUERY_ENGINE_LIBRARY: '/var/task/libquery_engine-linux-arm64-openssl-3.0.x.so.node',
       // CloudFormation dynamic reference — resolved at deploy, encrypted in Lambda
@@ -322,7 +333,6 @@ export class LuxLearningStack extends cdk.Stack {
         'cognito-idp:AdminCreateUser',
         'cognito-idp:AdminGetUser',
         'cognito-idp:AdminAddUserToGroup',
-        'cognito-idp:AdminRemoveUserFromGroupFromGroup',
         'cognito-idp:AdminRemoveUserFromGroup',
         'cognito-idp:AdminDisableUser',
         'cognito-idp:AdminEnableUser',
@@ -343,7 +353,10 @@ export class LuxLearningStack extends cdk.Stack {
       resources: [userPool.userPoolArn],
     }));
 
-    allFns.forEach((fn) => dbSecret.grantRead(fn));
+    allFns.forEach((fn) => {
+      dbSecret.grantRead(fn);
+      vapidSecret.grantRead(fn);
+    });
 
     sqsConsumerFn.addEventSource(new lambdaEventSources.SqsEventSource(reflectionQueue, {
       batchSize: 5,

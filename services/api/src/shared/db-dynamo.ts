@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
@@ -215,10 +216,17 @@ export async function getAllQuizAttempts(): Promise<QuizAttempt[]> {
   return items;
 }
 
-export async function isModuleUnlocked(userId: string, moduleOrder: number, allModuleIds: string[]): Promise<boolean> {
+export async function isModuleUnlocked(
+  userId: string,
+  moduleOrder: number,
+  allModules: { id: string; order: number }[]
+): Promise<boolean> {
   if (moduleOrder === 1) return true;
-  const prevModuleId = allModuleIds[moduleOrder - 2]; // order is 1-based
-  const reflection = await getReflection(userId, prevModuleId);
+  // Find the module whose order is exactly one before this one.
+  // Using order values (not array indices) is safe when orders are non-contiguous.
+  const prevModule = allModules.find((m) => m.order === moduleOrder - 1);
+  if (!prevModule) return false; // previous module doesn't exist — treat as locked
+  const reflection = await getReflection(userId, prevModule.id);
   return reflection?.status === 'APPROVED';
 }
 
@@ -341,9 +349,13 @@ export interface PushSubscriptionRecord {
   createdAt: string;
 }
 
+/** Deterministic, collision-free SK from endpoint URL (SHA-256 hex, 64 chars). */
+function endpointSK(endpoint: string): string {
+  return createHash('sha256').update(endpoint).digest('hex');
+}
+
 export async function savePushSubscription(sub: PushSubscriptionRecord) {
-  // Use a hash of endpoint as SK to keep it short
-  const sk = Buffer.from(sub.endpoint).toString('base64').slice(0, 100);
+  const sk = endpointSK(sub.endpoint);
   await ddb.send(new PutCommand({
     TableName: TABLES.PUSH_SUBS,
     Item: { userId: sub.userId, sk, endpoint: sub.endpoint, keys: sub.keys, role: sub.role, createdAt: sub.createdAt },
@@ -351,7 +363,7 @@ export async function savePushSubscription(sub: PushSubscriptionRecord) {
 }
 
 export async function deletePushSubscription(userId: string, endpoint: string) {
-  const sk = Buffer.from(endpoint).toString('base64').slice(0, 100);
+  const sk = endpointSK(endpoint);
   await ddb.send(new DeleteCommand({
     TableName: TABLES.PUSH_SUBS,
     Key: { userId, sk },

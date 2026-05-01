@@ -214,6 +214,7 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-04-30 | Bug fixes (13 issues): SW compilation, SK collision, userId guard, VAPID en Secrets Manager, fire-and-forget IIFE, isModuleUnlocked por order, SQS MessageGroupId, notificationclick, IAM typo |
 | 2026-04-30 | Push notifications PWA: VAPID keys, PushSubscriptions DynamoDB, pushFn Lambda, service worker, PushBell en Topbar |
 | 2026-04-30 | Phase 3: tags/categorías, score de calidad, priority flag, bug fixes admin/users e imagen |
 | 2026-04-30 | Phase 2: AI feedback generator (Bedrock), deadline backend en reflexiones, modal auditoría de quiz |

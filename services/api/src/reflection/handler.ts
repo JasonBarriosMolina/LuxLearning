@@ -30,8 +30,10 @@ function countWords(text: string): number {
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
-  const userId = event.requestContext.authorizer?.lambda?.userId!;
+  const userId = event.requestContext.authorizer?.lambda?.userId ?? '';
   const studentEmail = event.requestContext.authorizer?.lambda?.email ?? '';
+  if (!userId) return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+
   const method = event.requestContext.http.method;
   const path = event.rawPath;
   const prisma = getPrismaClient();
@@ -65,13 +67,13 @@ export const handler = async (event: Event) => {
       // Check module unlock
       const module = await prisma.module.findUnique({
         where: { id: moduleId },
-        include: { course: { include: { modules: { orderBy: { order: 'asc' }, select: { id: true } } } } },
+        include: { course: { include: { modules: { orderBy: { order: 'asc' }, select: { id: true, order: true } } } } },
       });
 
       if (!module) return badRequest('Module not found');
 
-      const allModuleIds = module.course.modules.map((m) => m.id);
-      const unlocked = await isModuleUnlocked(userId, module.order, allModuleIds);
+      const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order }));
+      const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs);
       if (!unlocked) return forbidden('Module is locked');
 
       // Save reflection with PENDING_AI status
@@ -94,23 +96,30 @@ export const handler = async (event: Event) => {
       await sqs.send(new SendMessageCommand({
         QueueUrl: process.env.SQS_REFLECTION_QUEUE_URL!,
         MessageBody: JSON.stringify({ userId, moduleId }),
-        MessageGroupId: userId, // FIFO ordering per user if needed
+        // Standard queue — MessageGroupId is not used (only valid for FIFO queues)
       }));
 
       // Fire-and-forget push notification to all evaluators
-      getPushSubscriptionsByRole('EVALUATOR').then(async (subs) => {
-        if (!subs.length) return;
-        const payload = JSON.stringify({
-          title: 'Nueva reflexión pendiente',
-          body: `${module.title} · ${wordCount} palabras`,
-          url: '/evaluator/reflections',
-        });
-        await Promise.allSettled(
-          subs.map((sub) =>
-            webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload).catch(() => {})
-          )
-        );
-      }).catch(() => {});
+      // Use IIFE so any synchronous throw (e.g. missing VAPID config) is also caught
+      void (async () => {
+        try {
+          if (!VAPID_PUBLIC || !VAPID_PRIVATE) return; // VAPID not configured — skip silently
+          const subs = await getPushSubscriptionsByRole('EVALUATOR');
+          if (!subs.length) return;
+          const payload = JSON.stringify({
+            title: 'Nueva reflexión pendiente',
+            body: `${module.title} · ${wordCount} palabras`,
+            url: '/evaluator/reflections',
+          });
+          await Promise.allSettled(
+            subs.map((sub) =>
+              webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
+            )
+          );
+        } catch {
+          // Non-fatal — push failure must never block the student's response
+        }
+      })();
 
       return ok(reflection, 'Reflection submitted. Processing with AI...');
     }

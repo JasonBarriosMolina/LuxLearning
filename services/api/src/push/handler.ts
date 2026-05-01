@@ -24,6 +24,7 @@ export const handler = async (event: Event) => {
 
     // POST /push/subscribe — save subscription
     if (method === 'POST' && path === '/push/subscribe') {
+      if (!userId) return badRequest('Unauthorized');
       const body = JSON.parse(event.body ?? '{}');
       const { endpoint, keys } = body as { endpoint: string; keys: { p256dh: string; auth: string } };
       if (!endpoint || !keys?.p256dh || !keys?.auth) return badRequest('endpoint and keys required');
@@ -40,6 +41,7 @@ export const handler = async (event: Event) => {
 
     // DELETE /push/subscribe — remove subscription
     if (method === 'DELETE' && path === '/push/subscribe') {
+      if (!userId) return badRequest('Unauthorized');
       const body = JSON.parse(event.body ?? '{}');
       const { endpoint } = body as { endpoint: string };
       if (!endpoint) return badRequest('endpoint required');

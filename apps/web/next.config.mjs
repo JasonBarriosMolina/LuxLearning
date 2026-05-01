@@ -6,8 +6,10 @@ const withPWA = withPWAInit({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
-  // Custom worker handles push events and is appended to the Workbox-generated SW
+  // Custom worker handles push events and is appended to the Workbox-generated SW.
+  // Must point to a plain JS file — next-pwa does not transpile TypeScript here.
   customWorkerSrc: 'worker',
+  customWorkerEntry: 'worker/index.js',
   workboxOptions: {
     runtimeCaching: [
       {

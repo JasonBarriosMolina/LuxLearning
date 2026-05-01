@@ -49,10 +49,13 @@ export function usePushNotifications() {
       const vapidKey: string = (keyRes as any)?.data?.publicKey ?? '';
       if (!vapidKey) throw new Error('No VAPID public key');
 
+      // urlBase64ToUint8Array calls window.atob synchronously — keep it inside try/catch
+      const appServerKey = urlBase64ToUint8Array(vapidKey);
+
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        applicationServerKey: appServerKey,
       });
 
       const json = sub.toJSON();

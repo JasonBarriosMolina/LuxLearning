@@ -45,11 +45,11 @@ export const handler = async (event: Event) => {
           courses.map(async (course) => {
             const progress = await getLessonProgress(userId, course.id);
             const completedLessonIds = new Set(progress.map((p) => p.lessonId));
-            const moduleIds = course.modules.map((m) => m.id);
+            const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
 
             const enrichedModules = await Promise.all(
               course.modules.map(async (mod) => {
-                const unlocked = await isModuleUnlocked(userId, mod.order, moduleIds);
+                const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
                 const reflection = await getReflection(userId, mod.id);
                 const quizPassed = await hasPassedQuiz(userId, mod.id);
                 return {
@@ -93,10 +93,10 @@ export const handler = async (event: Event) => {
 
       if (userId) {
         // Enrich with unlock status
-        const moduleIds = course.modules.map((m) => m.id);
+        const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
-            const unlocked = await isModuleUnlocked(userId, mod.order, moduleIds);
+            const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
             const progress = await getLessonProgress(userId, courseId);
             const completedLessonIds = new Set(progress.map((p) => p.lessonId));
             const quizPassed = await hasPassedQuiz(userId, mod.id);

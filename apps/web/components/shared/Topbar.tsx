@@ -62,9 +62,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
   const markAllRead = async () => {
     const unreadIds = notifs.filter((n) => !n.read).map((n) => n.notifId);
     setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-    for (const id of unreadIds) {
-      try { await api.notifications.markRead(id); } catch { /* non-fatal */ }
-    }
+    await Promise.allSettled(unreadIds.map((id) => api.notifications.markRead(id)));
   };
 
   const handleOpen = () => {
