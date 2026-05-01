@@ -57,6 +57,7 @@ export const handler = async (event: Event) => {
                   unlocked,
                   quizPassed,
                   reflectionStatus: reflection?.status ?? null,
+                  qualityScore: (reflection as any)?.qualityScore ?? null,
                   lessons: mod.lessons.map((l) => ({ ...l, completed: completedLessonIds.has(l.id) })),
                 };
               })
@@ -106,6 +107,7 @@ export const handler = async (event: Event) => {
               unlocked,
               quizPassed,
               reflectionStatus: reflection?.status ?? null,
+              qualityScore: (reflection as any)?.qualityScore ?? null,
               lessons: mod.lessons.map((l) => ({
                 ...l,
                 completed: completedLessonIds.has(l.id),

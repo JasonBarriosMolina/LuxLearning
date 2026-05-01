@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle, XCircle, User, BookOpen,
   Clock, AlertCircle, Brain, Copy, Check, Trash2, Plus,
-  Sparkles, Loader2, ClipboardCheck, X,
+  Sparkles, Loader2, ClipboardCheck, X, Flag, Star,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -210,6 +210,13 @@ export default function ReflectionDetailPage() {
   const [showAddComment, setShowAddComment] = useState(false);
   const { comments, add: addComment, remove: removeComment } = useFrequentComments();
 
+  // Quality score (1-10, only on approve)
+  const [qualityScore, setQualityScore] = useState<number>(7);
+
+  // Priority
+  const [priority, setPriority] = useState<boolean>(false);
+  const [priorityLoading, setPriorityLoading] = useState(false);
+
   // AI feedback
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
@@ -225,6 +232,7 @@ export default function ReflectionDetailPage() {
       const all = (res as any).data ?? [];
       const found = all.find((r: any) => r.userId === userId && r.moduleId === moduleId);
       setReflection(found ?? null);
+      if (found?.priority) setPriority(true);
       setLoading(false);
     });
   }, [userId, moduleId]);
@@ -237,7 +245,7 @@ export default function ReflectionDetailPage() {
     setError('');
     setSubmitting(action);
     try {
-      await api.evaluator.review({ userId, moduleId, action, feedback });
+      await api.evaluator.review({ userId, moduleId, action, feedback, ...(action === 'APPROVE' ? { qualityScore } : {}) });
       setDoneAction(action);
       setDone(true);
     } catch (err: any) {
@@ -265,6 +273,17 @@ export default function ReflectionDetailPage() {
       setAiError('No se pudieron generar sugerencias. Intenta de nuevo.');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const togglePriority = async () => {
+    setPriorityLoading(true);
+    const newPriority = !priority;
+    try {
+      await api.evaluator.setPriority(userId, moduleId, newPriority);
+      setPriority(newPriority);
+    } catch { /* silent */ } finally {
+      setPriorityLoading(false);
     }
   };
 
@@ -358,6 +377,21 @@ export default function ReflectionDetailPage() {
             <p className="text-gray-500 text-sm mt-0.5">{studentDisplay} · {reflection.moduleTitle ?? reflection.moduleId}</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={togglePriority}
+              disabled={priorityLoading}
+              title={priority ? 'Quitar prioridad alta' : 'Marcar como urgente'}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                priority
+                  ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                  : 'border-border text-gray-400 hover:border-red-300 hover:bg-red-50 hover:text-red-500'
+              }`}
+            >
+              {priorityLoading
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Flag className={`w-4 h-4 ${priority ? 'fill-red-500' : ''}`} />}
+              {priority ? 'Urgente' : 'Prioridad'}
+            </button>
             <button
               onClick={loadQuizAudit}
               disabled={quizLoading}
@@ -475,6 +509,44 @@ export default function ReflectionDetailPage() {
                 )}
 
                 <p className="text-xs text-gray-400">Será enviado por correo. Mínimo {MIN_FEEDBACK_LEN} caracteres.</p>
+
+                {/* Quality Score — only shows on Approve */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 text-amber-400" />
+                      Score de calidad (si apruebas)
+                    </label>
+                    <span className={`text-sm font-bold tabular-nums ${
+                      qualityScore >= 8 ? 'text-emerald-600' : qualityScore >= 5 ? 'text-amber-600' : 'text-red-500'
+                    }`}>{qualityScore}/10</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={1} max={10} step={1}
+                      value={qualityScore}
+                      onChange={(e) => setQualityScore(Number(e.target.value))}
+                      className="flex-1 h-2 appearance-none rounded-full bg-gray-200 accent-cta-from cursor-pointer"
+                    />
+                    <div className="flex gap-1">
+                      {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setQualityScore(n)}
+                          className={`w-5 h-5 rounded text-xs font-bold transition-all ${
+                            qualityScore === n
+                              ? n >= 8 ? 'bg-emerald-500 text-white' : n >= 5 ? 'bg-amber-400 text-white' : 'bg-red-400 text-white'
+                              : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
                 <textarea
                   value={feedback}

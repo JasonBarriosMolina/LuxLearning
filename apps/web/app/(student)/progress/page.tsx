@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { TrendingUp, CheckCircle, Lock, Clock, ArrowRight } from 'lucide-react';
+import { TrendingUp, CheckCircle, Lock, ArrowRight, Star } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -120,6 +120,12 @@ export default function ProgressPage() {
                           </span>
                           {mod.reflectionStatus && (
                             <ReflectionStatusBadge status={mod.reflectionStatus} />
+                          )}
+                          {mod.reflectionStatus === 'APPROVED' && mod.qualityScore != null && (
+                            <span className="inline-flex items-center gap-0.5 text-xs text-amber-500 font-semibold">
+                              <Star className="w-3 h-3 fill-amber-400" />
+                              {mod.qualityScore}/10
+                            </span>
                           )}
                         </div>
                         <ProgressBar value={modProgress} size="sm" />

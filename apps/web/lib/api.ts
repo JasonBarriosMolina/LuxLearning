@@ -76,6 +76,8 @@ export const api = {
       request<any>('/evaluator/ai-feedback', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
     quizAudit: (userId: string, moduleId: string) =>
       request<any>(`/evaluator/quiz-audit?userId=${encodeURIComponent(userId)}&moduleId=${encodeURIComponent(moduleId)}`),
+    setPriority: (userId: string, moduleId: string, priority: boolean) =>
+      request<any>('/evaluator/reflections/priority', { method: 'POST', body: JSON.stringify({ userId, moduleId, priority }) }),
   },
 
   notifications: {

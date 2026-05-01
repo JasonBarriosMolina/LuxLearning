@@ -101,10 +101,10 @@ export const handler = async (event: Event) => {
 
     // ── POST /admin/courses ─────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'POST') {
-      const { title, slug, description, imageUrl, isActive, isPilot } = body;
+      const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
       if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
       const course = await prisma.course.create({
-        data: { title, slug, description, imageUrl: imageUrl || null, isActive: isActive ?? false, isPilot: isPilot ?? false },
+        data: { title, slug, description, imageUrl: imageUrl || null, isActive: isActive ?? false, isPilot: isPilot ?? false, tags: Array.isArray(tags) ? tags : [] },
       });
       return created(course);
     }
@@ -132,11 +132,11 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'PUT') {
-        const { title, slug, description, imageUrl, isActive, isPilot } = body;
+        const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
         if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
         const course = await prisma.course.update({
           where: { id: courseId },
-          data: { title, slug, description, imageUrl: imageUrl || null, isActive, isPilot },
+          data: { title, slug, description, imageUrl: imageUrl || null, isActive, isPilot, tags: Array.isArray(tags) ? tags : [] },
         });
         return ok(course);
       }
@@ -307,9 +307,10 @@ export const handler = async (event: Event) => {
         const role = adminUsernames.has(username) ? 'ADMIN'
           : evaluatorUsernames.has(username) ? 'EVALUATOR'
           : 'STUDENT';
+        const email = attr(u, 'email') || username; // fallback to username (which is email for admin-created users)
         return {
           username,
-          email: attr(u, 'email'),
+          email,
           name: attr(u, 'name'),
           role,
           enabled: u.Enabled ?? true,

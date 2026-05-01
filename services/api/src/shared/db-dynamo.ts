@@ -110,7 +110,7 @@ export async function getReflection(userId: string, moduleId: string): Promise<R
 export async function updateReflectionStatus(
   userId: string,
   moduleId: string,
-  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt' | 'analyzedAt'>>
+  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt' | 'analyzedAt' | 'qualityScore'>>
 ) {
   const expressions: string[] = [];
   const names: Record<string, string> = {};
@@ -137,6 +137,10 @@ export async function updateReflectionStatus(
     expressions.push('analyzedAt = :analyzedAt');
     values[':analyzedAt'] = updates.analyzedAt;
   }
+  if (updates.qualityScore !== undefined) {
+    expressions.push('qualityScore = :qualityScore');
+    values[':qualityScore'] = updates.qualityScore;
+  }
 
   await ddb.send(new UpdateCommand({
     TableName: TABLES.REFLECTIONS,
@@ -144,6 +148,15 @@ export async function updateReflectionStatus(
     UpdateExpression: `SET ${expressions.join(', ')}`,
     ExpressionAttributeNames: Object.keys(names).length > 0 ? names : undefined,
     ExpressionAttributeValues: values,
+  }));
+}
+
+export async function setReflectionPriority(userId: string, moduleId: string, priority: boolean) {
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.REFLECTIONS,
+    Key: { userId, sk: moduleId },
+    UpdateExpression: 'SET priority = :p',
+    ExpressionAttributeValues: { ':p': priority },
   }));
 }
 

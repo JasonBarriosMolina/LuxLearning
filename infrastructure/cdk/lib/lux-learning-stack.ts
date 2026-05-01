@@ -386,8 +386,9 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/reflections',        apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/review', apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/students',           apigwv2.HttpMethod.GET,  evaluatorFn);
-    addRoute('/evaluator/ai-feedback',        apigwv2.HttpMethod.POST, evaluatorFn);
-    addRoute('/evaluator/quiz-audit',         apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/ai-feedback',          apigwv2.HttpMethod.POST, evaluatorFn);
+    addRoute('/evaluator/quiz-audit',           apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/reflections/priority', apigwv2.HttpMethod.POST, evaluatorFn);
 
     // Admin — Content Management
     addRoute('/admin/courses',                        apigwv2.HttpMethod.GET,    adminFn);

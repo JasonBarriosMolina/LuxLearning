@@ -8,6 +8,7 @@ export interface Course {
   imageUrl?: string;
   isActive: boolean;
   isPilot: boolean;
+  tags: string[];
   createdAt: string;
   modules?: Module[];
 }
@@ -81,8 +82,10 @@ export interface Reflection {
   aiResult?: AIDetectionResult;
   status: ReflectionStatus;
   evaluatorFeedback?: string;
+  qualityScore?: number;   // 1-10 assigned by evaluator on approval
+  priority?: boolean;      // evaluator-flagged high priority
   submittedAt: string;
-  deadline?: string;   // ISO — submittedAt + 48h, set at submission time
+  deadline?: string;       // ISO — submittedAt + 48h
   analyzedAt?: string;
   reviewedAt?: string;
 }

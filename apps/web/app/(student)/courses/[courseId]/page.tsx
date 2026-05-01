@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -64,11 +64,19 @@ export default function CoursePage() {
       </Link>
 
       {/* Course header */}
-      {course.imageUrl && (
-        <div className="rounded-2xl overflow-hidden h-48 shadow-card">
-          <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
-        </div>
-      )}
+      <div className="rounded-2xl overflow-hidden h-48 shadow-card">
+        {course.imageUrl
+          ? <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
+          : (
+            <div className="w-full h-full bg-cta-gradient flex items-center justify-center">
+              <div className="text-center text-white">
+                <BookOpen className="w-12 h-12 mx-auto mb-2 opacity-80" />
+                <p className="font-heading font-bold text-lg opacity-90">{course.title}</p>
+              </div>
+            </div>
+          )
+        }
+      </div>
 
       <div className="card">
         <div className="flex items-start justify-between gap-4 mb-4">

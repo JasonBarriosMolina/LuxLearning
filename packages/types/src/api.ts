@@ -69,6 +69,7 @@ export interface ReviewReflectionRequest {
   moduleId: string;
   action: 'APPROVE' | 'REJECT';
   feedback: string;
+  qualityScore?: number;
 }
 export type ReviewReflectionResponse = ApiResponse<Reflection>;
 

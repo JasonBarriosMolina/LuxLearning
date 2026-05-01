@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardList, Search, Clock, AlertTriangle, ArrowUpDown } from 'lucide-react';
+import { ClipboardList, Search, Clock, AlertTriangle, ArrowUpDown, Flag } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -176,7 +176,16 @@ export default function EvaluatorReflectionsPage() {
                     <div className="w-8 h-8 rounded-full bg-cta-gradient flex items-center justify-center text-white text-xs font-bold shrink-0">
                       {studentDisplay[0]?.toUpperCase()}
                     </div>
-                    <span className="text-sm font-medium text-charcoal truncate">{studentDisplay}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-charcoal truncate">{studentDisplay}</span>
+                        {(r as any).priority && (
+                          <span title="Alta prioridad">
+                            <Flag className="w-3.5 h-3.5 text-red-500 fill-red-500 shrink-0" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Module / Course */}

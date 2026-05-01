@@ -3,7 +3,7 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
-import { getPendingReflections, getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts } from '../shared/db-dynamo';
+import { getPendingReflections, getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -213,11 +213,12 @@ export const handler = async (event: Event) => {
     // POST /evaluator/reflections/review
     if (method === 'POST' && path === '/evaluator/reflections/review') {
       const body = JSON.parse(event.body ?? '{}');
-      const { userId: studentId, moduleId, action, feedback } = body as {
+      const { userId: studentId, moduleId, action, feedback, qualityScore } = body as {
         userId: string;
         moduleId: string;
         action: 'APPROVE' | 'REJECT';
         feedback: string;
+        qualityScore?: number;
       };
 
       if (!studentId || !moduleId || !action || !feedback) {
@@ -242,6 +243,7 @@ export const handler = async (event: Event) => {
         status: newStatus,
         evaluatorFeedback: feedback,
         reviewedAt,
+        ...(action === 'APPROVE' && qualityScore != null ? { qualityScore: Math.min(10, Math.max(1, Math.round(qualityScore))) } : {}),
       });
 
       // Get module info for emails
@@ -445,6 +447,15 @@ export const handler = async (event: Event) => {
       });
 
       return ok({ students, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
+    }
+
+    // POST /evaluator/reflections/priority — toggle priority flag
+    if (method === 'POST' && path === '/evaluator/reflections/priority') {
+      const body2 = JSON.parse(event.body ?? '{}');
+      const { userId: studentId, moduleId, priority } = body2 as { userId: string; moduleId: string; priority: boolean };
+      if (!studentId || !moduleId || priority == null) return badRequest('userId, moduleId, priority required');
+      await setReflectionPriority(studentId, moduleId, priority);
+      return ok({ priority });
     }
 
     // POST /evaluator/ai-feedback — generate 5 feedback suggestions via Bedrock

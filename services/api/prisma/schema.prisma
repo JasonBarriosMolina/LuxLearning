@@ -18,6 +18,7 @@ model Course {
   imageUrl    String?
   isActive    Boolean  @default(false)
   isPilot     Boolean  @default(false)
+  tags        String[] @default([])
   createdAt   DateTime @default(now())
   modules     Module[]
 }
