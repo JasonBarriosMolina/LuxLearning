@@ -192,16 +192,15 @@ VAPID_EMAIL=mailto:admin@luxlearning.com
 
 ### Frontend
 ```bash
-# Deploy manual via Vercel CLI (cuenta jasonrbm-1241 en https://vercel.com/jasonrbm-1241s-projects)
-cd apps/web
-npx vercel --prod
-
-# O si el .vercel/project.json está configurado correctamente, push a GitHub trigerea auto-deploy
-git push origin master
+# Deploy manual via Vercel CLI desde la RAÍZ del monorepo
+cd D:/InHouse/Lux
+npx vercel --prod --yes
 ```
 
-> **Nota:** La CLI debe estar autenticada con la cuenta `jasonrbm-1241` (no `shopydentalcr-5406`).
-> Repositorio GitHub: https://github.com/JasonBarriosMolina/LuxLearning
+> **Cuenta Vercel:** `jasonrbm-1241` — https://vercel.com/jasonrbm-1241s-projects/lux-learning  
+> **URL producción:** https://lux-learning.vercel.app  
+> **Repositorio GitHub:** https://github.com/JasonBarriosMolina/LuxLearning  
+> **Nota:** Deploy es manual (CLI). Para auto-deploy conectar GitHub en Vercel project settings.
 
 ### Backend (CDK)
 ```bash
