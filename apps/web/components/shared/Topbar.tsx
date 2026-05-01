@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Menu, Bell, CheckCheck, Clock, CheckCircle, XCircle, BookOpen } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { PushBell } from '@/components/ui/PushBell';
 
 interface TopbarProps {
   title?: string;
@@ -26,6 +28,8 @@ function NotifIcon({ type }: { type: string }) {
 }
 
 export function Topbar({ title, onMenuClick }: TopbarProps) {
+  const { role } = useAuth();
+  const isEvaluator = role === 'EVALUATOR' || role === 'ADMIN';
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -90,6 +94,9 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
         </h1>
       )}
       {!title && <div className="hidden lg:block flex-1" />}
+
+      {/* Push notifications bell (evaluators/admins only) */}
+      {isEvaluator && <PushBell />}
 
       {/* Notification bell */}
       <div className="relative" ref={dropRef}>

@@ -119,6 +119,7 @@ app/
 | `lux-quiz-results` | `USER#<userId>` | `MODULE#<moduleId>` | — | Resultados de quizzes |
 | `lux-enrollments` | `USER#<userId>` | `COURSE#<courseId>` | `courseId-index` | Inscripciones |
 | `lux-certificates` | `CERT#<certId>` | `META` | `userId-courseId-index` | Certificados |
+| `PushSubscriptions` | `userId` | `sk` (base64 endpoint[:100]) | — | Subscripciones push PWA |
 
 ---
 
@@ -131,6 +132,7 @@ app/
 | `adminFn` | `admin/handler.ts` | `POST /admin/users`, `GET/PUT/DELETE /admin/courses` |
 | `certsFn` | `certificates/handler.ts` | `GET /certificates/{certId}` (público), `GET /my-certificates`, `POST /my-certificates/generate` |
 | `reflectionsFn` | `reflections/handler.ts` | `POST /reflections`, `GET /reflections/{moduleId}` |
+| `pushFn` | `push/handler.ts` | `GET /push/vapid-key` (público), `POST /push/subscribe`, `DELETE /push/subscribe` |
 | `aiAnalysisFn` | `ai-analysis/handler.ts` | (SQS trigger — no HTTP) |
 
 ---
@@ -142,18 +144,18 @@ app/
 - [x] **Backend deadline**: campo `deadline` guardado al enviar reflexión (submittedAt + 48h); frontend usa backend cuando disponible
 - [x] **Modal de auditoría de quiz**: botón "Ver quiz" → modal con respuestas por intento, colores correcto/incorrecto
 
-### Phase 3 — ✅ Completado 2026-04-30 (excepto push)
+### Phase 3 — ✅ Completado 2026-04-30
 - [x] Tags/categorías para cursos — campo en Prisma, UI de chips en admin, filtro en estudiante
 - [x] Score de calidad (1-10) — slider + botones en aprobación, visible en progreso del estudiante con ⭐
 - [x] Priority flag — botón "Urgente" en detalle, ícono 🚩 en lista de evaluaciones
-- [ ] **Notificaciones push (PWA)** — pendiente: requiere VAPID keys + service worker
+- [x] **Notificaciones push (PWA)** — VAPID keys generadas, service worker custom (`worker/index.ts`), `PushBell` en Topbar, evaluators reciben push al enviar reflexión
 
 ### Bugs resueltos
 - [x] `/admin/users`: fallback email → username elimina UUIDs vacíos
 - [x] Curso sin imagen: banner gradient placeholder
 
 ### Pendiente
-- [ ] **Push notifications PWA** — necesita: `npx web-push generate-vapid-keys`, configurar VAPID_PUBLIC/PRIVATE en Lambda env, service worker en `public/sw.js`
+- (ninguno por ahora)
 
 ---
 
@@ -178,6 +180,10 @@ PRISMA_DATABASE_URL=...
 SES_FROM_EMAIL=...
 BEDROCK_REGION=...
 SQS_QUEUE_URL=...
+DYNAMO_TABLE_PUSH_SUBS=PushSubscriptions
+VAPID_PUBLIC_KEY=BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw
+VAPID_PRIVATE_KEY=SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo
+VAPID_EMAIL=mailto:admin@luxlearning.com
 ```
 
 ---
@@ -208,6 +214,7 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-04-30 | Push notifications PWA: VAPID keys, PushSubscriptions DynamoDB, pushFn Lambda, service worker, PushBell en Topbar |
 | 2026-04-30 | Phase 3: tags/categorías, score de calidad, priority flag, bug fixes admin/users e imagen |
 | 2026-04-30 | Phase 2: AI feedback generator (Bedrock), deadline backend en reflexiones, modal auditoría de quiz |
 | 2026-04-30 | Phase 1 Evaluador Dashboard: nuevo dashboard, tabla de evaluaciones con tiempo restante, detalle side-by-side con comentarios frecuentes |

@@ -151,6 +151,14 @@ export class LuxLearningStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    const pushSubsTable = new dynamodb.Table(this, 'PushSubscriptions', {
+      tableName: 'PushSubscriptions',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // ─── SQS ─────────────────────────────────────────────────────────────────
 
     const reflectionDlq = new sqs.Queue(this, 'ReflectionDLQ', {
@@ -179,9 +187,13 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_ENROLLMENTS: enrollmentsTable.tableName,
       DYNAMO_TABLE_CERTIFICATES: certificatesTable.tableName,
       SQS_REFLECTION_QUEUE_URL: reflectionQueue.queueUrl,
+      DYNAMO_TABLE_PUSH_SUBS: pushSubsTable.tableName,
       SES_FROM_EMAIL: 'noreply@luxlearning.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning.vercel.app',
+      VAPID_PUBLIC_KEY: 'BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw',
+      VAPID_PRIVATE_KEY: 'SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo',
+      VAPID_EMAIL: 'mailto:admin@luxlearning.com',
       PRISMA_QUERY_ENGINE_LIBRARY: '/var/task/libquery_engine-linux-arm64-openssl-3.0.x.so.node',
       // CloudFormation dynamic reference — resolved at deploy, encrypted in Lambda
       DATABASE_URL: '{{resolve:secretsmanager:lux/neon-db:SecretString:DATABASE_URL}}',
@@ -252,6 +264,7 @@ export class LuxLearningStack extends cdk.Stack {
     const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512 });
     const notifsFn   = makeFn('NotifsFn',   'notifications/handler.ts', 'handler');
     const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
+    const pushFn     = makeFn('PushFn',     'push/handler.ts',           'handler');
 
     // SQS Consumer (Bedrock AI detection)
     const sqsConsumerFn = makeFn('SQSConsumerFn', 'reflection/sqs-consumer.ts', 'handler', {
@@ -261,7 +274,7 @@ export class LuxLearningStack extends cdk.Stack {
 
     // ─── IAM Permissions ──────────────────────────────────────────────────────
 
-    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, sqsConsumerFn];
+    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn];
 
     allFns.forEach((fn) => {
       lessonProgressTable.grantReadWriteData(fn);
@@ -270,6 +283,7 @@ export class LuxLearningStack extends cdk.Stack {
       notificationsTable.grantReadWriteData(fn);
       enrollmentsTable.grantReadWriteData(fn);
       certificatesTable.grantReadWriteData(fn);
+      pushSubsTable.grantReadWriteData(fn);
     });
 
     reflectionQueue.grantSendMessages(reflFn);
@@ -414,6 +428,11 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/certificates/{certId}',    apigwv2.HttpMethod.GET,  certsFn, false); // PUBLIC
     addRoute('/my-certificates',          apigwv2.HttpMethod.GET,  certsFn);
     addRoute('/my-certificates/generate', apigwv2.HttpMethod.POST, certsFn);
+
+    // Push Notifications
+    addRoute('/push/vapid-key',  apigwv2.HttpMethod.GET,    pushFn, false); // PUBLIC — browser needs it before auth
+    addRoute('/push/subscribe',  apigwv2.HttpMethod.POST,   pushFn);
+    addRoute('/push/subscribe',  apigwv2.HttpMethod.DELETE, pushFn);
 
     // Admin — Enrollment Management
     addRoute('/admin/users/{username}/enrollments', apigwv2.HttpMethod.GET,    adminFn);

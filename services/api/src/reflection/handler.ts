@@ -1,9 +1,18 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import type { SQSEvent } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
-import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked } from '../shared/db-dynamo';
+import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
+
+// Configure web-push VAPID
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? '';
+const VAPID_EMAIL = process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
+}
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -87,6 +96,21 @@ export const handler = async (event: Event) => {
         MessageBody: JSON.stringify({ userId, moduleId }),
         MessageGroupId: userId, // FIFO ordering per user if needed
       }));
+
+      // Fire-and-forget push notification to all evaluators
+      getPushSubscriptionsByRole('EVALUATOR').then(async (subs) => {
+        if (!subs.length) return;
+        const payload = JSON.stringify({
+          title: 'Nueva reflexión pendiente',
+          body: `${module.title} · ${wordCount} palabras`,
+          url: '/evaluator/reflections',
+        });
+        await Promise.allSettled(
+          subs.map((sub) =>
+            webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload).catch(() => {})
+          )
+        );
+      }).catch(() => {});
 
       return ok(reflection, 'Reflection submitted. Processing with AI...');
     }

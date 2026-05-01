@@ -15,6 +15,7 @@ export const TABLES = {
   NOTIFS: process.env.DYNAMO_TABLE_NOTIFS ?? 'Notifications',
   ENROLLMENTS: process.env.DYNAMO_TABLE_ENROLLMENTS ?? 'Enrollments',
   CERTIFICATES: process.env.DYNAMO_TABLE_CERTIFICATES ?? 'Certificates',
+  PUSH_SUBS: process.env.DYNAMO_TABLE_PUSH_SUBS ?? 'PushSubscriptions',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -328,4 +329,42 @@ export async function getCertificatesByUser(userId: string): Promise<Certificate
     ExpressionAttributeValues: { ':uid': userId },
   }));
   return (result.Items ?? []) as unknown as Certificate[];
+}
+
+// ─── Push Subscriptions ───────────────────────────────────────────────────────
+
+export interface PushSubscriptionRecord {
+  userId: string;    // PK
+  endpoint: string;  // SK (unique per browser/device)
+  keys: { p256dh: string; auth: string };
+  role: string;
+  createdAt: string;
+}
+
+export async function savePushSubscription(sub: PushSubscriptionRecord) {
+  // Use a hash of endpoint as SK to keep it short
+  const sk = Buffer.from(sub.endpoint).toString('base64').slice(0, 100);
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PUSH_SUBS,
+    Item: { userId: sub.userId, sk, endpoint: sub.endpoint, keys: sub.keys, role: sub.role, createdAt: sub.createdAt },
+  }));
+}
+
+export async function deletePushSubscription(userId: string, endpoint: string) {
+  const sk = Buffer.from(endpoint).toString('base64').slice(0, 100);
+  await ddb.send(new DeleteCommand({
+    TableName: TABLES.PUSH_SUBS,
+    Key: { userId, sk },
+  }));
+}
+
+export async function getPushSubscriptionsByRole(role: string): Promise<PushSubscriptionRecord[]> {
+  // Scan filtered by role — table is small (evaluators only)
+  const result = await ddb.send(new ScanCommand({
+    TableName: TABLES.PUSH_SUBS,
+    FilterExpression: '#role = :role',
+    ExpressionAttributeNames: { '#role': 'role' },
+    ExpressionAttributeValues: { ':role': role },
+  }));
+  return (result.Items ?? []) as unknown as PushSubscriptionRecord[];
 }

@@ -6,6 +6,8 @@ const withPWA = withPWAInit({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  // Custom worker handles push events and is appended to the Workbox-generated SW
+  customWorkerSrc: 'worker',
   workboxOptions: {
     runtimeCaching: [
       {

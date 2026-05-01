@@ -93,6 +93,14 @@ export const api = {
       request<any>('/my-certificates/generate', { method: 'POST', body: JSON.stringify({ courseId }) }),
   },
 
+  push: {
+    vapidKey: () => fetch(`${API_URL}/push/vapid-key`).then((r) => r.json()),
+    subscribe: (body: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+      request<any>('/push/subscribe', { method: 'POST', body: JSON.stringify(body) }),
+    unsubscribe: (body: { endpoint: string }) =>
+      request<any>('/push/subscribe', { method: 'DELETE', body: JSON.stringify(body) }),
+  },
+
   admin: {
     // Courses
     courses: {
