@@ -137,10 +137,10 @@ app/
 
 ## Trabajo Pendiente
 
-### Phase 2 — Evaluador Dashboard (próximo)
-- [ ] **AI feedback generator**: botón "Generar sugerencias" → 5 puntos via Bedrock
-- [ ] **Backend "time remaining"**: campo `deadline` en reflexión al enviar
-- [ ] **Modal de auditoría de quiz**: ver respuestas del estudiante al quiz
+### Phase 2 — ✅ Completado 2026-04-30
+- [x] **AI feedback generator**: botón "Generar con IA" → 5 sugerencias via Bedrock (Claude Haiku), clickeables para insertar en feedback
+- [x] **Backend deadline**: campo `deadline` guardado al enviar reflexión (submittedAt + 48h); frontend usa backend cuando disponible
+- [x] **Modal de auditoría de quiz**: botón "Ver quiz" → modal con respuestas por intento, colores correcto/incorrecto
 
 ### Phase 3 — Futuro
 - [ ] Tags/categorías para cursos
@@ -205,6 +205,7 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-04-30 | Phase 2: AI feedback generator (Bedrock), deadline backend en reflexiones, modal auditoría de quiz |
 | 2026-04-30 | Phase 1 Evaluador Dashboard: nuevo dashboard, tabla de evaluaciones con tiempo restante, detalle side-by-side con comentarios frecuentes |
 | 2026-04-29 | Certificados completos: generación auto, página pública, download PDF |
 | 2026-04-29 | Emails: invitación, reflexión aprobada/rechazada con nombre real del estudiante |
