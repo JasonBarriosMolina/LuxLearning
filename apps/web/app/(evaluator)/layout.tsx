@@ -12,6 +12,7 @@ export default function EvaluatorLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.replace('/login');
     if (!isLoading && isAuthenticated && role === 'STUDENT') router.replace('/dashboard');
+    if (!isLoading && isAuthenticated && role !== 'EVALUATOR' && role !== 'ADMIN' && role !== 'STUDENT') router.replace('/login');
   }, [isLoading, isAuthenticated, role, router]);
 
   if (isLoading) {

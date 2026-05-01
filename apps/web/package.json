@@ -11,11 +11,11 @@
   },
   "dependencies": {
     "@aws-amplify/auth": "^6.4.0",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@lux/types": "*",
     "aws-amplify": "^6.4.0",
     "lucide-react": "^0.396.0",
-    "next": "14.2.4",
-    "next-pwa": "^5.6.0",
+    "next": "^15.5.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -1,9 +1,9 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import type { SQSEvent } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { getPrismaClient } from '../shared/db-neon.js';
-import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked } from '../shared/db-dynamo.js';
-import { ok, badRequest, forbidden, serverError, cors } from '../shared/response.js';
+import { getPrismaClient } from '../shared/db-neon';
+import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked } from '../shared/db-dynamo';
+import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -22,6 +22,7 @@ export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
+  const studentEmail = event.requestContext.authorizer?.lambda?.email ?? '';
   const method = event.requestContext.http.method;
   const path = event.rawPath;
   const prisma = getPrismaClient();
@@ -67,6 +68,7 @@ export const handler = async (event: Event) => {
       // Save reflection with PENDING_AI status
       const reflection = {
         userId,
+        studentEmail,
         moduleId,
         text,
         wordCount,

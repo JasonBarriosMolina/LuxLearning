@@ -4,11 +4,11 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigwv2Integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as apigwv2Authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as ses from 'aws-cdk-lib/aws-ses';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as path from 'path';
@@ -45,14 +45,13 @@ export class LuxLearningStack extends cdk.Stack {
         userPassword: true,
         userSrp: true,
       },
-      generateSecret: false, // Public client (SPA/PWA)
+      generateSecret: false,
       accessTokenValidity: cdk.Duration.hours(1),
       idTokenValidity: cdk.Duration.hours(1),
       refreshTokenValidity: cdk.Duration.days(30),
       preventUserExistenceErrors: true,
     });
 
-    // Cognito Groups
     new cognito.CfnUserPoolGroup(this, 'StudentGroup', {
       userPoolId: userPool.userPoolId,
       groupName: 'STUDENT',
@@ -66,6 +65,9 @@ export class LuxLearningStack extends cdk.Stack {
       description: 'Evaluadores de Lux Learning',
       precedence: 5,
     });
+
+    // Note: ADMIN group was created manually in Cognito and is not managed by CDK
+    // to avoid conflicts on re-deploy.
 
     // ─── Secrets Manager ──────────────────────────────────────────────────────
 
@@ -127,6 +129,28 @@ export class LuxLearningStack extends cdk.Stack {
       timeToLiveAttribute: 'ttl',
     });
 
+    const enrollmentsTable = new dynamodb.Table(this, 'Enrollments', {
+      tableName: 'Enrollments',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const certificatesTable = new dynamodb.Table(this, 'Certificates', {
+      tableName: 'Certificates',
+      partitionKey: { name: 'certId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    certificatesTable.addGlobalSecondaryIndex({
+      indexName: 'userId-courseId-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'courseId', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // ─── SQS ─────────────────────────────────────────────────────────────────
 
     const reflectionDlq = new sqs.Queue(this, 'ReflectionDLQ', {
@@ -137,15 +161,12 @@ export class LuxLearningStack extends cdk.Stack {
     const reflectionQueue = new sqs.Queue(this, 'ReflectionQueue', {
       queueName: 'lux-reflection-queue',
       visibilityTimeout: cdk.Duration.seconds(300),
-      deadLetterQueue: {
-        queue: reflectionDlq,
-        maxReceiveCount: 3,
-      },
+      deadLetterQueue: { queue: reflectionDlq, maxReceiveCount: 3 },
     });
 
-    // ─── Common Lambda config ─────────────────────────────────────────────────
+    // ─── Shared NodejsFunction config ─────────────────────────────────────────
 
-    const LAMBDA_DIST = path.join(__dirname, '../../../services/api/dist');
+    const API_SRC = path.join(__dirname, '../../../services/api/src');
 
     const commonEnv: Record<string, string> = {
       AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
@@ -155,33 +176,64 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_QUIZ: quizAttemptsTable.tableName,
       DYNAMO_TABLE_REFLECTIONS: reflectionsTable.tableName,
       DYNAMO_TABLE_NOTIFS: notificationsTable.tableName,
+      DYNAMO_TABLE_ENROLLMENTS: enrollmentsTable.tableName,
+      DYNAMO_TABLE_CERTIFICATES: certificatesTable.tableName,
       SQS_REFLECTION_QUEUE_URL: reflectionQueue.queueUrl,
       SES_FROM_EMAIL: 'noreply@luxlearning.com',
       BEDROCK_REGION: 'us-east-1',
-      FRONTEND_URL: 'https://luxlearning.com',
+      FRONTEND_URL: 'https://lux-learning.vercel.app',
+      PRISMA_QUERY_ENGINE_LIBRARY: '/var/task/libquery_engine-linux-arm64-openssl-3.0.x.so.node',
+      // CloudFormation dynamic reference — resolved at deploy, encrypted in Lambda
+      DATABASE_URL: '{{resolve:secretsmanager:lux/neon-db:SecretString:DATABASE_URL}}',
     };
 
-    const commonLambdaProps: Partial<lambda.FunctionProps> = {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      architecture: lambda.Architecture.ARM_64, // Graviton2 — 20% cheaper
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 256,
-      environment: commonEnv,
+    // Path to the generated Prisma ARM64 engine binary (cross-compiled from Windows)
+    const PRISMA_ENGINE = 'libquery_engine-linux-arm64-openssl-3.0.x.so.node';
+
+    const commonBundling: lambdaNodejs.BundlingOptions = {
+      minify: true,
+      sourceMap: false,
+      target: 'node20',
+      format: lambdaNodejs.OutputFormat.CJS,
+      externalModules: [
+        // Keep only AWS SDK external (provided by Lambda runtime)
+        '@aws-sdk/*',
+      ],
+      commandHooks: {
+        beforeInstall: () => [],
+        beforeBundling: () => [],
+        // After esbuild bundles, copy the Prisma Linux ARM64 engine binary
+        // alongside the bundle so the Lambda can find it at /var/task/
+        afterBundling: (inputDir: string, outputDir: string) => [
+          `node -e "require('fs').copyFileSync('${inputDir.replace(/\\/g, '/')}/node_modules/.prisma/client/${PRISMA_ENGINE}', '${outputDir.replace(/\\/g, '/')}/${PRISMA_ENGINE}')"`,
+        ],
+      },
     };
 
-    // Helper to create Lambda from compiled dist
-    const makeLambda = (id: string, handlerPath: string, extraProps?: Partial<lambda.FunctionProps>) =>
-      new lambda.Function(this, id, {
-        ...commonLambdaProps,
-        code: lambda.Code.fromAsset(LAMBDA_DIST),
-        handler: handlerPath,
-        ...extraProps,
-      } as lambda.FunctionProps);
+    const makeFn = (
+      id: string,
+      entry: string,
+      handler = 'handler',
+      extra: Partial<lambdaNodejs.NodejsFunctionProps> = {}
+    ) =>
+      new lambdaNodejs.NodejsFunction(this, id, {
+        functionName: `lux-${id.replace(/Fn$/, '').toLowerCase()}`,
+        runtime: lambda.Runtime.NODEJS_20_X,
+        architecture: lambda.Architecture.ARM_64, // Graviton2
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        entry: path.join(API_SRC, entry),
+        handler,
+        environment: commonEnv,
+        bundling: commonBundling,
+        ...extra,
+      });
 
     // ─── Lambda Authorizer ────────────────────────────────────────────────────
 
-    const authorizerFn = makeLambda('AuthorizerFn', 'shared/authorizer.handler', {
+    const authorizerFn = makeFn('AuthorizerFn', 'shared/authorizer.ts', 'handler', {
       timeout: cdk.Duration.seconds(5),
+      memorySize: 128,
     });
 
     const authorizer = new apigwv2Authorizers.HttpLambdaAuthorizer('JwtAuthorizer', authorizerFn, {
@@ -192,52 +244,85 @@ export class LuxLearningStack extends cdk.Stack {
 
     // ─── API Lambdas ──────────────────────────────────────────────────────────
 
-    const coursesFn = makeLambda('CoursesFn', 'courses/handler.handler', { memorySize: 512 });
-    const lessonsFn = makeLambda('LessonsFn', 'lessons/handler.handler');
-    const quizFn = makeLambda('QuizFn', 'quiz/handler.handler', { memorySize: 512 });
-    const reflectionFn = makeLambda('ReflectionFn', 'reflection/handler.handler', { memorySize: 512 });
-    const evaluatorFn = makeLambda('EvaluatorFn', 'evaluator/handler.handler', { memorySize: 512 });
+    const coursesFn  = makeFn('CoursesFn',  'courses/handler.ts',        'handler', { memorySize: 512 });
+    const lessonsFn  = makeFn('LessonsFn',  'lessons/handler.ts',        'handler');
+    const quizFn     = makeFn('QuizFn',     'quiz/handler.ts',           'handler', { memorySize: 512 });
+    const reflFn     = makeFn('ReflectionFn', 'reflection/handler.ts',  'handler', { memorySize: 512 });
+    const evaluatorFn = makeFn('EvaluatorFn', 'evaluator/handler.ts',   'handler', { memorySize: 512 });
+    const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512 });
+    const notifsFn   = makeFn('NotifsFn',   'notifications/handler.ts', 'handler');
+    const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
 
     // SQS Consumer (Bedrock AI detection)
-    const sqsConsumerFn = makeLambda('SQSConsumerFn', 'reflection/sqs-consumer.handler', {
+    const sqsConsumerFn = makeFn('SQSConsumerFn', 'reflection/sqs-consumer.ts', 'handler', {
       timeout: cdk.Duration.seconds(120),
       memorySize: 512,
     });
 
     // ─── IAM Permissions ──────────────────────────────────────────────────────
 
-    // DynamoDB
-    [coursesFn, lessonsFn, quizFn, reflectionFn, evaluatorFn, sqsConsumerFn].forEach((fn) => {
+    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, sqsConsumerFn];
+
+    allFns.forEach((fn) => {
       lessonProgressTable.grantReadWriteData(fn);
       quizAttemptsTable.grantReadWriteData(fn);
       reflectionsTable.grantReadWriteData(fn);
       notificationsTable.grantReadWriteData(fn);
+      enrollmentsTable.grantReadWriteData(fn);
+      certificatesTable.grantReadWriteData(fn);
     });
 
-    // SQS
-    reflectionQueue.grantSendMessages(reflectionFn);
+    reflectionQueue.grantSendMessages(reflFn);
     reflectionQueue.grantConsumeMessages(sqsConsumerFn);
 
-    // Bedrock
     sqsConsumerFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
-      resources: ['arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5'],
+      actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
     }));
 
-    // SES
     evaluatorFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: ['*'],
     }));
 
-    // Secrets
-    dbSecret.grantRead(coursesFn);
-    dbSecret.grantRead(lessonsFn);
-    dbSecret.grantRead(quizFn);
-    dbSecret.grantRead(reflectionFn);
-    dbSecret.grantRead(evaluatorFn);
+    evaluatorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminGetUser'],
+      resources: [userPool.userPoolArn],
+    }));
 
-    // SQS Event Source
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'cognito-idp:ListUsers',
+        'cognito-idp:ListUsersInGroup',
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminGetUser',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminRemoveUserFromGroupFromGroup',
+        'cognito-idp:AdminRemoveUserFromGroup',
+        'cognito-idp:AdminDisableUser',
+        'cognito-idp:AdminEnableUser',
+        'cognito-idp:AdminDeleteUser',
+        'cognito-idp:AdminSetUserPassword',
+        'cognito-idp:AdminUpdateUserAttributes',
+      ],
+      resources: [userPool.userPoolArn],
+    }));
+
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+
+    certsFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminGetUser'],
+      resources: [userPool.userPoolArn],
+    }));
+
+    allFns.forEach((fn) => dbSecret.grantRead(fn));
+
     sqsConsumerFn.addEventSource(new lambdaEventSources.SqsEventSource(reflectionQueue, {
       batchSize: 5,
       maxBatchingWindow: cdk.Duration.seconds(10),
@@ -250,94 +335,86 @@ export class LuxLearningStack extends cdk.Stack {
       apiName: 'lux-learning-api',
       description: 'Lux Learning REST API',
       corsPreflight: {
-        allowOrigins: ['https://luxlearning.com', 'http://localhost:3000'],
+        allowOrigins: ['*'],
         allowHeaders: ['Content-Type', 'Authorization'],
         allowMethods: [apigwv2.CorsHttpMethod.ANY],
         maxAge: cdk.Duration.hours(24),
       },
     });
 
-    const makeIntegration = (fn: lambda.Function) =>
-      new apigwv2Integrations.HttpLambdaIntegration(`${fn.node.id}Integration`, fn);
+    const i = (fn: lambda.IFunction) =>
+      new apigwv2Integrations.HttpLambdaIntegration(`${fn.node.id}Int`, fn);
 
-    // Routes — Courses
-    api.addRoutes({
-      path: '/courses',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(coursesFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/courses/{courseId}',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(coursesFn),
-      authorizer,
-    });
+    const addRoute = (
+      path: string,
+      method: apigwv2.HttpMethod,
+      fn: lambda.IFunction,
+      auth = true
+    ) =>
+      api.addRoutes({
+        path,
+        methods: [method],
+        integration: i(fn),
+        ...(auth ? { authorizer } : {}),
+      });
 
-    // Routes — Lessons
-    api.addRoutes({
-      path: '/lessons/complete',
-      methods: [apigwv2.HttpMethod.POST],
-      integration: makeIntegration(lessonsFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/lessons/progress',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(lessonsFn),
-      authorizer,
-    });
+    // Courses
+    addRoute('/courses',            apigwv2.HttpMethod.GET,  coursesFn);
+    addRoute('/courses/{courseId}', apigwv2.HttpMethod.GET,  coursesFn);
 
-    // Routes — Quiz
-    api.addRoutes({
-      path: '/quiz/{moduleId}/submit',
-      methods: [apigwv2.HttpMethod.POST],
-      integration: makeIntegration(quizFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/quiz/{moduleId}/attempts',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(quizFn),
-      authorizer,
-    });
+    // Lessons
+    addRoute('/lessons/complete',   apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/lessons/progress',   apigwv2.HttpMethod.GET,  lessonsFn);
 
-    // Routes — Reflection
-    api.addRoutes({
-      path: '/reflection',
-      methods: [apigwv2.HttpMethod.POST],
-      integration: makeIntegration(reflectionFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/reflection/{moduleId}',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(reflectionFn),
-      authorizer,
-    });
+    // Quiz
+    addRoute('/quiz/{moduleId}/submit',   apigwv2.HttpMethod.POST, quizFn);
+    addRoute('/quiz/{moduleId}/attempts', apigwv2.HttpMethod.GET,  quizFn);
 
-    // Routes — Evaluator (role checked inside Lambda)
-    api.addRoutes({
-      path: '/evaluator/reflections',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(evaluatorFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/evaluator/reflections/review',
-      methods: [apigwv2.HttpMethod.POST],
-      integration: makeIntegration(evaluatorFn),
-      authorizer,
-    });
-    api.addRoutes({
-      path: '/evaluator/students',
-      methods: [apigwv2.HttpMethod.GET],
-      integration: makeIntegration(evaluatorFn),
-      authorizer,
-    });
+    // Reflection
+    addRoute('/reflection',            apigwv2.HttpMethod.POST, reflFn);
+    addRoute('/reflection/{moduleId}', apigwv2.HttpMethod.GET,  reflFn);
 
-    // ─── SES Email Identity ───────────────────────────────────────────────────
-    // NOTE: Domain must be verified manually or via Route53 in production
+    // Evaluator
+    addRoute('/evaluator/reflections',        apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/reflections/review', apigwv2.HttpMethod.POST, evaluatorFn);
+    addRoute('/evaluator/students',           apigwv2.HttpMethod.GET,  evaluatorFn);
+
+    // Admin — Content Management
+    addRoute('/admin/courses',                        apigwv2.HttpMethod.GET,    adminFn);
+    addRoute('/admin/courses',                        apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.GET,    adminFn);
+    addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/courses/{courseId}/modules',     apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/modules/{moduleId}',             apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/modules/{moduleId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/modules/{moduleId}/lessons',     apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/lessons/{lessonId}',             apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/lessons/{lessonId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/modules/{moduleId}/questions',   apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/questions/{questionId}',         apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/questions/{questionId}',         apigwv2.HttpMethod.DELETE, adminFn);
+
+    // Notifications
+    addRoute('/notifications',       apigwv2.HttpMethod.GET,  notifsFn);
+    addRoute('/notifications/read',  apigwv2.HttpMethod.POST, notifsFn);
+
+    // Certificates — public verification (no auth) + authenticated list + generate
+    addRoute('/certificates/{certId}',    apigwv2.HttpMethod.GET,  certsFn, false); // PUBLIC
+    addRoute('/my-certificates',          apigwv2.HttpMethod.GET,  certsFn);
+    addRoute('/my-certificates/generate', apigwv2.HttpMethod.POST, certsFn);
+
+    // Admin — Enrollment Management
+    addRoute('/admin/users/{username}/enrollments', apigwv2.HttpMethod.GET,    adminFn);
+    addRoute('/admin/users/{username}/enrollments', apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/users/{username}/enrollments', apigwv2.HttpMethod.DELETE, adminFn);
+
+    // Admin — User Management (ADMIN role only, enforced in handler)
+    addRoute('/admin/users',                          apigwv2.HttpMethod.GET,    adminFn);
+    addRoute('/admin/users',                          apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/users/{username}/role',          apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/users/{username}/status',        apigwv2.HttpMethod.PUT,    adminFn);
+    addRoute('/admin/users/{username}',               apigwv2.HttpMethod.DELETE, adminFn);
 
     // ─── Outputs ─────────────────────────────────────────────────────────────
 
@@ -362,7 +439,11 @@ export class LuxLearningStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ReflectionQueueUrl', {
       value: reflectionQueue.queueUrl,
       description: 'SQS Reflection Queue URL',
-      exportName: 'LuxReflectionQueueUrl',
+    });
+
+    new cdk.CfnOutput(this, 'DbSecretArn', {
+      value: dbSecret.secretArn,
+      description: 'Secrets Manager ARN for Neon credentials',
     });
   }
 }

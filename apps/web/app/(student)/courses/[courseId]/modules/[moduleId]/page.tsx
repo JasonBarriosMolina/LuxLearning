@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
 
 export default function ModulePage() {
@@ -92,7 +93,7 @@ export default function ModulePage() {
 
         <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
           <span className="flex items-center gap-1">
-            <Clock className="w-4 h-4" /> {module.duration}
+            <Clock className="w-4 h-4" /> {formatCourseDuration(module.duration)}
           </span>
           <span className="flex items-center gap-1">
             <BookOpen className="w-4 h-4" /> {totalLessons} lecciones
@@ -127,7 +128,7 @@ export default function ModulePage() {
               <p className="font-medium text-charcoal text-sm truncate">
                 {lesson.order}. {lesson.title}
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">{lesson.duration}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{formatCourseDuration(lesson.duration)}</p>
             </div>
             {lesson.completed && (
               <span className="text-xs text-emerald-600 font-semibold shrink-0">Completada</span>

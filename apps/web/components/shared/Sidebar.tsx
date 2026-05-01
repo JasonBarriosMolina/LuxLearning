@@ -8,9 +8,12 @@ import {
   TrendingUp,
   ClipboardList,
   Users,
+  UserCog,
+  UserCircle,
   LogOut,
   X,
   Download,
+  Settings2,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -26,7 +29,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
-  roles: ('STUDENT' | 'EVALUATOR')[];
+  roles: ('STUDENT' | 'EVALUATOR' | 'ADMIN')[];
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -34,7 +37,13 @@ const NAV_ITEMS: NavItem[] = [
     href: '/dashboard',
     label: 'Dashboard',
     icon: <LayoutDashboard className="w-5 h-5" />,
-    roles: ['STUDENT', 'EVALUATOR'],
+    roles: ['STUDENT'],
+  },
+  {
+    href: '/evaluator/dashboard',
+    label: 'Dashboard',
+    icon: <LayoutDashboard className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
   },
   {
     href: '/courses',
@@ -50,15 +59,33 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: '/evaluator/reflections',
-    label: 'Reflexiones',
+    label: 'Evaluaciones',
     icon: <ClipboardList className="w-5 h-5" />,
-    roles: ['EVALUATOR'],
+    roles: ['EVALUATOR', 'ADMIN'],
   },
   {
     href: '/evaluator/students',
     label: 'Estudiantes',
     icon: <Users className="w-5 h-5" />,
-    roles: ['EVALUATOR'],
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/admin/courses',
+    label: 'Gestión de Contenido',
+    icon: <Settings2 className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/admin/users',
+    label: 'Usuarios',
+    icon: <UserCog className="w-5 h-5" />,
+    roles: ['ADMIN'],
+  },
+  {
+    href: '/profile',
+    label: 'Mi perfil',
+    icon: <UserCircle className="w-5 h-5" />,
+    roles: ['STUDENT', 'EVALUATOR', 'ADMIN'],
   },
 ];
 
@@ -68,7 +95,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { canInstall, install } = useInstallPrompt();
 
   const visibleItems = NAV_ITEMS.filter((item) =>
-    role ? item.roles.includes(role) : false
+    role ? item.roles.includes(role as 'STUDENT' | 'EVALUATOR' | 'ADMIN') : false
   );
 
   const sidebarContent = (
@@ -95,7 +122,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           </div>
           <div className="min-w-0">
             <p className="text-white text-sm font-medium truncate">{email ?? 'Usuario'}</p>
-            <p className="text-white/50 text-xs">{role === 'EVALUATOR' ? 'Evaluador' : 'Estudiante'}</p>
+            <p className="text-white/50 text-xs">
+              {role === 'ADMIN' ? 'Super Admin' : role === 'EVALUATOR' ? 'Evaluador' : 'Estudiante'}
+            </p>
           </div>
         </div>
       </div>

@@ -79,4 +79,58 @@ export const api = {
     markRead: (notifId: string) =>
       request('/notifications/read', { method: 'POST', body: JSON.stringify({ notifId }) }),
   },
+
+  certificates: {
+    get: (certId: string) => fetch(`${API_URL}/certificates/${certId}`).then((r) => r.json()),
+    mine: () => request<any>('/my-certificates'),
+    generate: (courseId: string) =>
+      request<any>('/my-certificates/generate', { method: 'POST', body: JSON.stringify({ courseId }) }),
+  },
+
+  admin: {
+    // Courses
+    courses: {
+      list: () => request<any>('/admin/courses'),
+      get: (courseId: string) => request<any>(`/admin/courses/${courseId}`),
+      create: (body: any) => request<any>('/admin/courses', { method: 'POST', body: JSON.stringify(body) }),
+      update: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
+    },
+    // Modules
+    modules: {
+      create: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}/modules`, { method: 'POST', body: JSON.stringify(body) }),
+      update: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (moduleId: string) => request<any>(`/admin/modules/${moduleId}`, { method: 'DELETE' }),
+    },
+    // Lessons
+    lessons: {
+      create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/lessons`, { method: 'POST', body: JSON.stringify(body) }),
+      update: (lessonId: string, body: any) => request<any>(`/admin/lessons/${lessonId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (lessonId: string) => request<any>(`/admin/lessons/${lessonId}`, { method: 'DELETE' }),
+    },
+    // Questions
+    questions: {
+      create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/questions`, { method: 'POST', body: JSON.stringify(body) }),
+      update: (questionId: string, body: any) => request<any>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (questionId: string) => request<any>(`/admin/questions/${questionId}`, { method: 'DELETE' }),
+    },
+    // Users
+    users: {
+      list: () => request<any>('/admin/users'),
+      invite: (body: { email: string; role: string; name?: string; courseIds?: string[] }) =>
+        request<any>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+      changeRole: (username: string, role: string) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/role`, { method: 'PUT', body: JSON.stringify({ role }) }),
+      setStatus: (username: string, enabled: boolean) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/status`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+      delete: (username: string) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+      getEnrollments: (username: string) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`),
+      addEnrollment: (username: string, courseId: string) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId }) }),
+      removeEnrollment: (username: string, courseId: string) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
+    },
+  },
 };

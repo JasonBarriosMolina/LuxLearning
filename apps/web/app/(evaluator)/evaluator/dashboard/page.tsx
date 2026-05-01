@@ -1,0 +1,536 @@
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
+import {
+  Clock, CheckCircle, XCircle, ArrowRight, AlertTriangle,
+  Users, ClipboardList, BookOpen, MoreVertical, MessageSquare,
+  Plus, X, ChevronRight, Zap,
+} from 'lucide-react';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { ReflectionStatusBadge } from '@/components/ui/Badge';
+import { formatDate } from '@/lib/utils';
+import type { Reflection } from '@lux/types';
+
+type EnrichedReflection = Reflection & {
+  moduleTitle?: string;
+  courseTitle?: string;
+  studentName?: string;
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+const DEADLINE_HOURS = 48;
+
+function getTimeRemaining(submittedAt: string): { label: string; urgent: boolean; overdue: boolean } {
+  const deadline = new Date(submittedAt).getTime() + DEADLINE_HOURS * 3600 * 1000;
+  const diff = deadline - Date.now();
+  if (diff <= 0) return { label: 'Vencido', urgent: true, overdue: true };
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h < 6) return { label: `${h}h ${m}m`, urgent: true, overdue: false };
+  if (h < 24) return { label: `${h}h restantes`, urgent: false, overdue: false };
+  const d = Math.floor(h / 24);
+  return { label: `${d}d restantes`, urgent: false, overdue: false };
+}
+
+// ── Bar Chart ──────────────────────────────────────────────────────────────────
+
+function StatusBarChart({ approved, rejected, pending }: { approved: number; rejected: number; pending: number }) {
+  const total = approved + rejected + pending || 1;
+  const bars = [
+    { label: 'Aprobadas', value: approved, color: '#10b981', pct: Math.round((approved / total) * 100) },
+    { label: 'Rechazadas', value: rejected, color: '#ef4444', pct: Math.round((rejected / total) * 100) },
+    { label: 'Pendientes', value: pending, color: '#f59e0b', pct: Math.round((pending / total) * 100) },
+  ];
+  const maxVal = Math.max(approved, rejected, pending, 1);
+
+  return (
+    <div className="space-y-3">
+      {bars.map((b) => (
+        <div key={b.label}>
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-gray-500 font-medium">{b.label}</span>
+            <span className="font-bold text-charcoal">{b.value}</span>
+          </div>
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${(b.value / maxVal) * 100}%`, backgroundColor: b.color }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Frequent Comments ──────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'lux_frequent_comments';
+
+function getStoredComments(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+  } catch { return []; }
+}
+
+function saveStoredComments(comments: string[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(comments));
+}
+
+const DEFAULT_COMMENTS = [
+  'Excelente reflexión, demuestra comprensión profunda del módulo.',
+  'Tu reflexión necesita más profundidad. Describe cómo aplicarás lo aprendido.',
+  'Buen análisis, pero evita el lenguaje genérico. Sé específico con tu experiencia.',
+  'La reflexión parece generada automáticamente. Por favor escribe en tus propias palabras.',
+];
+
+function FrequentComments() {
+  const [comments, setComments] = useState<string[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
+
+  useEffect(() => {
+    const stored = getStoredComments();
+    setComments(stored.length > 0 ? stored : DEFAULT_COMMENTS);
+  }, []);
+
+  const add = () => {
+    if (!newComment.trim()) return;
+    const updated = [...comments, newComment.trim()];
+    setComments(updated);
+    saveStoredComments(updated);
+    setNewComment('');
+    setAdding(false);
+  };
+
+  const remove = (i: number) => {
+    const updated = comments.filter((_, idx) => idx !== i);
+    setComments(updated);
+    saveStoredComments(updated);
+  };
+
+  const copy = (text: string, i: number) => {
+    navigator.clipboard.writeText(text);
+    setCopied(i);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-purple-500" />
+          <h2 className="font-heading font-bold text-base text-charcoal">Comentarios frecuentes</h2>
+        </div>
+        <button
+          onClick={() => setAdding(true)}
+          className="flex items-center gap-1 text-xs text-cta-from font-semibold hover:opacity-70"
+        >
+          <Plus className="w-3.5 h-3.5" /> Agregar
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {comments.map((c, i) => (
+          <div
+            key={i}
+            className="group flex items-start gap-2 p-3 rounded-xl bg-surface hover:bg-purple-50 transition-colors cursor-pointer"
+            onClick={() => copy(c, i)}
+          >
+            <p className="flex-1 text-xs text-gray-600 leading-relaxed">{c}</p>
+            <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-xs text-purple-500 font-semibold">
+                {copied === i ? '¡Copiado!' : 'Copiar'}
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); remove(i); }}
+                className="text-gray-300 hover:text-red-400"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {adding && (
+        <div className="space-y-2">
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Escribe tu comentario frecuente..."
+            className="input-field text-sm min-h-[80px] resize-none"
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button onClick={add} className="btn-primary text-xs px-3 py-1.5">Guardar</button>
+            <button onClick={() => setAdding(false)} className="btn-secondary text-xs px-3 py-1.5">Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
+
+export default function EvaluatorDashboardPage() {
+  const { email, name } = useAuth() as any;
+  const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'course' | 'student'>('course');
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+
+  const displayName = name || email?.split('@')[0] || 'Evaluador';
+
+  useEffect(() => {
+    Promise.all([
+      api.evaluator.reflections(),
+      api.evaluator.students(),
+    ]).then(([refRes, studRes]) => {
+      setReflections((refRes as any).data ?? []);
+      setStudents((studRes as any).data?.students ?? []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const pending = useMemo(() => reflections.filter((r) => r.status === 'PENDING_EVAL'), [reflections]);
+  const approved = useMemo(() => reflections.filter((r) => r.status === 'APPROVED'), [reflections]);
+  const rejected = useMemo(() => reflections.filter((r) => r.status === 'REJECTED'), [reflections]);
+
+  // Urgent = submitted > 36h ago but not yet reviewed
+  const urgent = useMemo(() =>
+    pending.filter((r) => {
+      const age = Date.now() - new Date(r.submittedAt).getTime();
+      return age > 36 * 3600 * 1000;
+    }), [pending]);
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
+
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
+            Panel del Evaluador
+          </h1>
+          <p className="text-gray-500 mt-1 text-sm">Hola, <strong>{displayName}</strong>. Aquí está tu carga de trabajo.</p>
+        </div>
+
+        {/* Toggle Curso / Estudiante */}
+        <div className="flex bg-surface rounded-xl p-1 gap-1 shrink-0">
+          {[
+            { key: 'course', label: '📋 Por Curso', icon: <BookOpen className="w-4 h-4" /> },
+            { key: 'student', label: '👤 Por Estudiante', icon: <Users className="w-4 h-4" /> },
+          ].map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setView(v.key as any)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                view === v.key ? 'bg-white shadow-sm text-charcoal' : 'text-gray-500 hover:text-charcoal'
+              }`}
+            >
+              {v.icon} {v.key === 'course' ? 'Por Curso' : 'Por Estudiante'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          {
+            label: 'Pendientes',
+            value: pending.length,
+            icon: <Clock className="w-5 h-5 text-amber-500" />,
+            bg: 'bg-amber-50',
+            ring: pending.length > 0 ? 'ring-2 ring-amber-300' : '',
+          },
+          {
+            label: 'Aprobadas',
+            value: approved.length,
+            icon: <CheckCircle className="w-5 h-5 text-emerald-500" />,
+            bg: 'bg-emerald-50',
+            ring: '',
+          },
+          {
+            label: 'Rechazadas',
+            value: rejected.length,
+            icon: <XCircle className="w-5 h-5 text-red-500" />,
+            bg: 'bg-red-50',
+            ring: '',
+          },
+          {
+            label: 'Estudiantes activos',
+            value: students.length,
+            icon: <Users className="w-5 h-5 text-purple-500" />,
+            bg: 'bg-purple-50',
+            ring: '',
+          },
+        ].map((s) => (
+          <div key={s.label} className={`card ${s.ring}`}>
+            <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mb-3`}>
+              {s.icon}
+            </div>
+            <p className="font-heading font-bold text-2xl text-charcoal">{loading ? '—' : s.value}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Urgent alerts ── */}
+      {!loading && urgent.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <h2 className="font-heading font-bold text-base text-red-700">
+              Acción Inmediata — {urgent.length} reflexión{urgent.length > 1 ? 'es' : ''} con tiempo crítico
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {urgent.map((r) => {
+              const tr = getTimeRemaining(r.submittedAt);
+              return (
+                <Link
+                  key={`${r.userId}-${r.moduleId}`}
+                  href={`/evaluator/reflections/${encodeURIComponent(r.userId)}?moduleId=${r.moduleId}`}
+                  className="flex items-center gap-3 bg-white rounded-xl p-3 hover:shadow-sm transition-shadow"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                    <Zap className="w-4 h-4 text-red-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-charcoal truncate">
+                      {(r as any).studentName ?? r.userId}
+                    </p>
+                    <p className="text-xs text-gray-500">{r.moduleTitle ?? r.moduleId}</p>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                    tr.overdue ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'
+                  }`}>
+                    {tr.label}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main content split ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Left — Work queue */}
+        <div className="lg:col-span-2 space-y-4">
+          {view === 'course' ? (
+            <>
+              <div className="flex items-center justify-between">
+                <h2 className="font-heading font-bold text-lg text-charcoal flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5 text-cta-from" />
+                  Carga de trabajo
+                </h2>
+                <Link href="/evaluator/reflections" className="text-sm text-cta-from font-semibold flex items-center gap-1 hover:opacity-70">
+                  Ver todas <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3, 4].map((n) => <div key={n} className="card h-16 animate-pulse" />)}
+                </div>
+              ) : pending.length === 0 ? (
+                <div className="card text-center py-12">
+                  <CheckCircle className="w-12 h-12 text-emerald-300 mx-auto mb-3" />
+                  <p className="font-heading font-bold text-charcoal">¡Todo al día!</p>
+                  <p className="text-gray-500 text-sm mt-1">No hay reflexiones pendientes.</p>
+                </div>
+              ) : (
+                <div className="card p-0 overflow-hidden">
+                  {/* Table header */}
+                  <div className="grid grid-cols-[1fr_1fr_100px_90px_40px] gap-3 px-4 py-3 bg-surface border-b border-border text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                    <span>Estudiante</span>
+                    <span>Módulo / Curso</span>
+                    <span>Enviado</span>
+                    <span>Tiempo</span>
+                    <span />
+                  </div>
+                  {pending.map((r) => {
+                    const tr = getTimeRemaining(r.submittedAt);
+                    const key = `${r.userId}-${r.moduleId}`;
+                    return (
+                      <div
+                        key={key}
+                        className="grid grid-cols-[1fr_1fr_100px_90px_40px] gap-3 px-4 py-3 items-center border-b border-border last:border-0 hover:bg-surface transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-full bg-cta-gradient flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {((r as any).studentName ?? r.userId)[0]?.toUpperCase()}
+                          </div>
+                          <p className="text-sm font-medium text-charcoal truncate">
+                            {(r as any).studentName ?? r.userId}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm text-charcoal truncate">{r.moduleTitle ?? r.moduleId}</p>
+                          <p className="text-xs text-gray-400 truncate">{(r as any).courseTitle ?? ''}</p>
+                        </div>
+                        <span className="text-xs text-gray-500">{formatDate(r.submittedAt)}</span>
+                        <span className={`text-xs font-semibold px-2 py-1 rounded-lg w-fit ${
+                          tr.overdue
+                            ? 'bg-red-100 text-red-600'
+                            : tr.urgent
+                            ? 'bg-orange-100 text-orange-600'
+                            : 'bg-emerald-50 text-emerald-600'
+                        }`}>
+                          {tr.label}
+                        </span>
+                        {/* Action menu */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenMenu(openMenu === key ? null : key)}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-charcoal"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                          {openMenu === key && (
+                            <div className="absolute right-0 top-8 z-20 bg-white border border-border rounded-xl shadow-lg py-1 w-44">
+                              <Link
+                                href={`/evaluator/reflections/${encodeURIComponent(r.userId)}?moduleId=${r.moduleId}`}
+                                className="flex items-center gap-2 px-4 py-2 text-sm text-charcoal hover:bg-surface"
+                                onClick={() => setOpenMenu(null)}
+                              >
+                                <ClipboardList className="w-4 h-4 text-cta-from" />
+                                Ver reflexión
+                              </Link>
+                              <Link
+                                href={`/evaluator/students`}
+                                className="flex items-center gap-2 px-4 py-2 text-sm text-charcoal hover:bg-surface"
+                                onClick={() => setOpenMenu(null)}
+                              >
+                                <Users className="w-4 h-4 text-purple-500" />
+                                Ver estudiante
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            // ── Student view ──
+            <>
+              <h2 className="font-heading font-bold text-lg text-charcoal flex items-center gap-2">
+                <Users className="w-5 h-5 text-purple-500" />
+                Progreso de estudiantes
+              </h2>
+              {loading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((n) => <div key={n} className="card h-20 animate-pulse" />)}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {students.slice(0, 8).map((s: any) => {
+                    const totalMods = s.courses?.reduce((acc: number, c: any) => acc + c.modules.length, 0) ?? 0;
+                    const approvedMods = s.courses?.reduce((acc: number, c: any) => acc + c.modulesApproved, 0) ?? 0;
+                    const pendingMods = s.courses?.reduce((acc: number, c: any) =>
+                      acc + c.modules.filter((m: any) => m.reflectionStatus === 'PENDING_EVAL').length, 0) ?? 0;
+                    const avgPct = s.courses?.length > 0
+                      ? Math.round(s.courses.reduce((acc: number, c: any) => acc + c.progressPct, 0) / s.courses.length)
+                      : 0;
+
+                    return (
+                      <div key={s.userId} className="card p-4 flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
+                          {(s.studentName ?? s.userId)[0]?.toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-sm font-semibold text-charcoal truncate">
+                              {s.studentName ?? s.userId}
+                            </p>
+                            {pendingMods > 0 && (
+                              <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
+                                {pendingMods} pendiente{pendingMods > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-cta-gradient"
+                                style={{ width: `${avgPct}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400 font-medium w-8 text-right">{avgPct}%</span>
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {approvedMods}/{totalMods} módulos aprobados
+                          </p>
+                        </div>
+                        <Link
+                          href="/evaluator/students"
+                          className="p-2 rounded-xl hover:bg-surface text-gray-300 hover:text-cta-from transition-colors shrink-0"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </Link>
+                      </div>
+                    );
+                  })}
+                  {students.length > 8 && (
+                    <Link href="/evaluator/students" className="btn-secondary text-sm w-full justify-center">
+                      Ver todos los estudiantes ({students.length})
+                    </Link>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Right sidebar — Chart + Frequent comments */}
+        <div className="space-y-4">
+          {/* Status bar chart */}
+          <div className="card">
+            <h2 className="font-heading font-bold text-base text-charcoal mb-4 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              Estado de evaluaciones
+            </h2>
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((n) => <div key={n} className="h-4 bg-gray-100 rounded animate-pulse" />)}
+              </div>
+            ) : (
+              <StatusBarChart
+                approved={approved.length}
+                rejected={rejected.length}
+                pending={pending.length}
+              />
+            )}
+            {!loading && reflections.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-gray-400 text-center">
+                  Tasa de aprobación:{' '}
+                  <strong className="text-emerald-600">
+                    {Math.round((approved.length / (approved.length + rejected.length || 1)) * 100)}%
+                  </strong>
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Frequent comments */}
+          <FrequentComments />
+        </div>
+      </div>
+    </div>
+  );
+}

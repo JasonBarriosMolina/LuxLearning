@@ -1,7 +1,6 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { markLessonComplete, getLessonProgress } from '../shared/db-dynamo.js';
-import { ok, badRequest, serverError, cors } from '../shared/response.js';
-import { init as cuid } from '@paralleldrive/cuid2';
+import { markLessonComplete, getLessonProgress } from '../shared/db-dynamo';
+import { ok, badRequest, serverError, cors } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;

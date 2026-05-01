@@ -2,29 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock } from 'lucide-react';
+import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
-import type { Course } from '@lux/types';
+import type { Course, Certificate } from '@lux/types';
 
-interface EnrichedCourse extends Course {
-  modules: Array<{
-    id: string;
-    order: number;
-    title: string;
-    duration: string;
-    unlocked: boolean;
-    quizPassed: boolean;
-    reflectionStatus: string | null;
-    lessons: Array<{ id: string; completed: boolean }>;
-  }>;
+interface EnrichedModule {
+  id: string;
+  order: number;
+  title: string;
+  duration: string;
+  unlocked: boolean;
+  quizPassed: boolean;
+  reflectionStatus: string | null;
+  lessons: Array<{ id: string; completed: boolean }>;
 }
+
+type EnrichedCourse = Omit<Course, 'modules'> & { modules: EnrichedModule[] };
 
 export default function StudentDashboardPage() {
   const { email } = useAuth();
   const [courses, setCourses] = useState<EnrichedCourse[]>([]);
+  const [certs, setCerts] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +33,10 @@ export default function StudentDashboardPage() {
       setCourses((res as any).data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
+    api.certificates.mine().then((res: any) => {
+      setCerts(res?.data ?? []);
+    }).catch(() => {});
+
   }, []);
 
   const firstName = email?.split('@')[0] ?? 'Estudiante';
@@ -124,6 +129,10 @@ export default function StudentDashboardPage() {
               ? Math.round((completedLessons / allLessons.length) * 100)
               : 0;
 
+            const isCourseComplete = (course.modules?.length ?? 0) > 0 &&
+              course.modules?.every((m) => m.reflectionStatus === 'APPROVED');
+            const courseCert = certs.find((c) => c.courseId === course.id);
+
             // Find current module (first unlocked, not fully completed)
             const currentModule = course.modules?.find(
               (m) => m.unlocked && m.reflectionStatus !== 'APPROVED'
@@ -191,6 +200,24 @@ export default function StudentDashboardPage() {
                       );
                     })}
                   </div>
+                )}
+
+                {/* Certificate banner — course complete */}
+                {isCourseComplete && courseCert && (
+                  <a
+                    href={`/certificado/${courseCert.certId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-4 rounded-xl text-white font-semibold text-sm transition-opacity hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #00B4D8, #7B2FBE)' }}
+                  >
+                    <Award className="w-5 h-5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-bold">¡Curso completado!</p>
+                      <p className="text-white/80 text-xs font-normal">Haz clic para ver y descargar tu certificado</p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
+                  </a>
                 )}
 
                 {/* Continue CTA */}

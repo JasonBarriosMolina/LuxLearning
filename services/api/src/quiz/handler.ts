@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { getPrismaClient } from '../shared/db-neon.js';
-import { saveQuizAttempt, getQuizAttempts, getLessonProgress } from '../shared/db-dynamo.js';
-import { ok, badRequest, forbidden, serverError, cors } from '../shared/response.js';
+import { getPrismaClient } from '../shared/db-neon';
+import { saveQuizAttempt, getQuizAttempts, getLessonProgress } from '../shared/db-dynamo';
+import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -74,6 +74,14 @@ export const handler = async (event: Event) => {
         submittedAt: new Date().toISOString(),
       });
 
+      const results = module.questions.map((q, i) => ({
+        questionText: q.text,
+        options: q.options,
+        selectedIndex: answers[i] ?? -1,
+        correctIndex: q.correctIndex,
+        isCorrect: answers[i] === q.correctIndex,
+      }));
+
       return ok({
         score,
         passed,
@@ -81,6 +89,7 @@ export const handler = async (event: Event) => {
         attempt: attemptNumber,
         correctCount,
         totalQuestions: module.questions.length,
+        results,
       });
     }
 

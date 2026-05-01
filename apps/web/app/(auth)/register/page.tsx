@@ -42,11 +42,19 @@ export default function RegisterPage() {
       await register(email, password, name);
       setStep('confirm');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrarse';
+      const msg = err instanceof Error ? err.message : '';
       if (msg.includes('UsernameExistsException')) {
-        setError('Este correo ya está registrado.');
+        setError('Este correo ya está registrado. Inicia sesión o recupera tu contraseña.');
+      } else if (msg.includes('InvalidPasswordException') || msg.includes('Password did not conform')) {
+        setError('La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.');
+      } else if (msg.includes('InvalidParameterException')) {
+        setError('Por favor verifica que todos los campos sean válidos.');
+      } else if (msg.includes('NetworkError') || msg.includes('network')) {
+        setError('Error de conexión. Verifica tu internet e intenta de nuevo.');
+      } else if (msg.includes('TooManyRequestsException') || msg.includes('LimitExceededException')) {
+        setError('Demasiados intentos. Por favor espera unos minutos e intenta de nuevo.');
       } else {
-        setError(msg);
+        setError('Error al crear la cuenta. Por favor intenta de nuevo.');
       }
     } finally {
       setLoading(false);
@@ -61,8 +69,16 @@ export default function RegisterPage() {
       await confirmRegistration(email, code);
       router.push('/login?registered=1');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Código inválido';
-      setError(msg.includes('CodeMismatchException') ? 'Código incorrecto. Inténtalo de nuevo.' : msg);
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('CodeMismatchException')) {
+        setError('Código incorrecto. Inténtalo de nuevo.');
+      } else if (msg.includes('ExpiredCodeException')) {
+        setError('El código ha expirado. Solicita uno nuevo.');
+      } else if (msg.includes('TooManyFailedAttemptsException')) {
+        setError('Demasiados intentos fallidos. Solicita un nuevo código.');
+      } else {
+        setError('Error al verificar el código. Por favor intenta de nuevo.');
+      }
     } finally {
       setLoading(false);
     }

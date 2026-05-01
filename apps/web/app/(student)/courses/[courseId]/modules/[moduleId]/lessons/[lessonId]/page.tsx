@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatCourseDuration } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 
 export default function LessonPage() {
@@ -92,7 +93,7 @@ export default function LessonPage() {
           )}
         </div>
         <h1 className="font-heading font-bold text-2xl text-charcoal">{lesson.title}</h1>
-        <p className="text-sm text-gray-500 mt-1">{lesson.duration}</p>
+        <p className="text-sm text-gray-500 mt-1">{formatCourseDuration(lesson.duration)}</p>
       </div>
 
       {/* YouTube embed */}

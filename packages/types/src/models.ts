@@ -82,6 +82,7 @@ export interface Reflection {
   status: ReflectionStatus;
   evaluatorFeedback?: string;
   submittedAt: string;
+  analyzedAt?: string;
   reviewedAt?: string;
 }
 
@@ -101,9 +102,18 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface Certificate {
+  certId: string;       // PK — unique certificate ID (cuid)
+  userId: string;       // student's userId (GSI PK)
+  courseId: string;     // GSI SK
+  studentName: string;  // resolved at generation time
+  courseTitle: string;
+  issuedAt: string;     // ISO timestamp
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'STUDENT' | 'EVALUATOR';
+export type UserRole = 'STUDENT' | 'EVALUATOR' | 'ADMIN';
 
 export interface AuthUser {
   userId: string;

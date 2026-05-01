@@ -13,7 +13,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     if (!isLoading && !isAuthenticated) {
       router.replace('/login');
     }
-    if (!isLoading && isAuthenticated && role === 'EVALUATOR') {
+    if (!isLoading && isAuthenticated && (role === 'EVALUATOR' || role === 'ADMIN')) {
       router.replace('/evaluator/dashboard');
     }
   }, [isLoading, isAuthenticated, role, router]);

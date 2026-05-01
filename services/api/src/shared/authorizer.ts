@@ -2,7 +2,7 @@ import type {
   APIGatewayRequestAuthorizerEventV2,
   APIGatewaySimpleAuthorizerWithContextResult,
 } from 'aws-lambda';
-import { verifyToken, extractToken } from './auth.js';
+import { verifyToken, extractToken } from './auth';
 
 export const handler = async (
   event: APIGatewayRequestAuthorizerEventV2

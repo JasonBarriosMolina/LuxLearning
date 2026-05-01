@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { getPrismaClient } from '../shared/db-neon.js';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection } from '../shared/db-dynamo.js';
-import { ok, notFound, serverError, cors } from '../shared/response.js';
+import { getPrismaClient } from '../shared/db-neon';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments } from '../shared/db-dynamo';
+import { ok, notFound, serverError, cors } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -16,11 +16,58 @@ export const handler = async (event: Event) => {
   try {
     // GET /courses
     if (path === '/courses' || path === '/courses/') {
+      const role = event.requestContext.authorizer?.lambda?.role;
+      let courseIdFilter: string[] | undefined;
+
+      // Students see only their enrolled courses (if they have enrollments)
+      if (userId && role === 'STUDENT') {
+        const enrolled = await getEnrollments(userId);
+        if (enrolled.length > 0) courseIdFilter = enrolled;
+      }
+
       const courses = await prisma.course.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          ...(courseIdFilter ? { id: { in: courseIdFilter } } : {}),
+        },
         orderBy: { createdAt: 'asc' },
-        include: { modules: { orderBy: { order: 'asc' }, select: { id: true, order: true, title: true, duration: true } } },
+        include: {
+          modules: {
+            orderBy: { order: 'asc' },
+            include: { lessons: { orderBy: { order: 'asc' }, select: { id: true } } },
+          },
+        },
       });
+
+      // Enrich with student progress if user is authenticated
+      if (userId) {
+        const enriched = await Promise.all(
+          courses.map(async (course) => {
+            const progress = await getLessonProgress(userId, course.id);
+            const completedLessonIds = new Set(progress.map((p) => p.lessonId));
+            const moduleIds = course.modules.map((m) => m.id);
+
+            const enrichedModules = await Promise.all(
+              course.modules.map(async (mod) => {
+                const unlocked = await isModuleUnlocked(userId, mod.order, moduleIds);
+                const reflection = await getReflection(userId, mod.id);
+                const quizPassed = await hasPassedQuiz(userId, mod.id);
+                return {
+                  ...mod,
+                  unlocked,
+                  quizPassed,
+                  reflectionStatus: reflection?.status ?? null,
+                  lessons: mod.lessons.map((l) => ({ ...l, completed: completedLessonIds.has(l.id) })),
+                };
+              })
+            );
+
+            return { ...course, modules: enrichedModules };
+          })
+        );
+        return ok(enriched);
+      }
+
       return ok(courses);
     }
 

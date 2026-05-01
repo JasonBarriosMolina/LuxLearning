@@ -34,6 +34,7 @@ export type GetLessonProgressResponse = ApiResponse<LessonProgress[]>;
 
 export interface SubmitQuizRequest {
   moduleId: string;
+  courseId?: string;
   answers: number[];
 }
 

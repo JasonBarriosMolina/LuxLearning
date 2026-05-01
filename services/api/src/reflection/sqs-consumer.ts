@@ -1,6 +1,6 @@
 import type { SQSEvent, SQSRecord } from 'aws-lambda';
-import { getReflection, updateReflectionStatus } from '../shared/db-dynamo.js';
-import { detectAI } from './detect-ai.js';
+import { getReflection, updateReflectionStatus } from '../shared/db-dynamo';
+import { detectAI } from './detect-ai';
 
 const AI_CONFIDENCE_THRESHOLD = 60;
 
@@ -20,13 +20,14 @@ async function processRecord(record: SQSRecord) {
     return;
   }
 
+  const analyzedAt = new Date().toISOString();
   let aiResult;
   try {
     aiResult = await detectAI(reflection.text);
   } catch (err) {
     console.error('[AI Detection] Bedrock error:', err);
     // On Bedrock failure, forward to evaluator instead of blocking student
-    await updateReflectionStatus(userId, moduleId, { status: 'PENDING_EVAL' });
+    await updateReflectionStatus(userId, moduleId, { status: 'PENDING_EVAL', analyzedAt });
     return;
   }
 
@@ -38,6 +39,7 @@ async function processRecord(record: SQSRecord) {
   await updateReflectionStatus(userId, moduleId, {
     status: newStatus,
     aiResult,
+    analyzedAt,
   });
 
   console.log(`[AI Detection] Updated status to ${newStatus}`);

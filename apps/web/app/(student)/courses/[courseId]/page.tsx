@@ -3,22 +3,37 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
-import { cn } from '@/lib/utils';
+import { cn, formatCourseDuration } from '@/lib/utils';
+import type { Certificate } from '@lux/types';
 
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const [course, setCourse] = useState<any>(null);
+  const [cert, setCert] = useState<Certificate | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.courses.get(courseId).then((res) => {
-      setCourse((res as any).data);
+      const c = (res as any).data;
+      setCourse(c);
       setLoading(false);
     });
+    api.certificates.mine().then((res: any) => {
+      const certs: Certificate[] = res?.data ?? [];
+      const found = certs.find((c) => c.courseId === courseId);
+      if (found) {
+        setCert(found);
+      } else {
+        // Auto-generate if course is complete but no cert yet (retroactive)
+        api.certificates.generate(courseId)
+          .then((r: any) => { if (r?.data) setCert(r.data); })
+          .catch(() => {});
+      }
+    }).catch(() => {});
   }, [courseId]);
 
   if (loading) {
@@ -37,6 +52,9 @@ export default function CoursePage() {
   const overallProgress = allLessons.length > 0
     ? Math.round((completedLessons / allLessons.length) * 100)
     : 0;
+
+  const isCourseComplete = (course.modules?.length ?? 0) > 0 &&
+    course.modules?.every((m: any) => m.reflectionStatus === 'APPROVED');
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
@@ -62,6 +80,39 @@ export default function CoursePage() {
         </div>
         <ProgressBar value={overallProgress} label={`${completedLessons} de ${allLessons.length} lecciones completadas`} showPercent />
       </div>
+
+      {/* Course completion banner */}
+      {isCourseComplete && (
+        <div className="relative overflow-hidden rounded-2xl bg-cta-gradient p-6 text-white shadow-lg">
+          <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="relative flex items-start gap-4">
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+              <Trophy className="w-7 h-7 text-white" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="font-heading font-bold text-xl">¡Curso completado!</h2>
+                <Star className="w-5 h-5 text-yellow-300 fill-yellow-300" />
+              </div>
+              <p className="text-white/80 text-sm mb-3">
+                Has completado todos los módulos y tus reflexiones fueron aprobadas. ¡Felicitaciones!
+              </p>
+              {cert && (
+                <a
+                  href={`/certificado/${cert.certId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-white text-purple-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-yellow-50 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Descargar certificado
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modules */}
       <div className="space-y-3">
@@ -99,7 +150,7 @@ export default function CoursePage() {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
                   <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {mod.duration}
+                    <Clock className="w-3 h-3" /> {formatCourseDuration(mod.duration)}
                   </span>
                   <span>{modLessons.length} lecciones</span>
                 </div>

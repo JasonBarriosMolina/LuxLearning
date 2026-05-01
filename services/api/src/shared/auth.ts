@@ -29,7 +29,11 @@ export async function verifyToken(token: string): Promise<VerifiedClaims> {
   });
 
   const groups = (payload['cognito:groups'] as string[] | undefined) ?? [];
-  const role: UserRole = groups.includes('EVALUATOR') ? 'EVALUATOR' : 'STUDENT';
+  const role: UserRole = groups.includes('ADMIN')
+    ? 'ADMIN'
+    : groups.includes('EVALUATOR')
+    ? 'EVALUATOR'
+    : 'STUDENT';
 
   return {
     userId: payload['sub'] as string,

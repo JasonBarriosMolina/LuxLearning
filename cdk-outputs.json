@@ -1,0 +1,9 @@
+{
+  "LuxLearningStack": {
+    "UserPoolClientId": "63ujfu3mt11s45p9g6m7p0n648",
+    "ReflectionQueueUrl": "https://sqs.us-east-1.amazonaws.com/798694628803/lux-reflection-queue",
+    "ApiUrl": "https://v4vabtmerb.execute-api.us-east-1.amazonaws.com",
+    "UserPoolId": "us-east-1_RGVyVRJXx",
+    "DbSecretArn": "arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/neon-db-bp488g"
+  }
+}

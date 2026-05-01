@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { STAFFPAD_COURSE } from '../../packages/types/src/seed-data.js';
+import { STAFFPAD_COURSE } from '../../../packages/types/src/seed-data';
 
 const prisma = new PrismaClient();
 

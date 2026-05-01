@@ -1,0 +1,1 @@
+{"statusCode":500,"headers":{"Access-Control-Allow-Origin":"https://lux-learning.vercel.app","Access-Control-Allow-Headers":"Content-Type,Authorization","Access-Control-Allow-Methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","Content-Type":"application/json"},"body":"{\"error\":\"Internal server error\",\"statusCode\":500}"}

@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Trophy } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { cn } from '@/lib/utils';
 
 type QuizState = 'answering' | 'submitting' | 'result';
 
@@ -54,12 +54,13 @@ export default function QuizPage() {
     try {
       const res = await api.quiz.submit(moduleId, {
         moduleId,
+        courseId,
         answers: answers as number[],
       });
       setResult((res as any).data ?? res);
       setState('result');
     } catch (err: any) {
-      alert(err.message ?? 'Error al enviar el quiz');
+      alert('Error al enviar el quiz. Por favor intenta de nuevo.');
       setState('answering');
     }
   };
@@ -88,9 +89,9 @@ export default function QuizPage() {
   if (state === 'result' && result) {
     const passed = result.passed;
     return (
-      <div className="max-w-2xl mx-auto animate-slide-up">
-        <div className="card text-center py-10 space-y-6">
-          {/* Score circle */}
+      <div className="max-w-2xl mx-auto animate-slide-up space-y-5">
+        {/* Score summary card */}
+        <div className="card text-center py-8 space-y-4">
           <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto ${
             passed ? 'bg-emerald-100' : 'bg-red-100'
           }`}>
@@ -102,17 +103,14 @@ export default function QuizPage() {
           </div>
 
           <div>
-            <p className={`font-heading font-bold text-4xl mb-1 ${
-              passed ? 'text-emerald-600' : 'text-red-500'
-            }`}>
+            <p className={`font-heading font-bold text-4xl mb-1 ${passed ? 'text-emerald-600' : 'text-red-500'}`}>
               {result.score}%
             </p>
             <h2 className="font-heading font-bold text-2xl text-charcoal">
               {passed ? '¡Aprobado!' : 'No aprobado'}
             </h2>
             <p className="text-gray-500 mt-2">
-              {result.correctCount} de {result.totalQuestions} correctas •
-              Nota mínima: {result.passingScore}%
+              {result.correctCount} de {result.totalQuestions} correctas • Nota mínima: {result.passingScore}%
             </p>
           </div>
 
@@ -122,34 +120,71 @@ export default function QuizPage() {
 
           {passed ? (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">
-                Excelente trabajo. Ahora escribe tu reflexión para completar el módulo.
-              </p>
-              <Link
-                href={`/courses/${courseId}/modules/${moduleId}/reflection`}
-                className="btn-primary inline-flex"
-              >
+              <p className="text-sm text-gray-600">Excelente trabajo. Ahora escribe tu reflexión para completar el módulo.</p>
+              <Link href={`/courses/${courseId}/modules/${moduleId}/reflection`} className="btn-primary inline-flex">
                 Escribir reflexión
               </Link>
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">
-                No te desanimes. Puedes intentarlo de nuevo sin límites.
-              </p>
+              <p className="text-sm text-gray-600">No te desanimes. Puedes intentarlo de nuevo sin límites.</p>
               <Button onClick={handleRetry} leftIcon={<RotateCcw className="w-4 h-4" />}>
                 Intentar de nuevo
               </Button>
             </div>
           )}
 
-          <Link
-            href={`/courses/${courseId}/modules/${moduleId}`}
-            className="text-sm text-gray-500 hover:text-charcoal block"
-          >
+          <Link href={`/courses/${courseId}/modules/${moduleId}`} className="text-sm text-gray-500 hover:text-charcoal block">
             Volver al módulo
           </Link>
         </div>
+
+        {/* Answer review */}
+        {result.results && result.results.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-heading font-bold text-lg text-charcoal">Revisión de respuestas</h3>
+            {result.results.map((r: any, i: number) => (
+              <div
+                key={i}
+                className={`card border-2 ${r.isCorrect ? 'border-emerald-200 bg-emerald-50/30' : 'border-red-200 bg-red-50/30'}`}
+              >
+                <div className="flex items-start gap-3 mb-3">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${r.isCorrect ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                    {r.isCorrect
+                      ? <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      : <XCircle className="w-4 h-4 text-red-500" />}
+                  </div>
+                  <p className="font-semibold text-charcoal text-sm leading-snug">
+                    {i + 1}. {r.questionText}
+                  </p>
+                </div>
+                <div className="space-y-1.5 pl-9">
+                  {r.options.map((opt: string, j: number) => {
+                    const isCorrect = j === r.correctIndex;
+                    const isSelected = j === r.selectedIndex;
+                    const isWrong = isSelected && !isCorrect;
+                    return (
+                      <div
+                        key={j}
+                        className={cn(
+                          'px-3 py-2 rounded-lg text-sm flex items-center gap-2',
+                          isCorrect ? 'bg-emerald-100 text-emerald-800 font-medium'
+                            : isWrong ? 'bg-red-100 text-red-700 line-through'
+                            : 'text-gray-500'
+                        )}
+                      >
+                        <span className="font-bold text-xs w-4 shrink-0">{String.fromCharCode(65 + j)}.</span>
+                        {opt}
+                        {isCorrect && <CheckCircle className="w-3.5 h-3.5 text-emerald-600 ml-auto shrink-0" />}
+                        {isWrong && <XCircle className="w-3.5 h-3.5 text-red-500 ml-auto shrink-0" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

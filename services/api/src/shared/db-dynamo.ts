@@ -1,6 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import type { LessonProgress, QuizAttempt, Reflection, Notification } from '@lux/types';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const ddb = DynamoDBDocumentClient.from(client, {
@@ -13,6 +13,8 @@ export const TABLES = {
   QUIZ: process.env.DYNAMO_TABLE_QUIZ ?? 'QuizAttempts',
   REFLECTIONS: process.env.DYNAMO_TABLE_REFLECTIONS ?? 'Reflections',
   NOTIFS: process.env.DYNAMO_TABLE_NOTIFS ?? 'Notifications',
+  ENROLLMENTS: process.env.DYNAMO_TABLE_ENROLLMENTS ?? 'Enrollments',
+  CERTIFICATES: process.env.DYNAMO_TABLE_CERTIFICATES ?? 'Certificates',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -108,7 +110,7 @@ export async function getReflection(userId: string, moduleId: string): Promise<R
 export async function updateReflectionStatus(
   userId: string,
   moduleId: string,
-  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt'>>
+  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt' | 'analyzedAt'>>
 ) {
   const expressions: string[] = [];
   const names: Record<string, string> = {};
@@ -131,6 +133,10 @@ export async function updateReflectionStatus(
     expressions.push('reviewedAt = :reviewedAt');
     values[':reviewedAt'] = updates.reviewedAt;
   }
+  if (updates.analyzedAt !== undefined) {
+    expressions.push('analyzedAt = :analyzedAt');
+    values[':analyzedAt'] = updates.analyzedAt;
+  }
 
   await ddb.send(new UpdateCommand({
     TableName: TABLES.REFLECTIONS,
@@ -151,6 +157,48 @@ export async function getPendingReflections(): Promise<Reflection[]> {
     ScanIndexForward: false, // Newest first
   }));
   return (result.Items ?? []) as unknown as Reflection[];
+}
+
+export async function getAllLessonProgress(): Promise<LessonProgress[]> {
+  const items: LessonProgress[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.PROGRESS,
+      ExclusiveStartKey: lastKey,
+    }));
+    (result.Items ?? []).forEach((item) => items.push(item as unknown as LessonProgress));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items;
+}
+
+export async function getAllReflections(): Promise<Reflection[]> {
+  const items: Reflection[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.REFLECTIONS,
+      ExclusiveStartKey: lastKey,
+    }));
+    (result.Items ?? []).forEach((item) => items.push(item as unknown as Reflection));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items;
+}
+
+export async function getAllQuizAttempts(): Promise<QuizAttempt[]> {
+  const items: QuizAttempt[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.QUIZ,
+      ExclusiveStartKey: lastKey,
+    }));
+    (result.Items ?? []).forEach((item) => items.push(item as unknown as QuizAttempt));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items;
 }
 
 export async function isModuleUnlocked(userId: string, moduleOrder: number, allModuleIds: string[]): Promise<boolean> {
@@ -188,4 +236,83 @@ export async function markNotificationRead(userId: string, notifId: string) {
     ExpressionAttributeNames: { '#read': 'read' },
     ExpressionAttributeValues: { ':true': true },
   }));
+}
+
+// ─── Enrollments ──────────────────────────────────────────────────────────────
+
+export async function createEnrollment(userId: string, courseId: string) {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.ENROLLMENTS,
+    Item: { userId, sk: `COURSE#${courseId}`, courseId, enrolledAt: new Date().toISOString() },
+  }));
+}
+
+export async function getEnrollments(userId: string): Promise<string[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.ENROLLMENTS,
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+  }));
+  return (result.Items ?? []).map((item) => item['courseId'] as string);
+}
+
+export async function deleteEnrollment(userId: string, courseId: string) {
+  await ddb.send(new DeleteCommand({
+    TableName: TABLES.ENROLLMENTS,
+    Key: { userId, sk: `COURSE#${courseId}` },
+  }));
+}
+
+export async function getAllEnrollments(): Promise<{ userId: string; courseId: string }[]> {
+  const items: { userId: string; courseId: string }[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.ENROLLMENTS,
+      ExclusiveStartKey: lastKey,
+    }));
+    (result.Items ?? []).forEach((item) =>
+      items.push({ userId: item['userId'] as string, courseId: item['courseId'] as string })
+    );
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items;
+}
+
+// ─── Certificates ─────────────────────────────────────────────────────────────
+
+export async function saveCertificate(cert: Certificate) {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.CERTIFICATES,
+    Item: { certId: cert.certId, ...cert },
+  }));
+}
+
+export async function getCertificate(certId: string): Promise<Certificate | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.CERTIFICATES,
+    Key: { certId },
+  }));
+  return result.Item ? (result.Item as unknown as Certificate) : null;
+}
+
+export async function getCertificateByUserAndCourse(userId: string, courseId: string): Promise<Certificate | null> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.CERTIFICATES,
+    IndexName: 'userId-courseId-index',
+    KeyConditionExpression: 'userId = :uid AND courseId = :cid',
+    ExpressionAttributeValues: { ':uid': userId, ':cid': courseId },
+    Limit: 1,
+  }));
+  return result.Items && result.Items.length > 0 ? (result.Items[0] as unknown as Certificate) : null;
+}
+
+export async function getCertificatesByUser(userId: string): Promise<Certificate[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.CERTIFICATES,
+    IndexName: 'userId-courseId-index',
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+  }));
+  return (result.Items ?? []) as unknown as Certificate[];
 }
