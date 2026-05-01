@@ -142,15 +142,18 @@ app/
 - [x] **Backend deadline**: campo `deadline` guardado al enviar reflexión (submittedAt + 48h); frontend usa backend cuando disponible
 - [x] **Modal de auditoría de quiz**: botón "Ver quiz" → modal con respuestas por intento, colores correcto/incorrecto
 
-### Phase 3 — Futuro
-- [ ] Tags/categorías para cursos
-- [ ] Score de calidad de reflexión (0-100)
-- [ ] Campo `priority` en reflexiones (evaluador puede marcar alta prioridad)
-- [ ] Notificación push (PWA) cuando nueva reflexión entra
+### Phase 3 — ✅ Completado 2026-04-30 (excepto push)
+- [x] Tags/categorías para cursos — campo en Prisma, UI de chips en admin, filtro en estudiante
+- [x] Score de calidad (1-10) — slider + botones en aprobación, visible en progreso del estudiante con ⭐
+- [x] Priority flag — botón "Urgente" en detalle, ícono 🚩 en lista de evaluaciones
+- [ ] **Notificaciones push (PWA)** — pendiente: requiere VAPID keys + service worker
 
-### Bugs conocidos / mejoras pendientes
-- [ ] Página `/admin/users` puede mostrar IDs de Cognito en lugar de emails en algunos edge cases
-- [ ] El curso piloto no tiene imagen por defecto (muestra banner vacío)
+### Bugs resueltos
+- [x] `/admin/users`: fallback email → username elimina UUIDs vacíos
+- [x] Curso sin imagen: banner gradient placeholder
+
+### Pendiente
+- [ ] **Push notifications PWA** — necesita: `npx web-push generate-vapid-keys`, configurar VAPID_PUBLIC/PRIVATE en Lambda env, service worker en `public/sw.js`
 
 ---
 
@@ -205,6 +208,7 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-04-30 | Phase 3: tags/categorías, score de calidad, priority flag, bug fixes admin/users e imagen |
 | 2026-04-30 | Phase 2: AI feedback generator (Bedrock), deadline backend en reflexiones, modal auditoría de quiz |
 | 2026-04-30 | Phase 1 Evaluador Dashboard: nuevo dashboard, tabla de evaluaciones con tiempo restante, detalle side-by-side con comentarios frecuentes |
 | 2026-04-29 | Certificados completos: generación auto, página pública, download PDF |
