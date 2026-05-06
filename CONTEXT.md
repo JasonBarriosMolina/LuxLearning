@@ -1,6 +1,6 @@
 # Lux Learning — Context & Estado del Sistema
 
-> **Última actualización:** 2026-04-30  
+> **Última actualización:** 2026-05-06 (Tier 0 fixes)  
 > **Actualizar este archivo en cada deploy a git.**
 
 ---
@@ -153,6 +153,33 @@ app/
 ### Bugs resueltos
 - [x] `/admin/users`: fallback email → username elimina UUIDs vacíos
 - [x] Curso sin imagen: banner gradient placeholder
+- [x] `GET /evaluator/reflections` solo devolvía PENDING_EVAL → stats del dashboard siempre en 0, filtros Todas/Aprobadas/Rechazadas vacíos, detalle de reflexiones ya revisadas daba "no encontrada". Fix: usar `getAllReflections()` con batch de módulos para evitar N+1 queries
+
+### Phase 4 — ✅ Completado 2026-05-06
+- [x] **Recordatorios automáticos por email**: Lambda `reminders/handler.ts` + EventBridge cron diario 9 AM UTC → SES a estudiantes inactivos >7 días
+- [x] **Dashboard de progreso mejorado**: Card de racha 🔥 (streak) en dashboard y página de progreso, calculada desde `completedAt` de lecciones
+- [x] **Feedback del evaluador visible**: En Mi Progreso, botón 💬 por módulo expande el comentario del evaluador con fecha
+- [x] **Reportes para Admin** (`/admin/reports`): tasa de aprobación global, estudiantes en riesgo, barras por estado, tabla por módulo ordenable, exportar CSV
+- [x] **Feedback de IA antes de enviar reflexión**: Botón "Analizar con IA" → Bedrock Haiku → evaluación + 3 sugerencias con panel expandible verde/ámbar
+- [x] **Push al estudiante**: PushBell para todos los roles; evaluador aprueba/rechaza → push en tiempo real al estudiante (`getPushSubscriptionsByUserId`)
+- [x] **Modo oscuro**: Toggle 🌙/☀️ en Topbar, persiste en localStorage, sin flash al cargar (script inline en `<head>`)
+- [x] **Onboarding tour**: 4 pasos animados para nuevos estudiantes en primer login, localStorage guard, componente `OnboardingTour`
+- [x] **evaluatorFeedback** incluido en respuesta de `GET /courses` para mostrar en Mi Progreso sin N+1
+
+### Nuevos archivos creados
+- `services/api/src/reminders/handler.ts` — Lambda recordatorios
+- `apps/web/app/(evaluator)/admin/reports/page.tsx` — Reportes admin
+- `apps/web/components/ui/ThemeToggle.tsx` — Toggle dark/light
+- `apps/web/components/ui/OnboardingTour.tsx` — Tour onboarding
+
+### Tier 0 — ✅ Completado 2026-05-06
+- [x] **Dark mode root fix**: tailwind.config.ts usa CSS variables para colores custom → `.dark { --surface: ... }` propaga automáticamente. `dark:` variants en `.card`, `.input-field`, `.btn-secondary`, `.nav-item`. `AppShell`/`Topbar`/`Sidebar` con clases `dark:` explícitas.
+- [x] **Fix "Generar con IA" error**: Bedrock model ID cambiado a cross-region inference profile `us.anthropic.claude-3-haiku-20240307-v1:0` en `evaluator/handler.ts` y `reflection/handler.ts`. EvaluatorFn timeout aumentado a 60s en CDK.
+- [x] **3 puntos menú visible**: Mejor contraste y hover state en el botón MoreVertical de la tabla de carga de trabajo.
+- [x] **"Ocultar por 8 días"**: Banner de bienvenida en dashboard estudiantil con botón de dismiss → localStorage con timestamp de expiración a 8 días.
+- [x] **"Pendientes" clickeable**: Card de Pendientes en dashboard evaluador envuelto en `<Link>` → navega a `/evaluator/reflections`.
+- [x] **"Siguiente" deshabilitado**: Botón Siguiente en visor de lección es un `<button disabled>` cuando `completed === false`; se convierte en Link activo al completar.
+- [x] **Carga de trabajo clickeable**: Filas de la tabla de work queue tienen `onClick` que navega al detalle de reflexión (excepto al hacer clic en el menú de 3 puntos).
 
 ### Pendiente
 - (ninguno por ahora)
@@ -195,12 +222,17 @@ VAPID_EMAIL=mailto:admin@luxlearning.com
 # Deploy manual via Vercel CLI desde la RAÍZ del monorepo
 cd D:/InHouse/Lux
 npx vercel --prod --yes
+# Reasignar alias después de cada deploy:
+npx vercel alias <deployment-url> lux-learning.vercel.app
 ```
 
 > **Cuenta Vercel:** `jasonrbm-1241` — https://vercel.com/jasonrbm-1241s-projects/lux-learning  
 > **URL producción:** https://lux-learning.vercel.app  
 > **Repositorio GitHub:** https://github.com/JasonBarriosMolina/LuxLearning  
-> **Nota:** Deploy es manual (CLI). Para auto-deploy conectar GitHub en Vercel project settings.
+> **Project ID:** `prj_PRyLhUv3v66Jj771mEP3cozLQjAK`  
+> **Configuración Vercel (API, NO en UI):** `framework: nextjs`, `rootDirectory: apps/web`, `buildCommand/outputDirectory/installCommand: null` (overrideados por `apps/web/vercel.json`)  
+> **`apps/web/vercel.json`:** `installCommand: "npm install --prefix ../.."`, `buildCommand: "../../node_modules/.bin/next build"`  
+> **Nota:** Deploy es manual (CLI). `middleware.ts` fue eliminado (era no-op y causaba MIDDLEWARE_INVOCATION_FAILED en Vercel Edge).
 
 ### Backend (CDK)
 ```bash
@@ -220,6 +252,7 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-05-06 | Phase 4: recordatorios email, dashboard streak, feedback evaluador visible, reportes admin, IA preview reflexión, push al estudiante, dark mode, onboarding tour. Bug fix: dark mode CSS overrides, PushBell solo evaluadores en Topbar |
 | 2026-04-30 | Bug fixes (13 issues): SW compilation, SK collision, userId guard, VAPID en Secrets Manager, fire-and-forget IIFE, isModuleUnlocked por order, SQS MessageGroupId, notificationclick, IAM typo |
 | 2026-04-30 | Push notifications PWA: VAPID keys, PushSubscriptions DynamoDB, pushFn Lambda, service worker, PushBell en Topbar |
 | 2026-04-30 | Phase 3: tags/categorías, score de calidad, priority flag, bug fixes admin/users e imagen |

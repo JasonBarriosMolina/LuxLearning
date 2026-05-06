@@ -11,11 +11,13 @@ import {
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments } from '../shared/db-dynamo';
 import { ok, created, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
 
@@ -475,6 +477,224 @@ export const handler = async (event: Event) => {
         await deleteEnrollment(username, courseId);
         return ok({ removed: true });
       }
+    }
+
+    // ── GET /admin/reports ──────────────────────────────────────────────────
+    if (path === '/admin/reports' && method === 'GET') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+
+      const [allReflections, allProgress, allEnrollments, courses] = await Promise.all([
+        getAllReflections(),
+        getAllLessonProgress(),
+        getAllEnrollments(),
+        prisma.course.findMany({
+          include: {
+            modules: {
+              orderBy: { order: 'asc' },
+              include: { lessons: { select: { id: true } } },
+            },
+          },
+        }),
+      ]);
+
+      // ── Tasa de aprobación por módulo ──────────────────────────────────────
+      const moduleMap = new Map<string, { title: string; courseTitle: string; total: number; approved: number; rejected: number; avgDaysToReview: number; totalReviewTime: number; reviewedCount: number }>();
+      courses.forEach((c) =>
+        c.modules.forEach((m) => moduleMap.set(m.id, { title: m.title, courseTitle: c.title, total: 0, approved: 0, rejected: 0, avgDaysToReview: 0, totalReviewTime: 0, reviewedCount: 0 }))
+      );
+
+      allReflections.forEach((r) => {
+        const entry = moduleMap.get(r.moduleId);
+        if (!entry) return;
+        entry.total++;
+        if (r.status === 'APPROVED') entry.approved++;
+        if (r.status === 'REJECTED') entry.rejected++;
+        if ((r.status === 'APPROVED' || r.status === 'REJECTED') && (r as any).reviewedAt && r.submittedAt) {
+          const ms = new Date((r as any).reviewedAt).getTime() - new Date(r.submittedAt).getTime();
+          if (ms > 0) {
+            entry.totalReviewTime += ms;
+            entry.reviewedCount++;
+          }
+        }
+      });
+
+      const moduleStats = Array.from(moduleMap.entries()).map(([moduleId, e]) => ({
+        moduleId,
+        title: e.title,
+        courseTitle: e.courseTitle,
+        total: e.total,
+        approved: e.approved,
+        rejected: e.rejected,
+        approvalRate: e.total > 0 ? Math.round((e.approved / e.total) * 100) : null,
+        avgHoursToReview: e.reviewedCount > 0 ? Math.round(e.totalReviewTime / e.reviewedCount / 3600000 * 10) / 10 : null,
+      })).filter((m) => m.total > 0).sort((a, b) => (b.approvalRate ?? 0) - (a.approvalRate ?? 0));
+
+      // ── Estudiantes en riesgo (inscrito, sin actividad en >7 días) ─────────
+      const INACTIVITY_DAYS = 7;
+      const now = Date.now();
+      const lastActivityByStudent = new Map<string, number>();
+
+      allProgress.forEach((p) => {
+        const t = new Date(p.completedAt).getTime();
+        if (!lastActivityByStudent.has(p.userId) || t > lastActivityByStudent.get(p.userId)!) {
+          lastActivityByStudent.set(p.userId, t);
+        }
+      });
+      allReflections.forEach((r) => {
+        const t = new Date(r.submittedAt).getTime();
+        if (!lastActivityByStudent.has(r.userId) || t > lastActivityByStudent.get(r.userId)!) {
+          lastActivityByStudent.set(r.userId, t);
+        }
+      });
+
+      const enrolledUserIds = [...new Set(allEnrollments.map((e) => e.userId))];
+      const atRiskStudents = enrolledUserIds.filter((uid) => {
+        const last = lastActivityByStudent.get(uid);
+        if (!last) return true; // never active
+        return (now - last) / 86400000 > INACTIVITY_DAYS;
+      }).length;
+
+      // ── Totals ─────────────────────────────────────────────────────────────
+      const totalReflections = allReflections.length;
+      const totalApproved = allReflections.filter((r) => r.status === 'APPROVED').length;
+      const totalRejected = allReflections.filter((r) => r.status === 'REJECTED').length;
+      const totalPending = allReflections.filter((r) => r.status === 'PENDING_EVAL').length;
+      const overallApprovalRate = totalReflections > 0 ? Math.round((totalApproved / totalReflections) * 100) : 0;
+      const totalEnrolled = enrolledUserIds.length;
+      const activeStudents = enrolledUserIds.filter((uid) => {
+        const last = lastActivityByStudent.get(uid);
+        return last && (now - last) / 86400000 <= 7;
+      }).length;
+
+      // ── Avg quality score ──────────────────────────────────────────────────
+      const scored = allReflections.filter((r) => (r as any).qualityScore != null);
+      const avgQuality = scored.length > 0
+        ? Math.round(scored.reduce((sum, r) => sum + ((r as any).qualityScore ?? 0), 0) / scored.length * 10) / 10
+        : null;
+
+      return ok({
+        summary: { totalReflections, totalApproved, totalRejected, totalPending, overallApprovalRate, totalEnrolled, activeStudents, atRiskStudents, avgQuality },
+        moduleStats,
+      });
+    }
+
+    // ── POST /admin/courses/ai-generate ────────────────────────────────────────
+    if (path === '/admin/courses/ai-generate' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const { method: genMethod, input } = body as { method?: string; input?: string };
+      if (!input) return badRequest('input es requerido');
+
+      let context = input;
+
+      // For URL method: fetch and strip HTML
+      if (genMethod === 'url') {
+        try {
+          const res = await fetch(input, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
+          const html = await res.text();
+          context = html
+            .replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 4000);
+        } catch {
+          return badRequest('No se pudo obtener contenido de la URL');
+        }
+      }
+
+      const prompt = `Eres un experto en diseño instruccional. Genera un curso en español con 7-10 módulos sobre el siguiente tema o contenido:
+
+"""
+${context.slice(0, 4000)}
+"""
+
+Responde ÚNICAMENTE con JSON válido (sin markdown, sin comentarios):
+{
+  "title": "Título del curso",
+  "description": "Descripción del curso en 2-3 oraciones",
+  "modules": [
+    {
+      "title": "Título del módulo",
+      "description": "Descripción del módulo",
+      "order": 1,
+      "lessons": [
+        { "title": "Título de la lección", "description": "Descripción breve", "order": 1 }
+      ]
+    }
+  ]
+}
+
+Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura sea coherente y progresiva.`;
+
+      const bedrockRes = await bedrock.send(
+        new InvokeModelCommand({
+          modelId: 'us.anthropic.claude-3-haiku-20240307-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        })
+      );
+      const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
+      const raw = parsed.content?.[0]?.text ?? '{}';
+      const clean = raw.replace(/```json|```/g, '').trim();
+      const structure = JSON.parse(clean);
+      return ok(structure);
+    }
+
+    // ── POST /admin/courses/ai-publish ──────────────────────────────────────────
+    if (path === '/admin/courses/ai-publish' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const { title, description, modules } = body as {
+        title?: string;
+        description?: string;
+        modules?: { title: string; description: string; order: number; lessons: { title: string; description: string; order: number }[] }[];
+      };
+      if (!title || !modules || !Array.isArray(modules)) return badRequest('title y modules son requeridos');
+
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
+      const totalLessons = modules.reduce((sum, m) => sum + (m.lessons?.length ?? 0), 0);
+
+      const course = await prisma.course.create({
+        data: {
+          title,
+          slug,
+          description: description ?? '',
+          isActive: false,
+          isPilot: false,
+          tags: ['ia-generado'],
+          modules: {
+            create: modules.map((m) => ({
+              title: m.title,
+              description: m.description ?? '',
+              order: m.order,
+              duration: (m.lessons?.length ?? 0) * 5,
+              passingScore: 70,
+              lessons: {
+                create: (m.lessons ?? []).map((l) => ({
+                  title: l.title,
+                  description: l.description ?? '',
+                  order: l.order,
+                  duration: 5,
+                  content: '',
+                  videoUrl: '',
+                })),
+              },
+            })),
+          },
+        },
+        include: {
+          modules: {
+            orderBy: { order: 'asc' },
+            include: { lessons: { orderBy: { order: 'asc' } } },
+          },
+        },
+      });
+      return created(course);
     }
 
     return notFound('Ruta no encontrada');

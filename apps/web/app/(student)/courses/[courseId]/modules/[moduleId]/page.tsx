@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft, PlayCircle, CheckCircle, Lock, Clock,
-  BookOpen, ClipboardCheck, FileText
+  BookOpen, ClipboardCheck, FileText, Star,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -18,13 +18,33 @@ export default function ModulePage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    api.courses.get(courseId).then((res) => {
-      setCourse((res as any).data);
+    Promise.all([
+      api.courses.get(courseId),
+      api.lessons.favorites(),
+    ]).then(([courseRes, favRes]) => {
+      setCourse((courseRes as any).data);
+      const favs: any[] = (favRes as any).data ?? [];
+      setFavIds(new Set(favs.filter((f: any) => f?.type === 'lesson').map((f: any) => f?.id)));
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [courseId]);
+
+  const toggleLessonFav = async (e: React.MouseEvent, lesson: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const res = await api.lessons.toggleFavorite({ type: 'lesson', id: lesson.id, title: lesson.title, courseId, moduleId });
+      const added = (res as any).data?.added ?? false;
+      setFavIds((prev) => {
+        const next = new Set(prev);
+        added ? next.add(lesson.id) : next.delete(lesson.id);
+        return next;
+      });
+    } catch {}
+  };
 
   const module = course?.modules?.find((m: any) => m.id === moduleId);
 
@@ -109,32 +129,44 @@ export default function ModulePage() {
       {/* Lessons */}
       <div className="space-y-2">
         <h2 className="font-heading font-semibold text-lg text-charcoal px-1">Lecciones</h2>
-        {module.lessons?.map((lesson: any) => (
-          <Link
-            key={lesson.id}
-            href={`/courses/${courseId}/modules/${moduleId}/lessons/${lesson.id}`}
-            className="card-hover flex items-center gap-4 p-4"
-          >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              lesson.completed ? 'bg-emerald-100' : 'bg-surface'
-            }`}>
-              {lesson.completed ? (
-                <CheckCircle className="w-5 h-5 text-emerald-600" />
-              ) : (
-                <PlayCircle className="w-5 h-5 text-cta-from" />
+        {module.lessons?.map((lesson: any) => {
+          const fav = favIds.has(lesson.id);
+          return (
+            <Link
+              key={lesson.id}
+              href={`/courses/${courseId}/modules/${moduleId}/lessons/${lesson.id}`}
+              className="card-hover flex items-center gap-4 p-4"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                lesson.completed ? 'bg-emerald-100' : 'bg-surface'
+              }`}>
+                {lesson.completed ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <PlayCircle className="w-5 h-5 text-cta-from" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-charcoal text-sm truncate">
+                  {lesson.order}. {lesson.title}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">{formatCourseDuration(lesson.duration)}</p>
+              </div>
+              {lesson.completed && (
+                <span className="text-xs text-emerald-600 font-semibold shrink-0">Completada</span>
               )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-charcoal text-sm truncate">
-                {lesson.order}. {lesson.title}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">{formatCourseDuration(lesson.duration)}</p>
-            </div>
-            {lesson.completed && (
-              <span className="text-xs text-emerald-600 font-semibold shrink-0">Completada</span>
-            )}
-          </Link>
-        ))}
+              <button
+                onClick={(e) => toggleLessonFav(e, lesson)}
+                title={fav ? 'Quitar de favoritos' : 'Marcar favorito'}
+                className={`shrink-0 p-1.5 rounded-lg transition-colors ${
+                  fav ? 'text-amber-500' : 'text-gray-200 hover:text-amber-400'
+                }`}
+              >
+                <Star className={`w-4 h-4 ${fav ? 'fill-amber-500' : ''}`} />
+              </button>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Quiz CTA */}

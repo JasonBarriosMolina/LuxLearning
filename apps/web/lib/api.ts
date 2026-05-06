@@ -47,6 +47,16 @@ export const api = {
   },
 
   lessons: {
+    highlights: (lessonId: string) => request<any>(`/lessons/highlights?lessonId=${lessonId}`),
+    saveHighlights: (lessonId: string, items: any[]) =>
+      request<any>('/lessons/highlights', { method: 'POST', body: JSON.stringify({ lessonId, items }) }),
+    favorites: () => request<any>('/lessons/favorites'),
+    toggleFavorite: (body: { type: string; id: string; title: string; courseId?: string; moduleId?: string }) =>
+      request<any>('/lessons/favorites/toggle', { method: 'POST', body: JSON.stringify(body) }),
+    transcript: (lessonId: string, youtubeId: string) =>
+      request<any>(`/lessons/transcript?lessonId=${lessonId}&youtubeId=${youtubeId}`),
+    chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string }) =>
+      request<any>('/lessons/chat', { method: 'POST', body: JSON.stringify(body) }),
     complete: (body: MarkLessonCompleteRequest) =>
       request('/lessons/complete', { method: 'POST', body: JSON.stringify(body) }),
     progress: (courseId: string) =>
@@ -65,6 +75,8 @@ export const api = {
       request('/reflection', { method: 'POST', body: JSON.stringify(body) }),
     get: (moduleId: string) =>
       request(`/reflection/${moduleId}`),
+    aiPreview: (text: string, moduleTitle?: string) =>
+      request<any>('/reflection/ai-preview', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
   },
 
   evaluator: {
@@ -78,6 +90,28 @@ export const api = {
       request<any>(`/evaluator/quiz-audit?userId=${encodeURIComponent(userId)}&moduleId=${encodeURIComponent(moduleId)}`),
     setPriority: (userId: string, moduleId: string, priority: boolean) =>
       request<any>('/evaluator/reflections/priority', { method: 'POST', body: JSON.stringify({ userId, moduleId, priority }) }),
+    aiCheck: (userId: string, moduleId: string) =>
+      request<any>('/evaluator/ai-check', { method: 'POST', body: JSON.stringify({ userId, moduleId }) }),
+    tasks: {
+      list: () => request<any>('/evaluator/tasks'),
+      create: (body: { title: string; description?: string; type?: string; dueDate: string; courseId?: string; moduleId?: string; courseTitle?: string; moduleTitle?: string; assignTo: 'individual' | 'course'; userId?: string; targetCourseId?: string }) =>
+        request<any>('/evaluator/tasks', { method: 'POST', body: JSON.stringify(body) }),
+      update: (taskId: string, body: { userId: string; title?: string; description?: string; dueDate?: string }) =>
+        request<any>(`/evaluator/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (taskId: string, userId: string) =>
+        request<any>(`/evaluator/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
+    },
+  },
+
+  tasks: {
+    list: () => request<any>('/tasks'),
+    complete: (taskId: string) => request<any>(`/tasks/${taskId}/complete`, { method: 'POST' }),
+    calendarUrl: async () => {
+      const { getIdToken } = await import('./auth');
+      const token = await getIdToken();
+      const base = process.env.NEXT_PUBLIC_API_URL ?? '';
+      return `${base}/tasks/calendar.ics${token ? `?token=${token}` : ''}`;
+    },
   },
 
   notifications: {
@@ -109,6 +143,10 @@ export const api = {
       create: (body: any) => request<any>('/admin/courses', { method: 'POST', body: JSON.stringify(body) }),
       update: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
+      aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
+        request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
+      aiPublish: (body: any) =>
+        request<any>('/admin/courses/ai-publish', { method: 'POST', body: JSON.stringify(body) }),
     },
     // Modules
     modules: {
@@ -128,6 +166,8 @@ export const api = {
       update: (questionId: string, body: any) => request<any>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (questionId: string) => request<any>(`/admin/questions/${questionId}`, { method: 'DELETE' }),
     },
+    // Reports
+    reports: () => request<any>('/admin/reports'),
     // Users
     users: {
       list: () => request<any>('/admin/users'),

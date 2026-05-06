@@ -14,6 +14,8 @@ import {
   X,
   Download,
   Settings2,
+  BarChart2,
+  CalendarCheck,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -58,6 +60,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['STUDENT'],
   },
   {
+    href: '/tasks',
+    label: 'Mis Tareas',
+    icon: <CalendarCheck className="w-5 h-5" />,
+    roles: ['STUDENT'],
+  },
+  {
     href: '/evaluator/reflections',
     label: 'Evaluaciones',
     icon: <ClipboardList className="w-5 h-5" />,
@@ -70,10 +78,22 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['EVALUATOR', 'ADMIN'],
   },
   {
+    href: '/evaluator/tasks',
+    label: 'Tareas',
+    icon: <CalendarCheck className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
     href: '/admin/courses',
     label: 'Gestión de Contenido',
     icon: <Settings2 className="w-5 h-5" />,
     roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/admin/reports',
+    label: 'Reportes',
+    icon: <BarChart2 className="w-5 h-5" />,
+    roles: ['ADMIN'],
   },
   {
     href: '/admin/users',
@@ -177,7 +197,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-charcoal flex-col h-screen sticky top-0 shrink-0">
+      <aside className="hidden lg:flex w-64 bg-[#2C2C2C] dark:bg-[#0D0D1F] flex-col h-screen sticky top-0 shrink-0">
         {sidebarContent}
       </aside>
 
@@ -188,7 +208,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={onMobileClose}
           />
-          <aside className="relative z-10 w-72 bg-charcoal flex flex-col h-full animate-slide-up">
+          <aside className="relative z-10 w-72 bg-[#2C2C2C] dark:bg-[#0D0D1F] flex flex-col h-full animate-slide-up">
             {sidebarContent}
           </aside>
         </div>

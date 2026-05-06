@@ -13,7 +13,7 @@ export function AppShell({ children, title }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen bg-surface overflow-hidden">
+    <div className="flex h-screen bg-surface dark:bg-[#0F0F1A] overflow-hidden">
       <Sidebar
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}

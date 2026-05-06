@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X } from 'lucide-react';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -39,6 +39,16 @@ export default function AdminCoursesPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tagInput, setTagInput] = useState('');
+
+  // AI wizard state
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiStep, setAiStep] = useState<1 | 2 | 3>(1);
+  const [aiMethod, setAiMethod] = useState<'topic' | 'url'>('topic');
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiPublishing, setAiPublishing] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const load = async () => {
     try {
@@ -101,6 +111,45 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const openAiModal = () => {
+    setAiStep(1);
+    setAiMethod('topic');
+    setAiInput('');
+    setAiResult(null);
+    setAiError('');
+    setAiModalOpen(true);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiInput.trim()) return;
+    setAiLoading(true);
+    setAiError('');
+    try {
+      const res = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
+      setAiResult((res as any).data);
+      setAiStep(3);
+    } catch (err: any) {
+      setAiError(err.message ?? 'Error al generar el curso');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleAiPublish = async () => {
+    if (!aiResult) return;
+    setAiPublishing(true);
+    setAiError('');
+    try {
+      await api.admin.courses.aiPublish(aiResult);
+      setAiModalOpen(false);
+      await load();
+    } catch (err: any) {
+      setAiError(err.message ?? 'Error al publicar el curso');
+    } finally {
+      setAiPublishing(false);
+    }
+  };
+
   const handleDelete = async (courseId: string) => {
     setDeleting(true);
     try {
@@ -122,9 +171,14 @@ export default function AdminCoursesPage() {
           <h1 className="font-heading font-bold text-2xl text-charcoal">Gestión de Contenido</h1>
           <p className="text-gray-500 mt-1 text-sm">Crea y administra cursos, módulos, lecciones y evaluaciones</p>
         </div>
-        <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
-          Nuevo curso
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={openAiModal} leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}>
+            Crear con IA
+          </Button>
+          <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
+            Nuevo curso
+          </Button>
+        </div>
       </div>
 
       {/* Courses list */}
@@ -312,6 +366,150 @@ export default function AdminCoursesPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* AI Wizard Modal */}
+      <Modal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        title="Crear curso con IA"
+        size="lg"
+      >
+        <div className="space-y-5">
+          {/* Step indicator */}
+          <div className="flex items-center gap-2">
+            {[1, 2, 3].map((s) => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                  aiStep >= s ? 'bg-gradient-to-br from-cta-from to-cta-to text-white' : 'bg-gray-100 text-gray-400'
+                }`}>{s}</div>
+                {s < 3 && <div className={`w-8 h-0.5 ${aiStep > s ? 'bg-cta-from' : 'bg-gray-200'}`} />}
+              </div>
+            ))}
+            <span className="ml-2 text-xs text-gray-400">
+              {aiStep === 1 ? 'Selecciona método' : aiStep === 2 ? 'Ingresa información' : 'Revisa y publica'}
+            </span>
+          </div>
+
+          {/* Step 1 — Method */}
+          {aiStep === 1 && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500">¿Cómo quieres generar el curso?</p>
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { id: 'topic', icon: '💡', title: 'Tema libre', desc: 'Describe el tema y la IA construye la estructura' },
+                  { id: 'url', icon: '🌐', title: 'Desde URL', desc: 'Pega una URL y la IA extrae el contenido' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setAiMethod(opt.id)}
+                    className={`text-left p-4 rounded-xl border-2 transition-colors ${
+                      aiMethod === opt.id ? 'border-cta-from bg-blue-50 dark:bg-blue-900/20' : 'border-border hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">{opt.icon}</div>
+                    <p className="font-semibold text-charcoal text-sm">{opt.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="p-3 rounded-xl border-2 border-dashed border-gray-200 opacity-50">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📄</span>
+                  <div>
+                    <p className="font-semibold text-charcoal text-sm">Desde PDF</p>
+                    <p className="text-xs text-gray-500">Próximamente</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={() => setAiStep(2)}>Siguiente</Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2 — Input */}
+          {aiStep === 2 && (
+            <div className="space-y-4">
+              {aiMethod === 'topic' ? (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-charcoal">Tema del curso</label>
+                  <textarea
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="ej. Liderazgo empresarial para jóvenes profesionales, con enfoque en comunicación y toma de decisiones"
+                    className="input-field min-h-[100px] resize-y"
+                    autoFocus
+                  />
+                  <p className="text-xs text-gray-400">Sé específico: incluye el público objetivo y el enfoque del curso.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-charcoal">URL del contenido</label>
+                  <input
+                    type="url"
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="https://ejemplo.com/articulo-o-pagina"
+                    className="input-field"
+                    autoFocus
+                  />
+                  <p className="text-xs text-gray-400">La IA extraerá el texto de la página y construirá la estructura del curso.</p>
+                </div>
+              )}
+              {aiError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{aiError}</div>
+              )}
+              <div className="flex justify-between">
+                <Button variant="secondary" onClick={() => setAiStep(1)}>Atrás</Button>
+                <Button
+                  onClick={handleAiGenerate}
+                  loading={aiLoading}
+                  leftIcon={!aiLoading ? <Sparkles className="w-4 h-4" /> : undefined}
+                  disabled={!aiInput.trim()}
+                >
+                  {aiLoading ? 'Generando...' : 'Generar con IA'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3 — Preview */}
+          {aiStep === 3 && aiResult && (
+            <div className="space-y-4">
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-100 dark:border-blue-900/40">
+                <p className="font-heading font-bold text-charcoal text-lg">{aiResult.title}</p>
+                <p className="text-sm text-gray-500 mt-1">{aiResult.description}</p>
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {(aiResult.modules ?? []).map((m: any, i: number) => (
+                  <div key={i} className="border border-border rounded-xl p-3">
+                    <p className="font-semibold text-sm text-charcoal">{m.order}. {m.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 mb-2">{m.description}</p>
+                    <div className="space-y-0.5">
+                      {(m.lessons ?? []).map((l: any, j: number) => (
+                        <p key={j} className="text-xs text-gray-400 pl-3 border-l-2 border-gray-200">{l.order}. {l.title}</p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">
+                El curso se publicará como <strong>inactivo</strong>. Puedes activarlo después de revisar el contenido.
+              </p>
+              {aiError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{aiError}</div>
+              )}
+              <div className="flex justify-between">
+                <Button variant="secondary" onClick={() => { setAiStep(2); setAiResult(null); }}>Regenerar</Button>
+                <Button onClick={handleAiPublish} loading={aiPublishing} leftIcon={<CheckCircle className="w-4 h-4" />}>
+                  Publicar curso
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Delete confirmation */}

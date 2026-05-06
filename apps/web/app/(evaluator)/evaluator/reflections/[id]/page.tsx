@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle, XCircle, User, BookOpen,
   Clock, AlertCircle, Brain, Copy, Check, Trash2, Plus,
-  Sparkles, Loader2, ClipboardCheck, X, Flag, Star,
+  Sparkles, Loader2, ClipboardCheck, X, Flag, Star, ScanSearch,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +22,26 @@ const DEFAULT_COMMENTS = [
   'Buen uso de ejemplos concretos de la vida real.',
   'La reflexión es muy corta. Desarrolla más tus ideas.',
   'Excelente conexión entre el contenido y tu experiencia.',
+  'Describe cómo aplicarás lo aprendido en tu práctica diaria.',
+  'Evita el lenguaje genérico. Sé específico con tu experiencia personal.',
+  'El texto parece generado por IA. Por favor escribe en tus propias palabras.',
+  'Muy buena reflexión. Aprobada con observaciones menores.',
+  'Incluye ejemplos específicos de situaciones reales que hayas vivido.',
+  'La estructura es clara pero falta desarrollo en las ideas principales.',
+  'Excelente nivel de autocrítica y reflexión profunda. ¡Sigue así!',
 ];
+
+// Auto-suggest a comment based on reflection text keywords
+function autoSuggestComment(text: string, comments: string[]): string | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (lower.length < 30) return comments.find((c) => c.includes('muy corta')) ?? null;
+  if (/chatgpt|generado|asistente|ia generó|inteligencia artificial/i.test(text))
+    return comments.find((c) => c.includes('generado por IA')) ?? null;
+  if (/(aplica|aplicar|práctica|implementar)/i.test(text))
+    return comments.find((c) => c.includes('comprensión')) ?? null;
+  return null;
+};
 
 function useFrequentComments() {
   const [comments, setComments] = useState<string[]>([]);
@@ -217,10 +236,14 @@ export default function ReflectionDetailPage() {
   const [priority, setPriority] = useState<boolean>(false);
   const [priorityLoading, setPriorityLoading] = useState(false);
 
-  // AI feedback
+  // AI feedback generator
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [aiError, setAiError] = useState('');
+
+  // AI detection check (manual re-trigger)
+  const [aiCheckLoading, setAiCheckLoading] = useState(false);
+  const [aiCheckResult, setAiCheckResult] = useState<any>(null);
 
   // Quiz audit modal
   const [quizData, setQuizData] = useState<QuizAuditData | null>(null);
@@ -273,6 +296,22 @@ export default function ReflectionDetailPage() {
       setAiError('No se pudieron generar sugerencias. Intenta de nuevo.');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const runAiCheck = async () => {
+    setAiCheckLoading(true);
+    setAiCheckResult(null);
+    try {
+      const res = await api.evaluator.aiCheck(userId, moduleId);
+      const result = (res as any).data?.aiResult ?? null;
+      setAiCheckResult(result);
+      // Also update local reflection state so the strip updates
+      if (result) setReflection((prev: any) => prev ? { ...prev, aiResult: result } : prev);
+    } catch {
+      setAiCheckResult({ error: true });
+    } finally {
+      setAiCheckLoading(false);
     }
   };
 
@@ -402,6 +441,21 @@ export default function ReflectionDetailPage() {
                 : <ClipboardCheck className="w-4 h-4" />}
               Ver quiz
             </button>
+            <button
+              onClick={runAiCheck}
+              disabled={aiCheckLoading}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                aiCheckLoading
+                  ? 'border-blue-200 bg-blue-50 text-blue-400 cursor-wait'
+                  : 'border-border hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-700'
+              }`}
+              title="Re-analizar con IA para detectar contenido generado"
+            >
+              {aiCheckLoading
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <ScanSearch className="w-4 h-4" />}
+              Comprobar IA
+            </button>
             <ReflectionStatusBadge status={reflection.status} />
           </div>
         </div>
@@ -423,6 +477,32 @@ export default function ReflectionDetailPage() {
             </div>
           ))}
         </div>
+
+        {/* Live AI check result */}
+        {aiCheckResult && !aiCheckResult.error && (
+          <div className={`rounded-xl border-2 px-4 py-3 flex items-center gap-3 animate-fade-in ${
+            aiCheckResult.isAI && aiCheckResult.confidence >= 60
+              ? 'border-red-200 bg-red-50'
+              : 'border-emerald-200 bg-emerald-50'
+          }`}>
+            <ScanSearch className={`w-4 h-4 shrink-0 ${aiCheckResult.isAI ? 'text-red-500' : 'text-emerald-600'}`} />
+            <span className="text-sm font-semibold text-charcoal">Comprobación IA:</span>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+              aiCheckResult.verdict === 'HUMANO' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+            }`}>
+              {aiCheckResult.verdict}
+            </span>
+            <span className="text-xs text-gray-500">Confianza: <strong>{aiCheckResult.confidence}%</strong></span>
+            {aiCheckResult.signals?.[0] && (
+              <span className="text-xs text-gray-500 truncate hidden sm:block">{aiCheckResult.signals[0]}</span>
+            )}
+          </div>
+        )}
+        {aiCheckResult?.error && (
+          <div className="rounded-xl border-2 border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            No se pudo completar la comprobación IA. Intenta de nuevo.
+          </div>
+        )}
 
         {/* AI Analysis (compact) */}
         {reflection.aiResult && (
@@ -624,6 +704,22 @@ export default function ReflectionDetailPage() {
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Auto-suggestion */}
+                {(() => {
+                  const suggestion = autoSuggestComment(reflection.text, comments);
+                  if (!suggestion) return null;
+                  return (
+                    <div
+                      onClick={() => insertComment(suggestion, -1)}
+                      className="flex items-start gap-2 p-2.5 rounded-xl border border-cta-from/40 bg-blue-50/60 hover:bg-blue-50 cursor-pointer transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-cta-from shrink-0 mt-0.5" />
+                      <p className="text-xs text-charcoal flex-1 leading-relaxed">{suggestion}</p>
+                      <span className="text-[10px] text-cta-from font-semibold whitespace-nowrap">Sugerido</span>
+                    </div>
+                  );
+                })()}
 
                 {showAddComment && (
                   <div className="flex gap-2">

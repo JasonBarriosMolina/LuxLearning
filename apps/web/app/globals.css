@@ -14,6 +14,13 @@
     --border: #E5E5E5;
   }
 
+  /* Dark mode CSS variables — all Tailwind utilities using these colors update automatically */
+  .dark {
+    --charcoal: #E8E8F0;
+    --surface: #16213E;
+    --border: #2D2D4E;
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;
@@ -32,12 +39,56 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  .dark body {
+    background-color: #0F0F1A;
+    color: #E8E8F0;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Montserrat', sans-serif;
     font-weight: 700;
     color: var(--charcoal);
   }
 }
+
+/* ─── Dark overrides for built-in Tailwind colors (bg-white, bg-gray-*, etc.) ── */
+.dark .bg-white {
+  background-color: #1A1A2E !important;
+}
+.dark .bg-gray-50 {
+  background-color: #14142A !important;
+}
+.dark .bg-gray-100 {
+  background-color: #1E1E36 !important;
+}
+.dark .bg-blue-50 {
+  background-color: #12183A !important;
+}
+.dark .bg-blue-50\/40 {
+  background-color: rgba(18, 24, 58, 0.4) !important;
+}
+.dark .text-gray-800 {
+  color: #D0D0E8 !important;
+}
+.dark .text-gray-700 {
+  color: #B0B0D0 !important;
+}
+.dark .text-gray-600 {
+  color: #A0A0C0 !important;
+}
+.dark .text-gray-500 {
+  color: #9090B0 !important;
+}
+.dark .text-gray-400 {
+  color: #7070A0 !important;
+}
+.dark .border-gray-200 {
+  border-color: #2D2D4E !important;
+}
+.dark .divide-gray-100 > * + * {
+  border-color: #2D2D4E !important;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 @layer components {
   .btn-primary {
@@ -50,7 +101,7 @@
 
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 px-6 py-3
-           bg-white text-charcoal font-heading font-semibold
+           bg-white dark:bg-[#1A1A2E] text-charcoal font-heading font-semibold
            rounded-xl border border-border transition-all duration-200
            hover:bg-surface hover:border-cta-from active:scale-95
            disabled:opacity-50 disabled:cursor-not-allowed;
@@ -64,7 +115,8 @@
   }
 
   .card {
-    @apply bg-white rounded-2xl shadow-card p-6 transition-shadow duration-200;
+    @apply bg-white dark:bg-[#1A1A2E] dark:border dark:border-[#2D2D4E]
+           rounded-2xl shadow-card dark:shadow-none p-6 transition-shadow duration-200;
   }
 
   .card-hover {
@@ -72,8 +124,8 @@
   }
 
   .input-field {
-    @apply w-full px-4 py-3 bg-white border border-border rounded-xl
-           font-sans text-charcoal placeholder-gray-400
+    @apply w-full px-4 py-3 bg-white dark:bg-[#1A1A2E] border border-border rounded-xl
+           font-sans text-charcoal placeholder-gray-400 dark:placeholder-[#6B6B8A]
            focus:outline-none focus:ring-2 focus:ring-cta-from focus:border-transparent
            transition-all duration-200;
   }
@@ -121,7 +173,7 @@
   /* Sidebar nav item */
   .nav-item {
     @apply flex items-center gap-3 px-4 py-3 rounded-xl font-medium
-           text-gray-500 transition-all duration-200
+           text-gray-500 dark:text-[#9090B0] transition-all duration-200
            hover:bg-surface hover:text-charcoal;
   }
 

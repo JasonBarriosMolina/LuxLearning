@@ -11,6 +11,8 @@ import * as apigwv2Authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as path from 'path';
 
 export class LuxLearningStack extends cdk.Stack {
@@ -169,6 +171,19 @@ export class LuxLearningStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    const tasksTable = new dynamodb.Table(this, 'ScheduledTasks', {
+      tableName: 'ScheduledTasks',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    tasksTable.addGlobalSecondaryIndex({
+      indexName: 'courseId-index',
+      partitionKey: { name: 'courseId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'dueDate', type: dynamodb.AttributeType.STRING },
+    });
+
     // ─── SQS ─────────────────────────────────────────────────────────────────
 
     const reflectionDlq = new sqs.Queue(this, 'ReflectionDLQ', {
@@ -198,6 +213,7 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_CERTIFICATES: certificatesTable.tableName,
       SQS_REFLECTION_QUEUE_URL: reflectionQueue.queueUrl,
       DYNAMO_TABLE_PUSH_SUBS: pushSubsTable.tableName,
+      DYNAMO_TABLE_TASKS: tasksTable.tableName,
       SES_FROM_EMAIL: 'noreply@luxlearning.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning.vercel.app',
@@ -268,14 +284,15 @@ export class LuxLearningStack extends cdk.Stack {
     // ─── API Lambdas ──────────────────────────────────────────────────────────
 
     const coursesFn  = makeFn('CoursesFn',  'courses/handler.ts',        'handler', { memorySize: 512 });
-    const lessonsFn  = makeFn('LessonsFn',  'lessons/handler.ts',        'handler');
+    const lessonsFn  = makeFn('LessonsFn',  'lessons/handler.ts',        'handler', { timeout: cdk.Duration.seconds(60) });
     const quizFn     = makeFn('QuizFn',     'quiz/handler.ts',           'handler', { memorySize: 512 });
     const reflFn     = makeFn('ReflectionFn', 'reflection/handler.ts',  'handler', { memorySize: 512 });
-    const evaluatorFn = makeFn('EvaluatorFn', 'evaluator/handler.ts',   'handler', { memorySize: 512 });
+    const evaluatorFn = makeFn('EvaluatorFn', 'evaluator/handler.ts',   'handler', { memorySize: 512, timeout: cdk.Duration.seconds(60) });
     const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512 });
     const notifsFn   = makeFn('NotifsFn',   'notifications/handler.ts', 'handler');
     const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
     const pushFn     = makeFn('PushFn',     'push/handler.ts',           'handler');
+    const tasksFn    = makeFn('TasksFn',    'tasks/handler.ts',          'handler', { timeout: cdk.Duration.seconds(15) });
 
     // SQS Consumer (Bedrock AI detection)
     const sqsConsumerFn = makeFn('SQSConsumerFn', 'reflection/sqs-consumer.ts', 'handler', {
@@ -283,9 +300,15 @@ export class LuxLearningStack extends cdk.Stack {
       memorySize: 512,
     });
 
+    // Reminders Lambda (EventBridge daily trigger)
+    const remindersFn = makeFn('RemindersFn', 'reminders/handler.ts', 'handler', {
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 256,
+    });
+
     // ─── IAM Permissions ──────────────────────────────────────────────────────
 
-    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn];
+    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn, remindersFn, tasksFn];
 
     allFns.forEach((fn) => {
       lessonProgressTable.grantReadWriteData(fn);
@@ -295,6 +318,7 @@ export class LuxLearningStack extends cdk.Stack {
       enrollmentsTable.grantReadWriteData(fn);
       certificatesTable.grantReadWriteData(fn);
       pushSubsTable.grantReadWriteData(fn);
+      tasksTable.grantReadWriteData(fn);
     });
 
     reflectionQueue.grantSendMessages(reflFn);
@@ -302,6 +326,15 @@ export class LuxLearningStack extends cdk.Stack {
 
     sqsConsumerFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
+    }));
+
+    // Bedrock for student AI preview (reflection handler)
+    reflFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
       resources: [
         'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
@@ -347,6 +380,24 @@ export class LuxLearningStack extends cdk.Stack {
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: ['*'],
     }));
+
+    // Reminders Lambda IAM
+    remindersFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+    remindersFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminGetUser'],
+      resources: [userPool.userPoolArn],
+    }));
+
+    // EventBridge rule — daily at 9:00 AM UTC
+    new events.Rule(this, 'DailyRemindersRule', {
+      ruleName: 'lux-daily-reminders',
+      description: 'Trigger reminders Lambda daily at 9:00 AM UTC',
+      schedule: events.Schedule.cron({ minute: '0', hour: '9' }),
+      targets: [new eventsTargets.LambdaFunction(remindersFn)],
+    });
 
     certsFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['cognito-idp:AdminGetUser'],
@@ -398,8 +449,14 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/courses/{courseId}', apigwv2.HttpMethod.GET,  coursesFn);
 
     // Lessons
-    addRoute('/lessons/complete',   apigwv2.HttpMethod.POST, lessonsFn);
-    addRoute('/lessons/progress',   apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/lessons/complete',         apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/lessons/progress',         apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/lessons/highlights',       apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/lessons/highlights',       apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/lessons/favorites',        apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/lessons/favorites/toggle', apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/lessons/transcript',       apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/lessons/chat',             apigwv2.HttpMethod.POST, lessonsFn);
 
     // Quiz
     addRoute('/quiz/{moduleId}/submit',   apigwv2.HttpMethod.POST, quizFn);
@@ -408,6 +465,7 @@ export class LuxLearningStack extends cdk.Stack {
     // Reflection
     addRoute('/reflection',            apigwv2.HttpMethod.POST, reflFn);
     addRoute('/reflection/{moduleId}', apigwv2.HttpMethod.GET,  reflFn);
+    addRoute('/reflection/ai-preview', apigwv2.HttpMethod.POST, reflFn);
 
     // Evaluator
     addRoute('/evaluator/reflections',        apigwv2.HttpMethod.GET,  evaluatorFn);
@@ -416,10 +474,13 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/ai-feedback',          apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/quiz-audit',           apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/priority', apigwv2.HttpMethod.POST, evaluatorFn);
+    addRoute('/evaluator/ai-check',             apigwv2.HttpMethod.POST, evaluatorFn);
 
     // Admin — Content Management
     addRoute('/admin/courses',                        apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses',                        apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/courses/ai-generate',            apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/courses/ai-publish',             apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.DELETE, adminFn);
@@ -458,6 +519,20 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/admin/users/{username}/role',          apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/users/{username}/status',        apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/users/{username}',               apigwv2.HttpMethod.DELETE, adminFn);
+
+    // Admin — Reports
+    addRoute('/admin/reports', apigwv2.HttpMethod.GET, adminFn);
+
+    // Tasks (student)
+    addRoute('/tasks',                        apigwv2.HttpMethod.GET,  tasksFn);
+    addRoute('/tasks/calendar.ics',           apigwv2.HttpMethod.GET,  tasksFn, false); // public — token in query param
+    addRoute('/tasks/{taskId}/complete',      apigwv2.HttpMethod.POST, tasksFn);
+
+    // Tasks (evaluator)
+    addRoute('/evaluator/tasks',              apigwv2.HttpMethod.GET,    evaluatorFn);
+    addRoute('/evaluator/tasks',              apigwv2.HttpMethod.POST,   evaluatorFn);
+    addRoute('/evaluator/tasks/{taskId}',     apigwv2.HttpMethod.PUT,    evaluatorFn);
+    addRoute('/evaluator/tasks/{taskId}',     apigwv2.HttpMethod.DELETE, evaluatorFn);
 
     // ─── Outputs ─────────────────────────────────────────────────────────────
 

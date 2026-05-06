@@ -6,6 +6,7 @@ import { PrismaLogo } from './PrismaLogo';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { PushBell } from '@/components/ui/PushBell';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 interface TopbarProps {
   title?: string;
@@ -70,7 +71,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-white border-b border-border h-16 flex items-center px-4 lg:px-6 gap-4 shrink-0">
+    <header className="sticky top-0 z-30 bg-white dark:bg-[#1A1A2E] border-b border-border h-16 flex items-center px-4 lg:px-6 gap-4 shrink-0">
       {/* Mobile menu button */}
       <button
         onClick={onMenuClick}
@@ -93,7 +94,10 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
       )}
       {!title && <div className="hidden lg:block flex-1" />}
 
-      {/* Push notifications bell (evaluators/admins only) */}
+      {/* Theme toggle */}
+      <ThemeToggle />
+
+      {/* Push bell — only evaluators/admins need real-time alerts in topbar */}
       {isEvaluator && <PushBell />}
 
       {/* Notification bell */}
@@ -112,7 +116,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-border rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in">
+          <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1A1A2E] border border-border rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <p className="font-heading font-bold text-sm text-charcoal">Notificaciones</p>

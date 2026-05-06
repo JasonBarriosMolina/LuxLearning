@@ -1,0 +1,4 @@
+{
+  "version": 2,
+  "installCommand": "npm install --prefix ../..","buildCommand": "../../node_modules/.bin/next build"
+}

@@ -4,8 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Clock, CheckCircle, XCircle, ArrowRight, AlertTriangle,
-  Users, ClipboardList, BookOpen, MoreVertical, MessageSquare,
-  Plus, X, ChevronRight, Zap,
+  Users, ClipboardList, BookOpen, MoreVertical,
+  ChevronRight, Zap,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -64,116 +64,6 @@ function StatusBarChart({ approved, rejected, pending }: { approved: number; rej
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Frequent Comments ──────────────────────────────────────────────────────────
-
-const STORAGE_KEY = 'lux_frequent_comments';
-
-function getStoredComments(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
-  } catch { return []; }
-}
-
-function saveStoredComments(comments: string[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(comments));
-}
-
-const DEFAULT_COMMENTS = [
-  'Excelente reflexión, demuestra comprensión profunda del módulo.',
-  'Tu reflexión necesita más profundidad. Describe cómo aplicarás lo aprendido.',
-  'Buen análisis, pero evita el lenguaje genérico. Sé específico con tu experiencia.',
-  'La reflexión parece generada automáticamente. Por favor escribe en tus propias palabras.',
-];
-
-function FrequentComments() {
-  const [comments, setComments] = useState<string[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [copied, setCopied] = useState<number | null>(null);
-
-  useEffect(() => {
-    const stored = getStoredComments();
-    setComments(stored.length > 0 ? stored : DEFAULT_COMMENTS);
-  }, []);
-
-  const add = () => {
-    if (!newComment.trim()) return;
-    const updated = [...comments, newComment.trim()];
-    setComments(updated);
-    saveStoredComments(updated);
-    setNewComment('');
-    setAdding(false);
-  };
-
-  const remove = (i: number) => {
-    const updated = comments.filter((_, idx) => idx !== i);
-    setComments(updated);
-    saveStoredComments(updated);
-  };
-
-  const copy = (text: string, i: number) => {
-    navigator.clipboard.writeText(text);
-    setCopied(i);
-    setTimeout(() => setCopied(null), 1500);
-  };
-
-  return (
-    <div className="card space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-purple-500" />
-          <h2 className="font-heading font-bold text-base text-charcoal">Comentarios frecuentes</h2>
-        </div>
-        <button
-          onClick={() => setAdding(true)}
-          className="flex items-center gap-1 text-xs text-cta-from font-semibold hover:opacity-70"
-        >
-          <Plus className="w-3.5 h-3.5" /> Agregar
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {comments.map((c, i) => (
-          <div
-            key={i}
-            className="group flex items-start gap-2 p-3 rounded-xl bg-surface hover:bg-purple-50 transition-colors cursor-pointer"
-            onClick={() => copy(c, i)}
-          >
-            <p className="flex-1 text-xs text-gray-600 leading-relaxed">{c}</p>
-            <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <span className="text-xs text-purple-500 font-semibold">
-                {copied === i ? '¡Copiado!' : 'Copiar'}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); remove(i); }}
-                className="text-gray-300 hover:text-red-400"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {adding && (
-        <div className="space-y-2">
-          <textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Escribe tu comentario frecuente..."
-            className="input-field text-sm min-h-[80px] resize-none"
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <button onClick={add} className="btn-primary text-xs px-3 py-1.5">Guardar</button>
-            <button onClick={() => setAdding(false)} className="btn-secondary text-xs px-3 py-1.5">Cancelar</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -274,15 +164,26 @@ export default function EvaluatorDashboardPage() {
             bg: 'bg-purple-50',
             ring: '',
           },
-        ].map((s) => (
-          <div key={s.label} className={`card ${s.ring}`}>
-            <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mb-3`}>
-              {s.icon}
+        ].map((s) => {
+          const inner = (
+            <>
+              <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mb-3`}>
+                {s.icon}
+              </div>
+              <p className="font-heading font-bold text-2xl text-charcoal">{loading ? '—' : s.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+            </>
+          );
+          return s.label === 'Pendientes' ? (
+            <Link key={s.label} href="/evaluator/reflections" className={`card ${s.ring} block hover:shadow-card-hover transition-shadow`}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={s.label} className={`card ${s.ring}`}>
+              {inner}
             </div>
-            <p className="font-heading font-bold text-2xl text-charcoal">{loading ? '—' : s.value}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Urgent alerts ── */}
@@ -365,16 +266,22 @@ export default function EvaluatorDashboardPage() {
                   {pending.map((r) => {
                     const tr = getTimeRemaining(r.submittedAt, (r as any).deadline);
                     const key = `${r.userId}-${r.moduleId}`;
+                    const detailHref = `/evaluator/reflections/${encodeURIComponent(r.userId)}?moduleId=${r.moduleId}`;
                     return (
                       <div
                         key={key}
-                        className="grid grid-cols-[1fr_1fr_100px_90px_40px] gap-3 px-4 py-3 items-center border-b border-border last:border-0 hover:bg-surface transition-colors"
+                        className="grid grid-cols-[1fr_1fr_100px_90px_40px] gap-3 px-4 py-3 items-center border-b border-border last:border-0 hover:bg-surface transition-colors cursor-pointer group"
+                        onClick={(e) => {
+                          // Don't navigate if clicking the action menu
+                          if ((e.target as HTMLElement).closest('[data-menu]')) return;
+                          window.location.href = detailHref;
+                        }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="w-7 h-7 rounded-full bg-cta-gradient flex items-center justify-center text-white text-xs font-bold shrink-0">
                             {((r as any).studentName ?? r.userId)[0]?.toUpperCase()}
                           </div>
-                          <p className="text-sm font-medium text-charcoal truncate">
+                          <p className="text-sm font-medium text-charcoal truncate group-hover:text-cta-from transition-colors">
                             {(r as any).studentName ?? r.userId}
                           </p>
                         </div>
@@ -393,17 +300,18 @@ export default function EvaluatorDashboardPage() {
                           {tr.label}
                         </span>
                         {/* Action menu */}
-                        <div className="relative">
+                        <div className="relative" data-menu>
                           <button
-                            onClick={() => setOpenMenu(openMenu === key ? null : key)}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-charcoal"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === key ? null : key); }}
+                            className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-charcoal transition-colors"
+                            title="Acciones"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
                           {openMenu === key && (
-                            <div className="absolute right-0 top-8 z-20 bg-white border border-border rounded-xl shadow-lg py-1 w-44">
+                            <div className="absolute right-0 top-8 z-20 bg-white dark:bg-[#1A1A2E] border border-border rounded-xl shadow-lg py-1 w-44">
                               <Link
-                                href={`/evaluator/reflections/${encodeURIComponent(r.userId)}?moduleId=${r.moduleId}`}
+                                href={detailHref}
                                 className="flex items-center gap-2 px-4 py-2 text-sm text-charcoal hover:bg-surface"
                                 onClick={() => setOpenMenu(null)}
                               >
@@ -529,8 +437,22 @@ export default function EvaluatorDashboardPage() {
             )}
           </div>
 
-          {/* Frequent comments */}
-          <FrequentComments />
+          {/* Quick link to evaluations */}
+          <div className="card">
+            <p className="text-xs text-gray-400 mb-3 font-semibold uppercase tracking-wide">Accesos rápidos</p>
+            <div className="space-y-2">
+              <Link href="/evaluator/reflections" className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors group">
+                <ClipboardList className="w-4 h-4 text-cta-from shrink-0" />
+                <span className="text-sm font-medium text-charcoal group-hover:text-cta-from transition-colors">Lista de evaluaciones</span>
+                <ArrowRight className="w-3.5 h-3.5 text-gray-300 ml-auto group-hover:text-cta-from transition-colors" />
+              </Link>
+              <Link href="/evaluator/students" className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors group">
+                <Users className="w-4 h-4 text-purple-500 shrink-0" />
+                <span className="text-sm font-medium text-charcoal group-hover:text-purple-600 transition-colors">Mis estudiantes</span>
+                <ArrowRight className="w-3.5 h-3.5 text-gray-300 ml-auto group-hover:text-purple-400 transition-colors" />
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

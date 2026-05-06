@@ -15,8 +15,8 @@ self.addEventListener('push', (event) => {
   const title = data.title ?? 'Lux Learning';
   const options = {
     body: data.body ?? '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-96x96.png',
     tag: data.tag ?? 'lux-push',
     renotify: true,
     data: { url: data.url ?? '/' },

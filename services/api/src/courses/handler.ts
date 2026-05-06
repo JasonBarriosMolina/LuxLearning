@@ -58,6 +58,8 @@ export const handler = async (event: Event) => {
                   quizPassed,
                   reflectionStatus: reflection?.status ?? null,
                   qualityScore: (reflection as any)?.qualityScore ?? null,
+                  evaluatorFeedback: (reflection as any)?.evaluatorFeedback ?? null,
+                  reviewedAt: (reflection as any)?.reviewedAt ?? null,
                   lessons: mod.lessons.map((l) => ({ ...l, completed: completedLessonIds.has(l.id) })),
                 };
               })

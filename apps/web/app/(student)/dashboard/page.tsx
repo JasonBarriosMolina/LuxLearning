@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award } from 'lucide-react';
+import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award, Flame, X, ClipboardList, Calendar, AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -26,7 +26,23 @@ export default function StudentDashboardPage() {
   const { email } = useAuth();
   const [courses, setCourses] = useState<EnrichedCourse[]>([]);
   const [certs, setCerts] = useState<Certificate[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    // Welcome banner: show unless hidden within the last 8 days
+    const hiddenUntil = localStorage.getItem('lux-welcome-hidden-until');
+    if (!hiddenUntil || Date.now() > Number(hiddenUntil)) {
+      setShowWelcome(true);
+    }
+  }, []);
+
+  const dismissWelcome = () => {
+    const eightDays = Date.now() + 8 * 24 * 60 * 60 * 1000;
+    localStorage.setItem('lux-welcome-hidden-until', String(eightDays));
+    setShowWelcome(false);
+  };
 
   useEffect(() => {
     api.courses.list().then((res) => {
@@ -35,6 +51,9 @@ export default function StudentDashboardPage() {
     }).catch(() => setLoading(false));
     api.certificates.mine().then((res: any) => {
       setCerts(res?.data ?? []);
+    }).catch(() => {});
+    api.tasks.list().then((res: any) => {
+      setTasks(res?.data ?? []);
     }).catch(() => {});
 
   }, []);
@@ -60,18 +79,57 @@ export default function StudentDashboardPage() {
     ? Math.round((stats.completedLessons / stats.totalLessons) * 100)
     : 0;
 
+  // Calculate streak from lesson completedAt dates
+  const streak = (() => {
+    const allDates = courses
+      .flatMap((c) => c.modules?.flatMap((m) => m.lessons ?? []) ?? [])
+      .filter((l: any) => l.completed && l.completedAt)
+      .map((l: any) => new Date(l.completedAt).toDateString());
+    const uniqueDays = [...new Set(allDates)].sort().reverse();
+    if (!uniqueDays.length) return 0;
+    const todayStr = new Date().toDateString();
+    const yesterdayStr = new Date(Date.now() - 86400000).toDateString();
+    if (uniqueDays[0] !== todayStr && uniqueDays[0] !== yesterdayStr) return 0;
+    let s = 1;
+    for (let i = 1; i < uniqueDays.length; i++) {
+      const diff = Math.round((new Date(uniqueDays[i-1]!).getTime() - new Date(uniqueDays[i]!).getTime()) / 86400000);
+      if (diff === 1) s++; else break;
+    }
+    return s;
+  })();
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
       {/* Welcome */}
       <div>
         <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
-          Hola, {firstName}
+          Hola, {firstName} 👋
         </h1>
         <p className="text-gray-500 mt-1">Continúa tu aprendizaje. Claridad que transforma.</p>
       </div>
 
+      {/* Dismissible welcome banner */}
+      {showWelcome && (
+        <div className="relative flex items-start gap-4 p-4 rounded-2xl bg-gradient-to-r from-[#00B4D8]/10 to-[#7B2FBE]/10 border border-[#00B4D8]/20">
+          <div className="flex-1 min-w-0">
+            <p className="font-heading font-bold text-sm text-charcoal">¡Bienvenido a Lux Learning!</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Completa las lecciones, pasa los quizzes y envía tus reflexiones para desbloquear nuevos módulos.
+            </p>
+          </div>
+          <button
+            onClick={dismissWelcome}
+            title="Ocultar por 8 días"
+            className="shrink-0 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+          >
+            <X className="w-3.5 h-3.5" />
+            Ocultar 8 días
+          </button>
+        </div>
+      )}
+
       {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           {
             label: 'Progreso total',
@@ -97,6 +155,12 @@ export default function StudentDashboardPage() {
             icon: <Clock className="w-5 h-5 text-amber-500" />,
             bg: 'bg-amber-50',
           },
+          {
+            label: streak > 1 ? `🔥 Racha activa` : 'Racha de días',
+            value: `${streak}d`,
+            icon: <Flame className={`w-5 h-5 ${streak > 0 ? 'text-orange-500' : 'text-gray-400'}`} />,
+            bg: streak > 0 ? 'bg-orange-50' : 'bg-gray-50',
+          },
         ].map((stat) => (
           <div key={stat.label} className="card">
             <div className={`w-10 h-10 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
@@ -121,6 +185,44 @@ export default function StudentDashboardPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Tasks widget */}
+          {tasks.length > 0 && (() => {
+            const today = new Date().toISOString().split('T')[0];
+            const pending = tasks.filter((t) => t.status !== 'COMPLETED').slice(0, 5);
+            const getColor = (t: any) => t.status === 'OVERDUE' || t.dueDate < today ? 'text-red-500' : (new Date(t.dueDate + 'T00:00:00').getTime() - Date.now()) / 86400000 <= 3 ? 'text-amber-500' : 'text-emerald-500';
+            return (
+              <div className="card">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="font-heading font-semibold text-base text-charcoal flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-cta-from" /> Mis tareas
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => { const url = await api.tasks.calendarUrl(); window.open(url, '_blank'); }}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-cta-from transition-colors"
+                      title="Descargar calendario .ics"
+                    >
+                      <Calendar className="w-3.5 h-3.5" /> Exportar
+                    </button>
+                    <Link href="/tasks" className="text-xs text-cta-from font-medium hover:underline">Ver todas</Link>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {pending.map((t) => (
+                    <div key={t.taskId} className="flex items-center gap-3 py-1.5">
+                      <AlertCircle className={`w-3.5 h-3.5 shrink-0 ${getColor(t)}`} />
+                      <span className="flex-1 text-sm text-charcoal truncate">{t.title}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{t.dueDate}</span>
+                    </div>
+                  ))}
+                  {tasks.filter((t) => t.status !== 'COMPLETED').length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-2">✅ Sin tareas pendientes</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           <h2 className="font-heading font-bold text-xl text-charcoal">Mis cursos</h2>
           {courses.map((course) => {
             const allLessons = course.modules?.flatMap((m) => m.lessons ?? []) ?? [];

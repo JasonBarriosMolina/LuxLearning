@@ -1,6 +1,7 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  darkMode: 'class',
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -9,9 +10,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        charcoal: '#2C2C2C',
-        surface: '#F8F8F8',
-        border: '#E5E5E5',
+        charcoal: 'var(--charcoal)',
+        surface: 'var(--surface)',
+        border: 'var(--border)',
         'cta-from': '#00B4D8',
         'cta-to': '#7B2FBE',
       },

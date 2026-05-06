@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/shared/AppShell';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { OnboardingTour } from '@/components/ui/OnboardingTour';
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const { role, isLoading, isAuthenticated } = useAuth();
@@ -26,5 +27,10 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     );
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      <OnboardingTour />
+      {children}
+    </AppShell>
+  );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Send, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Send, CheckCircle, Clock, AlertCircle, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -23,6 +23,10 @@ export default function ReflectionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiPreview, setAiPreview] = useState<{ assessment: string; suggestions: string[]; readyToSubmit: boolean } | null>(null);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [showAiWarningModal, setShowAiWarningModal] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -46,10 +50,22 @@ export default function ReflectionPage() {
   const wordsRemaining = Math.max(0, MIN_WORDS - wordCount);
   const isReady = wordCount >= MIN_WORDS;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isReady) return;
+  const handleAiPreview = async () => {
+    if (wordCount < 20) return;
+    setAnalyzing(true);
+    setAiPreview(null);
+    try {
+      const res = await api.reflection.aiPreview(text, module?.title);
+      setAiPreview((res as any).data ?? res);
+      setShowAiPanel(true);
+    } catch {
+      // non-fatal
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
+  const doSubmit = async () => {
     setError('');
     setSubmitting(true);
     try {
@@ -60,6 +76,19 @@ export default function ReflectionPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isReady) return;
+
+    // If AI preview flagged this as not ready, show warning modal first
+    if (aiPreview && !aiPreview.readyToSubmit) {
+      setShowAiWarningModal(true);
+      return;
+    }
+
+    await doSubmit();
   };
 
   if (loading) {
@@ -143,6 +172,46 @@ export default function ReflectionPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+      {/* AI Warning Modal */}
+      {showAiWarningModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAiWarningModal(false)} />
+          <div className="relative bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-heading font-bold text-lg text-charcoal">Contenido posiblemente generado por IA</h3>
+                <p className="text-xs text-gray-500 mt-0.5">El análisis sugiere que tu texto puede no ser 100% auténtico</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Nuestro análisis indica que esta reflexión podría haber sido generada o fuertemente asistida por IA.
+              El evaluador también realizará una verificación manual.
+            </p>
+            <p className="text-sm font-semibold text-amber-700 bg-amber-50 rounded-xl px-4 py-3">
+              ¿Estás seguro de que esta es tu reflexión auténtica y personal?
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowAiWarningModal(false)}
+                className="btn-secondary flex-1 text-sm"
+              >
+                Revisar mi texto
+              </button>
+              <button
+                onClick={() => { setShowAiWarningModal(false); doSubmit(); }}
+                disabled={submitting}
+                className="flex-1 btn-primary text-sm bg-amber-500 hover:bg-amber-600"
+              >
+                Sí, enviar de todos modos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href={`/courses/${courseId}/modules/${moduleId}`} className="p-2 rounded-lg hover:bg-surface">
@@ -217,6 +286,56 @@ export default function ReflectionPage() {
             )}
           </div>
         </div>
+
+        {/* AI Preview button */}
+        {wordCount >= 20 && (
+          <button
+            type="button"
+            onClick={handleAiPreview}
+            disabled={analyzing}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 border-dashed border-cta-from/40 text-cta-from font-semibold text-sm hover:border-cta-from hover:bg-blue-50 transition-all disabled:opacity-60"
+          >
+            <Sparkles className="w-4 h-4" />
+            {analyzing ? 'Analizando tu reflexión...' : 'Analizar con IA antes de enviar'}
+          </button>
+        )}
+
+        {/* AI Preview panel */}
+        {aiPreview && (
+          <div className={`rounded-xl border p-4 space-y-3 ${aiPreview.readyToSubmit ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+            <button
+              type="button"
+              onClick={() => setShowAiPanel((v) => !v)}
+              className="w-full flex items-center justify-between"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className={`w-4 h-4 ${aiPreview.readyToSubmit ? 'text-emerald-600' : 'text-amber-600'}`} />
+                <span className={`text-sm font-semibold ${aiPreview.readyToSubmit ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {aiPreview.readyToSubmit ? '✅ Tu reflexión está lista para enviar' : '💡 Sugerencias para mejorar antes de enviar'}
+                </span>
+              </div>
+              {showAiPanel ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+
+            {showAiPanel && (
+              <div className="space-y-3">
+                <p className={`text-sm ${aiPreview.readyToSubmit ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {aiPreview.assessment}
+                </p>
+                {aiPreview.suggestions.length > 0 && (
+                  <ul className="space-y-2">
+                    {aiPreview.suggestions.map((s, i) => (
+                      <li key={i} className={`flex items-start gap-2 text-sm ${aiPreview.readyToSubmit ? 'text-emerald-800' : 'text-amber-800'}`}>
+                        <span className="shrink-0 font-bold">{i + 1}.</span>
+                        <span>{s}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">

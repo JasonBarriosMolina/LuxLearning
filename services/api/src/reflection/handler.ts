@@ -1,10 +1,13 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import type { SQSEvent } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
+
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 // Configure web-push VAPID
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? '';
@@ -122,6 +125,54 @@ export const handler = async (event: Event) => {
       })();
 
       return ok(reflection, 'Reflection submitted. Processing with AI...');
+    }
+
+    // POST /reflection/ai-preview — AI feedback suggestions before submitting
+    if (method === 'POST' && path === '/reflection/ai-preview') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
+      if (!text || countWords(text) < 20) return badRequest('Se necesitan al menos 20 palabras para analizar');
+
+      const prompt = `Eres un coach de aprendizaje. Un estudiante está escribiendo su reflexión sobre el módulo "${moduleTitle ?? 'del curso'}" y quiere retroalimentación ANTES de enviarla.
+
+REFLEXIÓN (borrador):
+"""
+${text.slice(0, 3000)}
+"""
+
+Analiza el borrador y proporciona:
+1. Una evaluación breve (1-2 oraciones) de la calidad actual
+2. Exactamente 3 sugerencias concretas para mejorarla ANTES de enviar
+
+Responde ÚNICAMENTE con JSON:
+{
+  "assessment": "Evaluación breve aquí",
+  "suggestions": ["Sugerencia 1", "Sugerencia 2", "Sugerencia 3"],
+  "readyToSubmit": true o false
+}`;
+
+      try {
+        const response = await bedrock.send(new InvokeModelCommand({
+          modelId: 'us.anthropic.claude-3-haiku-20240307-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 768,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        }));
+        const raw = JSON.parse(new TextDecoder().decode(response.body));
+        const content = raw.content?.[0]?.text ?? '';
+        const clean = content.replace(/```json|```/g, '').trim();
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return serverError('AI response format error');
+        const parsed = JSON.parse(jsonMatch[0]);
+        return ok(parsed);
+      } catch (aiErr) {
+        console.error('[Reflection] AI preview error:', aiErr);
+        return serverError('AI preview failed');
+      }
     }
 
     return badRequest('Unknown route');

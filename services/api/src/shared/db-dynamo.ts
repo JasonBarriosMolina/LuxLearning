@@ -17,6 +17,7 @@ export const TABLES = {
   ENROLLMENTS: process.env.DYNAMO_TABLE_ENROLLMENTS ?? 'Enrollments',
   CERTIFICATES: process.env.DYNAMO_TABLE_CERTIFICATES ?? 'Certificates',
   PUSH_SUBS: process.env.DYNAMO_TABLE_PUSH_SUBS ?? 'PushSubscriptions',
+  TASKS: process.env.DYNAMO_TABLE_TASKS ?? 'ScheduledTasks',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -379,4 +380,165 @@ export async function getPushSubscriptionsByRole(role: string): Promise<PushSubs
     ExpressionAttributeValues: { ':role': role },
   }));
   return (result.Items ?? []) as unknown as PushSubscriptionRecord[];
+}
+
+export async function getPushSubscriptionsByUserId(userId: string): Promise<PushSubscriptionRecord[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.PUSH_SUBS,
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+  }));
+  return (result.Items ?? []) as unknown as PushSubscriptionRecord[];
+}
+
+// ─── Highlights ───────────────────────────────────────────────────────────────
+
+export interface HighlightItem {
+  id: string;
+  text: string;
+  color: string;
+  createdAt: string;
+}
+
+export async function getHighlights(userId: string, lessonId: string): Promise<HighlightItem[]> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: `HL#${lessonId}` },
+  }));
+  return (result.Item?.items ?? []) as HighlightItem[];
+}
+
+export async function saveHighlights(userId: string, lessonId: string, items: HighlightItem[]): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: `HL#${lessonId}`, items, updatedAt: new Date().toISOString() },
+  }));
+}
+
+// ─── Favorites ────────────────────────────────────────────────────────────────
+
+export interface FavoriteItem {
+  type: 'lesson' | 'module';
+  id: string;
+  title: string;
+  courseId?: string;
+  moduleId?: string;
+  createdAt: string;
+}
+
+export async function getFavorites(userId: string): Promise<FavoriteItem[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.PROGRESS,
+    KeyConditionExpression: 'userId = :uid AND begins_with(sk, :prefix)',
+    ExpressionAttributeValues: { ':uid': userId, ':prefix': 'FAV#' },
+  }));
+  return (result.Items ?? []).map((item) => item['data'] as FavoriteItem);
+}
+
+export async function toggleFavorite(userId: string, item: FavoriteItem): Promise<boolean> {
+  const sk = `FAV#${item.type}#${item.id}`;
+  const existing = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk },
+  }));
+  if (existing.Item) {
+    await ddb.send(new DeleteCommand({ TableName: TABLES.PROGRESS, Key: { userId, sk } }));
+    return false; // removed
+  } else {
+    await ddb.send(new PutCommand({
+      TableName: TABLES.PROGRESS,
+      Item: { userId, sk, data: { ...item, createdAt: new Date().toISOString() } },
+    }));
+    return true; // added
+  }
+}
+
+// ─── Transcripts ──────────────────────────────────────────────────────────────
+// Stored with userId='_transcript' (shared, not per-user) and sk=lessonId
+
+export async function getTranscript(lessonId: string): Promise<string | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId: '_transcript', sk: lessonId },
+  }));
+  return result.Item?.text ?? null;
+}
+
+export async function saveTranscript(lessonId: string, text: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId: '_transcript', sk: lessonId, text, generatedAt: new Date().toISOString() },
+  }));
+}
+
+// ─── Scheduled Tasks ──────────────────────────────────────────────────────────
+
+export interface Task {
+  userId: string;
+  sk: string;           // dueDate#taskId
+  taskId: string;
+  title: string;
+  description?: string;
+  courseId?: string;
+  moduleId?: string;
+  courseTitle?: string;
+  moduleTitle?: string;
+  type: 'custom' | 'complete_module' | 'submit_reflection' | 'pass_quiz';
+  dueDate: string;      // ISO date string (YYYY-MM-DD)
+  status: 'PENDING' | 'COMPLETED' | 'OVERDUE';
+  assignedBy: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export async function createTask(task: Omit<Task, 'sk'>): Promise<Task> {
+  const sk = `${task.dueDate}#${task.taskId}`;
+  const item: Task = { ...task, sk };
+  await ddb.send(new PutCommand({ TableName: TABLES.TASKS, Item: item }));
+  return item;
+}
+
+export async function getTasksForUser(userId: string): Promise<Task[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.TASKS,
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+  }));
+  return (result.Items ?? []) as Task[];
+}
+
+export async function getTasksByCourse(courseId: string): Promise<Task[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.TASKS,
+    IndexName: 'courseId-index',
+    KeyConditionExpression: 'courseId = :cid',
+    ExpressionAttributeValues: { ':cid': courseId },
+  }));
+  return (result.Items ?? []) as Task[];
+}
+
+export async function updateTask(userId: string, sk: string, updates: Partial<Pick<Task, 'title' | 'description' | 'dueDate' | 'status' | 'completedAt'>>): Promise<void> {
+  const exprs: string[] = [];
+  const names: Record<string, string> = {};
+  const vals: Record<string, any> = {};
+
+  if (updates.title !== undefined) { exprs.push('#t = :t'); names['#t'] = 'title'; vals[':t'] = updates.title; }
+  if (updates.description !== undefined) { exprs.push('#d = :d'); names['#d'] = 'description'; vals[':d'] = updates.description; }
+  if (updates.dueDate !== undefined) { exprs.push('#dd = :dd'); names['#dd'] = 'dueDate'; vals[':dd'] = updates.dueDate; }
+  if (updates.status !== undefined) { exprs.push('#s = :s'); names['#s'] = 'status'; vals[':s'] = updates.status; }
+  if (updates.completedAt !== undefined) { exprs.push('#ca = :ca'); names['#ca'] = 'completedAt'; vals[':ca'] = updates.completedAt; }
+
+  if (!exprs.length) return;
+
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.TASKS,
+    Key: { userId, sk },
+    UpdateExpression: `SET ${exprs.join(', ')}`,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: vals,
+  }));
+}
+
+export async function deleteTask(userId: string, sk: string): Promise<void> {
+  await ddb.send(new DeleteCommand({ TableName: TABLES.TASKS, Key: { userId, sk } }));
 }

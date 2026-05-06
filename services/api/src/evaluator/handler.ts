@@ -2,8 +2,18 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import webpush from 'web-push';
+
+// Configure VAPID for student push notifications
+const VAPID_PUBLIC_EV = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE_EV = process.env.VAPID_PRIVATE_KEY ?? '';
+if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
+  webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
+}
 import { getPrismaClient } from '../shared/db-neon';
-import { getPendingReflections, getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, TABLES, ddb } from '../shared/db-dynamo';
+import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -186,22 +196,26 @@ export const handler = async (event: Event) => {
   const prisma = getPrismaClient();
 
   try {
-    // GET /evaluator/reflections — list PENDING_EVAL
+    // GET /evaluator/reflections — list ALL reflections (frontend filters by status)
     if (method === 'GET' && path === '/evaluator/reflections') {
-      const reflections = await getPendingReflections();
+      const reflections = await getAllReflections();
 
-      // Enrich with module and course titles
+      // Enrich with module and course titles — batch to avoid N+1
+      const uniqueModuleIds = [...new Set(reflections.map((r) => r.moduleId))];
+      const modules = await prisma.module.findMany({
+        where: { id: { in: uniqueModuleIds } },
+        include: { course: { select: { title: true } } },
+      });
+      const moduleMap = new Map(modules.map((m) => [m.id, m]));
+
       const enriched = await Promise.all(
         reflections.map(async (r) => {
-          const module = await prisma.module.findUnique({
-            where: { id: r.moduleId },
-            include: { course: { select: { title: true } } },
-          });
+          const mod = moduleMap.get(r.moduleId);
           const studentName = await resolveStudentName(r.userId, (r as any).studentEmail);
           return {
             ...r,
-            moduleTitle: module?.title ?? 'Unknown',
-            courseTitle: module?.course.title ?? 'Unknown',
+            moduleTitle: mod?.title ?? 'Unknown',
+            courseTitle: mod?.course.title ?? 'Unknown',
             studentName,
           };
         })
@@ -263,6 +277,25 @@ export const handler = async (event: Event) => {
         read: false,
         createdAt: reviewedAt,
       });
+
+      // ── Fire-and-forget push notification to the student ─────────────────────
+      void (async () => {
+        try {
+          if (!VAPID_PUBLIC_EV || !VAPID_PRIVATE_EV) return;
+          const studentSubs = await getPushSubscriptionsByUserId(studentId);
+          if (!studentSubs.length) return;
+          const pushPayload = JSON.stringify({
+            title: action === 'APPROVE' ? '✅ Reflexión aprobada' : '✍️ Reflexión necesita revisión',
+            body: action === 'APPROVE'
+              ? `Tu reflexión de "${module?.title}" fue aprobada. ¡Siguiente módulo desbloqueado!`
+              : `Tu reflexión de "${module?.title}" necesita ser reescrita.`,
+            url: '/dashboard',
+          });
+          await Promise.allSettled(
+            studentSubs.map((sub) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, pushPayload))
+          );
+        } catch { /* non-fatal */ }
+      })();
 
       // ── Check if all modules approved → generate certificate ─────────────────
       let certId: string | null = null;
@@ -490,7 +523,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({
-          modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+          modelId: 'us.anthropic.claude-3-haiku-20240307-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
@@ -502,8 +535,8 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
         const raw = JSON.parse(new TextDecoder().decode(response.body));
         const content = raw.content?.[0]?.text ?? '';
-        // Extract JSON from the response
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const clean = content.replace(/```json|```/g, '').trim();
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
         if (!jsonMatch) return serverError('AI response format error');
         const parsed = JSON.parse(jsonMatch[0]);
         return ok({ suggestions: parsed.suggestions ?? [] });
@@ -547,6 +580,134 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
         moduleTitle: module.title,
         totalQuestions: module.questions.length,
       });
+    }
+
+    // POST /evaluator/ai-check — run AI detection synchronously on a reflection
+    if (method === 'POST' && path === '/evaluator/ai-check') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { userId: studentId, moduleId } = body as { userId?: string; moduleId?: string };
+      if (!studentId || !moduleId) return badRequest('userId and moduleId are required');
+
+      const reflection = await getReflection(studentId, moduleId);
+      if (!reflection) return notFound('Reflection not found');
+
+      try {
+        const aiResult = await detectAI(reflection.text ?? '');
+        // Persist result back to DynamoDB
+        await updateReflectionStatus(studentId, moduleId, { aiResult, analyzedAt: new Date().toISOString() });
+        return ok({ aiResult });
+      } catch (aiErr) {
+        console.error('[Evaluator] AI check error:', aiErr);
+        return serverError('AI detection failed');
+      }
+    }
+
+    // ── Tasks ─────────────────────────────────────────────────────────────────
+
+    // POST /evaluator/tasks — create task(s) for individual or all students in a course
+    if (path === '/evaluator/tasks' && method === 'POST') {
+      const { title, description, type = 'custom', dueDate, courseId, moduleId, courseTitle, moduleTitle, assignTo, userId: targetUserId, targetCourseId } = body as any;
+      if (!title || !dueDate) return badRequest('title y dueDate son requeridos');
+
+      const assignerUserId = event.requestContext.authorizer?.lambda?.userId!;
+      let assignees: string[] = [];
+
+      if (assignTo === 'course' && targetCourseId) {
+        // Fetch all enrolled students in a course
+        const all = await ddb.send(new QueryCommand({
+          TableName: TABLES.ENROLLMENTS,
+          IndexName: 'courseId-users-index',
+          KeyConditionExpression: 'courseId = :cid',
+          ExpressionAttributeValues: { ':cid': targetCourseId },
+        })).catch(async () => {
+          // Fallback: scan enrollments for this course
+          const scan = await ddb.send(new ScanCommand({
+            TableName: TABLES.ENROLLMENTS,
+            FilterExpression: 'courseId = :cid',
+            ExpressionAttributeValues: { ':cid': targetCourseId },
+          }));
+          return { Items: scan.Items ?? [] };
+        });
+        assignees = [...new Set((all.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))];
+      } else if (targetUserId) {
+        assignees = [targetUserId];
+      }
+
+      if (!assignees.length) return badRequest('No se encontraron destinatarios');
+
+      const tasks = await Promise.all(
+        assignees.map((uid) =>
+          createTask({
+            userId: uid,
+            taskId: createId(),
+            title,
+            description,
+            courseId,
+            moduleId,
+            courseTitle,
+            moduleTitle,
+            type,
+            dueDate,
+            status: 'PENDING',
+            assignedBy: assignerUserId,
+            createdAt: new Date().toISOString(),
+          })
+        )
+      );
+
+      // Push notifications (non-fatal)
+      Promise.allSettled(
+        assignees.map(async (uid) => {
+          const subs = await getPushSubscriptionsByUserId(uid);
+          await Promise.allSettled(
+            subs.map((sub: any) =>
+              webpush.sendNotification(sub, JSON.stringify({
+                title: '📋 Nueva tarea asignada',
+                body: `${title} — Vence: ${dueDate}`,
+              }))
+            )
+          );
+        })
+      ).catch(() => {});
+
+      return ok({ created: tasks.length });
+    }
+
+    // GET /evaluator/tasks — list all tasks assigned by this evaluator
+    if (path === '/evaluator/tasks' && method === 'GET') {
+      const assignerUserId = event.requestContext.authorizer?.lambda?.userId!;
+      const scan = await ddb.send(new ScanCommand({
+        TableName: TABLES.TASKS,
+        FilterExpression: 'assignedBy = :aid',
+        ExpressionAttributeValues: { ':aid': assignerUserId },
+      }));
+      const tasks = (scan.Items ?? []).sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate));
+      return ok(tasks);
+    }
+
+    // PUT /evaluator/tasks/:taskId — update a task
+    const taskEditMatch = path.match(/^\/evaluator\/tasks\/([^/]+)$/);
+    if (taskEditMatch && method === 'PUT') {
+      const taskId = taskEditMatch[1]!;
+      const { userId: targetUserId, title, description, dueDate } = body as any;
+      if (!targetUserId) return badRequest('userId es requerido');
+      const tasks = await getTasksForUser(targetUserId);
+      const task = tasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      await updateTask(targetUserId, task.sk, { title, description, dueDate });
+      return ok({ updated: true });
+    }
+
+    // DELETE /evaluator/tasks/:taskId — delete a task
+    if (taskEditMatch && method === 'DELETE') {
+      const taskId = taskEditMatch[1]!;
+      const { userId: targetUserId } = body as any;
+      if (!targetUserId) return badRequest('userId es requerido');
+      const tasks = await getTasksForUser(targetUserId);
+      const task = tasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      await deleteTask(targetUserId, task.sk);
+      return ok({ deleted: true });
     }
 
     return badRequest('Unknown route');

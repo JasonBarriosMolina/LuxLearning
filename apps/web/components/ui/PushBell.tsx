@@ -22,7 +22,10 @@ export function PushBell() {
 
   if (state === 'denied') {
     return (
-      <span title="Notificaciones bloqueadas en el navegador" className="p-2 rounded-xl text-gray-400 cursor-not-allowed">
+      <span
+        title="Notificaciones bloqueadas. Ve a Configuración del navegador → Privacidad → Notificaciones y permite este sitio."
+        className="p-2 rounded-xl text-red-400 cursor-help"
+      >
         <BellOff className="w-5 h-5" />
       </span>
     );
