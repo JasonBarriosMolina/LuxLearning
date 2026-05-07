@@ -41,6 +41,7 @@ export const handler = async (event: Event) => {
       });
 
       if (!module) return badRequest('Module not found');
+      if (!module.questions.length) return badRequest('Este módulo no tiene preguntas configuradas');
 
       // Verify all lessons are completed before allowing quiz
       const progress = await getLessonProgress(userId, courseId);

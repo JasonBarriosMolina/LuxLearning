@@ -21,19 +21,24 @@ export default function CoursePage() {
       const c = (res as any).data;
       setCourse(c);
       setLoading(false);
+
+      // Check completion from course data, then handle certificate
+      const isComplete = (c?.modules?.length ?? 0) > 0 &&
+        c.modules?.every((m: any) => m.reflectionStatus === 'APPROVED');
+
+      api.certificates.mine().then((res: any) => {
+        const certs: Certificate[] = res?.data ?? [];
+        const found = certs.find((cert) => cert.courseId === courseId);
+        if (found) {
+          setCert(found);
+        } else if (isComplete) {
+          // Auto-generate only when all reflections are APPROVED
+          api.certificates.generate(courseId)
+            .then((r: any) => { if (r?.data) setCert(r.data); })
+            .catch(() => {});
+        }
+      }).catch(() => {});
     });
-    api.certificates.mine().then((res: any) => {
-      const certs: Certificate[] = res?.data ?? [];
-      const found = certs.find((c) => c.courseId === courseId);
-      if (found) {
-        setCert(found);
-      } else {
-        // Auto-generate if course is complete but no cert yet (retroactive)
-        api.certificates.generate(courseId)
-          .then((r: any) => { if (r?.data) setCert(r.data); })
-          .catch(() => {});
-      }
-    }).catch(() => {});
   }, [courseId]);
 
   if (loading) {

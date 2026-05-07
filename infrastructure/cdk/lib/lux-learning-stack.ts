@@ -328,7 +328,11 @@ export class LuxLearningStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
         'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-east-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-west-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
       ],
     }));
 
@@ -337,7 +341,11 @@ export class LuxLearningStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-east-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-west-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
       ],
     }));
 
@@ -355,7 +363,11 @@ export class LuxLearningStack extends cdk.Stack {
       actions: ['bedrock:InvokeModel'],
       resources: [
         'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-east-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-west-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
       ],
     }));
 
@@ -379,6 +391,32 @@ export class LuxLearningStack extends cdk.Stack {
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: ['*'],
+    }));
+
+    // Bedrock for admin AI course generation
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-east-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-west-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
+    }));
+
+    // Bedrock for lesson chatbot
+    lessonsFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-haiku-20240307-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-east-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+        `arn:aws:bedrock:us-west-2:${this.account}:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
     }));
 
     // Reminders Lambda IAM

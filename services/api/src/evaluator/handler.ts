@@ -606,6 +606,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // POST /evaluator/tasks — create task(s) for individual or all students in a course
     if (path === '/evaluator/tasks' && method === 'POST') {
+      const body = JSON.parse(event.body ?? '{}');
       const { title, description, type = 'custom', dueDate, courseId, moduleId, courseTitle, moduleTitle, assignTo, userId: targetUserId, targetCourseId } = body as any;
       if (!title || !dueDate) return badRequest('title y dueDate son requeridos');
 
@@ -688,6 +689,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
     // PUT /evaluator/tasks/:taskId — update a task
     const taskEditMatch = path.match(/^\/evaluator\/tasks\/([^/]+)$/);
     if (taskEditMatch && method === 'PUT') {
+      const body = JSON.parse(event.body ?? '{}');
       const taskId = taskEditMatch[1]!;
       const { userId: targetUserId, title, description, dueDate } = body as any;
       if (!targetUserId) return badRequest('userId es requerido');
@@ -700,6 +702,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // DELETE /evaluator/tasks/:taskId — delete a task
     if (taskEditMatch && method === 'DELETE') {
+      const body = JSON.parse(event.body ?? '{}');
       const taskId = taskEditMatch[1]!;
       const { userId: targetUserId } = body as any;
       if (!targetUserId) return badRequest('userId es requerido');

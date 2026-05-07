@@ -85,6 +85,18 @@ export default function QuizPage() {
     return <div className="card text-center py-16"><p>Módulo no encontrado</p></div>;
   }
 
+  if (questions.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto card text-center py-16 space-y-3">
+        <p className="font-heading font-bold text-xl text-charcoal">Sin preguntas configuradas</p>
+        <p className="text-gray-500 text-sm">Este módulo aún no tiene preguntas de quiz. Contacta a tu evaluador.</p>
+        <Link href={`/courses/${courseId}/modules/${moduleId}`} className="btn-secondary inline-flex text-sm">
+          Volver al módulo
+        </Link>
+      </div>
+    );
+  }
+
   // Result screen
   if (state === 'result' && result) {
     const passed = result.passed;
@@ -104,7 +116,7 @@ export default function QuizPage() {
 
           <div>
             <p className={`font-heading font-bold text-4xl mb-1 ${passed ? 'text-emerald-600' : 'text-red-500'}`}>
-              {result.score}%
+              {isNaN(result.score) ? '—' : result.score}%
             </p>
             <h2 className="font-heading font-bold text-2xl text-charcoal">
               {passed ? '¡Aprobado!' : 'No aprobado'}

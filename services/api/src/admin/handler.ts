@@ -642,7 +642,9 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
       const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
       const raw = parsed.content?.[0]?.text ?? '{}';
       const clean = raw.replace(/```json|```/g, '').trim();
-      const structure = JSON.parse(clean);
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return serverError('AI response format error — no JSON found');
+      const structure = JSON.parse(jsonMatch[0]);
       return ok(structure);
     }
 

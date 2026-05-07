@@ -88,7 +88,10 @@
       "Bash(curl -s -X PATCH https://api.vercel.com/v9/projects/prj_PRyLhUv3v66Jj771mEP3cozLQjAK -H 'Authorization: Bearer vca_1CQCXI6a7ERlO3CnW4OyP9j5yCD8teljI8lV8YkFLVvoosJ4tN2wHZte' -H 'Content-Type: application/json' -d '{\"ssoProtection\":null}')",
       "Bash(curl -sI \"https://lux-learning.vercel.app\")",
       "Bash(npx tsc *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Read(//mnt/**)",
+      "Read(//d//**)",
+      "Bash(cmd.exe /c \"dir D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\infrastructure\\\\\\\\cdk\")"
     ]
   }
 }
