@@ -18,7 +18,7 @@ Texto a analizar:
 export async function detectAI(text: string): Promise<AIDetectionResult> {
   const response = await client.send(
     new InvokeModelCommand({
-      modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+      modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({

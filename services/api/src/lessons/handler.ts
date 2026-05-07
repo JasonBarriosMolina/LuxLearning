@@ -136,7 +136,7 @@ export const handler = async (event: Event) => {
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({
-          modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
+          modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
