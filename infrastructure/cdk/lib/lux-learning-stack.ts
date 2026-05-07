@@ -327,7 +327,7 @@ export class LuxLearningStack extends cdk.Stack {
     sqsConsumerFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
       resources: [
-        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
@@ -336,7 +336,7 @@ export class LuxLearningStack extends cdk.Stack {
     reflFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
@@ -354,7 +354,7 @@ export class LuxLearningStack extends cdk.Stack {
     evaluatorFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
@@ -385,7 +385,7 @@ export class LuxLearningStack extends cdk.Stack {
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
@@ -394,7 +394,7 @@ export class LuxLearningStack extends cdk.Stack {
     lessonsFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
-        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
         `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));

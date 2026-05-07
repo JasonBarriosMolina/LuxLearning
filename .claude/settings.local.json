@@ -91,7 +91,11 @@
       "Bash(npx next *)",
       "Read(//mnt/**)",
       "Read(//d//**)",
-      "Bash(cmd.exe /c \"dir D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\infrastructure\\\\\\\\cdk\")"
+      "Bash(cmd.exe /c \"dir D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\infrastructure\\\\\\\\cdk\")",
+      "Bash(ls \"D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\services\\\\\\\\api\\\\\\\\src\")",
+      "Bash(cmd.exe /c \"dir D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\services\\\\\\\\api\\\\\\\\src\")",
+      "Bash(aws ssm *)",
+      "Bash(python3 -c \"import json,sys; fns=json.load\\(sys.stdin\\)['Functions']; [print\\(f['FunctionName']\\) for f in fns]\")"
     ]
   }
 }

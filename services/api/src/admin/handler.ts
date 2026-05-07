@@ -629,7 +629,7 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({
-          modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({

@@ -56,18 +56,24 @@ export const handler = async (event: Event) => {
       const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
       if (!text || countWords(text) < 20) return badRequest('Se necesitan al menos 20 palabras para analizar');
 
-      const prompt = `Eres un coach de aprendizaje. Un estudiante está escribiendo su reflexión sobre el módulo "${moduleTitle ?? 'del curso'}" y quiere retroalimentación ANTES de enviarla.
+      const prompt = `Eres un evaluador pedagógico especializado en el tema de "${moduleTitle ?? 'este módulo'}". Un estudiante acaba de estudiar este módulo y está escribiendo su reflexión de aprendizaje. Quiere saber si puede mejorarla antes de enviarla.
 
-REFLEXIÓN (borrador):
+Una buena reflexión de aprendizaje debe:
+- Demostrar comprensión real de los conceptos del módulo (no copiarlos)
+- Conectar lo aprendido con experiencias o situaciones propias concretas
+- Mostrar pensamiento crítico: qué sorprendió, qué cambió, qué aplicará
+- Usar lenguaje propio (no parafrasear definiciones genéricas)
+
+REFLEXIÓN DEL ESTUDIANTE:
 """
 ${text.slice(0, 3000)}
 """
 
-Analiza el borrador y proporciona:
-1. Una evaluación breve (1-2 oraciones) de la calidad actual
-2. Exactamente 3 sugerencias concretas para mejorarla ANTES de enviar
+Evalúa si esta reflexión demuestra aprendizaje genuino sobre "${moduleTitle ?? 'el módulo'}" y proporciona:
+1. Una evaluación honesta pero motivadora (1-2 oraciones)
+2. Exactamente 3 sugerencias específicas y accionables para mejorarla
 
-Responde ÚNICAMENTE con JSON:
+Responde ÚNICAMENTE con JSON válido:
 {
   "assessment": "Evaluación breve aquí",
   "suggestions": ["Sugerencia 1", "Sugerencia 2", "Sugerencia 3"],
@@ -76,7 +82,7 @@ Responde ÚNICAMENTE con JSON:
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({
-          modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
