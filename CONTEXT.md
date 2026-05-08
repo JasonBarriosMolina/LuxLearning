@@ -1,215 +1,265 @@
-# Lux Learning — Context & Estado del Sistema
+# Lux Learning — Contexto Técnico y Reglas de Negocio
 
-> **Última actualización:** 2026-05-06 (Tier 0 fixes)  
-> **Actualizar este archivo en cada deploy a git.**
+> **Última actualización:** 2026-05-07 — Reports feature + bug fixes completos  
+> **Actualizar este archivo en cada deploy significativo.**
 
 ---
 
 ## Stack Técnico
 
-| Capa | Tecnología |
-|------|-----------|
-| Frontend | Next.js 15.5 App Router, TypeScript, Tailwind CSS |
-| Hosting Frontend | Vercel (auto-deploy desde `main`) |
-| Backend | AWS Lambda (ARM64 Graviton2) + API Gateway HTTP |
-| Base de datos | DynamoDB (single-table + tablas dedicadas) |
-| ORM / Datos de contenido | Prisma + PostgreSQL (Railway) |
-| Auth | AWS Cognito User Pool |
-| Email | AWS SES (sesiones verificadas) |
-| AI | AWS Bedrock (Claude 3 Haiku) — detección IA en reflexiones |
-| Queue | AWS SQS (análisis asíncrono de reflexiones) |
-| IaC | AWS CDK (TypeScript) |
-| Monorepo | Turborepo — `apps/web`, `services/api`, `packages/types`, `infrastructure/cdk` |
+| Capa | Tecnología | Detalle |
+|------|-----------|---------|
+| Frontend | Next.js 15.5 App Router, TypeScript, Tailwind CSS | Monorepo en `apps/web` |
+| Hosting Frontend | Vercel — auto-deploy desde `master` push | URL: https://lux-learning-tau.vercel.app |
+| Backend | AWS Lambda ARM64 (Graviton2) Node 20 + API Gateway HTTP v2 | us-east-1 |
+| Contenido | Prisma ORM + PostgreSQL Neon (pooled + unpooled) | Secreto en Secrets Manager: `lux/neon-db` |
+| DynamoDB | 10 tablas dedicadas (no single-table) | PAY_PER_REQUEST, RETAIN |
+| Auth | Cognito User Pool `us-east-1_RGVyVRJXx` | Client: `63ujfu3mt11s45p9g6m7p0n648` |
+| Email | AWS SES — `noreply@luxlearning.com` | Sender verificado |
+| AI | AWS Bedrock — Claude Haiku 4.5 via Global Inference Profile | Ver sección Bedrock |
+| Queue | AWS SQS `lux-reflection-queue` + DLQ | Análisis asíncrono post-submit |
+| Push | Web Push VAPID (PWA) | Keys en Secrets Manager: `lux/vapid` |
+| IaC | AWS CDK TypeScript | `infrastructure/cdk` |
+| Monorepo | Turborepo | `apps/web`, `services/api`, `packages/types`, `infrastructure/cdk` |
 
 ---
 
-## Arquitectura de Rutas (Frontend)
+## Bedrock — Configuración Crítica
 
 ```
-app/
-  (auth)/           → login, register
-  (student)/        → dashboard, courses, progress, profile
-  (evaluator)/      → evaluator/dashboard, evaluator/reflections, evaluator/students
-  (admin)/          → admin/courses, admin/users
-  certificado/[certId]/  → página pública de verificación de certificados
+Model ID:  global.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
+**No usar** el foundation model ID directamente — Haiku 4.5 requiere inference profile.
+
+IAM policy correcta para global inference profiles:
+```
+arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0
+arn:aws:bedrock:us-east-1:{account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0
+```
+La región del foundation-model ARN debe ser `*` (wildcard) — los global profiles validan contra ARN sin región.
+
 ---
 
-## Roles de Usuario
+## Sistema de Roles
 
-| Rol | Descripción | Menú principal |
-|-----|-------------|----------------|
-| `STUDENT` | Estudiante que toma cursos | Dashboard, Mis Cursos, Mi Progreso, Perfil |
-| `EVALUATOR` | Evaluador de reflexiones | Dashboard, Evaluaciones, Estudiantes, Gestión de Contenido, Perfil |
-| `ADMIN` | Super Admin | Todo lo anterior + Usuarios |
+| Rol | Cognito Group | Acceso |
+|-----|--------------|--------|
+| `STUDENT` | `STUDENT` (precedence 10) | Cursos, progreso, tareas, perfil |
+| `EVALUATOR` | `EVALUATOR` (precedence 5) | Dashboard evaluador, reflexiones, estudiantes, reportes |
+| `ADMIN` | `ADMIN` (precedence 1, creado manualmente) | Todo lo anterior + gestión de contenido + gestión de usuarios |
+
+**Implementación:** El `authorizer.ts` lee el primer grupo Cognito por precedencia → `role` en el contexto JWT.  
+**Enforce en backend:** `auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN'` para rutas de evaluación. `auth?.role !== 'ADMIN'` para mutaciones de contenido/usuarios.  
+**Sidebar en frontend:** `EVALUATOR` ve Reportes (no Gestión de Contenido). `ADMIN` ve todo.
 
 ---
 
-## Features Implementadas
+## Reglas de Negocio
 
-### Autenticación
-- Cognito User Pool con email + contraseña temporal
-- Invitación por email al crear usuario (SES) con cursos asignados
-- Roles via Cognito custom attributes (`custom:role`)
+### Flujo del Estudiante
+1. Enrolado a un curso → accede a **Módulo 1** sin restricción
+2. Módulo N se desbloquea cuando el Módulo N-1 tiene reflexión con `status = APPROVED`
+3. Dentro de un módulo: completa lecciones → pasa quiz → envía reflexión
+4. Quiz: debe obtener `score >= passingScore` (configurado en Prisma por módulo) para poder enviar reflexión
+5. Reflexión enviada → status `PENDING_EVAL` → SQS → IA analiza (async) → `aiResult` guardado en DDB
 
-### Cursos y Módulos (Estudiante)
-- Lista de cursos enriquecida con progreso personal
-- Módulos con bloqueo secuencial (unlock por reflexión aprobada)
-- Progreso de lecciones (completar al navegar)
-- Quiz por módulo (debe pasar para enviar reflexión)
+### Flujo de Evaluación
+1. Evaluador ve reflexiones `PENDING_EVAL` en su dashboard
+2. Revisa texto + resultado IA → ingresa feedback (obligatorio) → Aprobar o Rechazar
+3. **Al aprobar:**
+   - Status → `APPROVED`, `reviewedAt` guardado
+   - Si todos los módulos del curso aprobados → genera certificado automáticamente
+   - Email al estudiante (SES) con feedback + link al certificado si aplica
+   - Push notification al estudiante
+4. **Al rechazar:**
+   - Status → `REJECTED`, estudiante puede reescribir desde cero
+   - Email al estudiante con comentario del evaluador
 
-### Reflexiones
-- Envío de reflexión en texto libre
-- Análisis automático IA (Bedrock via SQS) — detecta texto generado por IA
-- Evaluador revisa con feedback obligatorio
-- Al aprobar: desbloquea siguiente módulo + envía email al estudiante
-- Al rechazar: estudiante puede reescribir
+### Desbloqueo de Módulos
+```typescript
+// isModuleUnlocked() en db-dynamo.ts
+if (moduleOrder === 1) return true;
+const prevModule = allModules.find((m) => m.order === moduleOrder - 1);
+const reflection = await getReflection(userId, prevModule.id);
+return reflection?.status === 'APPROVED';
+```
 
 ### Certificados
-- Auto-generación cuando todos los módulos del curso tienen reflexión `APPROVED`
-- ID único con `cuid` (no predecible)
-- Página pública `/certificado/[certId]` — sin auth, solo muestra datos no sensibles
-- Botón "Descargar certificado" (browser print → PDF, `@media print` A4 landscape)
-- Retroactivo: endpoint `POST /my-certificates/generate` idempotente
+- Auto-generado en `POST /evaluator/reflections/review` cuando todos los módulos del curso están APPROVED
+- `certId` generado con `cuid2` (no predecible)
+- Página pública `/certificado/[certId]` — sin auth, solo muestra nombre, curso, fecha
+- Endpoint `POST /my-certificates/generate` es idempotente (idempotency check en DB)
 
-### Notificaciones por Email (SES)
-| Evento | Destinatario | Estado |
-|--------|-------------|--------|
-| Invitación / creación de cuenta | Estudiante | ✅ Implementado |
-| Reflexión aprobada | Estudiante | ✅ Implementado |
-| Reflexión rechazada | Estudiante | ✅ Implementado |
-| Certificado generado | Estudiante (link incluido en aprobación) | ✅ Implementado |
+### Score de Calidad
+- Evaluador puede asignar score 1-10 al aprobar una reflexión
+- Guardado como `qualityScore` en DDB Reflections
+- Visible en Mi Progreso del estudiante con ⭐
 
-### Dashboard Evaluador (Phase 1 — 2026-04-30)
-- Toggle **Por Curso** / **Por Estudiante**
-- Stats cards: Pendientes, Aprobadas, Rechazadas, Estudiantes activos
-- **Alertas urgentes**: reflexiones con >36h sin revisar (banner rojo)
-- **Tabla de trabajo**: Estudiante, Módulo/Curso, Enviado, Tiempo restante (48h deadline), 3-dot action menu
-- **Vista por Estudiante**: progress bars por módulo, badge de pendientes
-- **Gráfico de barras** de estado (CSS puro, sin librería)
-- **Comentarios frecuentes**: localStorage, editable, copy-to-clipboard
-
-### Evaluaciones (Lista)
-- Tabla con columnas: Estudiante, Módulo/Curso, Enviado, Tiempo restante, Estado
-- Toggle de ordenamiento: Por urgencia / Por fecha
-- Filtros: Todas / Pendientes / Aprobadas / Rechazadas
-- Pendientes como filtro predeterminado
-
-### Evaluación (Detalle — side-by-side)
-- Panel izquierdo: texto completo de la reflexión (sticky)
-- Panel derecho: form de feedback + acción Aprobar/Rechazar
-- **Comentarios frecuentes integrados**: clic inserta en el textarea del feedback
-- Análisis IA (compact strip)
-- Meta: estudiante, módulo, fecha, palabras
-
-### Duración de Módulos
-- `formatCourseDuration(value)` en `apps/web/lib/utils.ts`
-- Convierte `"45"` → `"45 min"`, `"90"` → `"1 h 30 min"`, `"60"` → `"1 h"`
-- Aplicado en: módulo detail, course page, dashboard, progress page
-
----
-
-## Estructura DynamoDB
-
-| Tabla | PK | SK | GSI(s) | Uso |
-|-------|----|----|--------|-----|
-| `lux-progress` | `USER#<userId>` | `LESSON#<lessonId>` | — | Progreso de lecciones |
-| `lux-reflections` | `USER#<userId>` | `MODULE#<moduleId>` | `moduleId-index`, `status-index` | Reflexiones y evaluaciones |
-| `lux-quiz-results` | `USER#<userId>` | `MODULE#<moduleId>` | — | Resultados de quizzes |
-| `lux-enrollments` | `USER#<userId>` | `COURSE#<courseId>` | `courseId-index` | Inscripciones |
-| `lux-certificates` | `CERT#<certId>` | `META` | `userId-courseId-index` | Certificados |
-| `PushSubscriptions` | `userId` | `sk` (base64 endpoint[:100]) | — | Subscripciones push PWA |
-
----
-
-## Lambdas y Endpoints
-
-| Lambda | Archivo | Endpoints principales |
-|--------|---------|----------------------|
-| `coursesFn` | `courses/handler.ts` | `GET /courses`, `GET /courses/{id}`, `GET/POST lessons` |
-| `evaluatorFn` | `evaluator/handler.ts` | `GET /evaluator/reflections`, `POST /evaluator/review`, `GET /evaluator/students` |
-| `adminFn` | `admin/handler.ts` | `POST /admin/users`, `GET/PUT/DELETE /admin/courses` |
-| `certsFn` | `certificates/handler.ts` | `GET /certificates/{certId}` (público), `GET /my-certificates`, `POST /my-certificates/generate` |
-| `reflectionsFn` | `reflections/handler.ts` | `POST /reflections`, `GET /reflections/{moduleId}` |
-| `pushFn` | `push/handler.ts` | `GET /push/vapid-key` (público), `POST /push/subscribe`, `DELETE /push/subscribe` |
-| `aiAnalysisFn` | `ai-analysis/handler.ts` | (SQS trigger — no HTTP) |
-
----
-
-## Trabajo Pendiente
-
-### Phase 2 — ✅ Completado 2026-04-30
-- [x] **AI feedback generator**: botón "Generar con IA" → 5 sugerencias via Bedrock (Claude Haiku), clickeables para insertar en feedback
-- [x] **Backend deadline**: campo `deadline` guardado al enviar reflexión (submittedAt + 48h); frontend usa backend cuando disponible
-- [x] **Modal de auditoría de quiz**: botón "Ver quiz" → modal con respuestas por intento, colores correcto/incorrecto
-
-### Phase 3 — ✅ Completado 2026-04-30
-- [x] Tags/categorías para cursos — campo en Prisma, UI de chips en admin, filtro en estudiante
-- [x] Score de calidad (1-10) — slider + botones en aprobación, visible en progreso del estudiante con ⭐
-- [x] Priority flag — botón "Urgente" en detalle, ícono 🚩 en lista de evaluaciones
-- [x] **Notificaciones push (PWA)** — VAPID keys generadas, service worker custom (`worker/index.ts`), `PushBell` en Topbar, evaluators reciben push al enviar reflexión
-
-### Bugs resueltos
-- [x] `/admin/users`: fallback email → username elimina UUIDs vacíos
-- [x] Curso sin imagen: banner gradient placeholder
-- [x] `GET /evaluator/reflections` solo devolvía PENDING_EVAL → stats del dashboard siempre en 0, filtros Todas/Aprobadas/Rechazadas vacíos, detalle de reflexiones ya revisadas daba "no encontrada". Fix: usar `getAllReflections()` con batch de módulos para evitar N+1 queries
-
-### Phase 4 — ✅ Completado 2026-05-06
-- [x] **Recordatorios automáticos por email**: Lambda `reminders/handler.ts` + EventBridge cron diario 9 AM UTC → SES a estudiantes inactivos >7 días
-- [x] **Dashboard de progreso mejorado**: Card de racha 🔥 (streak) en dashboard y página de progreso, calculada desde `completedAt` de lecciones
-- [x] **Feedback del evaluador visible**: En Mi Progreso, botón 💬 por módulo expande el comentario del evaluador con fecha
-- [x] **Reportes para Admin** (`/admin/reports`): tasa de aprobación global, estudiantes en riesgo, barras por estado, tabla por módulo ordenable, exportar CSV
-- [x] **Feedback de IA antes de enviar reflexión**: Botón "Analizar con IA" → Bedrock Haiku → evaluación + 3 sugerencias con panel expandible verde/ámbar
-- [x] **Push al estudiante**: PushBell para todos los roles; evaluador aprueba/rechaza → push en tiempo real al estudiante (`getPushSubscriptionsByUserId`)
-- [x] **Modo oscuro**: Toggle 🌙/☀️ en Topbar, persiste en localStorage, sin flash al cargar (script inline en `<head>`)
-- [x] **Onboarding tour**: 4 pasos animados para nuevos estudiantes en primer login, localStorage guard, componente `OnboardingTour`
-- [x] **evaluatorFeedback** incluido en respuesta de `GET /courses` para mostrar en Mi Progreso sin N+1
-
-### Nuevos archivos creados
-- `services/api/src/reminders/handler.ts` — Lambda recordatorios
-- `apps/web/app/(evaluator)/admin/reports/page.tsx` — Reportes admin
-- `apps/web/components/ui/ThemeToggle.tsx` — Toggle dark/light
-- `apps/web/components/ui/OnboardingTour.tsx` — Tour onboarding
-
-### Tier 0 — ✅ Completado 2026-05-06
-- [x] **Dark mode root fix**: tailwind.config.ts usa CSS variables para colores custom → `.dark { --surface: ... }` propaga automáticamente. `dark:` variants en `.card`, `.input-field`, `.btn-secondary`, `.nav-item`. `AppShell`/`Topbar`/`Sidebar` con clases `dark:` explícitas.
-- [x] **Fix "Generar con IA" error**: Bedrock model ID cambiado a cross-region inference profile `us.anthropic.claude-3-haiku-20240307-v1:0` en `evaluator/handler.ts` y `reflection/handler.ts`. EvaluatorFn timeout aumentado a 60s en CDK.
-- [x] **3 puntos menú visible**: Mejor contraste y hover state en el botón MoreVertical de la tabla de carga de trabajo.
-- [x] **"Ocultar por 8 días"**: Banner de bienvenida en dashboard estudiantil con botón de dismiss → localStorage con timestamp de expiración a 8 días.
-- [x] **"Pendientes" clickeable**: Card de Pendientes en dashboard evaluador envuelto en `<Link>` → navega a `/evaluator/reflections`.
-- [x] **"Siguiente" deshabilitado**: Botón Siguiente en visor de lección es un `<button disabled>` cuando `completed === false`; se convierte en Link activo al completar.
-- [x] **Carga de trabajo clickeable**: Filas de la tabla de work queue tienen `onClick` que navega al detalle de reflexión (excepto al hacer clic en el menú de 3 puntos).
-
-### Pendiente
-- (ninguno por ahora)
-
----
-
-## Variables de Entorno Requeridas
-
-### Frontend (Vercel)
+### Reportes — Score Integral
 ```
-NEXT_PUBLIC_API_URL=https://<api-gw-id>.execute-api.<region>.amazonaws.com
-NEXT_PUBLIC_COGNITO_USER_POOL_ID=...
-NEXT_PUBLIC_COGNITO_CLIENT_ID=...
+integratedScore = reflectionApprovalRate * 0.6 + avgQuizScore * 0.4
+```
+- `reflectionApprovalRate` = aprobadas / total × 100
+- `avgQuizScore` = promedio de scores de intentos aprobados (no fallidos)
+- Estudiante "activo" = actividad en últimos 7 días
+- Estudiante "en riesgo" = sin actividad en últimos 7 días
+
+### Análisis Nocturno (AnalysisFn — 02:00 UTC)
+- Mínimo 3 reflexiones APPROVED por módulo para correr análisis IA
+- Temas débiles de quiz: `errorRate > 30%` (solo si total de intentos > 0)
+- Error rate correcto: `a.answers.length > i && a.answers[i] !== q.correctIndex`
+- Guarda en `ReportAnalysis` (temas + resumen) y `CurriculumRecommendations` (recursos)
+- 300ms delay entre módulos para evitar rate limiting de Bedrock
+
+### Recordatorios (RemindersFn — 09:00 UTC)
+- Envía email a estudiantes inactivos >7 días
+- Solo envía si el estudiante tiene email en Cognito
+
+---
+
+## DynamoDB — Tablas y Estructura de Keys
+
+| Tabla (env var) | PK | SK | GSI | Contenido |
+|-----------------|----|----|-----|-----------|
+| `LessonProgress` (`DYNAMO_TABLE_PROGRESS`) | `userId` | `courseId#moduleId#lessonId` | — | Progreso de lecciones, highlights (`HL#lessonId`), favoritos (`FAV#type#id`), transcripciones (`_transcript` / lessonId) |
+| `QuizAttempts` (`DYNAMO_TABLE_QUIZ`) | `userId` | `moduleId#0001` (padded) | `moduleId-index` (PK: moduleId, SK: submittedAt) | Intentos de quiz con `answers[]`, `score`, `passed` |
+| `Reflections` (`DYNAMO_TABLE_REFLECTIONS`) | `userId` | `moduleId` | `status-index` (PK: status, SK: submittedAt) | Reflexiones con `text`, `status`, `aiResult`, `evaluatorFeedback`, `qualityScore`, `priority` |
+| `Notifications` (`DYNAMO_TABLE_NOTIFS`) | `userId` | `notifId` | — | Notificaciones in-app, TTL automático |
+| `Enrollments` (`DYNAMO_TABLE_ENROLLMENTS`) | `userId` | `COURSE#courseId` | — | Inscripciones a cursos |
+| `Certificates` (`DYNAMO_TABLE_CERTIFICATES`) | `certId` | — | `userId-courseId-index` | Certificados generados |
+| `PushSubscriptions` (`DYNAMO_TABLE_PUSH_SUBS`) | `userId` | `sha256(endpoint)` | — | Suscripciones Web Push por dispositivo |
+| `ScheduledTasks` (`DYNAMO_TABLE_TASKS`) | `userId` | `dueDate#taskId` | `courseId-index` (PK: courseId, SK: dueDate) | Tareas asignadas por evaluador |
+| `ReportAnalysis` (`DYNAMO_TABLE_REPORT_ANALYSIS`) | `moduleId` | `'ANALYSIS'` (fijo) | — | Análisis IA nocturno: temas clave, resumen, quiz débil |
+| `CurriculumRecommendations` (`DYNAMO_TABLE_RECOMMENDATIONS`) | `moduleId` | `'RECS'` (fijo) | — | Recursos sugeridos por IA, editables |
+
+---
+
+## Lambdas — Inventario Completo
+
+| Función AWS | Lambda name | Timeout / Mem | Trigger | Endpoints |
+|-------------|------------|--------------|---------|-----------|
+| `AuthorizerFn` | `lux-authorizer` | 5s / 128MB | API GW Authorizer | — (valida JWT Cognito) |
+| `CoursesFn` | `lux-courses` | 30s / 512MB | HTTP | `GET /courses`, `GET /courses/{courseId}` |
+| `LessonsFn` | `lux-lessons` | 60s / 256MB | HTTP | `GET/POST /lessons/progress`, `/lessons/complete`, `/lessons/highlights`, `/lessons/favorites`, `/lessons/favorites/toggle`, `/lessons/transcript`, `/lessons/chat` |
+| `QuizFn` | `lux-quiz` | 30s / 512MB | HTTP | `POST /quiz/{moduleId}/submit`, `GET /quiz/{moduleId}/attempts` |
+| `ReflectionFn` | `lux-reflection` | 30s / 512MB | HTTP | `POST /reflection`, `GET /reflection/{moduleId}`, `POST /reflection/ai-preview` |
+| `EvaluatorFn` | `lux-evaluator` | 60s / 512MB | HTTP | `GET /evaluator/reflections`, `POST /evaluator/reflections/review`, `GET /evaluator/students`, `POST /evaluator/ai-feedback`, `GET /evaluator/quiz-audit`, `POST /evaluator/reflections/priority`, `POST /evaluator/ai-check`, `GET/POST/PUT/DELETE /evaluator/tasks` |
+| `AdminFn` | `lux-admin` | 30s / 512MB | HTTP | `GET/POST/PUT/DELETE /admin/courses`, `/admin/modules`, `/admin/lessons`, `/admin/questions`, `/admin/users`, `/admin/users/{u}/enrollments`, `/admin/users/{u}/role`, `/admin/users/{u}/status` |
+| `NotifsFn` | `lux-notifs` | 30s / 256MB | HTTP | `GET /notifications`, `POST /notifications/read` |
+| `CertsFn` | `lux-certs` | 30s / 256MB | HTTP | `GET /certificates/{certId}` (público), `GET /my-certificates`, `POST /my-certificates/generate` |
+| `PushFn` | `lux-push` | 30s / 256MB | HTTP | `GET /push/vapid-key` (público), `POST /push/subscribe`, `DELETE /push/subscribe` |
+| `TasksFn` | `lux-tasks` | 15s / 256MB | HTTP | `GET /tasks`, `GET /tasks/calendar.ics` (público, token en query), `POST /tasks/{id}/complete` |
+| `ReportsFn` | `lux-reports` | 60s / 512MB | HTTP | `GET /reports?mode=master\|student\|course&studentId=&courseId=`, `POST /reports/email`, `GET/PUT /reports/recommendations/{moduleId}` |
+| `SQSConsumerFn` | `lux-sqsconsumer` | 120s / 512MB | SQS batch 5 | Análisis IA de reflexiones (Bedrock) |
+| `RemindersFn` | `lux-reminders` | 300s / 256MB | EventBridge 09:00 UTC | Emails recordatorio a estudiantes inactivos |
+| `AnalysisFn` | `lux-analysis` | 300s / 512MB | EventBridge 02:00 UTC | Análisis nocturno de reflexiones + recomendaciones |
+
+**Rutas públicas (sin auth):** `/push/vapid-key`, `/certificates/{certId}`, `/tasks/calendar.ics`
+
+---
+
+## Autenticación — Flujo Técnico
+
+1. Frontend obtiene `idToken` de Cognito via `getIdToken()` en `lib/auth.ts`
+2. Cada request incluye `Authorization: Bearer {idToken}`
+3. API Gateway invoca `AuthorizerFn` → `jose.jwtVerify()` contra JWKS Cognito
+4. Authorizer extrae `cognito:groups`, determina `role` (mayor precedencia gana: ADMIN > EVALUATOR > STUDENT), retorna `{ userId, email, role }` como contexto
+5. Handler accede via `event.requestContext.authorizer?.lambda`
+
+---
+
+## Shape de Respuestas API
+
+Todos los `ok()` retornan:
+```json
+{ "data": <payload>, "message": null }
 ```
 
-### Lambdas (CDK commonEnv)
+Patrón en frontend para acceder datos:
+```typescript
+const d = res?.data ?? res;
 ```
-DYNAMO_TABLE_PROGRESS=lux-progress
-DYNAMO_TABLE_REFLECTIONS=lux-reflections
-DYNAMO_TABLE_QUIZ=lux-quiz-results
-DYNAMO_TABLE_ENROLLMENTS=lux-enrollments
-DYNAMO_TABLE_CERTIFICATES=lux-certificates
-COGNITO_USER_POOL_ID=...
-PRISMA_DATABASE_URL=...
-SES_FROM_EMAIL=...
-BEDROCK_REGION=...
-SQS_QUEUE_URL=...
+
+Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
+
+---
+
+## Features Implementadas — Estado Actual
+
+### Core (Estudiante)
+- ✅ Cursos con módulos secuenciales bloqueados
+- ✅ Lecciones con video YouTube embed, puntos clave
+- ✅ Resaltado de texto en 4 colores (amarillo/verde/azul/rosa), persiste en DDB
+- ✅ Favoritos de lecciones y módulos, persiste en DDB
+- ✅ Transcripción de video (youtube-transcript, caché en DDB)
+- ✅ Chatbot IA por lección (Bedrock, historial de conversación, contexto de la lección)
+- ✅ Quiz por módulo con intentos múltiples y auditoría
+- ✅ Reflexión con análisis IA previo al envío ("¿Listo para enviar?")
+- ✅ Progreso personal con score de calidad del evaluador y feedback expandible
+- ✅ Certificados descargables (PDF via print)
+- ✅ Sistema de tareas asignadas con calendario .ics exportable
+- ✅ Racha de actividad (streak) en dashboard
+- ✅ Dark mode (toggle persistente, sin FOUC)
+- ✅ Onboarding tour (4 pasos, localStorage guard)
+- ✅ Push notifications (Web Push PWA)
+
+### Evaluador
+- ✅ Dashboard con workqueue por curso/estudiante, alertas urgentes (>36h)
+- ✅ Detalle side-by-side con comentarios frecuentes
+- ✅ Botón "Generar feedback con IA" (Bedrock, 5 sugerencias)
+- ✅ "Comprobar IA" — detecta si reflexión fue generada con IA
+- ✅ Priority flag por reflexión
+- ✅ Score de calidad 1-10 al aprobar
+- ✅ Tareas a estudiantes individuales o cursos completos
+- ✅ **Reportes:** 5 pilares (KPIs, progreso integral, análisis cualitativo IA, mapa de calor quiz, recomendaciones editables), filtros master/estudiante/curso, export PDF + email SES
+
+### Admin
+- ✅ Gestión de cursos, módulos, lecciones, preguntas (solo ADMIN)
+- ✅ Creación de cursos con IA (topic o URL → estructura 7-10 módulos → preview → publicar)
+- ✅ Gestión de usuarios: invitar, cambiar rol, activar/desactivar
+- ✅ Gestión de inscripciones por usuario
+
+---
+
+## Prisma Schema (PostgreSQL Neon)
+
+Modelos principales: `Course`, `Module` (con `order`, `passingScore`), `Lesson` (con `youtubeId`, `points[]`, `duration`), `Question` (con `options[]`, `correctIndex`).
+
+Conexión: pooled URL para Lambdas con conexiones concurrentes.  
+Engine binary: `libquery_engine-linux-arm64-openssl-3.0.x.so.node` copiado por CDK `afterBundling` hook.
+
+---
+
+## Variables de Entorno
+
+### Frontend (`.env.local` / Vercel)
+```
+NEXT_PUBLIC_API_URL=https://v4vabtmerb.execute-api.us-east-1.amazonaws.com
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx
+NEXT_PUBLIC_COGNITO_CLIENT_ID=63ujfu3mt11s45p9g6m7p0n648
+```
+
+### Lambdas (CDK `commonEnv` → todos los Fns)
+```
+COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
+DYNAMO_TABLE_PROGRESS=LessonProgress
+DYNAMO_TABLE_QUIZ=QuizAttempts
+DYNAMO_TABLE_REFLECTIONS=Reflections
+DYNAMO_TABLE_NOTIFS=Notifications
+DYNAMO_TABLE_ENROLLMENTS=Enrollments
+DYNAMO_TABLE_CERTIFICATES=Certificates
 DYNAMO_TABLE_PUSH_SUBS=PushSubscriptions
-VAPID_PUBLIC_KEY=BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw
-VAPID_PRIVATE_KEY=SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo
+DYNAMO_TABLE_TASKS=ScheduledTasks
+DYNAMO_TABLE_REPORT_ANALYSIS=ReportAnalysis
+DYNAMO_TABLE_RECOMMENDATIONS=CurriculumRecommendations
+SES_FROM_EMAIL=noreply@luxlearning.com
+BEDROCK_REGION=us-east-1
+FRONTEND_URL=https://lux-learning.vercel.app
+SQS_REFLECTION_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/798694628803/lux-reflection-queue
+DATABASE_URL={{resolve:secretsmanager:lux/neon-db:SecretString:DATABASE_URL}}
+VAPID_PUBLIC_KEY={{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PUBLIC_KEY}}
+VAPID_PRIVATE_KEY={{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PRIVATE_KEY}}
 VAPID_EMAIL=mailto:admin@luxlearning.com
 ```
 
@@ -217,33 +267,23 @@ VAPID_EMAIL=mailto:admin@luxlearning.com
 
 ## Deploy
 
-### Frontend
-```bash
-# Deploy manual via Vercel CLI desde la RAÍZ del monorepo
-cd D:/InHouse/Lux
-npx vercel --prod --yes
-# Reasignar alias después de cada deploy:
-npx vercel alias <deployment-url> lux-learning.vercel.app
-```
-
-> **Cuenta Vercel:** `jasonrbm-1241` — https://vercel.com/jasonrbm-1241s-projects/lux-learning  
-> **URL producción:** https://lux-learning.vercel.app  
-> **Repositorio GitHub:** https://github.com/JasonBarriosMolina/LuxLearning  
-> **Project ID:** `prj_PRyLhUv3v66Jj771mEP3cozLQjAK`  
-> **Configuración Vercel (API, NO en UI):** `framework: nextjs`, `rootDirectory: apps/web`, `buildCommand/outputDirectory/installCommand: null` (overrideados por `apps/web/vercel.json`)  
-> **`apps/web/vercel.json`:** `installCommand: "npm install --prefix ../.."`, `buildCommand: "../../node_modules/.bin/next build"`  
-> **Nota:** Deploy es manual (CLI). `middleware.ts` fue eliminado (era no-op y causaba MIDDLEWARE_INVOCATION_FAILED en Vercel Edge).
-
 ### Backend (CDK)
 ```bash
 cd infrastructure/cdk
-npx cdk deploy --require-approval never
+npx cdk deploy LuxLearningStack --require-approval never
 ```
 
-### Verificar build local
+### Frontend (Vercel — auto desde git push)
+```
+URL producción: https://lux-learning-tau.vercel.app
+Repositorio: https://github.com/JasonBarriosMolina/LuxLearning
+Branch: master
+Root directory: apps/web
+```
+
+### Build local
 ```bash
 cd apps/web && npx next build
-cd services/api && npx tsc --noEmit  # errores esperados por module resolution, no bloquean esbuild
 ```
 
 ---
@@ -252,13 +292,9 @@ cd services/api && npx tsc --noEmit  # errores esperados por module resolution, 
 
 | Fecha | Descripción |
 |-------|-------------|
-| 2026-05-06 | Phase 4: recordatorios email, dashboard streak, feedback evaluador visible, reportes admin, IA preview reflexión, push al estudiante, dark mode, onboarding tour. Bug fix: dark mode CSS overrides, PushBell solo evaluadores en Topbar |
-| 2026-04-30 | Bug fixes (13 issues): SW compilation, SK collision, userId guard, VAPID en Secrets Manager, fire-and-forget IIFE, isModuleUnlocked por order, SQS MessageGroupId, notificationclick, IAM typo |
-| 2026-04-30 | Push notifications PWA: VAPID keys, PushSubscriptions DynamoDB, pushFn Lambda, service worker, PushBell en Topbar |
-| 2026-04-30 | Phase 3: tags/categorías, score de calidad, priority flag, bug fixes admin/users e imagen |
-| 2026-04-30 | Phase 2: AI feedback generator (Bedrock), deadline backend en reflexiones, modal auditoría de quiz |
-| 2026-04-30 | Phase 1 Evaluador Dashboard: nuevo dashboard, tabla de evaluaciones con tiempo restante, detalle side-by-side con comentarios frecuentes |
-| 2026-04-29 | Certificados completos: generación auto, página pública, download PDF |
-| 2026-04-29 | Emails: invitación, reflexión aprobada/rechazada con nombre real del estudiante |
-| 2026-04-29 | `formatCourseDuration()`: duraciones con unidades en todo el sistema |
-| 2026-04-29 | Nombres de estudiantes en lugar de UUIDs en evaluador |
+| 2026-05-07 | Bug fixes: error rate quiz, reports filter guard, dashboard nav router.push |
+| 2026-05-07 | Reports feature: ReportsFn + AnalysisFn Lambdas, 2 nuevas tablas DDB, EventBridge nightly, UI 5 pilares, filtros, PDF + email SES |
+| 2026-05-07 | Mejora prompt ai-preview reflexión (evaluador pedagógico especializado), model ID → global.* en todos los handlers, IAM bedrock fix (`arn:aws:bedrock:*::`) |
+| 2026-05-07 | Role enforcement: EVALUATOR pierde gestión de contenido, gana /reports; Sidebar actualizado |
+| 2026-05-06 | Tier 0-4: highlights, favoritos, transcripción, chatbot IA lección, creación curso con IA, tareas + calendario .ics, dark mode, onboarding tour, push al estudiante |
+| 2026-04-30 | Phase 1-4: evaluador dashboard, feedback IA, score calidad, priority flag, notificaciones push, reportes básicos admin, recordatorios email, streak |
