@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Clock, CheckCircle, XCircle, ArrowRight, AlertTriangle,
@@ -72,6 +73,7 @@ function StatusBarChart({ approved, rejected, pending }: { approved: number; rej
 
 export default function EvaluatorDashboardPage() {
   const { email, name } = useAuth() as any;
+  const router = useRouter();
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,7 +276,7 @@ export default function EvaluatorDashboardPage() {
                         onClick={(e) => {
                           // Don't navigate if clicking the action menu
                           if ((e.target as HTMLElement).closest('[data-menu]')) return;
-                          window.location.href = detailHref;
+                          router.push(detailHref);
                         }}
                       >
                         <div className="flex items-center gap-2 min-w-0">

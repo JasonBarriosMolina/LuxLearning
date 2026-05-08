@@ -167,7 +167,7 @@ export const handler = async (event: Event) => {
         if (!attempts.length || !mod.questions.length) return null;
         const questions = mod.questions.map((q, i) => {
           const total = attempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i).length;
-          const errors = attempts.filter((a) => Array.isArray(a.answers) && a.answers[i] !== q.correctIndex).length;
+          const errors = attempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i && a.answers[i] !== q.correctIndex).length;
           return {
             index: i,
             text: q.text.slice(0, 80),

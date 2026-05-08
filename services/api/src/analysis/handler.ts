@@ -67,7 +67,7 @@ export const handler = async () => {
         const modAttempts = allAttempts.filter((a) => a.moduleId === mod.id);
         const weakQuizTopics = mod.questions.map((q, i) => {
           const total = modAttempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i).length;
-          const errors = modAttempts.filter((a) => Array.isArray(a.answers) && a.answers[i] !== q.correctIndex).length;
+          const errors = modAttempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i && a.answers[i] !== q.correctIndex).length;
           return { questionText: q.text.slice(0, 120), errorRate: total > 0 ? Math.round((errors / total) * 100) : 0 };
         }).filter((q) => q.errorRate > 30).sort((a, b) => b.errorRate - a.errorRate).slice(0, 5);
 

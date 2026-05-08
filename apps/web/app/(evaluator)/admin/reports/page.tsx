@@ -113,6 +113,12 @@ export default function ReportsPage() {
 
   // Load report data when filters change
   useEffect(() => {
+    // Don't fetch until required filter is selected
+    if ((mode === 'student' && !filterStudentId) || (mode === 'course' && !filterCourseId)) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
     setLoading(true);
     setData(null);
     const params: any = { mode };
@@ -291,7 +297,7 @@ ${data.analysis.slice(0, 5).map((a) => `
           <div className="card text-center py-12 text-gray-400">Sin datos disponibles</div>
         )}
 
-        {data && (
+        {data && canLoad && (
           <>
             {/* ── 1. KPIs ─────────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
