@@ -172,14 +172,9 @@ export default function AdminCoursesPage() {
           <p className="text-gray-500 mt-1 text-sm">Crea y administra cursos, módulos, lecciones y evaluaciones</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={openAiModal}
-            style={{ border: '1.5px solid #7B2FBE', color: '#7B2FBE', background: 'transparent', borderRadius: 12, padding: '10px 20px', fontWeight: 600, fontFamily: 'Montserrat, sans-serif', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}
-          >
-            <Sparkles className="w-4 h-4" style={{ color: '#7B2FBE' }} />
+          <Button variant="secondary" onClick={openAiModal} leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}>
             Crear con IA
-          </button>
+          </Button>
           <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
             Nuevo curso
           </Button>
