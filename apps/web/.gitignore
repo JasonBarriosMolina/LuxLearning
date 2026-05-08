@@ -1,1 +1,3 @@
-.vercel
+﻿.vercel
+!.vercel/project.json
+.env*.local
