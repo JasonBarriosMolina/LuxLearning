@@ -103,6 +103,7 @@ export const handler = async (event: Event) => {
 
     // ── POST /admin/courses ─────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
       if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
       const course = await prisma.course.create({
@@ -134,6 +135,7 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'PUT') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
         if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
         const course = await prisma.course.update({
@@ -144,6 +146,7 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'DELETE') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         await prisma.course.delete({ where: { id: courseId } });
         return ok({ deleted: true });
       }
@@ -152,6 +155,7 @@ export const handler = async (event: Event) => {
     // ── POST /admin/courses/:courseId/modules ───────────────────────────────
     const courseModulesMatch = path.match(/^\/admin\/courses\/([^/]+)\/modules$/);
     if (courseModulesMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const courseId = courseModulesMatch[1]!;
       const { title, description, duration, passingScore, order } = body;
       if (!title || !description || !duration || passingScore == null) {
@@ -174,6 +178,7 @@ export const handler = async (event: Event) => {
       const moduleId = moduleMatch[1]!;
 
       if (method === 'PUT') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         const { title, description, duration, passingScore, order } = body;
         if (!title || !description || !duration || passingScore == null) {
           return badRequest('title, description, duration y passingScore son requeridos');
@@ -186,6 +191,7 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'DELETE') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         await prisma.module.delete({ where: { id: moduleId } });
         return ok({ deleted: true });
       }
@@ -194,6 +200,7 @@ export const handler = async (event: Event) => {
     // ── POST /admin/modules/:moduleId/lessons ───────────────────────────────
     const moduleLessonsMatch = path.match(/^\/admin\/modules\/([^/]+)\/lessons$/);
     if (moduleLessonsMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const moduleId = moduleLessonsMatch[1]!;
       const { title, duration, youtubeId, imageUrl, points, tip, order } = body;
       if (!title || !duration || !youtubeId) {
@@ -222,6 +229,7 @@ export const handler = async (event: Event) => {
       const lessonId = lessonMatch[1]!;
 
       if (method === 'PUT') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         const { title, duration, youtubeId, imageUrl, points, tip, order } = body;
         if (!title || !duration || !youtubeId) {
           return badRequest('title, duration y youtubeId son requeridos');
@@ -240,6 +248,7 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'DELETE') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         await prisma.lesson.delete({ where: { id: lessonId } });
         return ok({ deleted: true });
       }
@@ -248,6 +257,7 @@ export const handler = async (event: Event) => {
     // ── POST /admin/modules/:moduleId/questions ─────────────────────────────
     const moduleQuestionsMatch = path.match(/^\/admin\/modules\/([^/]+)\/questions$/);
     if (moduleQuestionsMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const moduleId = moduleQuestionsMatch[1]!;
       const { text, options, correctIndex, order } = body;
       if (!text || !Array.isArray(options) || options.length < 2 || correctIndex == null) {
@@ -270,6 +280,7 @@ export const handler = async (event: Event) => {
       const questionId = questionMatch[1]!;
 
       if (method === 'PUT') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         const { text, options, correctIndex, order } = body;
         if (!text || !Array.isArray(options) || options.length < 2 || correctIndex == null) {
           return badRequest('text, options (mínimo 2) y correctIndex son requeridos');
@@ -282,6 +293,7 @@ export const handler = async (event: Event) => {
       }
 
       if (method === 'DELETE') {
+        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
         await prisma.question.delete({ where: { id: questionId } });
         return ok({ deleted: true });
       }
@@ -481,7 +493,7 @@ export const handler = async (event: Event) => {
 
     // ── GET /admin/reports ──────────────────────────────────────────────────
     if (path === '/admin/reports' && method === 'GET') {
-      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      // Both EVALUATOR and ADMIN can view reports
 
       const [allReflections, allProgress, allEnrollments, courses] = await Promise.all([
         getAllReflections(),

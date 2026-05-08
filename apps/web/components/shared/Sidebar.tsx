@@ -87,13 +87,13 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/courses',
     label: 'Gestión de Contenido',
     icon: <Settings2 className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
+    roles: ['ADMIN'],
   },
   {
     href: '/admin/reports',
     label: 'Reportes',
     icon: <BarChart2 className="w-5 h-5" />,
-    roles: ['ADMIN'],
+    roles: ['EVALUATOR', 'ADMIN'],
   },
   {
     href: '/admin/users',

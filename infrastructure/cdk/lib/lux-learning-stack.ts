@@ -68,8 +68,8 @@ export class LuxLearningStack extends cdk.Stack {
       precedence: 5,
     });
 
-    // Note: ADMIN group was created manually in Cognito and is not managed by CDK
-    // to avoid conflicts on re-deploy.
+    // ADMIN group (precedence: 1) was created manually in Cognito and already exists.
+    // CDK cannot import existing Cognito groups — do not add CfnUserPoolGroup here.
 
     // ─── Secrets Manager ──────────────────────────────────────────────────────
 
