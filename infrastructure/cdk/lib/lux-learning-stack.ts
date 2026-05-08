@@ -184,6 +184,22 @@ export class LuxLearningStack extends cdk.Stack {
       sortKey: { name: 'dueDate', type: dynamodb.AttributeType.STRING },
     });
 
+    const reportAnalysisTable = new dynamodb.Table(this, 'ReportAnalysis', {
+      tableName: 'ReportAnalysis',
+      partitionKey: { name: 'moduleId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const recommendationsTable = new dynamodb.Table(this, 'CurriculumRecommendations', {
+      tableName: 'CurriculumRecommendations',
+      partitionKey: { name: 'moduleId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // ─── SQS ─────────────────────────────────────────────────────────────────
 
     const reflectionDlq = new sqs.Queue(this, 'ReflectionDLQ', {
@@ -214,6 +230,8 @@ export class LuxLearningStack extends cdk.Stack {
       SQS_REFLECTION_QUEUE_URL: reflectionQueue.queueUrl,
       DYNAMO_TABLE_PUSH_SUBS: pushSubsTable.tableName,
       DYNAMO_TABLE_TASKS: tasksTable.tableName,
+      DYNAMO_TABLE_REPORT_ANALYSIS: reportAnalysisTable.tableName,
+      DYNAMO_TABLE_RECOMMENDATIONS: recommendationsTable.tableName,
       SES_FROM_EMAIL: 'noreply@luxlearning.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning.vercel.app',
@@ -293,6 +311,7 @@ export class LuxLearningStack extends cdk.Stack {
     const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
     const pushFn     = makeFn('PushFn',     'push/handler.ts',           'handler');
     const tasksFn    = makeFn('TasksFn',    'tasks/handler.ts',          'handler', { timeout: cdk.Duration.seconds(15) });
+    const reportsFn  = makeFn('ReportsFn',  'reports/handler.ts',        'handler', { memorySize: 512, timeout: cdk.Duration.seconds(60) });
 
     // SQS Consumer (Bedrock AI detection)
     const sqsConsumerFn = makeFn('SQSConsumerFn', 'reflection/sqs-consumer.ts', 'handler', {
@@ -306,9 +325,15 @@ export class LuxLearningStack extends cdk.Stack {
       memorySize: 256,
     });
 
+    // Nightly Analysis Lambda (EventBridge 02:00 UTC)
+    const analysisFn = makeFn('AnalysisFn', 'analysis/handler.ts', 'handler', {
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 512,
+    });
+
     // ─── IAM Permissions ──────────────────────────────────────────────────────
 
-    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn, remindersFn, tasksFn];
+    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn, remindersFn, tasksFn, reportsFn, analysisFn];
 
     allFns.forEach((fn) => {
       lessonProgressTable.grantReadWriteData(fn);
@@ -319,6 +344,8 @@ export class LuxLearningStack extends cdk.Stack {
       certificatesTable.grantReadWriteData(fn);
       pushSubsTable.grantReadWriteData(fn);
       tasksTable.grantReadWriteData(fn);
+      reportAnalysisTable.grantReadWriteData(fn);
+      recommendationsTable.grantReadWriteData(fn);
     });
 
     reflectionQueue.grantSendMessages(reflFn);
@@ -408,6 +435,33 @@ export class LuxLearningStack extends cdk.Stack {
       actions: ['cognito-idp:AdminGetUser'],
       resources: [userPool.userPoolArn],
     }));
+
+    // Reports Lambda — Cognito + SES
+    reportsFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminGetUser'],
+      resources: [userPool.userPoolArn],
+    }));
+    reportsFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+
+    // Analysis Lambda — Bedrock + Cognito
+    analysisFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        `arn:aws:bedrock:us-east-1:${this.account}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+      ],
+    }));
+
+    // EventBridge rule — nightly at 2:00 AM UTC
+    new events.Rule(this, 'NightlyAnalysisRule', {
+      ruleName: 'lux-nightly-analysis',
+      description: 'Trigger analysis Lambda nightly at 2:00 AM UTC',
+      schedule: events.Schedule.cron({ minute: '0', hour: '2' }),
+      targets: [new eventsTargets.LambdaFunction(analysisFn)],
+    });
 
     // EventBridge rule — daily at 9:00 AM UTC
     new events.Rule(this, 'DailyRemindersRule', {
@@ -538,8 +592,14 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/admin/users/{username}/status',        apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/users/{username}',               apigwv2.HttpMethod.DELETE, adminFn);
 
-    // Admin — Reports
+    // Admin — Reports (legacy, keep for backward compat)
     addRoute('/admin/reports', apigwv2.HttpMethod.GET, adminFn);
+
+    // Reports (new dedicated handler)
+    addRoute('/reports',                                    apigwv2.HttpMethod.GET,  reportsFn);
+    addRoute('/reports/email',                              apigwv2.HttpMethod.POST, reportsFn);
+    addRoute('/reports/recommendations/{moduleId}',         apigwv2.HttpMethod.GET,  reportsFn);
+    addRoute('/reports/recommendations/{moduleId}',         apigwv2.HttpMethod.PUT,  reportsFn);
 
     // Tasks (student)
     addRoute('/tasks',                        apigwv2.HttpMethod.GET,  tasksFn);

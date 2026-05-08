@@ -18,6 +18,8 @@ export const TABLES = {
   CERTIFICATES: process.env.DYNAMO_TABLE_CERTIFICATES ?? 'Certificates',
   PUSH_SUBS: process.env.DYNAMO_TABLE_PUSH_SUBS ?? 'PushSubscriptions',
   TASKS: process.env.DYNAMO_TABLE_TASKS ?? 'ScheduledTasks',
+  REPORT_ANALYSIS: process.env.DYNAMO_TABLE_REPORT_ANALYSIS ?? 'ReportAnalysis',
+  RECOMMENDATIONS: process.env.DYNAMO_TABLE_RECOMMENDATIONS ?? 'CurriculumRecommendations',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -541,4 +543,57 @@ export async function updateTask(userId: string, sk: string, updates: Partial<Pi
 
 export async function deleteTask(userId: string, sk: string): Promise<void> {
   await ddb.send(new DeleteCommand({ TableName: TABLES.TASKS, Key: { userId, sk } }));
+}
+
+// ─── Report Analysis (nightly AI pre-compute) ─────────────────────────────────
+
+export interface ReportAnalysis {
+  moduleId: string;
+  keyTopics: { topic: string; count: number; sentiment: 'positive' | 'neutral' | 'negative' }[];
+  reflectionSummary: string;
+  weakQuizTopics: { questionText: string; errorRate: number }[];
+  reflectionCount: number;
+  analyzedAt: string;
+}
+
+export async function getReportAnalysis(moduleId: string): Promise<ReportAnalysis | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.REPORT_ANALYSIS,
+    Key: { moduleId, sk: 'ANALYSIS' },
+  }));
+  return result.Item ? (result.Item as unknown as ReportAnalysis) : null;
+}
+
+export async function saveReportAnalysis(analysis: ReportAnalysis): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.REPORT_ANALYSIS,
+    Item: { moduleId: analysis.moduleId, sk: 'ANALYSIS', ...analysis },
+  }));
+}
+
+// ─── Curriculum Recommendations ───────────────────────────────────────────────
+
+export interface CurriculumResource {
+  id: string;
+  weakTopic: string;
+  title: string;
+  type: 'article' | 'book' | 'video' | 'link';
+  url: string;
+  description: string;
+  aiGenerated: boolean;
+}
+
+export async function getRecommendations(moduleId: string): Promise<CurriculumResource[]> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.RECOMMENDATIONS,
+    Key: { moduleId, sk: 'RECS' },
+  }));
+  return (result.Item?.items ?? []) as CurriculumResource[];
+}
+
+export async function saveRecommendations(moduleId: string, items: CurriculumResource[]): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.RECOMMENDATIONS,
+    Item: { moduleId, sk: 'RECS', items, updatedAt: new Date().toISOString() },
+  }));
 }

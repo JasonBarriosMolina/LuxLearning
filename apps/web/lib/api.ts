@@ -166,8 +166,22 @@ export const api = {
       update: (questionId: string, body: any) => request<any>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (questionId: string) => request<any>(`/admin/questions/${questionId}`, { method: 'DELETE' }),
     },
-    // Reports
+    // Reports (legacy)
     reports: () => request<any>('/admin/reports'),
+    // Reports v2
+    reportsV2: (params?: { mode?: string; studentId?: string; courseId?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.mode) qs.set('mode', params.mode);
+      if (params?.studentId) qs.set('studentId', params.studentId);
+      if (params?.courseId) qs.set('courseId', params.courseId);
+      const q = qs.toString();
+      return request<any>(`/reports${q ? '?' + q : ''}`);
+    },
+    sendReportEmail: (body: { to: string; subject: string; htmlBody: string }) =>
+      request<any>('/reports/email', { method: 'POST', body: JSON.stringify(body) }),
+    getRecommendations: (moduleId: string) => request<any>(`/reports/recommendations/${moduleId}`),
+    updateRecommendations: (moduleId: string, items: any[]) =>
+      request<any>(`/reports/recommendations/${moduleId}`, { method: 'PUT', body: JSON.stringify({ items }) }),
     // Users
     users: {
       list: () => request<any>('/admin/users'),
