@@ -50,4 +50,5 @@ coverage/
 *.tsbuildinfo
 
 .vercel
+!apps/web/.vercel/project.json
 .env*.local
