@@ -166,13 +166,18 @@ export default function AdminCoursesPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading font-bold text-2xl text-charcoal">Gestión de Contenido</h1>
           <p className="text-gray-500 mt-1 text-sm">Crea y administra cursos, módulos, lecciones y evaluaciones</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={openAiModal} leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="secondary"
+            onClick={openAiModal}
+            leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}
+            className="border-purple-300 dark:border-purple-700 hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 text-purple-700 dark:text-purple-300"
+          >
             Crear con IA
           </Button>
           <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
