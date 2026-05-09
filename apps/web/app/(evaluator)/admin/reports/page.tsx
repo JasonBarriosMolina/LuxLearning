@@ -105,10 +105,23 @@ export default function ReportsPage() {
 
   // Load filter options once
   useEffect(() => {
-    api.evaluator.students().then((res: any) => {
-      const d = res?.data ?? res;
-      setStudentOptions((d?.students ?? []).map((s: any) => ({ userId: s.userId, studentName: s.studentName })));
-      setCourseOptions((d?.courses ?? []).map((c: any) => ({ id: c.id, title: c.title })));
+    // Load students from Cognito (all STUDENT-role users, regardless of activity)
+    // and courses from admin endpoint
+    Promise.all([
+      api.admin.users.list(),
+      api.admin.courses.list(),
+    ]).then(([usersRes, coursesRes]: any[]) => {
+      const users = Array.isArray(usersRes) ? usersRes : (usersRes?.data ?? []);
+      const allCourses = Array.isArray(coursesRes) ? coursesRes : (coursesRes?.data ?? []);
+      setStudentOptions(
+        users
+          .filter((u: any) => u.role === 'STUDENT')
+          .map((u: any) => ({
+            userId: u.username,
+            studentName: u.name || u.email,
+          }))
+      );
+      setCourseOptions(allCourses.map((c: any) => ({ id: c.id, title: c.title })));
     }).catch(() => {});
   }, []);
 
