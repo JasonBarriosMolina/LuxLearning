@@ -19,14 +19,14 @@ export default function LandingPage() {
 
   if (isLoading || isAuthenticated) {
     return (
-      <div className="min-h-screen bg-charcoal flex items-center justify-center">
+      <div className="min-h-screen bg-[#070712] flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-cta-from border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-charcoal text-white overflow-hidden">
+    <div className="min-h-screen bg-[#070712] text-white overflow-hidden">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-cta-from/15 rounded-full blur-3xl" />
