@@ -83,6 +83,7 @@ export default function ReportsPage() {
   const [mode, setMode] = useState<Mode>('master');
   const [filterStudentId, setFilterStudentId] = useState('');
   const [filterCourseId, setFilterCourseId] = useState('');
+  const [filterStudentCourseId, setFilterStudentCourseId] = useState(''); // sub-filtro curso en modo individual
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -125,9 +126,11 @@ export default function ReportsPage() {
     }).catch(() => {});
   }, []);
 
+  // Resetear sub-filtro de curso cuando cambia el estudiante
+  useEffect(() => { setFilterStudentCourseId(''); }, [filterStudentId]);
+
   // Load report data when filters change
   useEffect(() => {
-    // Don't fetch until required filter is selected
     if ((mode === 'student' && !filterStudentId) || (mode === 'course' && !filterCourseId)) {
       setLoading(false);
       setData(null);
@@ -136,14 +139,17 @@ export default function ReportsPage() {
     setLoading(true);
     setData(null);
     const params: any = { mode };
-    if (mode === 'student' && filterStudentId) params.studentId = filterStudentId;
+    if (mode === 'student' && filterStudentId) {
+      params.studentId = filterStudentId;
+      if (filterStudentCourseId) params.courseId = filterStudentCourseId;
+    }
     if (mode === 'course' && filterCourseId) params.courseId = filterCourseId;
 
     api.admin.reportsV2(params).then((res: any) => {
       setData(res?.data ?? res);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [mode, filterStudentId, filterCourseId]);
+  }, [mode, filterStudentId, filterCourseId, filterStudentCourseId]);
 
   const canLoad = mode === 'master' || (mode === 'student' && filterStudentId) || (mode === 'course' && filterCourseId);
 
@@ -154,7 +160,10 @@ export default function ReportsPage() {
   const buildEmailSubject = () => {
     if (mode === 'student') {
       const s = studentOptions.find((s) => s.userId === filterStudentId);
-      return `Reporte de progreso — ${s?.studentName ?? filterStudentId}`;
+      const c = filterStudentCourseId ? courseOptions.find((c) => c.id === filterStudentCourseId) : null;
+      return c
+        ? `Reporte de progreso — ${s?.studentName ?? filterStudentId} · ${c.title}`
+        : `Reporte de progreso — ${s?.studentName ?? filterStudentId}`;
     }
     if (mode === 'course') {
       const c = courseOptions.find((c) => c.id === filterCourseId);
@@ -305,7 +314,7 @@ ${data.analysis.slice(0, 5).map((a) => `
           {(['master', 'student', 'course'] as Mode[]).map((m) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setFilterStudentId(''); setFilterCourseId(''); }}
+              onClick={() => { setMode(m); setFilterStudentId(''); setFilterCourseId(''); setFilterStudentCourseId(''); }}
               className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${mode === m ? 'bg-cta-from text-white' : 'bg-surface text-gray-600 hover:bg-gray-100'}`}
             >
               {m === 'master' ? '📊 Maestro' : m === 'student' ? '👤 Individual' : '📚 Por Curso'}
@@ -315,17 +324,32 @@ ${data.analysis.slice(0, 5).map((a) => `
 
         {/* Filters */}
         {mode === 'student' && (
-          <div className="no-print">
+          <div className="no-print flex flex-wrap gap-3 items-center">
+            {/* Selector de estudiante */}
             <select
               value={filterStudentId}
               onChange={(e) => setFilterStudentId(e.target.value)}
-              className="w-full sm:w-80 px-4 py-2.5 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cta-from"
+              className="w-full sm:w-72 px-4 py-2.5 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cta-from"
             >
               <option value="">Selecciona un estudiante…</option>
               {studentOptions.map((s) => (
                 <option key={s.userId} value={s.userId}>{s.studentName}</option>
               ))}
             </select>
+
+            {/* Sub-filtro de curso — solo aparece si hay estudiante seleccionado */}
+            {filterStudentId && (
+              <select
+                value={filterStudentCourseId}
+                onChange={(e) => setFilterStudentCourseId(e.target.value)}
+                className="w-full sm:w-64 px-4 py-2.5 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cta-from"
+              >
+                <option value="">Todos los cursos</option>
+                {courseOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            )}
           </div>
         )}
         {mode === 'course' && (

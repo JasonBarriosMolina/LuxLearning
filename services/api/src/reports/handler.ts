@@ -79,8 +79,14 @@ export const handler = async (event: Event) => {
 
       if (mode === 'student' && filterStudentId) {
         scopedStudentIds = new Set([filterStudentId]);
-        const enrolled = allEnrollments.filter((e) => e.userId === filterStudentId).map((e) => e.courseId);
-        scopedCourseIds = new Set(enrolled);
+        if (filterCourseId) {
+          // Sub-filtro: solo ese curso específico
+          scopedCourseIds = new Set([filterCourseId]);
+        } else {
+          // Todos los cursos del estudiante
+          const enrolled = allEnrollments.filter((e) => e.userId === filterStudentId).map((e) => e.courseId);
+          scopedCourseIds = new Set(enrolled);
+        }
       } else if (mode === 'course' && filterCourseId) {
         scopedCourseIds = new Set([filterCourseId]);
         const enrolled = allEnrollments.filter((e) => e.courseId === filterCourseId).map((e) => e.userId);
