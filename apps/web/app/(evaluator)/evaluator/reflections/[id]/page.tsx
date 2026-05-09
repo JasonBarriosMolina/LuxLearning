@@ -504,8 +504,8 @@ export default function ReflectionDetailPage() {
           </div>
         )}
 
-        {/* AI Analysis (compact) */}
-        {reflection.aiResult && (
+        {/* AI Analysis (compact) — se oculta si ya hay un resultado manual fresco */}
+        {reflection.aiResult && !aiCheckResult && (
           <div className={`rounded-xl border-2 px-4 py-3 flex items-center gap-3 ${
             reflection.aiResult.isAI && reflection.aiResult.confidence >= 60
               ? 'border-red-200 bg-red-50'
