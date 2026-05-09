@@ -232,9 +232,9 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_TASKS: tasksTable.tableName,
       DYNAMO_TABLE_REPORT_ANALYSIS: reportAnalysisTable.tableName,
       DYNAMO_TABLE_RECOMMENDATIONS: recommendationsTable.tableName,
-      SES_FROM_EMAIL: 'noreply@luxlearning.com',
+      SES_FROM_EMAIL: 'jason.rbm@gmail.com',
       BEDROCK_REGION: 'us-east-1',
-      FRONTEND_URL: 'https://lux-learning.vercel.app',
+      FRONTEND_URL: 'https://lux-learning-mentor.vercel.app',
       // VAPID keys resolved from Secrets Manager at deploy time (not visible in CF template)
       VAPID_PUBLIC_KEY:  '{{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PUBLIC_KEY}}',
       VAPID_PRIVATE_KEY: '{{resolve:secretsmanager:lux/vapid:SecretString:VAPID_PRIVATE_KEY}}',

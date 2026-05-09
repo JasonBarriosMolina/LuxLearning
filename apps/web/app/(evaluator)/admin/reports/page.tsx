@@ -94,6 +94,7 @@ export default function ReportsPage() {
   const [emailTo, setEmailTo] = useState('');
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   // Recommendations editing
   const [editingRecs, setEditingRecs] = useState<string | null>(null); // moduleId
@@ -174,11 +175,20 @@ ${data.analysis.slice(0, 5).map((a) => `
   const sendEmail = async () => {
     if (!emailTo || !data) return;
     setEmailSending(true);
+    setEmailError('');
     try {
       await api.admin.sendReportEmail({ to: emailTo, subject: buildEmailSubject(), htmlBody: buildEmailHtml() });
       setEmailSent(true);
       setTimeout(() => setEmailSent(false), 4000);
-    } catch {}
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      if (msg.includes('not verified') || msg.includes('sandbox')) {
+        setEmailError('El destinatario no está verificado en SES (modo sandbox). Usa jason.rbm@gmail.com.');
+      } else {
+        setEmailError('Error al enviar el correo. Verifica la dirección e intenta de nuevo.');
+      }
+      setTimeout(() => setEmailError(''), 6000);
+    }
     setEmailSending(false);
   };
 
@@ -222,10 +232,43 @@ ${data.analysis.slice(0, 5).map((a) => `
       {/* Print styles */}
       <style>{`
         @media print {
+          /* Ocultar chrome de la app */
           nav, aside, header, .no-print { display: none !important; }
+
+          /* Liberar el layout del AppShell para que todo el contenido sea imprimible */
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important;
+          }
+          /* AppShell outer wrapper (flex h-screen overflow-hidden) */
+          body > div {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          /* AppShell inner content column */
+          body > div > div {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          /* main scroll container */
+          main {
+            overflow: visible !important;
+            height: auto !important;
+            padding: 0 !important;
+          }
+
+          @page { margin: 1.5cm; }
+
+          .card {
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+            page-break-inside: avoid;
+            margin-bottom: 16px !important;
+          }
           .print-area { display: block !important; }
-          body { background: white !important; }
-          .card { box-shadow: none !important; border: 1px solid #eee !important; }
         }
       `}</style>
 
@@ -576,7 +619,8 @@ ${data.analysis.slice(0, 5).map((a) => `
               <h2 className="font-heading font-bold text-base text-charcoal flex items-center gap-2 mb-4">
                 <Send className="w-5 h-5 text-cta-from" /> Exportar reporte
               </h2>
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row gap-4">
                 {/* Email */}
                 <div className="flex-1 flex gap-2">
                   <input
@@ -602,6 +646,13 @@ ${data.analysis.slice(0, 5).map((a) => `
                 >
                   <FileText className="w-4 h-4" /> Descargar PDF
                 </button>
+              </div>
+              {emailError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{emailError}</p>
+              )}
+              {emailSent && (
+                <p className="text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ Correo enviado correctamente</p>
+              )}
               </div>
             </div>
 
