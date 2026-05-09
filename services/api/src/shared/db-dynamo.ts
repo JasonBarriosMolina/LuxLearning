@@ -185,7 +185,10 @@ export async function getAllLessonProgress(): Promise<LessonProgress[]> {
       TableName: TABLES.PROGRESS,
       ExclusiveStartKey: lastKey,
     }));
-    (result.Items ?? []).forEach((item) => items.push(item as unknown as LessonProgress));
+    // Exclude internal cache entries (e.g. userId='_transcript')
+    (result.Items ?? [])
+      .filter((item) => !String(item['userId'] ?? '').startsWith('_'))
+      .forEach((item) => items.push(item as unknown as LessonProgress));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastKey);
   return items;

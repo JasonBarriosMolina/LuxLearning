@@ -84,8 +84,19 @@ function InviteModal({ onClose, onCreated, courses }: {
         name: name.trim() || undefined,
         courseIds: selectedCourses.length > 0 ? selectedCourses : undefined,
       });
-      onCreated(res as AppUser);
-      setCreated({ email: email.trim(), temporaryPassword: res.temporaryPassword ?? '' });
+      // Unwrap { data: {...} } envelope from Lambda
+      const raw = (res as any)?.data ?? res;
+      const newUser: AppUser = {
+        username: raw.username ?? email.trim(),
+        email: raw.email ?? email.trim(),
+        name: name.trim(),
+        role,
+        enabled: true,
+        status: 'FORCE_CHANGE_PASSWORD',
+        createdAt: new Date().toISOString(),
+      };
+      onCreated(newUser);
+      setCreated({ email: email.trim(), temporaryPassword: raw.temporaryPassword ?? '' });
     } catch (e: any) {
       setError(e?.body?.error ?? e?.message ?? 'Error al crear usuario');
     } finally {
@@ -605,7 +616,7 @@ export default function UsersPage() {
       {/* Modals */}
       {showInvite && (
         <InviteModal
-          onClose={() => setShowInvite(false)}
+          onClose={() => { setShowInvite(false); load(); }}
           onCreated={(u) => setUsers((prev) => [u, ...prev])}
           courses={courses}
         />
