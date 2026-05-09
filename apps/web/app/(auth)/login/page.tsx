@@ -26,15 +26,19 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const translateError = (msg: string) => {
-    if (msg.includes('UserNotConfirmedException')) return 'Por favor confirma tu correo electrónico antes de iniciar sesión.';
-    if (msg.includes('NotAuthorizedException')) return 'Correo o contraseña incorrectos.';
-    if (msg.includes('UserNotFoundException')) return 'No existe una cuenta con ese correo electrónico.';
-    if (msg.includes('UserAlreadyAuthenticatedException') || msg.includes('There is already')) return 'Ya hay una sesión activa. Por favor recarga la página.';
-    if (msg.includes('NetworkError') || msg.includes('network')) return 'Error de conexión. Verifica tu internet e intenta de nuevo.';
-    if (msg.includes('TooManyRequests') || msg.includes('LimitExceeded')) return 'Demasiados intentos. Por favor espera unos minutos.';
-    if (msg.includes('PasswordResetRequired')) return 'Debes restablecer tu contraseña. Revisa tu correo electrónico.';
-    if (msg.includes('InvalidPasswordException') || msg.includes('Password does not conform')) return 'La contraseña debe tener al menos 8 caracteres, mayúsculas, minúsculas y números.';
+  const translateError = (err: unknown) => {
+    // Amplify v6 puts the Cognito exception type in err.name, description in err.message
+    const name = err instanceof Error ? (err as any).name ?? '' : '';
+    const msg  = err instanceof Error ? err.message ?? '' : '';
+    const key  = `${name} ${msg}`;
+    if (key.includes('UserNotConfirmed'))       return 'Por favor confirma tu correo electrónico antes de iniciar sesión.';
+    if (key.includes('NotAuthorized') || key.includes('Incorrect username or password')) return 'Correo o contraseña incorrectos.';
+    if (key.includes('UserNotFound'))           return 'No existe una cuenta con ese correo electrónico.';
+    if (key.includes('UserAlreadyAuthenticated') || key.includes('There is already')) return 'Ya hay una sesión activa. Por favor recarga la página.';
+    if (key.includes('NetworkError') || key.includes('network') || key.includes('Failed to fetch')) return 'Error de conexión. Verifica tu internet e intenta de nuevo.';
+    if (key.includes('TooManyRequests') || key.includes('LimitExceeded')) return 'Demasiados intentos. Por favor espera unos minutos.';
+    if (key.includes('PasswordResetRequired'))  return 'Debes restablecer tu contraseña. Revisa tu correo electrónico.';
+    if (key.includes('InvalidPassword') || key.includes('Password does not conform')) return 'La contraseña debe tener al menos 8 caracteres, mayúsculas, minúsculas y números.';
     return 'Error al iniciar sesión. Por favor intenta de nuevo.';
   };
 
@@ -53,7 +57,7 @@ function LoginForm() {
       const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' ? '/evaluator/dashboard' : '/dashboard');
       router.push(destination);
     } catch (err: unknown) {
-      setError(translateError(err instanceof Error ? err.message : ''));
+      setError(translateError(err));
     } finally {
       setLoading(false);
     }
@@ -71,7 +75,7 @@ function LoginForm() {
       const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' ? '/evaluator/dashboard' : '/dashboard');
       router.push(destination);
     } catch (err: unknown) {
-      setError(translateError(err instanceof Error ? err.message : ''));
+      setError(translateError(err));
     } finally {
       setLoading(false);
     }
