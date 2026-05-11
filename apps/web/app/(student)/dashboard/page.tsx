@@ -298,7 +298,7 @@ export default function StudentDashboardPage() {
                             ) : mod.reflectionStatus === 'APPROVED' ? (
                               <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
                             ) : mod.quizPassed ? (
-                              <Clock className="w-3.5 h-3.5 text-amber-500" title="Reflexión pendiente" />
+                              <Clock className="w-3.5 h-3.5 text-amber-500" />
                             ) : null}
                           </div>
                           <p className="text-sm font-medium text-charcoal line-clamp-1">{mod.title}</p>
