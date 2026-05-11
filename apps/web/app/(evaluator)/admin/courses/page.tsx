@@ -42,13 +42,17 @@ export default function AdminCoursesPage() {
 
   // AI wizard state
   const [aiModalOpen, setAiModalOpen] = useState(false);
-  const [aiStep, setAiStep] = useState<1 | 2 | 3>(1);
+  const [aiStep, setAiStep] = useState<1 | 2 | 3 | 4>(1);
   const [aiMethod, setAiMethod] = useState<'topic' | 'url'>('topic');
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
   const [aiPublishing, setAiPublishing] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [aiPublishedCourseId, setAiPublishedCourseId] = useState<string | null>(null);
+  const [aiStudentList, setAiStudentList] = useState<{ username: string; email: string; name: string }[]>([]);
+  const [aiSelectedStudents, setAiSelectedStudents] = useState<string[]>([]);
+  const [aiAssigning, setAiAssigning] = useState(false);
 
   const load = async () => {
     try {
@@ -117,6 +121,9 @@ export default function AdminCoursesPage() {
     setAiInput('');
     setAiResult(null);
     setAiError('');
+    setAiPublishedCourseId(null);
+    setAiStudentList([]);
+    setAiSelectedStudents([]);
     setAiModalOpen(true);
   };
 
@@ -140,13 +147,42 @@ export default function AdminCoursesPage() {
     setAiPublishing(true);
     setAiError('');
     try {
-      await api.admin.courses.aiPublish(aiResult);
-      setAiModalOpen(false);
+      const res = await api.admin.courses.aiPublish(aiResult);
+      const courseId = (res as any).data?.id ?? (res as any).id;
+      setAiPublishedCourseId(courseId);
+      // Load students for step 4
+      const usersRes = await api.admin.users.list();
+      const allUsers = (usersRes as any).data ?? [];
+      const students = allUsers.filter((u: any) => u.role === 'STUDENT' && u.enabled);
+      setAiStudentList(students);
+      setAiSelectedStudents(students.map((s: any) => s.username));
+      setAiStep(4);
       await load();
     } catch (err: any) {
       setAiError(err.message ?? 'Error al publicar el curso');
     } finally {
       setAiPublishing(false);
+    }
+  };
+
+  const handleAiAssign = async () => {
+    if (!aiPublishedCourseId || aiSelectedStudents.length === 0) {
+      setAiModalOpen(false);
+      return;
+    }
+    setAiAssigning(true);
+    try {
+      await Promise.all(
+        aiSelectedStudents.map((username) =>
+          api.admin.users.addEnrollment(username, aiPublishedCourseId).catch(() => {})
+        )
+      );
+      setAiModalOpen(false);
+    } catch {
+      // non-fatal
+      setAiModalOpen(false);
+    } finally {
+      setAiAssigning(false);
     }
   };
 
@@ -378,16 +414,16 @@ export default function AdminCoursesPage() {
         <div className="space-y-5">
           {/* Step indicator */}
           <div className="flex items-center gap-2">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center gap-2">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                   aiStep >= s ? 'bg-gradient-to-br from-cta-from to-cta-to text-white' : 'bg-gray-100 text-gray-400'
                 }`}>{s}</div>
-                {s < 3 && <div className={`w-8 h-0.5 ${aiStep > s ? 'bg-cta-from' : 'bg-gray-200'}`} />}
+                {s < 4 && <div className={`w-6 h-0.5 ${aiStep > s ? 'bg-cta-from' : 'bg-gray-200'}`} />}
               </div>
             ))}
             <span className="ml-2 text-xs text-gray-400">
-              {aiStep === 1 ? 'Selecciona método' : aiStep === 2 ? 'Ingresa información' : 'Revisa y publica'}
+              {aiStep === 1 ? 'Método' : aiStep === 2 ? 'Información' : aiStep === 3 ? 'Revisar' : 'Asignar'}
             </span>
           </div>
 
@@ -481,6 +517,17 @@ export default function AdminCoursesPage() {
               <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-100 dark:border-blue-900/40">
                 <p className="font-heading font-bold text-charcoal text-lg">{aiResult.title}</p>
                 <p className="text-sm text-gray-500 mt-1">{aiResult.description}</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                    {(aiResult.modules ?? []).length} módulos
+                  </span>
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                    {(aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0)} lecciones
+                  </span>
+                  <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                    {(aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0)} preguntas de quiz
+                  </span>
+                </div>
               </div>
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {(aiResult.modules ?? []).map((m: any, i: number) => (
@@ -489,9 +536,14 @@ export default function AdminCoursesPage() {
                     <p className="text-xs text-gray-500 mt-0.5 mb-2">{m.description}</p>
                     <div className="space-y-0.5">
                       {(m.lessons ?? []).map((l: any, j: number) => (
-                        <p key={j} className="text-xs text-gray-400 pl-3 border-l-2 border-gray-200">{l.order}. {l.title}</p>
+                        <p key={j} className={`text-xs pl-3 border-l-2 ${l.type === 'video' ? 'text-purple-500 border-purple-200' : 'text-gray-400 border-gray-200'}`}>
+                          {l.order}. {l.title} {l.type === 'video' ? '🎬' : '📄'}
+                        </p>
                       ))}
                     </div>
+                    {(m.questions ?? []).length > 0 && (
+                      <p className="text-xs text-emerald-600 mt-1.5 pl-3">✓ {m.questions.length} preguntas de quiz generadas</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -505,6 +557,89 @@ export default function AdminCoursesPage() {
                 <Button variant="secondary" onClick={() => { setAiStep(2); setAiResult(null); }}>Regenerar</Button>
                 <Button onClick={handleAiPublish} loading={aiPublishing} leftIcon={<CheckCircle className="w-4 h-4" />}>
                   Publicar curso
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4 — Assign students */}
+          {aiStep === 4 && (
+            <div className="space-y-4">
+              <div className="p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 rounded-xl border border-emerald-200">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="w-8 h-8 text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="font-heading font-bold text-charcoal">¡Curso publicado exitosamente!</p>
+                    <p className="text-sm text-gray-500 mt-0.5">Ahora puedes asignarlo a tus estudiantes.</p>
+                  </div>
+                </div>
+              </div>
+
+              {aiStudentList.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="text-sm">No hay estudiantes registrados todavía.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-charcoal">Selecciona estudiantes a inscribir</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAiSelectedStudents(aiStudentList.map((s) => s.username))}
+                        className="text-xs text-cta-from font-medium hover:opacity-70"
+                      >
+                        Todos
+                      </button>
+                      <span className="text-xs text-gray-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setAiSelectedStudents([])}
+                        className="text-xs text-gray-400 font-medium hover:opacity-70"
+                      >
+                        Ninguno
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto space-y-1 border border-border rounded-xl p-2">
+                    {aiStudentList.map((s) => {
+                      const checked = aiSelectedStudents.includes(s.username);
+                      return (
+                        <label key={s.username} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface cursor-pointer transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setAiSelectedStudents((prev) =>
+                              checked ? prev.filter((u) => u !== s.username) : [...prev, s.username]
+                            )}
+                            className="w-4 h-4 accent-cta-from"
+                          />
+                          <div className="w-8 h-8 rounded-full bg-cta-gradient flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {(s.name || s.email)[0]?.toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-charcoal truncate">{s.name || s.email}</p>
+                            <p className="text-xs text-gray-400 truncate">{s.email}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-400">{aiSelectedStudents.length} de {aiStudentList.length} estudiantes seleccionados</p>
+                </>
+              )}
+
+              <div className="flex justify-between">
+                <Button variant="secondary" onClick={() => setAiModalOpen(false)}>
+                  Omitir
+                </Button>
+                <Button
+                  onClick={handleAiAssign}
+                  loading={aiAssigning}
+                  disabled={aiSelectedStudents.length === 0}
+                  leftIcon={<CheckCircle className="w-4 h-4" />}
+                >
+                  Asignar y cerrar
                 </Button>
               </div>
             </div>

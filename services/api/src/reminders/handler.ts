@@ -4,7 +4,7 @@
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getAllLessonProgress, getAllEnrollments, getAllReflections } from '../shared/db-dynamo';
+import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll } from '../shared/db-dynamo';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -12,8 +12,8 @@ const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://lux-learning.vercel.app';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 
-// Days of inactivity before sending a reminder
-const INACTIVITY_DAYS = 7;
+// Hours of inactivity before sending a reminder
+const INACTIVITY_HOURS = 72;
 // Don't send a reminder if we sent one less than this many days ago
 // (we store in a simple in-memory map; Lambda is stateless, so this is reset per invocation)
 // For a stateless check we use DynamoDB lastActivity timestamp only.
@@ -59,29 +59,27 @@ export const handler = async () => {
   console.log('[Reminders] Starting daily reminder check...');
 
   try {
-    const [allProgress, allReflections, allEnrollments] = await Promise.all([
+    const [allProgress, allReflections, allEnrollments, allLastSeen] = await Promise.all([
       getAllLessonProgress(),
       getAllReflections(),
       getAllEnrollments(),
+      getLastSeenAll(),
     ]);
 
     const now = Date.now();
 
-    // Build last activity timestamp per user
-    const lastActivity = new Map<string, number>();
+    // Build last seen map from heartbeat (most accurate) — fallback to activity
+    const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, new Date(ls.lastSeen).getTime()]));
 
+    // Build last activity timestamp per user (fallback)
+    const lastActivity = new Map<string, number>();
     allProgress.forEach((p) => {
       const t = new Date(p.completedAt).getTime();
-      if (!lastActivity.has(p.userId) || t > lastActivity.get(p.userId)!) {
-        lastActivity.set(p.userId, t);
-      }
+      if (!lastActivity.has(p.userId) || t > lastActivity.get(p.userId)!) lastActivity.set(p.userId, t);
     });
-
     allReflections.forEach((r) => {
       const t = new Date(r.submittedAt).getTime();
-      if (!lastActivity.has(r.userId) || t > lastActivity.get(r.userId)!) {
-        lastActivity.set(r.userId, t);
-      }
+      if (!lastActivity.has(r.userId) || t > lastActivity.get(r.userId)!) lastActivity.set(r.userId, t);
     });
 
     // All enrolled unique users
@@ -91,12 +89,13 @@ export const handler = async () => {
     let skipped = 0;
 
     for (const userId of enrolledUsers) {
-      const last = lastActivity.get(userId);
-      const daysInactive = last
-        ? Math.floor((now - last) / 86400000)
-        : INACTIVITY_DAYS + 1; // never active → over threshold
+      // Use heartbeat lastSeen if available, else fall back to last activity
+      const lastTs = lastSeenMap.get(userId) ?? lastActivity.get(userId);
+      const hoursInactive = lastTs
+        ? Math.floor((now - lastTs) / 3600000)
+        : INACTIVITY_HOURS + 1; // never active → over threshold
 
-      if (daysInactive < INACTIVITY_DAYS) {
+      if (hoursInactive < INACTIVITY_HOURS) {
         skipped++;
         continue;
       }
@@ -119,12 +118,12 @@ export const handler = async () => {
           Destination: { ToAddresses: [email] },
           Message: {
             Subject: { Data: `${name ? name + ', t' : 'T'}e echamos de menos en Lux Learning 🌟`, Charset: 'UTF-8' },
-            Body: { Html: { Data: reminderEmailHtml(name, daysInactive), Charset: 'UTF-8' } },
+            Body: { Html: { Data: reminderEmailHtml(name, Math.floor(hoursInactive / 24) || 1), Charset: 'UTF-8' } },
           },
         }));
 
         sent++;
-        console.log(`[Reminders] Sent to ${email} (${daysInactive}d inactive)`);
+        console.log(`[Reminders] Sent to ${email} (${hoursInactive}h inactive)`);
       } catch (err) {
         console.warn(`[Reminders] Failed for userId ${userId}:`, err);
         skipped++;

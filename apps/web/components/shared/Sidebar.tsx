@@ -16,6 +16,7 @@ import {
   Settings2,
   BarChart2,
   CalendarCheck,
+  UserPlus,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -93,6 +94,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/reports',
     label: 'Reportes',
     icon: <BarChart2 className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/admin/assign-courses',
+    label: 'Asignar Cursos',
+    icon: <UserPlus className="w-5 h-5" />,
     roles: ['EVALUATOR', 'ADMIN'],
   },
   {

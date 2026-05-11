@@ -95,7 +95,17 @@
       "Bash(ls \"D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\services\\\\\\\\api\\\\\\\\src\")",
       "Bash(cmd.exe /c \"dir D:\\\\\\\\InHouse\\\\\\\\Lux\\\\\\\\services\\\\\\\\api\\\\\\\\src\")",
       "Bash(aws ssm *)",
-      "Bash(python3 -c \"import json,sys; fns=json.load\\(sys.stdin\\)['Functions']; [print\\(f['FunctionName']\\) for f in fns]\")"
+      "Bash(python3 -c \"import json,sys; fns=json.load\\(sys.stdin\\)['Functions']; [print\\(f['FunctionName']\\) for f in fns]\")",
+      "Bash(python -c \"import sys,json; fns=json.load\\(sys.stdin\\)['Functions']; [print\\(f['FunctionName'], f['Timeout'], f['MemorySize']\\) for f in fns if 'lux' in f['FunctionName'].lower\\(\\) or 'Lux' in f['FunctionName']]\")",
+      "Bash(git commit -m 'docs: rewrite CONTEXT.md with full technical details and business rules *)",
+      "Bash(node_modules/.bin/next build *)",
+      "Bash(powershell.exe -Command \"Select-String 'tailwind' 'D:\\\\InHouse\\\\Lux\\\\apps\\\\web\\\\package.json'\")",
+      "PowerShell($bundle = Invoke-WebRequest -Uri \"https://lux-learning-tau.vercel.app/_next/static/chunks/app/\\(evaluator\\)/admin/courses/page-6fac9cefd5cf23c2.js\" -UseBasicParsing; $bundle.Content | Select-String \"Crear con IA|openAiModal|Sparkles|aiModal\" | Select-Object -First 5)",
+      "PowerShell(cd \"D:\\\\InHouse\\\\Lux\"; git log --oneline --all -- \"apps/web/.env.local\" 2>&1 | Select-Object -First 5)",
+      "Bash(vercel --prod --yes)",
+      "Bash(vercel ls *)",
+      "Bash(vercel alias *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Estudiantes en Cognito: {len\\(d[\\\\\"Users\\\\\"]\\)}'\\)\")"
     ]
   }
 }

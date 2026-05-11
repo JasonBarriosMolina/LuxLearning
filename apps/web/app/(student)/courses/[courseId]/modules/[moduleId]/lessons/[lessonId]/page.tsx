@@ -316,19 +316,32 @@ export default function LessonPage() {
         </button>
       </div>
 
-      {/* YouTube embed */}
-      <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
-        <iframe
-          className="w-full h-full"
-          src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`}
-          title={lesson.title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
-      </div>
+      {/* Lesson content: text or video */}
+      {lesson.type === 'text' || !lesson.youtubeId ? (
+        <div className="card">
+          {lesson.content ? (
+            <div
+              className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal"
+              dangerouslySetInnerHTML={{ __html: lesson.content }}
+            />
+          ) : (
+            <p className="text-gray-400 text-sm text-center py-8">El contenido de esta lección no está disponible aún.</p>
+          )}
+        </div>
+      ) : (
+        <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
+          <iframe
+            className="w-full h-full"
+            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`}
+            title={lesson.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )}
 
-      {/* Transcript toggle */}
-      {lesson.youtubeId && (
+      {/* Transcript toggle — only for video lessons */}
+      {(lesson.type !== 'text' && lesson.youtubeId) && (
         <div className="rounded-xl border border-border overflow-hidden">
           <button
             onClick={handleTranscriptToggle}

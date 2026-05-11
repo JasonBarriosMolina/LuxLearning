@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Clock, CheckCircle, XCircle, ArrowRight, AlertTriangle,
   Users, ClipboardList, BookOpen, MoreVertical,
-  ChevronRight, Zap,
+  ChevronRight, Zap, WifiOff, Send, Loader2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -18,6 +18,14 @@ type EnrichedReflection = Reflection & {
   moduleTitle?: string;
   courseTitle?: string;
   studentName?: string;
+};
+
+type StudentPresence = {
+  userId: string;
+  studentName?: string;
+  lastSeen?: string | null;
+  presenceStatus?: 'online' | 'active' | 'inactive';
+  courses: { courseId: string; title: string; progressPct: number }[];
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -75,10 +83,12 @@ export default function EvaluatorDashboardPage() {
   const { email, name } = useAuth() as any;
   const router = useRouter();
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
+  const [students, setStudents] = useState<StudentPresence[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'course' | 'student'>('course');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
 
   const displayName = name || email?.split('@')[0] || 'Evaluador';
 
@@ -88,7 +98,8 @@ export default function EvaluatorDashboardPage() {
       api.evaluator.students(),
     ]).then(([refRes, studRes]) => {
       setReflections((refRes as any).data ?? []);
-      setStudents((studRes as any).data?.students ?? []);
+      const rawStudents = (studRes as any).data?.students ?? [];
+      setStudents(rawStudents);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -103,6 +114,42 @@ export default function EvaluatorDashboardPage() {
       const age = Date.now() - new Date(r.submittedAt).getTime();
       return age > 36 * 3600 * 1000;
     }), [pending]);
+
+  // Presence counts
+  const onlineStudents = useMemo(() => students.filter((s) => s.presenceStatus === 'online'), [students]);
+  const activeStudents = useMemo(() => students.filter((s) => s.presenceStatus === 'active'), [students]);
+  const inactiveStudents = useMemo(() => students.filter((s) => s.presenceStatus === 'inactive'), [students]);
+  // Warning zone: active students with lastSeen between 48-72h (approaching inactive)
+  const approachingInactive = useMemo(() => students.filter((s) => {
+    if (!s.lastSeen) return false;
+    const diff = Date.now() - new Date(s.lastSeen).getTime();
+    return diff >= 48 * 3600 * 1000 && diff < 72 * 3600 * 1000;
+  }), [students]);
+
+  const formatHoursAgo = (lastSeen?: string | null) => {
+    if (!lastSeen) return null;
+    const diff = Date.now() - new Date(lastSeen).getTime();
+    const h = Math.round(diff / 3600000);
+    return h;
+  };
+
+  const handleSendReminder = async (student: StudentPresence) => {
+    setSendingReminder(student.userId);
+    try {
+      const hoursInactive = formatHoursAgo(student.lastSeen) ?? 72;
+      const courseTitle = student.courses?.[0]?.title;
+      await api.evaluator.sendReminder({
+        userId: student.userId,
+        studentEmail: student.userId, // userId is email in Cognito
+        studentName: student.studentName,
+        hoursInactive,
+        courseTitle,
+      });
+      setReminderSent((prev) => new Set([...prev, student.userId]));
+    } catch { /* non-fatal */ } finally {
+      setSendingReminder(null);
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
@@ -160,11 +207,11 @@ export default function EvaluatorDashboardPage() {
             ring: '',
           },
           {
-            label: 'Estudiantes activos',
-            value: students.length,
-            icon: <Users className="w-5 h-5 text-purple-500" />,
-            bg: 'bg-purple-50',
-            ring: '',
+            label: 'En línea ahora',
+            value: onlineStudents.length,
+            icon: <Users className="w-5 h-5 text-emerald-500" />,
+            bg: 'bg-emerald-50',
+            ring: onlineStudents.length > 0 ? 'ring-2 ring-emerald-200' : '',
           },
         ].map((s) => {
           const inner = (
@@ -222,6 +269,76 @@ export default function EvaluatorDashboardPage() {
                   </span>
                   <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
                 </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Approaching inactive warning ── */}
+      {!loading && approachingInactive.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <p className="text-sm font-bold text-amber-700">
+              {approachingInactive.length} estudiante{approachingInactive.length > 1 ? 's' : ''} próximo{approachingInactive.length > 1 ? 's' : ''} a inactivarse (entre 48-72h sin conectarse)
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {approachingInactive.map((s) => (
+              <span key={s.userId} className="text-xs bg-white border border-amber-200 text-amber-700 px-2.5 py-1 rounded-full font-medium">
+                {s.studentName ?? s.userId}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Inactive students panel ── */}
+      {!loading && inactiveStudents.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <WifiOff className="w-5 h-5 text-red-500" />
+              <h2 className="font-heading font-bold text-base text-red-700">
+                {inactiveStudents.length} estudiante{inactiveStudents.length > 1 ? 's' : ''} inactivo{inactiveStudents.length > 1 ? 's' : ''} (+72h sin conectarse)
+              </h2>
+            </div>
+            <Link href="/evaluator/students" className="text-xs text-red-600 font-semibold hover:opacity-70">
+              Ver todos →
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {inactiveStudents.slice(0, 5).map((s) => {
+              const hoursAgo = formatHoursAgo(s.lastSeen);
+              const timeLabel = hoursAgo != null
+                ? hoursAgo >= 48 ? `${Math.round(hoursAgo / 24)}d sin conectarse` : `${hoursAgo}h sin conectarse`
+                : 'Sin actividad';
+              const alreadySent = reminderSent.has(s.userId);
+              const isSending = sendingReminder === s.userId;
+              return (
+                <div key={s.userId} className="flex items-center gap-3 bg-white rounded-xl p-3">
+                  <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-500 text-xs font-bold shrink-0">
+                    {(s.studentName ?? s.userId)[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-charcoal truncate">{s.studentName ?? s.userId}</p>
+                    <p className="text-xs text-red-500">{timeLabel}</p>
+                  </div>
+                  <button
+                    onClick={() => !alreadySent && handleSendReminder(s)}
+                    disabled={isSending || alreadySent}
+                    className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0 ${
+                      alreadySent
+                        ? 'bg-emerald-100 text-emerald-600 cursor-default'
+                        : 'bg-red-100 text-red-600 hover:bg-red-200'
+                    }`}
+                    title="Enviar recordatorio por email"
+                  >
+                    {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : alreadySent ? <CheckCircle className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
+                    {alreadySent ? 'Enviado' : 'Recordatorio'}
+                  </button>
+                </div>
               );
             })}
           </div>

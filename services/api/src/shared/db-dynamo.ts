@@ -600,3 +600,26 @@ export async function saveRecommendations(moduleId: string, items: CurriculumRes
     Item: { moduleId, sk: 'RECS', items, updatedAt: new Date().toISOString() },
   }));
 }
+
+// ─── Student Presence (heartbeat / lastSeen) ──────────────────────────────────
+// Stored in PROGRESS table using special key: userId = userId, sk = 'HEARTBEAT'
+
+export async function updateLastSeen(userId: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: 'HEARTBEAT', lastSeen: new Date().toISOString() },
+  }));
+}
+
+export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: string }[]> {
+  const result = await ddb.send(new ScanCommand({
+    TableName: TABLES.PROGRESS,
+    FilterExpression: 'sk = :hb',
+    ExpressionAttributeValues: { ':hb': 'HEARTBEAT' },
+    ProjectionExpression: 'userId, lastSeen',
+  }));
+  return (result.Items ?? []).map((item) => ({
+    userId: String(item['userId'] ?? ''),
+    lastSeen: String(item['lastSeen'] ?? ''),
+  })).filter((item) => item.userId && !item.userId.startsWith('_'));
+}

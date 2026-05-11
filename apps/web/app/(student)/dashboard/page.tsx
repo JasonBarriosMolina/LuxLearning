@@ -249,9 +249,6 @@ export default function StudentDashboardPage() {
                       <h3 className="font-heading font-bold text-lg text-charcoal truncate">
                         {course.title}
                       </h3>
-                      {course.isPilot && (
-                        <Badge variant="info">Piloto</Badge>
-                      )}
                     </div>
                     <p className="text-sm text-gray-500 line-clamp-2">{course.description}</p>
                   </div>
@@ -274,10 +271,18 @@ export default function StudentDashboardPage() {
                         ? Math.round((mod.lessons.filter((l) => l.completed).length / mod.lessons.length) * 100)
                         : 0;
 
+                      // Smart navigation: go to the pending state of the module
+                      const getModuleHref = () => {
+                        if (!mod.unlocked) return '#';
+                        if (!mod.quizPassed) return `/courses/${course.id}/modules/${mod.id}`;
+                        if (mod.reflectionStatus !== 'APPROVED') return `/courses/${course.id}/modules/${mod.id}/reflection`;
+                        return `/courses/${course.id}/modules/${mod.id}`;
+                      };
+
                       return (
                         <Link
                           key={mod.id}
-                          href={mod.unlocked ? `/courses/${course.id}/modules/${mod.id}` : '#'}
+                          href={getModuleHref()}
                           className={`p-3 rounded-xl border transition-all duration-200 ${
                             mod.unlocked
                               ? 'border-border hover:border-cta-from hover:shadow-card cursor-pointer'
@@ -292,6 +297,8 @@ export default function StudentDashboardPage() {
                               <Lock className="w-3.5 h-3.5 text-gray-400" />
                             ) : mod.reflectionStatus === 'APPROVED' ? (
                               <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                            ) : mod.quizPassed ? (
+                              <Clock className="w-3.5 h-3.5 text-amber-500" title="Reflexión pendiente" />
                             ) : null}
                           </div>
                           <p className="text-sm font-medium text-charcoal line-clamp-1">{mod.title}</p>

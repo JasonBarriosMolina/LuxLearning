@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { api } from '@/lib/api';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -11,6 +12,13 @@ interface AppShellProps {
 
 export function AppShell({ children, title }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Heartbeat: update lastSeen every 2 minutes while app is open
+  useEffect(() => {
+    api.heartbeat();
+    const interval = setInterval(() => api.heartbeat(), 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex h-screen bg-surface dark:bg-[#0F0F1A] overflow-hidden">

@@ -301,7 +301,7 @@ export const handler = async (event: Event) => {
 
     // ── GET /admin/users ────────────────────────────────────────────────────
     if (path === '/admin/users' && method === 'GET') {
-      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
 
       // Fetch all users + group memberships in parallel
       const [usersRes, evaluatorsRes, adminsRes] = await Promise.all([
@@ -468,7 +468,7 @@ export const handler = async (event: Event) => {
     // ── /admin/users/:username/enrollments ──────────────────────────────────
     const userEnrollmentsMatch = path.match(/^\/admin\/users\/([^/]+)\/enrollments$/);
     if (userEnrollmentsMatch) {
-      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
       const username = decodeURIComponent(userEnrollmentsMatch[1]!);
 
       if (method === 'GET') {
@@ -615,7 +615,7 @@ export const handler = async (event: Event) => {
         }
       }
 
-      const prompt = `Eres un experto en diseño instruccional. Genera un curso en español con 7-10 módulos sobre el siguiente tema o contenido:
+      const prompt = `Eres un experto en diseño instruccional. Genera un curso completo en español con 7-10 módulos sobre el siguiente tema o contenido:
 
 """
 ${context.slice(0, 4000)}
@@ -631,13 +631,39 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin comentarios):
       "description": "Descripción del módulo",
       "order": 1,
       "lessons": [
-        { "title": "Título de la lección", "description": "Descripción breve", "order": 1 }
+        { "title": "Introducción — [tema del módulo]", "order": 1, "type": "video", "content": "" },
+        { "title": "Título lección de texto", "order": 2, "type": "text", "content": "Escribe aquí 3-5 párrafos educativos y detallados sobre este subtema específico del módulo. El contenido debe ser informativo, claro y útil para el estudiante." },
+        { "title": "Título lección de texto", "order": 3, "type": "text", "content": "3-5 párrafos sobre otro subtema..." },
+        { "title": "Título lección de texto", "order": 4, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Título lección de texto", "order": 5, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Título lección de texto", "order": 6, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Título lección de texto", "order": 7, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Título lección de texto", "order": 8, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Título lección de texto", "order": 9, "type": "text", "content": "3-5 párrafos..." },
+        { "title": "Resumen y cierre — [tema del módulo]", "order": 10, "type": "video", "content": "" }
+      ],
+      "questions": [
+        { "text": "¿Pregunta de opción múltiple sobre el módulo?", "options": ["Opción A", "Opción B", "Opción C", "Opción D"], "correctIndex": 0, "order": 1 },
+        { "text": "¿Pregunta 2?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 2 },
+        { "text": "¿Pregunta 3?", "options": ["A", "B", "C", "D"], "correctIndex": 2, "order": 3 },
+        { "text": "¿Pregunta 4?", "options": ["A", "B", "C", "D"], "correctIndex": 0, "order": 4 },
+        { "text": "¿Pregunta 5?", "options": ["A", "B", "C", "D"], "correctIndex": 3, "order": 5 },
+        { "text": "¿Pregunta 6?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 6 },
+        { "text": "¿Pregunta 7?", "options": ["A", "B", "C", "D"], "correctIndex": 0, "order": 7 },
+        { "text": "¿Pregunta 8?", "options": ["A", "B", "C", "D"], "correctIndex": 2, "order": 8 },
+        { "text": "¿Pregunta 9?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 9 },
+        { "text": "¿Pregunta 10?", "options": ["A", "B", "C", "D"], "correctIndex": 3, "order": 10 }
       ]
     }
   ]
 }
 
-Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura sea coherente y progresiva.`;
+REGLAS ESTRICTAS QUE DEBES CUMPLIR:
+1. Cada módulo tiene EXACTAMENTE 10 lecciones: orden 1 y 10 son type "video" con content vacío "", órdenes 2 al 9 son type "text" con content de 3-5 párrafos educativos reales sobre el subtema
+2. Cada módulo tiene EXACTAMENTE 10 questions con 4 opciones (A, B, C, D) cada una, basadas en el contenido del módulo
+3. Las preguntas deben ser específicas al tema del módulo, no genéricas
+4. El contenido de las lecciones de texto debe ser educativo, específico y en español
+5. No incluyas markdown ni comentarios en el JSON`;
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({
@@ -646,7 +672,7 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 4000,
+            max_tokens: 8000,
             messages: [{ role: 'user', content: prompt }],
           }),
         })
@@ -666,12 +692,17 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
       const { title, description, modules } = body as {
         title?: string;
         description?: string;
-        modules?: { title: string; description: string; order: number; lessons: { title: string; description: string; order: number }[] }[];
+        modules?: {
+          title: string;
+          description: string;
+          order: number;
+          lessons: { title: string; order: number; type?: string; content?: string }[];
+          questions?: { text: string; options: string[]; correctIndex: number; order: number }[];
+        }[];
       };
       if (!title || !modules || !Array.isArray(modules)) return badRequest('title y modules son requeridos');
 
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
-      const totalLessons = modules.reduce((sum, m) => sum + (m.lessons?.length ?? 0), 0);
 
       const course = await prisma.course.create({
         data: {
@@ -693,9 +724,19 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
                   title: l.title,
                   order: l.order,
                   duration: '5 min',
+                  type: l.type ?? 'video',
                   youtubeId: '',
+                  content: l.content ?? null,
                   points: [],
                   tip: '',
+                })),
+              },
+              questions: {
+                create: (m.questions ?? []).map((q) => ({
+                  text: q.text,
+                  options: q.options,
+                  correctIndex: Number(q.correctIndex),
+                  order: q.order,
                 })),
               },
             })),
@@ -704,7 +745,10 @@ Cada módulo debe tener entre 3 y 6 lecciones. Asegúrate de que la estructura s
         include: {
           modules: {
             orderBy: { order: 'asc' },
-            include: { lessons: { orderBy: { order: 'asc' } } },
+            include: {
+              lessons: { orderBy: { order: 'asc' } },
+              questions: { orderBy: { order: 'asc' } },
+            },
           },
         },
       });

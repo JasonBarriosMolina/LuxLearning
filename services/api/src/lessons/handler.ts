@@ -7,6 +7,7 @@ import {
   getHighlights, saveHighlights,
   getFavorites, toggleFavorite,
   getTranscript, saveTranscript,
+  updateLastSeen,
 } from '../shared/db-dynamo';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
@@ -150,6 +151,12 @@ export const handler = async (event: Event) => {
       const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
       const reply = parsed.content?.[0]?.text ?? '';
       return ok({ reply });
+    }
+
+    // ── POST /student/heartbeat ───────────────────────────────────────────────
+    if (method === 'POST' && path === '/student/heartbeat') {
+      if (userId) await updateLastSeen(userId);
+      return ok({ ok: true });
     }
 
     return badRequest('Unknown route');

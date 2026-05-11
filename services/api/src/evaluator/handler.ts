@@ -11,7 +11,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
   webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
 }
 import { getPrismaClient } from '../shared/db-neon';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
@@ -378,7 +378,7 @@ export const handler = async (event: Event) => {
 
     // GET /evaluator/students — full progress per student
     if (method === 'GET' && path === '/evaluator/students') {
-      const [allProgress, allReflections, allAttempts, allEnrollments, courses] = await Promise.all([
+      const [allProgress, allReflections, allAttempts, allEnrollments, courses, allLastSeen] = await Promise.all([
         getAllLessonProgress(),
         getAllReflections(),
         getAllQuizAttempts(),
@@ -393,7 +393,20 @@ export const handler = async (event: Event) => {
             },
           },
         }),
+        getLastSeenAll(),
       ]);
+
+      // Build lastSeen map
+      const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, ls.lastSeen]));
+      const now = Date.now();
+      const getPresenceStatus = (userId: string): 'online' | 'active' | 'inactive' => {
+        const ls = lastSeenMap.get(userId);
+        if (!ls) return 'inactive';
+        const diffMs = now - new Date(ls).getTime();
+        if (diffMs < 5 * 60 * 1000) return 'online';       // < 5 min = online
+        if (diffMs < 72 * 60 * 60 * 1000) return 'active'; // < 72h = active
+        return 'inactive';
+      };
 
       // Build per-student maps
       type StudentAccum = {
@@ -469,17 +482,72 @@ export const handler = async (event: Event) => {
           };
         });
 
-        return { userId: s.userId, studentName, courses: courseStats };
+        const lastSeen = lastSeenMap.get(s.userId) ?? null;
+        const presenceStatus = getPresenceStatus(s.userId);
+        return { userId: s.userId, studentName, courses: courseStats, lastSeen, presenceStatus };
       }));
 
-      // Sort: most progress first
+      // Sort: online first, then active, then inactive, then by progress
+      const statusOrder = { online: 0, active: 1, inactive: 2 };
       students.sort((a, b) => {
+        const sA = statusOrder[a.presenceStatus as keyof typeof statusOrder] ?? 2;
+        const sB = statusOrder[b.presenceStatus as keyof typeof statusOrder] ?? 2;
+        if (sA !== sB) return sA - sB;
         const pA = a.courses.reduce((sum, c) => sum + c.progressPct, 0);
         const pB = b.courses.reduce((sum, c) => sum + c.progressPct, 0);
         return pB - pA;
       });
 
       return ok({ students, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
+    }
+
+    // POST /evaluator/reminder — send inactivity reminder email to a student
+    if (method === 'POST' && path === '/evaluator/reminder') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { userId, studentEmail, studentName, hoursInactive, courseTitle } = body as {
+        userId: string; studentEmail: string; studentName?: string;
+        hoursInactive?: number; courseTitle?: string;
+      };
+      if (!userId || !studentEmail) return badRequest('userId y studentEmail son requeridos');
+
+      const name = studentName || studentEmail.split('@')[0];
+      const hours = Math.round(hoursInactive ?? 72);
+      const timeLabel = hours >= 48 ? `${Math.round(hours / 24)} días` : `${hours} horas`;
+
+      const reminderHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Claridad que transforma.</p>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">¡Hola, ${name}!</h2>
+      <p style="color:#555;line-height:1.6;">Hemos notado que llevas <strong>${timeLabel}</strong> sin conectarte a la plataforma.</p>
+      ${courseTitle ? `<p style="color:#555;line-height:1.6;">Recuerda que tienes el curso <strong>"${courseTitle}"</strong> activo con fechas límite próximas.</p>` : ''}
+      <p style="color:#555;line-height:1.6;">Tu progreso importa. ¡Todavía estás a tiempo de completar tus módulos y reflexiones!</p>
+      <a href="${process.env.FRONTEND_URL ?? 'https://lux-learning-mentor.vercel.app'}/dashboard"
+         style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:16px;">
+        Continuar aprendiendo
+      </a>
+    </div>
+  </div>
+</body>
+</html>`;
+
+      await ses.send(new SendEmailCommand({
+        Source: FROM_EMAIL,
+        Destination: { ToAddresses: [studentEmail] },
+        Message: {
+          Subject: { Data: '¡Te echamos de menos en Lux Learning!', Charset: 'UTF-8' },
+          Body: { Html: { Data: reminderHtml, Charset: 'UTF-8' } },
+        },
+      }));
+
+      return ok({ sent: true });
     }
 
     // POST /evaluator/reflections/priority — toggle priority flag

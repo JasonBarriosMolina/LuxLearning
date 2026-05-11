@@ -84,6 +84,8 @@ export const api = {
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
     students: () => request('/evaluator/students'),
+    sendReminder: (body: { userId: string; studentEmail: string; studentName?: string; hoursInactive?: number; courseTitle?: string }) =>
+      request<any>('/evaluator/reminder', { method: 'POST', body: JSON.stringify(body) }),
     aiFeedback: (text: string, moduleTitle?: string) =>
       request<any>('/evaluator/ai-feedback', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
     quizAudit: (userId: string, moduleId: string) =>
@@ -126,6 +128,8 @@ export const api = {
     generate: (courseId: string) =>
       request<any>('/my-certificates/generate', { method: 'POST', body: JSON.stringify({ courseId }) }),
   },
+
+  heartbeat: () => request('/student/heartbeat', { method: 'POST' }).catch(() => {}),
 
   push: {
     vapidKey: () => fetch(`${API_URL}/push/vapid-key`).then((r) => r.json()),

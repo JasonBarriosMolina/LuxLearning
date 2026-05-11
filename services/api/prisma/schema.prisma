@@ -44,7 +44,9 @@ model Lesson {
   order     Int
   title     String
   duration  String
-  youtubeId String
+  type      String   @default("video")
+  youtubeId String   @default("")
+  content   String?
   imageUrl  String?
   points    String[]
   tip       String

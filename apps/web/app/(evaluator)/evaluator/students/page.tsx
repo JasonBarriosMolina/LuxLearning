@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search } from 'lucide-react';
+import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -20,7 +20,37 @@ type CourseStat = {
   modules: ModuleStat[];
 };
 
-type Student = { userId: string; studentName?: string; courses: CourseStat[] };
+type Student = { userId: string; studentName?: string; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' };
+
+function PresenceBadge({ status }: { status?: string }) {
+  if (status === 'online') return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />En línea
+    </span>
+  );
+  if (status === 'active') return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Activo
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />Inactivo
+    </span>
+  );
+}
+
+function formatLastSeen(lastSeen?: string | null): string {
+  if (!lastSeen) return 'Nunca';
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2) return 'Hace un momento';
+  if (mins < 60) return `Hace ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Hace ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `Hace ${days}d`;
+}
 
 function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
   if (mod.reflectionStatus === 'APPROVED') return <CheckCircle className="w-4 h-4 text-emerald-500" />;
@@ -53,7 +83,11 @@ function StudentCard({ student, courses }: { student: Student; courses: { id: st
           {(student.studentName ?? student.userId)[0]?.toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
+            <PresenceBadge status={student.presenceStatus} />
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen)}</p>
           <div className="mt-1.5">
             <ProgressBar value={overallPct} size="sm" />
           </div>
@@ -231,11 +265,16 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+type PresenceFilter = 'all' | 'online' | 'active' | 'inactive';
+
 export default function StudentsPage() {
   const [data, setData] = useState<{ students: Student[]; courses: { id: string; title: string }[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'students' | 'courses'>('students');
+  const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>('all');
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [expandedCourseStudents, setExpandedCourseStudents] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.evaluator.students().then((res) => {
@@ -244,10 +283,28 @@ export default function StudentsPage() {
     }).catch(() => setLoading(false));
   }, []);
 
-  const filtered = (data?.students ?? []).filter((s) => {
-    if (search === '') return true;
-    const q = search.toLowerCase();
-    return (s.studentName ?? s.userId).toLowerCase().includes(q);
+  const allStudents = data?.students ?? [];
+
+  const filtered = allStudents.filter((s) => {
+    const matchSearch = search === '' || (s.studentName ?? s.userId).toLowerCase().includes(search.toLowerCase());
+    const matchPresence = presenceFilter === 'all' || s.presenceStatus === presenceFilter;
+    return matchSearch && matchPresence;
+  });
+
+  const presenceCounts = {
+    online: allStudents.filter((s) => s.presenceStatus === 'online').length,
+    active: allStudents.filter((s) => s.presenceStatus === 'active').length,
+    inactive: allStudents.filter((s) => s.presenceStatus === 'inactive').length,
+  };
+
+  // For course view: students enrolled in selected course
+  const courseStudents = selectedCourseId
+    ? allStudents.filter((s) => s.courses.some((c) => c.courseId === selectedCourseId))
+    : allStudents;
+
+  const filteredCourseStudents = courseStudents.filter((s) => {
+    const matchPresence = presenceFilter === 'all' || s.presenceStatus === presenceFilter;
+    return matchPresence;
   });
 
   return (
@@ -257,8 +314,8 @@ export default function StudentsPage() {
         <p className="text-gray-500 mt-1 text-sm">Progreso detallado por estudiante y curso</p>
       </div>
 
-      {/* View toggle + search */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* View toggle */}
+      <div className="flex flex-wrap gap-3">
         <div className="flex bg-surface rounded-xl p-1 gap-1 shrink-0">
           {(['students', 'courses'] as const).map((v) => (
             <button
@@ -272,23 +329,35 @@ export default function StudentsPage() {
             </button>
           ))}
         </div>
-        {view === 'students' && (
-          <div className="flex-1">
-            <Input
-              placeholder="Buscar estudiante..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              leftIcon={<Search className="w-4 h-4" />}
-            />
-          </div>
-        )}
+
+        {/* Presence filter chips */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([
+            { key: 'all', label: 'Todos', count: allStudents.length, color: 'bg-gray-100 text-gray-600' },
+            { key: 'online', label: '🟢 En línea', count: presenceCounts.online, color: 'bg-emerald-100 text-emerald-700' },
+            { key: 'active', label: '🟡 Activos', count: presenceCounts.active, color: 'bg-amber-100 text-amber-700' },
+            { key: 'inactive', label: '🔴 Inactivos', count: presenceCounts.inactive, color: 'bg-red-100 text-red-600' },
+          ] as const).map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setPresenceFilter(f.key as PresenceFilter)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                presenceFilter === f.key
+                  ? f.color + ' ring-2 ring-offset-1 ring-current'
+                  : 'bg-surface text-gray-500 hover:bg-gray-100'
+              }`}
+            >
+              {f.label} ({f.count})
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((n) => <div key={n} className="card h-20 animate-pulse" />)}
         </div>
-      ) : !data || data.students.length === 0 ? (
+      ) : !data || allStudents.length === 0 ? (
         <div className="card text-center py-16">
           <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="font-heading font-bold text-charcoal">Sin actividad todavía</p>
@@ -296,6 +365,13 @@ export default function StudentsPage() {
         </div>
       ) : view === 'students' ? (
         <div className="space-y-3">
+          {/* Search bar */}
+          <Input
+            placeholder="Buscar estudiante..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            leftIcon={<Search className="w-4 h-4" />}
+          />
           {filtered.length === 0 ? (
             <p className="text-center text-gray-400 py-8">No se encontró ningún estudiante.</p>
           ) : (
@@ -306,9 +382,71 @@ export default function StudentsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {data.courses.map((course) => (
-            <CourseOverview key={course.id} students={data.students} course={course} />
-          ))}
+          {/* Course selector */}
+          <div className="card">
+            <select
+              value={selectedCourseId}
+              onChange={(e) => { setSelectedCourseId(e.target.value); setExpandedCourseStudents(new Set()); }}
+              className="input-field"
+            >
+              <option value="">— Todos los cursos —</option>
+              {(data.courses ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Students in selected course */}
+          {filteredCourseStudents.length === 0 ? (
+            <p className="text-center text-gray-400 py-8">No hay estudiantes en este filtro.</p>
+          ) : (
+            <div className="space-y-2">
+              {filteredCourseStudents.map((student) => {
+                const isExpanded = expandedCourseStudents.has(student.userId);
+                return (
+                  <div key={student.userId} className="card overflow-hidden p-0">
+                    <button
+                      onClick={() => setExpandedCourseStudents((prev) => {
+                        const next = new Set(prev);
+                        if (isExpanded) next.delete(student.userId); else next.add(student.userId);
+                        return next;
+                      })}
+                      className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
+                        {(student.studentName ?? student.userId)[0]?.toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-charcoal text-sm">{student.studentName ?? student.userId}</p>
+                          <PresenceBadge status={student.presenceStatus} />
+                        </div>
+                        <p className="text-xs text-gray-400">{formatLastSeen(student.lastSeen)}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {student.courses.find((c) => c.courseId === selectedCourseId || !selectedCourseId) && (() => {
+                          const course = student.courses.find((c) => selectedCourseId ? c.courseId === selectedCourseId : true);
+                          if (!course) return null;
+                          return (
+                            <div className="text-center hidden sm:block">
+                              <p className="font-bold text-sm text-charcoal">{course.progressPct}%</p>
+                              <p className="text-xs text-gray-400">Progreso</p>
+                            </div>
+                          );
+                        })()}
+                        {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-border">
+                        <StudentCard student={student} courses={data.courses} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

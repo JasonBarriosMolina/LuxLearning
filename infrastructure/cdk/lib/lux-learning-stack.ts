@@ -529,6 +529,7 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/lessons/favorites/toggle', apigwv2.HttpMethod.POST, lessonsFn);
     addRoute('/lessons/transcript',       apigwv2.HttpMethod.GET,  lessonsFn);
     addRoute('/lessons/chat',             apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/student/heartbeat',        apigwv2.HttpMethod.POST, lessonsFn);
 
     // Quiz
     addRoute('/quiz/{moduleId}/submit',   apigwv2.HttpMethod.POST, quizFn);
@@ -543,6 +544,7 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/reflections',        apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/review', apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/students',           apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/reminder',           apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/ai-feedback',          apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/quiz-audit',           apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/priority', apigwv2.HttpMethod.POST, evaluatorFn);
