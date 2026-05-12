@@ -550,21 +550,29 @@ export default function AdminCoursesPage() {
                   </span>
                 </div>
               </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {(aiResult.modules ?? []).map((m: any, i: number) => (
-                  <div key={i} className="border border-border rounded-xl p-3">
-                    <p className="font-semibold text-sm text-charcoal">{m.order}. {m.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 mb-2">{m.description}</p>
-                    <div className="space-y-0.5">
+                  <div key={i} className="border border-border rounded-xl overflow-hidden">
+                    {/* Module header */}
+                    <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
+                      <p className="font-semibold text-sm text-charcoal">{m.order}. {m.title}</p>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                          {(m.lessons ?? []).length} lec
+                        </span>
+                        <span className="text-xs bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-medium">
+                          {(m.questions ?? []).length} quiz
+                        </span>
+                      </div>
+                    </div>
+                    {/* Lessons list */}
+                    <div className="px-3 py-2 grid grid-cols-2 gap-x-3 gap-y-0.5">
                       {(m.lessons ?? []).map((l: any, j: number) => (
-                        <p key={j} className={`text-xs pl-3 border-l-2 ${l.type === 'video' ? 'text-purple-500 border-purple-200' : 'text-gray-400 border-gray-200'}`}>
-                          {l.order}. {l.title} {l.type === 'video' ? '🎬' : '📄'}
+                        <p key={j} className={`text-xs truncate ${l.type === 'video' ? 'text-purple-500' : 'text-gray-400'}`}>
+                          {l.type === 'video' ? '🎬' : '📄'} {l.title}
                         </p>
                       ))}
                     </div>
-                    {(m.questions ?? []).length > 0 && (
-                      <p className="text-xs text-emerald-600 mt-1.5 pl-3">✓ {m.questions.length} preguntas de quiz generadas</p>
-                    )}
                   </div>
                 ))}
               </div>

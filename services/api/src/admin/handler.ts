@@ -663,8 +663,8 @@ export const handler = async (event: Event) => {
 """
 ${context.slice(0, 3000)}
 """
-Genera la estructura en JSON con exactamente 7 módulos. Responde ÚNICAMENTE con JSON válido:
-{"title":"Título del curso","description":"Descripción 2-3 oraciones","modules":[{"order":1,"title":"Módulo 1","description":"Descripción breve"},{"order":2,"title":"Módulo 2","description":"Descripción breve"},{"order":3,"title":"Módulo 3","description":"Descripción breve"},{"order":4,"title":"Módulo 4","description":"Descripción breve"},{"order":5,"title":"Módulo 5","description":"Descripción breve"},{"order":6,"title":"Módulo 6","description":"Descripción breve"},{"order":7,"title":"Módulo 7","description":"Descripción breve"}]}`, 1200);
+Determina cuántos módulos necesita este curso según la complejidad del tema (mínimo 5, máximo 10). Genera la estructura en JSON. Responde ÚNICAMENTE con JSON válido:
+{"title":"Título del curso","description":"Descripción 2-3 oraciones","modules":[{"order":1,"title":"Módulo 1","description":"Descripción breve"},{"order":2,"title":"Módulo 2","description":"Descripción breve"},{"order":3,"title":"Módulo 3","description":"Descripción breve"}]}`, 1200);
 
           if (!structure.title || !Array.isArray(structure.modules)) throw new Error('Estructura inválida');
 
