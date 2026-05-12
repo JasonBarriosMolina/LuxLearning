@@ -133,15 +133,27 @@ export default function AdminCoursesPage() {
     setAiLoading(true);
     setAiError('');
     setAiLoadingMsg('Diseñando estructura del curso...');
-    // Switch message after ~2.5s when parallel module generation kicks in
-    const msgTimer = setTimeout(() => setAiLoadingMsg('Generando módulos, lecciones y preguntas...'), 2500);
     try {
-      const res = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
-      clearTimeout(msgTimer);
+      // Step 1: dispatch — returns jobId immediately (~200ms)
+      const { jobId } = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
+
+      // Step 2: poll for result
+      setAiLoadingMsg('Generando módulos, lecciones y preguntas...');
+      let attempts = 0;
+      const res = await new Promise<any>((resolve, reject) => {
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const job = await api.admin.courses.aiJob(jobId);
+            if (job.status === 'done') { clearInterval(poll); resolve(job.result); }
+            else if (job.status === 'error') { clearInterval(poll); reject(new Error(job.error ?? 'Error generando curso')); }
+            else if (attempts > 60) { clearInterval(poll); reject(new Error('Tiempo de espera agotado')); }
+          } catch (e) { clearInterval(poll); reject(e); }
+        }, 2000);
+      });
       setAiResult((res as any).data);
       setAiStep(3);
     } catch (err: any) {
-      clearTimeout(msgTimer);
       setAiError(err.message ?? 'Error al generar el curso');
     } finally {
       setAiLoading(false);

@@ -149,6 +149,8 @@ export const api = {
       delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
         request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
+      aiJob: (jobId: string) =>
+        request<any>(`/admin/courses/ai-job?jobId=${encodeURIComponent(jobId)}`),
       aiPublish: (body: any) =>
         request<any>('/admin/courses/ai-publish', { method: 'POST', body: JSON.stringify(body) }),
     },

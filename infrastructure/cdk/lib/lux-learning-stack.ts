@@ -417,6 +417,12 @@ export class LuxLearningStack extends cdk.Stack {
       ],
     }));
 
+    // Self-invocation for async AI generation (bypasses API GW 29s timeout)
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:us-east-1:${this.account}:function:lux-admin`],
+    }));
+
     // Bedrock for lesson chatbot
     lessonsFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -554,6 +560,7 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/admin/courses',                        apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses',                        apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/courses/ai-generate',            apigwv2.HttpMethod.POST,   adminFn);
+    addRoute('/admin/courses/ai-job',                 apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses/ai-publish',             apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.PUT,    adminFn);

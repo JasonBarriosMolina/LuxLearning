@@ -623,3 +623,20 @@ export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: stri
     lastSeen: String(item['lastSeen'] ?? ''),
   })).filter((item) => item.userId && !item.userId.startsWith('_'));
 }
+
+// ─── AI Generation Jobs ───────────────────────────────────────────────────────
+
+export async function saveAiJob(jobId: string, data: { status: 'processing' | 'done' | 'error'; result?: any; error?: string }): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId: '_AIJOB', sk: jobId, ...data, updatedAt: new Date().toISOString() },
+  }));
+}
+
+export async function getAiJob(jobId: string): Promise<{ status: string; result?: any; error?: string } | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId: '_AIJOB', sk: jobId },
+  }));
+  return result.Item ? (result.Item as any) : null;
+}

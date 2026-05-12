@@ -12,12 +12,14 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
 import { ok, created, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
 
@@ -590,15 +592,118 @@ export const handler = async (event: Event) => {
       });
     }
 
+    // ── GET /admin/courses/ai-job — poll async job status ──────────────────────
+    if (path === '/admin/courses/ai-job' && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador');
+      const jobId = event.queryStringParameters?.jobId;
+      if (!jobId) return badRequest('jobId es requerido');
+      const job = await getAiJob(jobId);
+      if (!job) return notFound('Job no encontrado');
+      return ok(job);
+    }
+
     // ── POST /admin/courses/ai-generate ────────────────────────────────────────
     if (path === '/admin/courses/ai-generate' && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-      const { method: genMethod, input } = body as { method?: string; input?: string };
+      const { method: genMethod, input, _jobId, _context } = body as { method?: string; input?: string; _jobId?: string; _context?: string };
+
+      // ── ASYNC WORKER: invoked by self with _jobId ─────────────────────────
+      if (_jobId && _context) {
+        // This branch runs as a fire-and-forget Lambda invocation — no API GW timeout
+        const context = _context;
+
+        // ── Bedrock helper ───────────────────────────────────────────────────
+        const bedrockJSON = async (prompt: string, maxTokens = 2000): Promise<any> => {
+          const res = await bedrock.send(new InvokeModelCommand({
+            modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+              anthropic_version: 'bedrock-2023-05-31',
+              max_tokens: maxTokens,
+              messages: [{ role: 'user', content: prompt }],
+            }),
+          }));
+          const parsed = JSON.parse(new TextDecoder().decode(res.body));
+          const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json|```/g, '').trim();
+          const match = raw.match(/[\[{][\s\S]*/);
+          let jsonStr = match?.[0] ?? '{}';
+          try { return JSON.parse(jsonStr); } catch {
+            jsonStr = jsonStr.replace(/,\s*$/, '');
+            const opens = (jsonStr.match(/\[/g) ?? []).length - (jsonStr.match(/\]/g) ?? []).length;
+            const openObjs = (jsonStr.match(/\{/g) ?? []).length - (jsonStr.match(/\}/g) ?? []).length;
+            if ((jsonStr.match(/"/g) ?? []).length % 2 !== 0) jsonStr += '"';
+            for (let i = 0; i < openObjs; i++) jsonStr += '}';
+            for (let i = 0; i < opens; i++) jsonStr += ']';
+            return JSON.parse(jsonStr);
+          }
+        };
+
+        try {
+          // FASE 1: Estructura
+          const structure = await bedrockJSON(`Eres un experto en diseño instruccional. Para un curso sobre:
+"""
+${context.slice(0, 3000)}
+"""
+Genera la estructura en JSON con exactamente 7 módulos. Responde ÚNICAMENTE con JSON válido:
+{"title":"Título del curso","description":"Descripción 2-3 oraciones","modules":[{"order":1,"title":"Módulo 1","description":"Descripción breve"},{"order":2,"title":"Módulo 2","description":"Descripción breve"},{"order":3,"title":"Módulo 3","description":"Descripción breve"},{"order":4,"title":"Módulo 4","description":"Descripción breve"},{"order":5,"title":"Módulo 5","description":"Descripción breve"},{"order":6,"title":"Módulo 6","description":"Descripción breve"},{"order":7,"title":"Módulo 7","description":"Descripción breve"}]}`, 1200);
+
+          if (!structure.title || !Array.isArray(structure.modules)) throw new Error('Estructura inválida');
+
+          // FASE 2: Módulos en paralelo — cada uno genera lecciones y preguntas simultáneamente
+          const generateModule = async (mod: { order: number; title: string; description: string }) => {
+            const [lessons, questions] = await Promise.all([
+              bedrockJSON(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${mod.title}" del curso "${structure.title}".
+Responde ÚNICAMENTE con array JSON válido:
+[
+{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":""},
+{"title":"Subtema 1","order":2,"type":"text","content":"Escribe 2 párrafos educativos sobre este subtema específico de ${mod.title}. Mínimo 3 oraciones por párrafo."},
+{"title":"Subtema 2","order":3,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 3","order":4,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 4","order":5,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 5","order":6,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 6","order":7,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 7","order":8,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Subtema 8","order":9,"type":"text","content":"2 párrafos educativos..."},
+{"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":""}
+]
+REGLAS: 10 lecciones exactas, órdenes 1 y 10 type "video" content "", órdenes 2-9 type "text" con contenido educativo real en español. Cierra el array con ]. Sin markdown.`, 3500),
+
+              bedrockJSON(`Genera 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
+Responde ÚNICAMENTE con array JSON válido:
+[
+{"text":"¿Pregunta real sobre ${mod.title}?","options":["Respuesta correcta","Distractor B","Distractor C","Distractor D"],"correctIndex":0,"order":1},
+{"text":"¿Pregunta 2?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":2},
+{"text":"¿Pregunta 3?","options":["Op A","Op B","Op C","Op D"],"correctIndex":2,"order":3},
+{"text":"¿Pregunta 4?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":4},
+{"text":"¿Pregunta 5?","options":["Op A","Op B","Op C","Op D"],"correctIndex":3,"order":5},
+{"text":"¿Pregunta 6?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":6},
+{"text":"¿Pregunta 7?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":7},
+{"text":"¿Pregunta 8?","options":["Op A","Op B","Op C","Op D"],"correctIndex":2,"order":8},
+{"text":"¿Pregunta 9?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":9},
+{"text":"¿Pregunta 10?","options":["Op A","Op B","Op C","Op D"],"correctIndex":3,"order":10}
+]
+REGLAS: 10 preguntas exactas, opciones reales (no "Op A"), específicas al tema "${mod.title}", correctIndex 0-3. Sin markdown.`, 1500),
+            ]);
+            return { order: mod.order, title: mod.title, description: mod.description,
+              lessons: Array.isArray(lessons) ? lessons : [],
+              questions: Array.isArray(questions) ? questions : [] };
+          };
+
+          const modulesWithContent = await Promise.all(structure.modules.map((mod: any) => generateModule(mod)));
+          const result = { title: structure.title, description: structure.description,
+            modules: modulesWithContent.sort((a: any, b: any) => a.order - b.order) };
+
+          await saveAiJob(_jobId, { status: 'done', result });
+        } catch (err: any) {
+          await saveAiJob(_jobId, { status: 'error', error: err.message ?? 'Error desconocido' });
+        }
+        return ok({ ok: true }); // async invocation ignores response
+      }
+
+      // ── DISPATCH: first call — save job and fire async ────────────────────
       if (!input) return badRequest('input es requerido');
-
       let context = input;
-
-      // For URL method: fetch and strip HTML
       if (genMethod === 'url') {
         try {
           const res = await fetch(input, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
@@ -610,121 +715,26 @@ export const handler = async (event: Event) => {
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 4000);
-        } catch {
-          return badRequest('No se pudo obtener contenido de la URL');
-        }
+        } catch { return badRequest('No se pudo obtener contenido de la URL'); }
       }
 
-      // Helper: call Bedrock and extract JSON
-      const bedrockJSON = async (prompt: string, maxTokens = 2000): Promise<any> => {
-        const res = await bedrock.send(new InvokeModelCommand({
-          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-          contentType: 'application/json',
-          accept: 'application/json',
-          body: JSON.stringify({
-            anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: maxTokens,
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        }));
-        const parsed = JSON.parse(new TextDecoder().decode(res.body));
-        const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json|```/g, '').trim();
-        const match = raw.match(/[\[{][\s\S]*/);
-        return JSON.parse(match?.[0] ?? '{}');
+      const jobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAiJob(jobId, { status: 'processing' });
+
+      // Fire-and-forget: invoke self async bypassing API GW timeout
+      const asyncPayload = {
+        requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+        rawPath: '/admin/courses/ai-generate',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ _jobId: jobId, _context: context }),
       };
+      await lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event', // async — no wait for response
+        Payload: Buffer.from(JSON.stringify(asyncPayload)),
+      }));
 
-      // ── FASE 1: Estructura del curso (título + lista de módulos) ──────────────
-      const structurePrompt = `Eres un experto en diseño instruccional. Para un curso sobre el siguiente tema:
-
-"""
-${context.slice(0, 3000)}
-"""
-
-Genera la estructura en JSON con exactamente 7 módulos. Responde ÚNICAMENTE con JSON válido:
-{
-  "title": "Título del curso en español",
-  "description": "Descripción del curso en 2-3 oraciones",
-  "modules": [
-    { "order": 1, "title": "Título módulo 1", "description": "Descripción breve del módulo 1" },
-    { "order": 2, "title": "Título módulo 2", "description": "Descripción breve del módulo 2" },
-    { "order": 3, "title": "Título módulo 3", "description": "Descripción breve" },
-    { "order": 4, "title": "Título módulo 4", "description": "Descripción breve" },
-    { "order": 5, "title": "Título módulo 5", "description": "Descripción breve" },
-    { "order": 6, "title": "Título módulo 6", "description": "Descripción breve" },
-    { "order": 7, "title": "Título módulo 7", "description": "Descripción breve" }
-  ]
-}`;
-
-      const structure = await bedrockJSON(structurePrompt, 1200);
-      if (!structure.title || !Array.isArray(structure.modules)) {
-        return serverError('Error generando estructura del curso');
-      }
-
-      // ── FASE 2: Lecciones y preguntas por módulo en paralelo ─────────────────
-      const generateModule = async (mod: { order: number; title: string; description: string }) => {
-        const courseTitle = structure.title;
-
-        // Lecciones y preguntas en paralelo para cada módulo
-        const [lessons, questions] = await Promise.all([
-
-          // Llamada A: 10 lecciones del módulo
-          bedrockJSON(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${mod.title}" del curso "${courseTitle}".
-
-Responde ÚNICAMENTE con un array JSON válido:
-[
-  { "title": "Introducción — ${mod.title}", "order": 1, "type": "video", "content": "" },
-  { "title": "Título subtema 1", "order": 2, "type": "text", "content": "Escribe 3 párrafos educativos detallados sobre este subtema. Cada párrafo mínimo 4 oraciones." },
-  { "title": "Título subtema 2", "order": 3, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 3", "order": 4, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 4", "order": 5, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 5", "order": 6, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 6", "order": 7, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 7", "order": 8, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Título subtema 8", "order": 9, "type": "text", "content": "3 párrafos educativos detallados..." },
-  { "title": "Resumen y cierre — ${mod.title}", "order": 10, "type": "video", "content": "" }
-]
-
-REGLAS: exactamente 10 lecciones, órdenes 1 y 10 son type "video" con content "", órdenes 2-9 son type "text" con contenido real educativo en español sobre "${mod.title}". Sin markdown en el JSON.`, 2500),
-
-          // Llamada B: 10 preguntas del módulo
-          bedrockJSON(`Genera exactamente 10 preguntas de opción múltiple en español para evaluar el módulo "${mod.title}" del curso "${courseTitle}".
-
-Responde ÚNICAMENTE con un array JSON válido:
-[
-  { "text": "¿Pregunta específica sobre ${mod.title}?", "options": ["Opción correcta", "Distractor 1", "Distractor 2", "Distractor 3"], "correctIndex": 0, "order": 1 },
-  { "text": "¿Pregunta 2?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 2 },
-  { "text": "¿Pregunta 3?", "options": ["A", "B", "C", "D"], "correctIndex": 2, "order": 3 },
-  { "text": "¿Pregunta 4?", "options": ["A", "B", "C", "D"], "correctIndex": 0, "order": 4 },
-  { "text": "¿Pregunta 5?", "options": ["A", "B", "C", "D"], "correctIndex": 3, "order": 5 },
-  { "text": "¿Pregunta 6?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 6 },
-  { "text": "¿Pregunta 7?", "options": ["A", "B", "C", "D"], "correctIndex": 0, "order": 7 },
-  { "text": "¿Pregunta 8?", "options": ["A", "B", "C", "D"], "correctIndex": 2, "order": 8 },
-  { "text": "¿Pregunta 9?", "options": ["A", "B", "C", "D"], "correctIndex": 1, "order": 9 },
-  { "text": "¿Pregunta 10?", "options": ["A", "B", "C", "D"], "correctIndex": 3, "order": 10 }
-]
-
-REGLAS: exactamente 10 preguntas, cada una con 4 opciones reales (no "A","B","C","D"), específicas al tema "${mod.title}", correctIndex entre 0-3. Sin markdown.`, 1500),
-        ]);
-
-        return {
-          order: mod.order,
-          title: mod.title,
-          description: mod.description,
-          lessons: Array.isArray(lessons) ? lessons : [],
-          questions: Array.isArray(questions) ? questions : [],
-        };
-      };
-
-      // Todos los módulos en paralelo
-      const modulesWithContent = await Promise.all(
-        structure.modules.map((mod: any) => generateModule(mod))
-      );
-
-      return ok({
-        title: structure.title,
-        description: structure.description,
-        modules: modulesWithContent.sort((a: any, b: any) => a.order - b.order),
-      });
+      return ok({ jobId });
     }
 
     // ── POST /admin/courses/ai-publish ──────────────────────────────────────────
