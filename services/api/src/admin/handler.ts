@@ -613,6 +613,24 @@ export const handler = async (event: Event) => {
         const context = _context;
 
         // ── Bedrock helper ───────────────────────────────────────────────────
+        // Escape control chars ONLY inside JSON string values (not structural whitespace)
+        const fixJsonControlChars = (str: string): string => {
+          let out = ''; let inStr = false; let esc = false;
+          for (let i = 0; i < str.length; i++) {
+            const c = str[i]!; const code = str.charCodeAt(i);
+            if (esc) { out += c; esc = false; continue; }
+            if (c === '\\' && inStr) { out += c; esc = true; continue; }
+            if (c === '"') { inStr = !inStr; out += c; continue; }
+            if (inStr && code < 0x20) {
+              if (code === 0x0A) out += '\\n';
+              else if (code === 0x0D) out += '\\r';
+              else if (code === 0x09) out += '\\t';
+              else out += `\\u${code.toString(16).padStart(4, '0')}`;
+            } else { out += c; }
+          }
+          return out;
+        };
+
         const bedrockJSON = async (prompt: string, maxTokens = 2000): Promise<any> => {
           const res = await bedrock.send(new InvokeModelCommand({
             modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -625,13 +643,9 @@ export const handler = async (event: Event) => {
             }),
           }));
           const parsed = JSON.parse(new TextDecoder().decode(res.body));
-          const raw = (parsed.content?.[0]?.text ?? '{}')
-            .replace(/```json|```/g, '')
-            // Remove control characters that break JSON parsing
-            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-            .trim();
+          const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json|```/g, '').trim();
           const match = raw.match(/[\[{][\s\S]*/);
-          let jsonStr = match?.[0] ?? '{}';
+          let jsonStr = fixJsonControlChars(match?.[0] ?? '{}');
           try { return JSON.parse(jsonStr); } catch {
             jsonStr = jsonStr.replace(/,\s*$/, '');
             const opens = (jsonStr.match(/\[/g) ?? []).length - (jsonStr.match(/\]/g) ?? []).length;
