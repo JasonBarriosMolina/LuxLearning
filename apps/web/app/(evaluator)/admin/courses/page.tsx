@@ -135,7 +135,8 @@ export default function AdminCoursesPage() {
     setAiLoadingMsg('Diseñando estructura del curso...');
     try {
       // Step 1: dispatch — returns jobId immediately (~200ms)
-      const { jobId } = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
+      const res0 = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
+      const jobId = res0?.data?.jobId ?? res0?.jobId;
 
       // Step 2: poll for result
       setAiLoadingMsg('Generando módulos, lecciones y preguntas...');
@@ -144,7 +145,8 @@ export default function AdminCoursesPage() {
         const poll = setInterval(async () => {
           attempts++;
           try {
-            const job = await api.admin.courses.aiJob(jobId);
+            const raw = await api.admin.courses.aiJob(jobId);
+            const job = raw?.data ?? raw;
             if (job.status === 'done') { clearInterval(poll); resolve(job.result); }
             else if (job.status === 'error') { clearInterval(poll); reject(new Error(job.error ?? 'Error generando curso')); }
             else if (attempts > 60) { clearInterval(poll); reject(new Error('Tiempo de espera agotado')); }
