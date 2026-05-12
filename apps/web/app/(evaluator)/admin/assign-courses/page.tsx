@@ -44,7 +44,7 @@ export default function AssignCoursesPage() {
     ]).then(([cRes, uRes]) => {
       const allCourses = ((cRes as any).data ?? []) as Course[];
       const allUsers = ((uRes as any).data ?? []) as Student[];
-      setCourses(allCourses.filter((c) => c.isActive));
+      setCourses(allCourses);
       setStudents(allUsers.filter((u) => u.role === 'STUDENT' && u.enabled));
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -148,7 +148,7 @@ export default function AssignCoursesPage() {
           <UserPlus className="w-6 h-6 text-cta-from" />
           Asignar Cursos
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">Inscribe estudiantes a cursos activos de forma individual o masiva</p>
+        <p className="text-gray-500 mt-1 text-sm">Inscribe estudiantes a cursos de forma individual o masiva</p>
       </div>
 
       {/* Mode toggle */}
@@ -177,7 +177,7 @@ export default function AssignCoursesPage() {
         /* ── BY COURSE ── */
         <div className="space-y-4">
           <div className="card space-y-3">
-            <label className="text-sm font-semibold text-charcoal">Selecciona un curso activo</label>
+            <label className="text-sm font-semibold text-charcoal">Selecciona un curso</label>
             <select
               value={selectedCourseId}
               onChange={(e) => setSelectedCourseId(e.target.value)}
@@ -185,7 +185,7 @@ export default function AssignCoursesPage() {
             >
               <option value="">— Elige un curso —</option>
               {courses.map((c) => (
-                <option key={c.id} value={c.id}>{c.title}</option>
+                <option key={c.id} value={c.id}>{c.title}{c.isActive ? '' : ' (inactivo)'}</option>
               ))}
             </select>
           </div>
