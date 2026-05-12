@@ -430,7 +430,7 @@ export default function AdminCoursesPage() {
         open={aiModalOpen}
         onClose={() => setAiModalOpen(false)}
         title="Crear curso con IA"
-        size="lg"
+        size="2xl"
       >
         <div className="space-y-5">
           {/* Step indicator */}
@@ -550,7 +550,7 @@ export default function AdminCoursesPage() {
                   </span>
                 </div>
               </div>
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                 {(aiResult.modules ?? []).map((m: any, i: number) => (
                   <div key={i} className="border border-border rounded-xl overflow-hidden">
                     {/* Module header */}
@@ -565,10 +565,10 @@ export default function AdminCoursesPage() {
                         </span>
                       </div>
                     </div>
-                    {/* Lessons list */}
-                    <div className="px-3 py-2 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                    {/* Lessons list — single column */}
+                    <div className="px-3 py-2 space-y-0.5">
                       {(m.lessons ?? []).map((l: any, j: number) => (
-                        <p key={j} className={`text-xs truncate ${l.type === 'video' ? 'text-purple-500' : 'text-gray-400'}`}>
+                        <p key={j} className={`text-xs ${l.type === 'video' ? 'text-purple-500' : 'text-gray-400'}`}>
                           {l.type === 'video' ? '🎬' : '📄'} {l.title}
                         </p>
                       ))}
