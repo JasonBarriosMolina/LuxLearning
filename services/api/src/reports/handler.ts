@@ -222,6 +222,10 @@ export const handler = async (event: Event) => {
         })
       );
       studentProgress.sort((a, b) => b.integratedScore - a.integratedScore);
+      // Only include students with actual activity (exclude never-started)
+      const activeStudentProgress = studentProgress.filter(
+        (s) => s.reflectionsTotal > 0 || s.avgQuizScore > 0 || s.lastActivity !== null
+      );
 
       // ── AI Analysis (from nightly job cache) ─────────────────────────────
       const allModuleIds = visibleCourses.flatMap((c) => c.modules.map((m) => m.id));
@@ -249,7 +253,7 @@ export const handler = async (event: Event) => {
         summary: { totalReflections, totalApproved, totalRejected, totalPending, overallApprovalRate, totalEnrolled, activeStudents, atRiskStudents, neverStarted, avgQuality },
         moduleStats,
         heatMap,
-        studentProgress,
+        studentProgress: activeStudentProgress,
         analysis,
         recommendations,
       });

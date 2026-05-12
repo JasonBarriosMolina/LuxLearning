@@ -17,6 +17,7 @@ import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/cli
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
 import { ok, created, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
+import { jsonrepair } from 'jsonrepair';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -709,17 +710,14 @@ export const handler = async (event: Event) => {
             }),
           }));
           const parsed = JSON.parse(new TextDecoder().decode(res.body));
-          const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json|```/g, '').trim();
+          const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
           const match = raw.match(/[\[{][\s\S]*/);
-          let jsonStr = fixJsonControlChars(match?.[0] ?? '{}');
+          const jsonStr = fixJsonControlChars(match?.[0] ?? '{}');
           try { return JSON.parse(jsonStr); } catch {
-            jsonStr = jsonStr.replace(/,\s*$/, '');
-            const opens = (jsonStr.match(/\[/g) ?? []).length - (jsonStr.match(/\]/g) ?? []).length;
-            const openObjs = (jsonStr.match(/\{/g) ?? []).length - (jsonStr.match(/\}/g) ?? []).length;
-            if ((jsonStr.match(/"/g) ?? []).length % 2 !== 0) jsonStr += '"';
-            for (let i = 0; i < openObjs; i++) jsonStr += '}';
-            for (let i = 0; i < opens; i++) jsonStr += ']';
-            return JSON.parse(jsonStr);
+            // Use jsonrepair to fix unescaped quotes, trailing commas, truncation, etc.
+            try { return JSON.parse(jsonrepair(jsonStr)); } catch {
+              return {};
+            }
           }
         };
 
@@ -740,18 +738,18 @@ Determina cuántos módulos necesita este curso según la complejidad del tema (
               bedrockJSON(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order, type, content, duration, points (array 3 frases cortas), tip (1 consejo práctico).
 [
-{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"","duration":"5 min","points":["Concepto clave 1 de ${mod.title}","Concepto clave 2","Para qué sirve este módulo"],"tip":"Toma notas mientras ves el video introductorio."},
-{"title":"Subtema A","order":2,"type":"text","content":"Escribe 2 párrafos educativos reales sobre un subtema de ${mod.title}.","duration":"8 min","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico aplicable al subtema."},
-{"title":"Subtema B","order":3,"type":"text","content":"2 párrafos sobre otro subtema de ${mod.title}.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip práctico."},
-{"title":"Subtema C","order":4,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema D","order":5,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema E","order":6,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema F","order":7,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema G","order":8,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema H","order":9,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":"","duration":"5 min","points":["Resumen concepto 1","Resumen concepto 2","Próximos pasos"],"tip":"Completa el quiz para afianzar lo aprendido."}
+{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"<p>Escribe 1 párrafo introductorio sobre qué aprenderá el estudiante en ${mod.title} y por qué es importante.</p>","duration":"5 min","points":["Concepto clave 1 de ${mod.title}","Concepto clave 2","Para qué sirve este módulo"],"tip":"Toma notas de los conceptos que te resulten nuevos."},
+{"title":"Subtema A","order":2,"type":"text","content":"<p>Párrafo 1 educativo real sobre subtema de ${mod.title}.</p><p>Párrafo 2 con más detalle y ejemplos.</p>","duration":"8 min","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico aplicable al subtema."},
+{"title":"Subtema B","order":3,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip práctico."},
+{"title":"Subtema C","order":4,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema D","order":5,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema E","order":6,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema F","order":7,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema G","order":8,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema H","order":9,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":"<p>Escribe 1 párrafo que resuma los conceptos principales aprendidos en ${mod.title} y los próximos pasos del estudiante.</p>","duration":"5 min","points":["Resumen concepto 1","Resumen concepto 2","Próximos pasos"],"tip":"Completa el quiz para afianzar lo aprendido."}
 ]
-REGLAS: 10 lecciones, órdenes 1 y 10 type "video" content "", órdenes 2-9 type "text" con contenido real en español. points y tip REALES y específicos al tema. Sin markdown.`, 4000),
+REGLAS ESTRICTAS: 10 lecciones exactas. TODAS deben tener content real en español con etiquetas <p>. points y tip ESPECÍFICOS al tema real. Sin markdown, sin comillas dentro del content. Genera contenido educativo auténtico, no ejemplos genéricos.`, 4000),
 
               bedrockJSON(`Genera 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con array JSON válido:
@@ -769,8 +767,26 @@ Responde ÚNICAMENTE con array JSON válido:
 ]
 REGLAS: 10 preguntas exactas, opciones reales (no "Op A"), específicas al tema "${mod.title}", correctIndex 0-3. Sin markdown.`, 1500),
             ]);
+
+            // Garantizar que TODAS las lecciones tengan content
+            const finalLessons = Array.isArray(lessons) ? await Promise.all(lessons.map(async (l: any) => {
+              if (l.content && l.content.trim().length > 10) return l;
+              // Si falta content, generarlo individualmente
+              const fallback = await bedrockJSON(
+                `Genera el contenido educativo en español para la lección "${l.title}" del módulo "${mod.title}" del curso "${structure.title}".
+Responde ÚNICAMENTE con JSON válido: {"content":"<p>Párrafo 1 educativo real sobre el tema.</p><p>Párrafo 2 con más detalle.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
+Sin markdown. Contenido auténtico y específico.`, 800
+              );
+              return {
+                ...l,
+                content: fallback.content ?? `<p>Introducción a ${l.title} en el contexto de ${mod.title}.</p>`,
+                points: fallback.points?.length ? fallback.points : (l.points?.length ? l.points : [`Concepto clave de ${l.title}`]),
+                tip: fallback.tip ?? l.tip ?? 'Repasa los puntos clave antes de continuar.',
+              };
+            })) : [];
+
             return { order: mod.order, title: mod.title, description: mod.description,
-              lessons: Array.isArray(lessons) ? lessons : [],
+              lessons: finalLessons,
               questions: Array.isArray(questions) ? questions : [] };
           };
 

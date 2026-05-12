@@ -29,25 +29,34 @@ const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 
 // Cache userId -> email to avoid repeated Cognito calls within a Lambda invocation
 const emailCache = new Map<string, string>();
+const roleCache = new Map<string, string>();
+
+async function getCognitoUser(userId: string): Promise<{ email: string; role: string } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+  if (emailCache.has(userId)) return { email: emailCache.get(userId)!, role: roleCache.get(userId) ?? '' };
+  try {
+    const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
+    const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value ?? userId;
+    const role = res.UserAttributes?.find((a) => a.Name === 'custom:role')?.Value ?? '';
+    emailCache.set(userId, email);
+    roleCache.set(userId, role);
+    return { email, role };
+  } catch {
+    return null;
+  }
+}
 
 async function resolveStudentName(userId: string, storedEmail?: string): Promise<string> {
   if (storedEmail) return storedEmail;
   if (emailCache.has(userId)) return emailCache.get(userId)!;
-  // userId looks like a UUID (Cognito sub) — look up via AdminGetUser
-  if (/^[0-9a-f-]{36}$/i.test(userId)) {
-    try {
-      const res = await cognito.send(new AdminGetUserCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: userId,
-      }));
-      const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value ?? userId;
-      emailCache.set(userId, email);
-      return email;
-    } catch {
-      return userId;
-    }
-  }
-  return userId;
+  const user = await getCognitoUser(userId);
+  return user?.email ?? userId;
+}
+
+async function isStudentRole(userId: string): Promise<boolean> {
+  if (roleCache.has(userId)) return roleCache.get(userId) === 'STUDENT';
+  const user = await getCognitoUser(userId);
+  return user?.role === 'STUDENT';
 }
 
 // Returns { email, name } for a student — email for sending, name for display
@@ -487,9 +496,13 @@ export const handler = async (event: Event) => {
         return { userId: s.userId, studentName, courses: courseStats, lastSeen, presenceStatus };
       }));
 
+      // Filter out non-STUDENT users (evaluators, admins who may have enrollments/heartbeats)
+      const studentRoleChecks = await Promise.all(students.map((s) => isStudentRole(s.userId)));
+      const studentsOnly = students.filter((_, i) => studentRoleChecks[i]);
+
       // Sort: online first, then active, then inactive, then by progress
       const statusOrder = { online: 0, active: 1, inactive: 2 };
-      students.sort((a, b) => {
+      studentsOnly.sort((a, b) => {
         const sA = statusOrder[a.presenceStatus as keyof typeof statusOrder] ?? 2;
         const sB = statusOrder[b.presenceStatus as keyof typeof statusOrder] ?? 2;
         if (sA !== sB) return sA - sB;
@@ -498,7 +511,7 @@ export const handler = async (event: Event) => {
         return pB - pA;
       });
 
-      return ok({ students, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
+      return ok({ students: studentsOnly, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
     }
 
     // POST /evaluator/reminder — send inactivity reminder email to a student

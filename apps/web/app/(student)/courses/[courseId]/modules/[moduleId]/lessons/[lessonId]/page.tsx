@@ -316,8 +316,18 @@ export default function LessonPage() {
         </button>
       </div>
 
-      {/* Lesson content: text or video */}
-      {lesson.type === 'text' || !lesson.youtubeId ? (
+      {/* Lesson content: video player OR text content */}
+      {lesson.youtubeId ? (
+        <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
+          <iframe
+            className="w-full h-full"
+            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`}
+            title={lesson.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      ) : (
         <div className="card">
           {lesson.content ? (
             <div
@@ -327,16 +337,6 @@ export default function LessonPage() {
           ) : (
             <p className="text-gray-400 text-sm text-center py-8">El contenido de esta lección no está disponible aún.</p>
           )}
-        </div>
-      ) : (
-        <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
-          <iframe
-            className="w-full h-full"
-            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`}
-            title={lesson.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
         </div>
       )}
 
