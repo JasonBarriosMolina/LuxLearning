@@ -723,20 +723,20 @@ Determina cuántos módulos necesita este curso según la complejidad del tema (
           const generateModule = async (mod: { order: number; title: string; description: string }) => {
             const [lessons, questions] = await Promise.all([
               bedrockJSON(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${mod.title}" del curso "${structure.title}".
-Responde ÚNICAMENTE con array JSON válido:
+Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order, type, content, duration, points (array 3 frases cortas), tip (1 consejo práctico).
 [
-{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":""},
-{"title":"Subtema 1","order":2,"type":"text","content":"Escribe 2 párrafos educativos sobre este subtema específico de ${mod.title}. Mínimo 3 oraciones por párrafo."},
-{"title":"Subtema 2","order":3,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 3","order":4,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 4","order":5,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 5","order":6,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 6","order":7,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 7","order":8,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Subtema 8","order":9,"type":"text","content":"2 párrafos educativos..."},
-{"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":""}
+{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"","duration":"5 min","points":["Concepto clave 1 de ${mod.title}","Concepto clave 2","Para qué sirve este módulo"],"tip":"Toma notas mientras ves el video introductorio."},
+{"title":"Subtema A","order":2,"type":"text","content":"Escribe 2 párrafos educativos reales sobre un subtema de ${mod.title}.","duration":"8 min","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico aplicable al subtema."},
+{"title":"Subtema B","order":3,"type":"text","content":"2 párrafos sobre otro subtema de ${mod.title}.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip práctico."},
+{"title":"Subtema C","order":4,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema D","order":5,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema E","order":6,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema F","order":7,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema G","order":8,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema H","order":9,"type":"text","content":"2 párrafos.","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":"","duration":"5 min","points":["Resumen concepto 1","Resumen concepto 2","Próximos pasos"],"tip":"Completa el quiz para afianzar lo aprendido."}
 ]
-REGLAS: 10 lecciones exactas, órdenes 1 y 10 type "video" content "", órdenes 2-9 type "text" con contenido educativo real en español. Cierra el array con ]. Sin markdown.`, 3500),
+REGLAS: 10 lecciones, órdenes 1 y 10 type "video" content "", órdenes 2-9 type "text" con contenido real en español. points y tip REALES y específicos al tema. Sin markdown.`, 4000),
 
               bedrockJSON(`Genera 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con array JSON válido:
@@ -844,12 +844,12 @@ REGLAS: 10 preguntas exactas, opciones reales (no "Op A"), específicas al tema 
                 create: (m.lessons ?? []).map((l) => ({
                   title: l.title,
                   order: l.order,
-                  duration: '5 min',
+                  duration: l.duration ?? (l.type === 'video' ? '5 min' : '8 min'),
                   type: l.type ?? 'video',
                   youtubeId: '',
                   content: l.content ?? null,
-                  points: [],
-                  tip: '',
+                  points: Array.isArray(l.points) ? l.points : [],
+                  tip: l.tip ?? '',
                 })),
               },
               questions: {
