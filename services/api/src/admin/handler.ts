@@ -114,6 +114,16 @@ export const handler = async (event: Event) => {
       return created(course);
     }
 
+    // ── GET /admin/courses/ai-job — poll async job status ──────────────────────
+    if (path === '/admin/courses/ai-job' && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador');
+      const jobId = event.queryStringParameters?.jobId;
+      if (!jobId) return badRequest('jobId es requerido');
+      const job = await getAiJob(jobId);
+      if (!job) return notFound('Job no encontrado');
+      return ok(job);
+    }
+
     // ── /admin/courses/:courseId ────────────────────────────────────────────
     const courseMatch = path.match(/^\/admin\/courses\/([^/]+)$/);
     if (courseMatch) {
@@ -592,16 +602,6 @@ export const handler = async (event: Event) => {
       });
     }
 
-    // ── GET /admin/courses/ai-job — poll async job status ──────────────────────
-    if (path === '/admin/courses/ai-job' && method === 'GET') {
-      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador');
-      const jobId = event.queryStringParameters?.jobId;
-      if (!jobId) return badRequest('jobId es requerido');
-      const job = await getAiJob(jobId);
-      if (!job) return notFound('Job no encontrado');
-      return ok(job);
-    }
-
     // ── POST /admin/courses/ai-generate ────────────────────────────────────────
     if (path === '/admin/courses/ai-generate' && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
@@ -625,7 +625,11 @@ export const handler = async (event: Event) => {
             }),
           }));
           const parsed = JSON.parse(new TextDecoder().decode(res.body));
-          const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json|```/g, '').trim();
+          const raw = (parsed.content?.[0]?.text ?? '{}')
+            .replace(/```json|```/g, '')
+            // Remove control characters that break JSON parsing
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+            .trim();
           const match = raw.match(/[\[{][\s\S]*/);
           let jsonStr = match?.[0] ?? '{}';
           try { return JSON.parse(jsonStr); } catch {
