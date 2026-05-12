@@ -267,8 +267,7 @@ export default function AdminCoursesPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <p className="text-xs text-gray-500">
-                    {course.modules?.length ?? 0} módulos •{' '}
-                    <span className="font-mono text-gray-400">{course.slug}</span>
+                    {course.modules?.length ?? 0} módulos
                   </p>
                   {course.tags?.map((tag: string) => (
                     <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-600 font-medium">

@@ -9,6 +9,7 @@ import {
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminDeleteUserCommand,
+  AdminGetUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
@@ -51,6 +52,35 @@ function invitationEmailHtml(name: string, email: string, temporaryPassword: str
       <a href="${FRONTEND_URL}/auth/login"
          style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:16px;">
         Iniciar sesión
+      </a>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function enrollmentEmailHtml(name: string, courseName: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Claridad que transforma.</p>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">¡Tienes un nuevo curso!</h2>
+      <p style="color:#555;line-height:1.6;">Hola ${name},</p>
+      <p style="color:#555;line-height:1.6;">Has sido inscrito en el siguiente curso:</p>
+      <div style="background:#F0F7FF;border-left:4px solid #00B4D8;padding:16px 20px;border-radius:4px;margin:24px 0;">
+        <p style="margin:0;color:#2C2C2C;font-size:16px;font-weight:600;">📚 ${courseName}</p>
+      </div>
+      <p style="color:#555;line-height:1.6;">Ingresa a la plataforma para comenzar tu aprendizaje.</p>
+      <a href="${FRONTEND_URL}/courses"
+         style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:16px;">
+        Ver mis cursos
       </a>
     </div>
   </div>
@@ -492,6 +522,27 @@ export const handler = async (event: Event) => {
         const { courseId } = body;
         if (!courseId) return badRequest('courseId es requerido');
         await createEnrollment(username, courseId);
+
+        // Send enrollment notification email
+        try {
+          const [userRes, course] = await Promise.all([
+            cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username })),
+            prisma.course.findUnique({ where: { id: courseId }, select: { title: true } }),
+          ]);
+          const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+          const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value;
+          if (emailAttr && course) {
+            await ses.send(new SendEmailCommand({
+              Source: FROM_EMAIL,
+              Destination: { ToAddresses: [emailAttr] },
+              Message: {
+                Subject: { Data: `¡Nuevo curso disponible: ${course.title}!`, Charset: 'UTF-8' },
+                Body: { Html: { Data: enrollmentEmailHtml(nameAttr || emailAttr.split('@')[0], course.title), Charset: 'UTF-8' } },
+              },
+            }));
+          }
+        } catch (e) { console.warn('Enrollment email failed:', e); }
+
         return ok({ enrolled: true });
       }
 
@@ -771,7 +822,8 @@ REGLAS: 10 preguntas exactas, opciones reales (no "Op A"), específicas al tema 
       };
       if (!title || !modules || !Array.isArray(modules)) return badRequest('title y modules son requeridos');
 
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
+      const slug = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        + '-' + Math.random().toString(36).slice(2, 8);
 
       const course = await prisma.course.create({
         data: {
