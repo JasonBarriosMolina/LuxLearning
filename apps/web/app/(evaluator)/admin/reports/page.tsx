@@ -15,7 +15,7 @@ type Mode = 'master' | 'student' | 'course';
 type Summary = {
   totalReflections: number; totalApproved: number; totalRejected: number;
   totalPending: number; overallApprovalRate: number; totalEnrolled: number;
-  activeStudents: number; atRiskStudents: number; avgQuality: number | null;
+  activeStudents: number; atRiskStudents: number; neverStarted: number; avgQuality: number | null;
 };
 
 type ModuleStat = {
@@ -379,13 +379,34 @@ ${data.analysis.slice(0, 5).map((a) => `
 
         {data && canLoad && (
           <>
+            {/* Banner: course/students with no activity yet */}
+            {data.summary.totalReflections === 0 && data.summary.activeStudents === 0 && data.summary.totalEnrolled > 0 && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
+                <div>
+                  <p className="font-semibold">Sin actividad registrada aún</p>
+                  <p className="text-amber-700 mt-0.5">
+                    Hay {data.summary.totalEnrolled} estudiante{data.summary.totalEnrolled !== 1 ? 's' : ''} inscrito{data.summary.totalEnrolled !== 1 ? 's' : ''} pero ninguno ha iniciado el curso todavía. Los reportes se poblarán cuando comiencen a avanzar.
+                  </p>
+                </div>
+              </div>
+            )}
+            {data.summary.totalEnrolled === 0 && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 text-sm">
+                <BookOpen className="w-5 h-5 shrink-0 mt-0.5 text-gray-400" />
+                <div>
+                  <p className="font-semibold">Sin estudiantes inscritos</p>
+                  <p className="text-gray-500 mt-0.5">Asigna estudiantes a este curso desde <strong>Asignar Cursos</strong> para ver estadísticas.</p>
+                </div>
+              </div>
+            )}
             {/* ── 1. KPIs ─────────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Tasa de aprobación', value: `${data.summary.overallApprovalRate}%`, sub: `${data.summary.totalApproved} de ${data.summary.totalReflections}`, icon: <CheckCircle className="w-5 h-5 text-emerald-500" />, bg: 'bg-emerald-50', color: 'text-emerald-600' },
                 { label: 'Pendientes de revisión', value: data.summary.totalPending, sub: `${data.summary.totalRejected} rechazadas`, icon: <Clock className="w-5 h-5 text-amber-500" />, bg: 'bg-amber-50', color: 'text-amber-600' },
                 { label: 'Estudiantes activos', value: data.summary.activeStudents, sub: `de ${data.summary.totalEnrolled} inscritos`, icon: <Users className="w-5 h-5 text-cta-from" />, bg: 'bg-blue-50', color: 'text-cta-from' },
-                { label: 'En riesgo de abandono', value: data.summary.atRiskStudents, sub: 'sin actividad >7 días', icon: <AlertTriangle className="w-5 h-5 text-red-500" />, bg: data.summary.atRiskStudents > 0 ? 'bg-red-50' : 'bg-gray-50', color: data.summary.atRiskStudents > 0 ? 'text-red-600' : 'text-gray-400' },
+                { label: 'En riesgo de abandono', value: data.summary.atRiskStudents, sub: data.summary.neverStarted > 0 ? `${data.summary.neverStarted} aún no han iniciado` : 'inactivos >7 días habiendo iniciado', icon: <AlertTriangle className="w-5 h-5 text-red-500" />, bg: data.summary.atRiskStudents > 0 ? 'bg-red-50' : 'bg-gray-50', color: data.summary.atRiskStudents > 0 ? 'text-red-600' : 'text-gray-400' },
               ].map((card) => (
                 <div key={card.label} className="card">
                   <div className={`w-10 h-10 ${card.bg} rounded-xl flex items-center justify-center mb-3`}>{card.icon}</div>

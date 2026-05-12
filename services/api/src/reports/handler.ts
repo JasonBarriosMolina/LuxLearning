@@ -134,10 +134,13 @@ export const handler = async (event: Event) => {
         const last = lastActivityByStudent.get(uid);
         return last && (now - last) / 86400000 <= 7;
       }).length;
+      // "At risk" = had activity before BUT inactive >7 days (excludes students who never started)
       const atRiskStudents = enrolledUserIds.filter((uid) => {
         const last = lastActivityByStudent.get(uid);
-        return !last || (now - last) / 86400000 > 7;
+        return last != null && (now - last) / 86400000 > 7;
       }).length;
+      // Students who have never had any activity (never started)
+      const neverStarted = enrolledUserIds.filter((uid) => !lastActivityByStudent.has(uid)).length;
 
       const scored = scopedReflections.filter((r) => (r as any).qualityScore != null);
       const avgQuality = scored.length > 0
@@ -243,7 +246,7 @@ export const handler = async (event: Event) => {
 
       return ok({
         mode, filterStudentId, filterCourseId,
-        summary: { totalReflections, totalApproved, totalRejected, totalPending, overallApprovalRate, totalEnrolled, activeStudents, atRiskStudents, avgQuality },
+        summary: { totalReflections, totalApproved, totalRejected, totalPending, overallApprovalRate, totalEnrolled, activeStudents, atRiskStudents, neverStarted, avgQuality },
         moduleStats,
         heatMap,
         studentProgress,
