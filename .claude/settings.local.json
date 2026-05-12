@@ -105,7 +105,9 @@
       "Bash(vercel --prod --yes)",
       "Bash(vercel ls *)",
       "Bash(vercel alias *)",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Estudiantes en Cognito: {len\\(d[\\\\\"Users\\\\\"]\\)}'\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Estudiantes en Cognito: {len\\(d[\\\\\"Users\\\\\"]\\)}'\\)\")",
+      "Bash(aws dynamodb *)",
+      "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\)['Items']; [print\\(i['sk']['S'], i['status']['S'], i.get\\('error',{}\\).get\\('S','ok'\\)\\) for i in sorted\\(items, key=lambda x: x['sk']['S']\\)]\")"
     ]
   }
 }

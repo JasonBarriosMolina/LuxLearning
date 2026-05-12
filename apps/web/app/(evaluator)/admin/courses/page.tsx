@@ -153,7 +153,7 @@ export default function AdminCoursesPage() {
           } catch (e) { clearInterval(poll); reject(e); }
         }, 2000);
       });
-      setAiResult((res as any).data);
+      setAiResult(res);
       setAiStep(3);
     } catch (err: any) {
       setAiError(err.message ?? 'Error al generar el curso');
