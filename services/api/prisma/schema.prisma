@@ -11,15 +11,17 @@ datasource db {
 }
 
 model Course {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  slug        String   @unique
+  slug        String    @unique
   description String
   imageUrl    String?
-  isActive    Boolean  @default(false)
-  isPilot     Boolean  @default(false)
-  tags        String[] @default([])
-  createdAt   DateTime @default(now())
+  isActive    Boolean   @default(false)
+  isPilot     Boolean   @default(false)
+  tags        String[]  @default([])
+  startDate   DateTime?
+  closeDate   DateTime?
+  createdAt   DateTime  @default(now())
   modules     Module[]
 }
 

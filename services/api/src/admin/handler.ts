@@ -136,10 +136,18 @@ export const handler = async (event: Event) => {
     // ── POST /admin/courses ─────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-      const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
+      const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate } = body;
       if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
       const course = await prisma.course.create({
-        data: { title, slug, description, imageUrl: imageUrl || null, isActive: isActive ?? false, isPilot: isPilot ?? false, tags: Array.isArray(tags) ? tags : [] },
+        data: {
+          title, slug, description,
+          imageUrl: imageUrl || null,
+          isActive: isActive ?? false,
+          isPilot: isPilot ?? false,
+          tags: Array.isArray(tags) ? tags : [],
+          startDate: startDate ? new Date(startDate) : null,
+          closeDate: closeDate ? new Date(closeDate) : null,
+        },
       });
       return created(course);
     }
@@ -178,11 +186,18 @@ export const handler = async (event: Event) => {
 
       if (method === 'PUT') {
         if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-        const { title, slug, description, imageUrl, isActive, isPilot, tags } = body;
+        const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate } = body;
         if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
         const course = await prisma.course.update({
           where: { id: courseId },
-          data: { title, slug, description, imageUrl: imageUrl || null, isActive, isPilot, tags: Array.isArray(tags) ? tags : [] },
+          data: {
+            title, slug, description,
+            imageUrl: imageUrl || null,
+            isActive, isPilot,
+            tags: Array.isArray(tags) ? tags : [],
+            startDate: startDate ? new Date(startDate) : null,
+            closeDate: closeDate ? new Date(closeDate) : null,
+          },
         });
         return ok(course);
       }

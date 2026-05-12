@@ -65,6 +65,11 @@ export default function CoursesPage() {
                         <Clock className="w-3.5 h-3.5" /> {totalDuration} min
                       </span>
                     )}
+                    {course.startDate && new Date(course.startDate) > new Date() && (
+                      <span className="text-xs text-blue-600 font-medium">
+                        Inicia: {new Date(course.startDate).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
                     {course.closeDate && (
                       <span className="text-xs text-amber-600 font-medium">
                         Cierra: {new Date(course.closeDate).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}

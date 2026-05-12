@@ -17,10 +17,12 @@ interface CourseForm {
   isActive: boolean;
   isPilot: boolean;
   tags: string[];
+  startDate: string;
+  closeDate: string;
 }
 
 const EMPTY_FORM: CourseForm = {
-  title: '', slug: '', description: '', imageUrl: '', isActive: false, isPilot: false, tags: [],
+  title: '', slug: '', description: '', imageUrl: '', isActive: false, isPilot: false, tags: [], startDate: '', closeDate: '',
 };
 
 function slugify(text: string) {
@@ -83,6 +85,8 @@ export default function AdminCoursesPage() {
       isActive: course.isActive,
       isPilot: course.isPilot,
       tags: course.tags ?? [],
+      startDate: course.startDate ? new Date(course.startDate).toISOString().slice(0, 10) : '',
+      closeDate: course.closeDate ? new Date(course.closeDate).toISOString().slice(0, 10) : '',
     });
     setTagInput('');
     setError('');
@@ -343,6 +347,27 @@ export default function AdminCoursesPage() {
             onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
             placeholder="https://..."
           />
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-charcoal">Fecha de inicio</label>
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+                className="input-field"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-charcoal">Fecha de cierre</label>
+              <input
+                type="date"
+                value={form.closeDate}
+                onChange={(e) => setForm((f) => ({ ...f, closeDate: e.target.value }))}
+                className="input-field"
+              />
+            </div>
+          </div>
           {/* Tags */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-charcoal flex items-center gap-1.5">
