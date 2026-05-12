@@ -46,6 +46,7 @@ export default function AdminCoursesPage() {
   const [aiMethod, setAiMethod] = useState<'topic' | 'url'>('topic');
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiLoadingMsg, setAiLoadingMsg] = useState('');
   const [aiResult, setAiResult] = useState<any>(null);
   const [aiPublishing, setAiPublishing] = useState(false);
   const [aiError, setAiError] = useState('');
@@ -131,14 +132,20 @@ export default function AdminCoursesPage() {
     if (!aiInput.trim()) return;
     setAiLoading(true);
     setAiError('');
+    setAiLoadingMsg('Diseñando estructura del curso...');
+    // Switch message after ~2.5s when parallel module generation kicks in
+    const msgTimer = setTimeout(() => setAiLoadingMsg('Generando módulos, lecciones y preguntas...'), 2500);
     try {
       const res = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
+      clearTimeout(msgTimer);
       setAiResult((res as any).data);
       setAiStep(3);
     } catch (err: any) {
+      clearTimeout(msgTimer);
       setAiError(err.message ?? 'Error al generar el curso');
     } finally {
       setAiLoading(false);
+      setAiLoadingMsg('');
     }
   };
 
@@ -505,7 +512,7 @@ export default function AdminCoursesPage() {
                   leftIcon={!aiLoading ? <Sparkles className="w-4 h-4" /> : undefined}
                   disabled={!aiInput.trim()}
                 >
-                  {aiLoading ? 'Generando...' : 'Generar con IA'}
+                  {aiLoading ? (aiLoadingMsg || 'Generando...') : 'Generar con IA'}
                 </Button>
               </div>
             </div>

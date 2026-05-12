@@ -306,7 +306,7 @@ export class LuxLearningStack extends cdk.Stack {
     const quizFn     = makeFn('QuizFn',     'quiz/handler.ts',           'handler', { memorySize: 512 });
     const reflFn     = makeFn('ReflectionFn', 'reflection/handler.ts',  'handler', { memorySize: 512 });
     const evaluatorFn = makeFn('EvaluatorFn', 'evaluator/handler.ts',   'handler', { memorySize: 512, timeout: cdk.Duration.seconds(60) });
-    const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512 });
+    const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512, timeout: cdk.Duration.seconds(120) });
     const notifsFn   = makeFn('NotifsFn',   'notifications/handler.ts', 'handler');
     const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
     const pushFn     = makeFn('PushFn',     'push/handler.ts',           'handler');
