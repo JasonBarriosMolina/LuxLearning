@@ -16,12 +16,16 @@ import {
   Settings2,
   BarChart2,
   CalendarCheck,
+  CalendarDays,
   UserPlus,
+  MessageSquare,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useInstallPrompt } from '@/lib/hooks/useInstallPrompt';
 import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
 
 interface SidebarProps {
   mobileOpen?: boolean;
@@ -67,6 +71,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['STUDENT'],
   },
   {
+    href: '/calendar',
+    label: 'Calendario',
+    icon: <CalendarDays className="w-5 h-5" />,
+    roles: ['STUDENT'],
+  },
+  {
     href: '/evaluator/reflections',
     label: 'Evaluaciones',
     icon: <ClipboardList className="w-5 h-5" />,
@@ -109,12 +119,62 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['ADMIN'],
   },
   {
+    href: '/activity',
+    label: 'Mi Actividad',
+    icon: <BarChart2 className="w-5 h-5" />,
+    roles: ['STUDENT'],
+  },
+  {
     href: '/profile',
-    label: 'Mi perfil',
+    label: 'Mi Perfil',
     icon: <UserCircle className="w-5 h-5" />,
-    roles: ['STUDENT', 'EVALUATOR', 'ADMIN'],
+    roles: ['STUDENT'],
+  },
+  {
+    href: '/communications',
+    label: 'Comunicaciones',
+    icon: <MessageSquare className="w-5 h-5" />,
+    roles: ['STUDENT'],
+  },
+  {
+    href: '/evaluator/communications',
+    label: 'Comunicaciones',
+    icon: <MessageSquare className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/evaluator/profile',
+    label: 'Mi Perfil',
+    icon: <UserCircle className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
   },
 ];
+
+function UnreadBadge() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const poll = () => {
+      api.messages.chats.list()
+        .then((res: any) => {
+          const items: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+          const total = items.reduce((s: number, c: any) => s + (c.unread ?? 0), 0);
+          setCount(total);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (count === 0) return null;
+  return (
+    <span className="ml-auto bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">
+      {count > 9 ? '9+' : count}
+    </span>
+  );
+}
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
@@ -160,6 +220,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
         {visibleItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+          const isCommunications = item.href.includes('communications');
           return (
             <Link
               key={item.href}
@@ -173,7 +234,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               )}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {isCommunications && <UnreadBadge />}
             </Link>
           );
         })}

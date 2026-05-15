@@ -10,12 +10,14 @@ import {
   AdminEnableUserCommand,
   AdminDeleteUserCommand,
   AdminGetUserCommand,
+  AdminUpdateUserAttributesCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
+import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
 
@@ -106,6 +108,19 @@ function isAdmin(event: Event): boolean {
   return event.requestContext.authorizer?.lambda?.role === 'ADMIN';
 }
 
+async function getCallerName(event: Event): Promise<string | null> {
+  const userId = event.requestContext.authorizer?.lambda?.userId;
+  const email = event.requestContext.authorizer?.lambda?.email;
+  if (!userId || userId === 'system') return null;
+  try {
+    const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
+    const name = res.UserAttributes?.find((a) => a.Name === 'name')?.Value;
+    return name || email || userId;
+  } catch {
+    return email || userId;
+  }
+}
+
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
@@ -139,6 +154,7 @@ export const handler = async (event: Event) => {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate } = body;
       if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
+      const callerName = await getCallerName(event);
       const course = await prisma.course.create({
         data: {
           title, slug, description,
@@ -148,8 +164,15 @@ export const handler = async (event: Event) => {
           tags: Array.isArray(tags) ? tags : [],
           startDate: startDate ? new Date(startDate) : null,
           closeDate: closeDate ? new Date(closeDate) : null,
+          createdByName: callerName,
         },
       });
+      // Auto-create group chat for the new course
+      await upsertChat(`group_${course.id}`, {
+        type: 'GROUP',
+        name: `Curso: ${course.title}`,
+        participants: [],
+      }).catch(() => {});
       return created(course);
     }
 
@@ -361,20 +384,42 @@ export const handler = async (event: Event) => {
     if (path === '/admin/users' && method === 'GET') {
       if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
 
+      // Paginated fetch helpers
+      const listAllUsers = async () => {
+        const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+        let token: string | undefined;
+        do {
+          const res = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60, PaginationToken: token }));
+          all.push(...(res.Users ?? []));
+          token = res.PaginationToken;
+        } while (token);
+        return all;
+      };
+      const listAllInGroup = async (GroupName: string) => {
+        const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+        let token: string | undefined;
+        do {
+          const res = await cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName, Limit: 60, NextToken: token }));
+          all.push(...(res.Users ?? []));
+          token = res.NextToken;
+        } while (token);
+        return all;
+      };
+
       // Fetch all users + group memberships in parallel
-      const [usersRes, evaluatorsRes, adminsRes] = await Promise.all([
-        cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 })),
-        cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'EVALUATOR', Limit: 60 })),
-        cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'ADMIN', Limit: 60 })),
+      const [allUsers, evaluators, admins] = await Promise.all([
+        listAllUsers(),
+        listAllInGroup('EVALUATOR'),
+        listAllInGroup('ADMIN'),
       ]);
 
-      const evaluatorUsernames = new Set((evaluatorsRes.Users ?? []).map((u) => u.Username));
-      const adminUsernames = new Set((adminsRes.Users ?? []).map((u) => u.Username));
+      const evaluatorUsernames = new Set(evaluators.map((u) => u.Username));
+      const adminUsernames = new Set(admins.map((u) => u.Username));
 
       const attr = (user: { Attributes?: { Name?: string; Value?: string }[] }, name: string) =>
         user.Attributes?.find((a) => a.Name === name)?.Value ?? '';
 
-      const users = (usersRes.Users ?? []).map((u) => {
+      const users = allUsers.map((u) => {
         const username = u.Username ?? '';
         const role = adminUsernames.has(username) ? 'ADMIN'
           : evaluatorUsernames.has(username) ? 'EVALUATOR'
@@ -749,45 +794,74 @@ Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order
 {"title":"Subtema H","order":9,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
 {"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":"<p>Escribe 1 párrafo que resuma los conceptos principales aprendidos en ${mod.title} y los próximos pasos del estudiante.</p>","duration":"5 min","points":["Resumen concepto 1","Resumen concepto 2","Próximos pasos"],"tip":"Completa el quiz para afianzar lo aprendido."}
 ]
-REGLAS ESTRICTAS: 10 lecciones exactas. TODAS deben tener content real en español con etiquetas <p>. points y tip ESPECÍFICOS al tema real. Sin markdown, sin comillas dentro del content. Genera contenido educativo auténtico, no ejemplos genéricos.`, 4000),
+REGLAS ESTRICTAS: 10 lecciones exactas. TODAS deben tener content real en español con etiquetas <p>. points y tip ESPECÍFICOS al tema real. Sin markdown, sin comillas dentro del content. Genera contenido educativo auténtico, no ejemplos genéricos.`, 6000),
 
-              bedrockJSON(`Genera 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
+              bedrockJSON(`Genera exactamente 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con array JSON válido:
 [
 {"text":"¿Pregunta real sobre ${mod.title}?","options":["Respuesta correcta","Distractor B","Distractor C","Distractor D"],"correctIndex":0,"order":1},
-{"text":"¿Pregunta 2?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":2},
-{"text":"¿Pregunta 3?","options":["Op A","Op B","Op C","Op D"],"correctIndex":2,"order":3},
-{"text":"¿Pregunta 4?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":4},
-{"text":"¿Pregunta 5?","options":["Op A","Op B","Op C","Op D"],"correctIndex":3,"order":5},
-{"text":"¿Pregunta 6?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":6},
-{"text":"¿Pregunta 7?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":7},
-{"text":"¿Pregunta 8?","options":["Op A","Op B","Op C","Op D"],"correctIndex":2,"order":8},
-{"text":"¿Pregunta 9?","options":["Op A","Op B","Op C","Op D"],"correctIndex":1,"order":9},
-{"text":"¿Pregunta 10?","options":["Op A","Op B","Op C","Op D"],"correctIndex":3,"order":10}
+{"text":"¿Segunda pregunta sobre ${mod.title}?","options":["Op A correcta","Op B","Op C","Op D"],"correctIndex":0,"order":2},
+{"text":"¿Tercera pregunta?","options":["Op A","Op B correcta","Op C","Op D"],"correctIndex":1,"order":3},
+{"text":"¿Cuarta pregunta?","options":["Op A","Op B","Op C correcta","Op D"],"correctIndex":2,"order":4},
+{"text":"¿Quinta pregunta?","options":["Op A","Op B","Op C","Op D correcta"],"correctIndex":3,"order":5},
+{"text":"¿Sexta pregunta?","options":["Op A correcta","Op B","Op C","Op D"],"correctIndex":0,"order":6},
+{"text":"¿Séptima pregunta?","options":["Op A","Op B correcta","Op C","Op D"],"correctIndex":1,"order":7},
+{"text":"¿Octava pregunta?","options":["Op A","Op B","Op C correcta","Op D"],"correctIndex":2,"order":8},
+{"text":"¿Novena pregunta?","options":["Op A","Op B","Op C","Op D correcta"],"correctIndex":3,"order":9},
+{"text":"¿Décima pregunta?","options":["Op A correcta","Op B","Op C","Op D"],"correctIndex":0,"order":10}
 ]
-REGLAS: 10 preguntas exactas, opciones reales (no "Op A"), específicas al tema "${mod.title}", correctIndex 0-3. Sin markdown.`, 1500),
+REGLAS: exactamente 10 preguntas, opciones con texto real (no genérico), específicas al tema "${mod.title}", correctIndex entre 0-3. Sin markdown.`, 2000),
             ]);
 
-            // Garantizar que TODAS las lecciones tengan content
-            const finalLessons = Array.isArray(lessons) ? await Promise.all(lessons.map(async (l: any) => {
-              if (l.content && l.content.trim().length > 10) return l;
-              // Si falta content, generarlo individualmente
+            // Garantizar 10 lecciones completas — validar título, content y regenerar si faltan
+            const validLessons = Array.isArray(lessons) ? lessons.filter((l: any) => l && typeof l === 'object') : [];
+
+            // Si faltan lecciones (< 10), completar las faltantes
+            const existingOrders = new Set(validLessons.map((l: any) => l.order));
+            const missingOrders = Array.from({ length: 10 }, (_, i) => i + 1).filter((o) => !existingOrders.has(o));
+            const extraLessons = await Promise.all(missingOrders.map(async (order) => {
+              const isVideo = order === 1 || order === 10;
               const fallback = await bedrockJSON(
-                `Genera el contenido educativo en español para la lección "${l.title}" del módulo "${mod.title}" del curso "${structure.title}".
-Responde ÚNICAMENTE con JSON válido: {"content":"<p>Párrafo 1 educativo real sobre el tema.</p><p>Párrafo 2 con más detalle.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
-Sin markdown. Contenido auténtico y específico.`, 800
+                `Genera la lección ${order} de 10 del módulo "${mod.title}" del curso "${structure.title}".
+Responde ÚNICAMENTE con JSON: {"title":"Título real","order":${order},"type":"${isVideo ? 'video' : 'text'}","content":"<p>Contenido educativo real.</p><p>Segundo párrafo.</p>","duration":"${isVideo ? '5' : '8'} min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo práctico."}`, 600
+              );
+              return { order, type: isVideo ? 'video' : 'text', duration: isVideo ? '5 min' : '8 min', ...fallback, order };
+            }));
+
+            const allLessons = [...validLessons, ...extraLessons].sort((a: any, b: any) => a.order - b.order);
+
+            // Validar y completar campos faltantes en cada lección
+            const finalLessons = await Promise.all(allLessons.map(async (l: any) => {
+              const needsContent = !l.content || l.content.trim().length < 10;
+              const needsTitle = !l.title || l.title.trim().length < 2;
+              if (!needsContent && !needsTitle) return l;
+              const fallback = await bedrockJSON(
+                `Genera datos para la lección ${l.order} "${needsTitle ? 'sin título' : l.title}" del módulo "${mod.title}".
+Responde ÚNICAMENTE con JSON: {"title":"Título real específico","content":"<p>Párrafo 1 educativo.</p><p>Párrafo 2.</p>","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo práctico."}`, 600
               );
               return {
                 ...l,
-                content: fallback.content ?? `<p>Introducción a ${l.title} en el contexto de ${mod.title}.</p>`,
-                points: fallback.points?.length ? fallback.points : (l.points?.length ? l.points : [`Concepto clave de ${l.title}`]),
-                tip: fallback.tip ?? l.tip ?? 'Repasa los puntos clave antes de continuar.',
+                title: needsTitle ? (fallback.title ?? `Lección ${l.order} — ${mod.title}`) : l.title,
+                content: needsContent ? (fallback.content ?? `<p>Contenido de lección ${l.order} sobre ${mod.title}.</p>`) : l.content,
+                points: l.points?.length ? l.points : (fallback.points ?? [`Punto clave de ${mod.title}`]),
+                tip: l.tip || fallback.tip || 'Repasa los puntos clave antes de continuar.',
               };
-            })) : [];
+            }));
+
+            // Garantizar 10 preguntas de quiz
+            let finalQuestions = Array.isArray(questions) ? questions.filter((q: any) => q?.text && q?.options?.length === 4) : [];
+            if (finalQuestions.length < 10) {
+              const missing = 10 - finalQuestions.length;
+              const extraQ = await bedrockJSON(
+                `Genera ${missing} preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":${finalQuestions.length + 1}},...]. Sin markdown.`, 1000
+              );
+              if (Array.isArray(extraQ)) finalQuestions = [...finalQuestions, ...extraQ].slice(0, 10);
+            }
+            finalQuestions = finalQuestions.map((q: any, i: number) => ({ ...q, order: i + 1 }));
 
             return { order: mod.order, title: mod.title, description: mod.description,
               lessons: finalLessons,
-              questions: Array.isArray(questions) ? questions : [] };
+              questions: finalQuestions };
           };
 
           const modulesWithContent = await Promise.all(structure.modules.map((mod: any) => generateModule(mod)));
@@ -839,7 +913,7 @@ Sin markdown. Contenido auténtico y específico.`, 800
 
     // ── POST /admin/courses/ai-publish ──────────────────────────────────────────
     if (path === '/admin/courses/ai-publish' && method === 'POST') {
-      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
       const { title, description, modules } = body as {
         title?: string;
         description?: string;
@@ -856,6 +930,36 @@ Sin markdown. Contenido auténtico y específico.`, 800
       const slug = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
         + '-' + Math.random().toString(36).slice(2, 8);
 
+      const publisherName = await getCallerName(event);
+      const publisherRole = event.requestContext.authorizer?.lambda?.role ?? '';
+      const publisherId = event.requestContext.authorizer?.lambda?.userId;
+
+      // Suggest tags with AI (non-blocking — run before course creation)
+      let suggestedTags: string[] = [];
+      try {
+        const tagPrompt = `Eres un experto en clasificación de cursos educativos. Sugiere entre 3 y 5 etiquetas (tags) relevantes para el siguiente curso, en español, cortas (1-3 palabras cada una).
+
+Curso: "${title}"
+Descripción: "${(description ?? '').slice(0, 300)}"
+
+Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comunicación","gestión"]`;
+
+        const tagRes = await bedrock.send(new InvokeModelCommand({
+          modelId: 'us.anthropic.claude-3-haiku-20240307-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 200,
+            messages: [{ role: 'user', content: tagPrompt }],
+          }),
+        }));
+        const tagText = JSON.parse(new TextDecoder().decode(tagRes.body)).content[0].text.trim();
+        const cleaned = tagText.replace(/```json|```/g, '').trim();
+        suggestedTags = JSON.parse(cleaned);
+        if (!Array.isArray(suggestedTags)) suggestedTags = [];
+      } catch { suggestedTags = []; }
+
       const course = await prisma.course.create({
         data: {
           title,
@@ -863,7 +967,10 @@ Sin markdown. Contenido auténtico y específico.`, 800
           description: description ?? '',
           isActive: false,
           isPilot: false,
-          tags: ['ia-generado'],
+          tags: suggestedTags,
+          createdByName: publisherName,
+          evaluatorId: publisherRole === 'EVALUATOR' ? publisherId : null,
+          evaluatorName: publisherRole === 'EVALUATOR' ? (publisherName ?? null) : null,
           modules: {
             create: modules.map((m) => ({
               title: m.title,
@@ -904,7 +1011,51 @@ Sin markdown. Contenido auténtico y específico.`, 800
           },
         },
       });
-      return created(course);
+      // Auto-create group chat for the new course
+      await upsertChat(`group_${course.id}`, {
+        type: 'GROUP',
+        name: `Curso: ${course.title}`,
+        participants: [],
+      }).catch(() => {});
+
+      return created({ ...course, suggestedTags });
+    }
+
+    // ── GET /user/profile ───────────────────────────────────────────────────────
+    if (path === '/user/profile' && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('No autorizado');
+      const userId = event.requestContext.authorizer?.lambda?.userId;
+      if (!userId) return badRequest('userId no disponible');
+      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
+      const attr = (name: string) => res.UserAttributes?.find((a) => a.Name === name)?.Value ?? '';
+      return ok({
+        username: userId,
+        name: attr('name'),
+        email: attr('email') || userId,
+        phone: attr('phone_number'),
+        bio: attr('custom:bio'),
+        picture: attr('picture'),
+      });
+    }
+
+    // ── PUT /user/profile ───────────────────────────────────────────────────────
+    if (path === '/user/profile' && method === 'PUT') {
+      if (!isAuthorized(event)) return forbidden('No autorizado');
+      const userId = event.requestContext.authorizer?.lambda?.userId;
+      if (!userId) return badRequest('userId no disponible');
+      const { name, phone, bio, picture } = body as { name?: string; phone?: string; bio?: string; picture?: string };
+      const attrs: { Name: string; Value: string }[] = [];
+      if (name !== undefined) attrs.push({ Name: 'name', Value: name });
+      if (phone !== undefined) attrs.push({ Name: 'phone_number', Value: phone });
+      if (bio !== undefined) attrs.push({ Name: 'custom:bio', Value: bio });
+      if (picture !== undefined) attrs.push({ Name: 'picture', Value: picture });
+      if (attrs.length === 0) return badRequest('No hay campos para actualizar');
+      await cognito.send(new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: userId,
+        UserAttributes: attrs,
+      }));
+      return ok({ updated: true });
     }
 
     return notFound('Ruta no encontrada');

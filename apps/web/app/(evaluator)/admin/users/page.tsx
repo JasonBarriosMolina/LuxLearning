@@ -211,7 +211,7 @@ function InviteModal({ onClose, onCreated, courses }: {
           {courses.length > 0 && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Cursos asignados <span className="font-normal text-gray-400">(opcional — sin selección ve todos)</span>
+                Cursos asignados <span className="font-normal text-gray-400">(obligatorio para Estudiantes — sin cursos asignados no verá contenido)</span>
               </label>
               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                 {courses.map((c) => {

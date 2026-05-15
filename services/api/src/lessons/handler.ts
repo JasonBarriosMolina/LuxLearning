@@ -8,7 +8,12 @@ import {
   getFavorites, toggleFavorite,
   getTranscript, saveTranscript,
   updateLastSeen,
+  markOnboardingDone, isOnboardingDone,
+  getTasksForUser, updateTask,
+  startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
+  TABLES, ddb,
 } from '../shared/db-dynamo';
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
 
@@ -157,6 +162,89 @@ export const handler = async (event: Event) => {
     if (method === 'POST' && path === '/student/heartbeat') {
       if (userId) await updateLastSeen(userId);
       return ok({ ok: true });
+    }
+
+    // ── GET /student/onboarding ───────────────────────────────────────────────
+    if (method === 'GET' && path === '/student/onboarding') {
+      const done = userId ? await isOnboardingDone(userId) : false;
+      return ok({ done });
+    }
+
+    // ── POST /student/onboarding ──────────────────────────────────────────────
+    if (method === 'POST' && path === '/student/onboarding') {
+      if (userId) await markOnboardingDone(userId);
+      return ok({ ok: true });
+    }
+
+    // ── PUT /student/tasks/:taskId/submit — submit a URL for a task ───────────
+    const taskSubmitMatch = path.match(/^\/student\/tasks\/([^/]+)\/submit$/);
+    if (taskSubmitMatch && method === 'PUT') {
+      const taskId = taskSubmitMatch[1]!;
+      let body: any = {};
+      try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* no body */ }
+      const { submissionUrl } = body as { submissionUrl?: string };
+      if (!submissionUrl) return badRequest('submissionUrl es requerido');
+      const tasks = await getTasksForUser(userId);
+      const task = tasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      await updateTask(userId, task.sk, { status: 'COMPLETED', completedAt: new Date().toISOString() });
+      // Also store submissionUrl via UpdateCommand
+      await ddb.send(new UpdateCommand({
+        TableName: TABLES.TASKS,
+        Key: { userId, sk: task.sk },
+        UpdateExpression: 'SET submissionUrl = :url',
+        ExpressionAttributeValues: { ':url': submissionUrl },
+      })).catch(() => {});
+      return ok({ ok: true });
+    }
+
+    // ── Activity / Session Tracking ───────────────────────────────────────────
+
+    if (method === 'POST' && path === '/student/activity/start') {
+      let body: any = {};
+      try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* no body */ }
+      const { sessionId } = body as { sessionId?: string };
+      if (!sessionId) return badRequest('sessionId es requerido');
+      await startSession(userId, sessionId);
+      return ok({ ok: true });
+    }
+
+    if (method === 'PUT' && path === '/student/activity/update') {
+      let body: any = {};
+      try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* no body */ }
+      const { sessionId, durationSeconds } = body as { sessionId?: string; durationSeconds?: number };
+      if (!sessionId) return badRequest('sessionId es requerido');
+      await updateSession(userId, sessionId, durationSeconds ?? 0);
+      return ok({ ok: true });
+    }
+
+    if (method === 'POST' && path === '/student/activity/end') {
+      let body: any = {};
+      try { body = event.body ? JSON.parse(event.body) : {}; } catch { /* no body */ }
+      const { sessionId } = body as { sessionId?: string };
+      if (!sessionId) return badRequest('sessionId es requerido');
+      await endSession(userId, sessionId);
+      return ok({ ok: true });
+    }
+
+    if (method === 'GET' && path === '/student/activity') {
+      const days = parseInt(event.queryStringParameters?.days ?? '30', 10);
+      const [sessions, quizAttempts, tasks] = await Promise.all([
+        getActivity(userId, days),
+        getAllQuizAttemptsForUser(userId),
+        getTasksForUser(userId),
+      ]);
+      // Build summary
+      const totalSeconds = sessions.reduce((s: number, sess: any) => s + (sess.durationSeconds ?? 0), 0);
+      const totalHours = Math.round((totalSeconds / 3600) * 10) / 10;
+      // Group by day for chart
+      const byDay: Record<string, number> = {};
+      sessions.forEach((sess: any) => {
+        const day = (sess.startedAt ?? '').slice(0, 10);
+        if (day) byDay[day] = (byDay[day] ?? 0) + (sess.durationSeconds ?? 0);
+      });
+      const completedTasks = tasks.filter((t: any) => t.status === 'COMPLETED');
+      return ok({ sessions, totalHours, byDay, quizAttempts, completedTasks });
     }
 
     return badRequest('Unknown route');

@@ -20,6 +20,7 @@ export const TABLES = {
   TASKS: process.env.DYNAMO_TABLE_TASKS ?? 'ScheduledTasks',
   REPORT_ANALYSIS: process.env.DYNAMO_TABLE_REPORT_ANALYSIS ?? 'ReportAnalysis',
   RECOMMENDATIONS: process.env.DYNAMO_TABLE_RECOMMENDATIONS ?? 'CurriculumRecommendations',
+  ACTIVITY: process.env.DYNAMO_TABLE_ACTIVITY ?? 'LuxActivity',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -206,6 +207,15 @@ export async function getAllReflections(): Promise<Reflection[]> {
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastKey);
   return items;
+}
+
+export async function getAllQuizAttemptsForUser(userId: string): Promise<QuizAttempt[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.QUIZ,
+    KeyConditionExpression: 'userId = :uid',
+    ExpressionAttributeValues: { ':uid': userId },
+  }));
+  return (result.Items ?? []) as unknown as QuizAttempt[];
 }
 
 export async function getAllQuizAttempts(): Promise<QuizAttempt[]> {
@@ -488,7 +498,9 @@ export interface Task {
   moduleId?: string;
   courseTitle?: string;
   moduleTitle?: string;
-  type: 'custom' | 'complete_module' | 'submit_reflection' | 'pass_quiz';
+  type: 'custom' | 'complete_module' | 'submit_reflection' | 'pass_quiz' | 'upload_link' | 'watch_video' | 'read_resource';
+  resourceUrl?: string;
+  submissionUrl?: string;
   dueDate: string;      // ISO date string (YYYY-MM-DD)
   status: 'PENDING' | 'COMPLETED' | 'OVERDUE';
   assignedBy: string;
@@ -624,6 +636,24 @@ export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: stri
   })).filter((item) => item.userId && !item.userId.startsWith('_'));
 }
 
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+// Stored in PROGRESS table: userId = userId, sk = 'ONBOARDING#done'
+
+export async function markOnboardingDone(userId: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: 'ONBOARDING#done', completedAt: new Date().toISOString() },
+  }));
+}
+
+export async function isOnboardingDone(userId: string): Promise<boolean> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: 'ONBOARDING#done' },
+  }));
+  return !!result.Item;
+}
+
 // ─── AI Generation Jobs ───────────────────────────────────────────────────────
 
 export async function saveAiJob(jobId: string, data: { status: 'processing' | 'done' | 'error'; result?: any; error?: string }): Promise<void> {
@@ -639,4 +669,64 @@ export async function getAiJob(jobId: string): Promise<{ status: string; result?
     Key: { userId: '_AIJOB', sk: jobId },
   }));
   return result.Item ? (result.Item as any) : null;
+}
+
+// ─── Digital Signature ────────────────────────────────────────────────────────
+// Stored in PROGRESS table: userId = userId, sk = 'SIGNATURE'
+
+export async function getSignature(userId: string): Promise<string | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: 'SIGNATURE' },
+  }));
+  return result.Item?.signature ?? null;
+}
+
+export async function saveSignature(userId: string, signature: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: 'SIGNATURE', signature, updatedAt: new Date().toISOString() },
+  }));
+}
+
+// ─── Activity / Session Tracking ─────────────────────────────────────────────
+// Table: LuxActivity, PK: userId, SK: SESSION#${timestamp}
+
+export async function startSession(userId: string, sessionId: string): Promise<void> {
+  const now = new Date().toISOString();
+  // TTL: 90 days from now
+  const ttl = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60;
+  await ddb.send(new PutCommand({
+    TableName: TABLES.ACTIVITY,
+    Item: { userId, sk: `SESSION#${sessionId}`, sessionId, startedAt: now, durationSeconds: 0, ttl },
+  }));
+}
+
+export async function updateSession(userId: string, sessionId: string, durationSeconds: number): Promise<void> {
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.ACTIVITY,
+    Key: { userId, sk: `SESSION#${sessionId}` },
+    UpdateExpression: 'SET durationSeconds = :d, lastUpdatedAt = :ts',
+    ExpressionAttributeValues: { ':d': durationSeconds, ':ts': new Date().toISOString() },
+  })).catch(() => {});
+}
+
+export async function endSession(userId: string, sessionId: string): Promise<void> {
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.ACTIVITY,
+    Key: { userId, sk: `SESSION#${sessionId}` },
+    UpdateExpression: 'SET endedAt = :ts',
+    ExpressionAttributeValues: { ':ts': new Date().toISOString() },
+  })).catch(() => {});
+}
+
+export async function getActivity(userId: string, days = 30): Promise<any[]> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.ACTIVITY,
+    KeyConditionExpression: 'userId = :uid AND sk >= :since',
+    ExpressionAttributeValues: { ':uid': userId, ':since': `SESSION#${since}` },
+    ScanIndexForward: false,
+  }));
+  return result.Items ?? [];
 }
