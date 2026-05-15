@@ -1,6 +1,6 @@
 # Lux Learning — Contexto Técnico y Reglas de Negocio
 
-> **Última actualización:** 2026-05-07 — Reports feature + bug fixes completos  
+> **Última actualización:** 2026-05-15 — Batch 10 completo (A-1, A-3, A-4, A-5, A-9, A-10, B-4, B-5)  
 > **Actualizar este archivo en cada deploy significativo.**
 
 ---
@@ -203,6 +203,9 @@ Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
 - ✅ Dark mode (toggle persistente, sin FOUC)
 - ✅ Onboarding tour (4 pasos, localStorage guard)
 - ✅ Push notifications (Web Push PWA)
+- ✅ **Calendario visual** `/calendar` — react-big-calendar, colores por tipo de tarea, filtro por curso
+- ✅ **Mi Actividad** `/activity` — sesiones, quiz scores (ScatterChart), tareas completadas (recharts)
+- ✅ **Mi Perfil** en sidebar del estudiante
 
 ### Evaluador
 - ✅ Dashboard con workqueue por curso/estudiante, alertas urgentes (>36h)
@@ -213,10 +216,15 @@ Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
 - ✅ Score de calidad 1-10 al aprobar
 - ✅ Tareas a estudiantes individuales o cursos completos
 - ✅ **Reportes:** 5 pilares (KPIs, progreso integral, análisis cualitativo IA, mapa de calor quiz, recomendaciones editables), filtros master/estudiante/curso, export PDF + email SES
+- ✅ **Lista estudiantes** como tabla limpia (nombre+fecha registro+estado+cursos+acciones, sin PresenceBadge)
+- ✅ Badge ⚠ en tareas con UUID como título
+- ✅ Botón submit deshabilitado durante guardado (previene doble envío)
 
 ### Admin
 - ✅ Gestión de cursos, módulos, lecciones, preguntas (solo ADMIN)
 - ✅ Creación de cursos con IA (topic o URL → estructura 7-10 módulos → preview → publicar)
+- ✅ **Tags generados por IA persisten en Prisma** al publicar curso (fix A-5)
+- ✅ Label correcto en invitación: "obligatorio para Estudiantes — sin cursos asignados no verá contenido"
 - ✅ Gestión de usuarios: invitar, cambiar rol, activar/desactivar
 - ✅ Gestión de inscripciones por usuario
 
@@ -265,6 +273,22 @@ VAPID_EMAIL=mailto:admin@luxlearning.com
 
 ---
 
+## Colores de Tipos de Tarea (`apps/web/lib/constants/task-colors.ts`)
+
+```typescript
+custom: '#6366F1'          // Tarea libre
+complete_module: '#3B82F6' // Completar módulo
+submit_reflection: '#8B5CF6' // Enviar reflexión
+pass_quiz: '#F59E0B'       // Aprobar quiz
+upload_link: '#10B981'     // Subir enlace
+watch_video: '#EC4899'     // Ver video
+read_resource: '#14B8A6'   // Leer recurso
+```
+
+Usado en `TaskCalendar.tsx` y `activity/page.tsx`.
+
+---
+
 ## Deploy
 
 ### Backend (CDK)
@@ -292,6 +316,7 @@ cd apps/web && npx next build
 
 | Fecha | Descripción |
 |-------|-------------|
+| 2026-05-15 | **Batch 10:** A-1 label invitación, A-3 Mi Perfil sidebar, A-4 tabla estudiantes limpia, A-5 tags IA persisten, A-9 badge UUID, A-10 submit guard, B-4 calendario visual + colores tipo, B-5 actividad extendida (quiz scores + sesiones + tareas) |
 | 2026-05-07 | Bug fixes: error rate quiz, reports filter guard, dashboard nav router.push |
 | 2026-05-07 | Reports feature: ReportsFn + AnalysisFn Lambdas, 2 nuevas tablas DDB, EventBridge nightly, UI 5 pilares, filtros, PDF + email SES |
 | 2026-05-07 | Mejora prompt ai-preview reflexión (evaluador pedagógico especializado), model ID → global.* en todos los handlers, IAM bedrock fix (`arn:aws:bedrock:*::`) |
