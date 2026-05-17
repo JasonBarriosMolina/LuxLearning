@@ -107,7 +107,26 @@
       "Bash(vercel alias *)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Estudiantes en Cognito: {len\\(d[\\\\\"Users\\\\\"]\\)}'\\)\")",
       "Bash(aws dynamodb *)",
-      "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\)['Items']; [print\\(i['sk']['S'], i['status']['S'], i.get\\('error',{}\\).get\\('S','ok'\\)\\) for i in sorted\\(items, key=lambda x: x['sk']['S']\\)]\")"
+      "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\)['Items']; [print\\(i['sk']['S'], i['status']['S'], i.get\\('error',{}\\).get\\('S','ok'\\)\\) for i in sorted\\(items, key=lambda x: x['sk']['S']\\)]\")",
+      "Bash(node --input-type=module)",
+      "Bash(grep -v \"^$\")",
+      "PowerShell(cd D:\\\\InHouse\\\\Lux\\\\services\\\\api; $env:PRISMA_MIGRATE_SKIP_GENERATE=\"true\"; npx prisma db push 2>&1 | Select-Object -Last 15)",
+      "Bash(grep -qE \"\\(Deployment complete|Error:|Build failed|Completed|\\\\\\\\.vercel\\\\\\\\.app\\)\" \"C:\\\\Users\\\\jason\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--InHouse-Lux\\\\7a94b293-bc02-4e85-ab99-fb069fe85e2a\\\\tasks\\\\bttslao9c.output\")",
+      "Bash(aws ce *)",
+      "Bash(python3 -c ' *)",
+      "Bash(aws inspector2 *)",
+      "Bash(aws ec2 *)",
+      "Bash(aws elbv2 *)",
+      "Bash(aws rds *)",
+      "Bash(aws securityhub *)",
+      "Bash(aws guardduty *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\InHouse\\\\Lux\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('dynamicRoutes:', len\\(d.get\\('dynamicRoutes',[]\\)\\), 'staticRoutes:', len\\(d.get\\('staticRoutes',[]\\)\\), 'pages:', len\\(d.get\\('pages',[]\\)\\)\\)\")",
+      "Bash(npm show *)",
+      "Bash(vercel build *)",
+      "Bash(ls \"D:\\\\InHouse\\\\Lux\\\\.claude\" 2>&1 && ls \"C:\\\\Users\\\\jason\\\\.claude\" 2>&1)",
+      "Bash(git commit -m 'docs: actualizar CONTEXT.md con Batch 10 \\(2026-05-15\\) *)"
     ]
   }
 }

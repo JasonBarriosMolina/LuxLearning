@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -12,9 +12,12 @@ import type { Certificate } from '@lux/types';
 
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
+  const router = useRouter();
   const [course, setCourse] = useState<any>(null);
   const [cert, setCert] = useState<Certificate | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [contactingEvaluator, setContactingEvaluator] = useState(false);
 
   useEffect(() => {
     api.courses.get(courseId).then((res) => {
@@ -38,6 +41,13 @@ export default function CoursePage() {
             .catch(() => {});
         }
       }).catch(() => {});
+
+      // Load chat unread count for group chat
+      api.messages.chats.list().then((res: any) => {
+        const chats: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+        const groupChat = chats.find((ch: any) => ch.chatId === `group_${courseId}` || ch.sk === `group_${courseId}`);
+        setChatUnread(groupChat?.unread ?? 0);
+      }).catch(() => {});
     });
   }, [courseId]);
 
@@ -52,7 +62,9 @@ export default function CoursePage() {
 
   if (!course) return null;
 
-  const allLessons = course.modules?.flatMap((m: any) => m.lessons ?? []) ?? [];
+  const allLessons = course.modules?.flatMap((m: any) =>
+    (m.lessons ?? []).map((l: any) => ({ ...l, moduleId: m.id }))
+  ) ?? [];
   const completedLessons = allLessons.filter((l: any) => l.completed).length;
   const overallProgress = allLessons.length > 0
     ? Math.round((completedLessons / allLessons.length) * 100)
@@ -60,6 +72,23 @@ export default function CoursePage() {
 
   const isCourseComplete = (course.modules?.length ?? 0) > 0 &&
     course.modules?.every((m: any) => m.reflectionStatus === 'APPROVED');
+
+  // Find first incomplete lesson for "Continue where you left off"
+  const firstIncomplete = allLessons.find((l: any) => !l.completed);
+  const continueUrl = firstIncomplete
+    ? `/courses/${courseId}/modules/${firstIncomplete.moduleId}/lessons/${firstIncomplete.id}`
+    : null;
+
+  const handleContactEvaluator = async () => {
+    if (!course.evaluatorId) return;
+    setContactingEvaluator(true);
+    try {
+      const res = await api.messages.chats.create({ type: 'DIRECT', targetUserId: course.evaluatorId });
+      const chatId = (res as any)?.data?.chatId ?? (res as any)?.chatId;
+      if (chatId) router.push(`/communications?chatId=${chatId}`);
+    } catch { }
+    finally { setContactingEvaluator(false); }
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
@@ -88,10 +117,101 @@ export default function CoursePage() {
           <div>
             <h1 className="font-heading font-bold text-2xl text-charcoal">{course.title}</h1>
             <p className="text-gray-500 mt-1 text-sm">{course.description}</p>
+            {/* Creator / Evaluator */}
+            {(course.createdByName || course.evaluatorName) && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                {course.createdByName && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <User className="w-3.5 h-3.5" />
+                    Creado por <span className="font-medium text-gray-600">{course.createdByName}</span>
+                  </span>
+                )}
+                {course.evaluatorName && course.evaluatorName !== course.createdByName && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
+                    <UserCog className="w-3.5 h-3.5" />
+                    Evaluador: <span className="font-medium text-gray-600">{course.evaluatorName}</span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           {course.isPilot && <Badge variant="info">Curso Piloto</Badge>}
         </div>
+        {/* Dates */}
+        {(course.startDate || course.closeDate) && (
+          <div className="flex flex-wrap gap-4 mt-3 mb-3">
+            {course.startDate && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Clock className="w-3.5 h-3.5" />
+                Inicio: <span className="font-medium text-gray-600">{new Date(course.startDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </span>
+            )}
+            {course.closeDate && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+                Cierre: <span className="font-medium text-amber-600">{new Date(course.closeDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </span>
+            )}
+          </div>
+        )}
         <ProgressBar value={overallProgress} label={`${completedLessons} de ${allLessons.length} lecciones completadas`} showPercent />
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-3">
+        {/* Continue where left off */}
+        {continueUrl && !isCourseComplete && (
+          <Link
+            href={continueUrl}
+            className="flex-1 min-w-[180px] flex items-center justify-center gap-2 bg-cta-gradient text-white font-semibold text-sm px-5 py-3 rounded-xl hover:opacity-90 transition-opacity shadow-sm"
+          >
+            <PlayCircle className="w-4 h-4" />
+            Continuar donde lo dejé
+          </Link>
+        )}
+
+        {/* Chat del Curso */}
+        <Link
+          href={`/communications?chatId=group_${courseId}`}
+          className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors relative"
+        >
+          <MessageSquare className="w-4 h-4 text-cta-from" />
+          Chat del Curso
+          {chatUnread > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+              {chatUnread > 9 ? '9+' : chatUnread}
+            </span>
+          )}
+        </Link>
+
+        {/* Contactar Evaluador */}
+        {course.evaluatorId ? (
+          <button
+            onClick={handleContactEvaluator}
+            disabled={contactingEvaluator}
+            className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors disabled:opacity-60"
+          >
+            <UserCog className="w-4 h-4 text-purple-500" />
+            {contactingEvaluator ? 'Abriendo chat...' : 'Contactar Evaluador'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface">
+            <UserCog className="w-4 h-4" />
+            Lux Learning – Admin
+          </div>
+        )}
+
+        {/* Biblioteca — placeholder */}
+        <div
+          className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group"
+          title="Próximamente"
+        >
+          <Library className="w-4 h-4" />
+          Biblioteca
+          <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+            Próximamente
+          </span>
+        </div>
       </div>
 
       {/* Course completion banner */}

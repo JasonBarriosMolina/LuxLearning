@@ -11,7 +11,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
   webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
 }
 import { getPrismaClient } from '../shared/db-neon';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
@@ -717,6 +717,18 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
       if (!assignees.length) return badRequest('No se encontraron destinatarios');
 
+      // Server-side dedup: if same title+dueDate+assignedBy exists in last 30s, return existing
+      const cutoff = new Date(Date.now() - 30_000).toISOString();
+      const recentScan = await ddb.send(new ScanCommand({
+        TableName: TABLES.TASKS,
+        FilterExpression: '#t = :title AND dueDate = :dd AND assignedBy = :aid AND createdAt >= :cutoff',
+        ExpressionAttributeNames: { '#t': 'title' },
+        ExpressionAttributeValues: { ':title': title, ':dd': dueDate, ':aid': assignerUserId, ':cutoff': cutoff },
+      })).catch(() => ({ Items: [] }));
+      if ((recentScan.Items ?? []).length > 0) {
+        return ok({ created: (recentScan.Items ?? []).length, deduplicated: true });
+      }
+
       const tasks = await Promise.all(
         assignees.map((uid) =>
           createTask({
@@ -792,6 +804,20 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
       if (!task) return badRequest('Tarea no encontrada');
       await deleteTask(targetUserId, task.sk);
       return ok({ deleted: true });
+    }
+
+    // GET /evaluator/signature — obtener firma digital del evaluador
+    if (method === 'GET' && path === '/evaluator/signature') {
+      const signature = await getSignature(userId);
+      return ok({ signature });
+    }
+
+    // PUT /evaluator/signature — guardar firma digital del evaluador
+    if (method === 'PUT' && path === '/evaluator/signature') {
+      const { signature } = body as { signature?: string };
+      if (!signature) return badRequest('signature es requerido');
+      await saveSignature(userId, signature);
+      return ok({ ok: true });
     }
 
     return badRequest('Unknown route');

@@ -103,6 +103,10 @@ export const api = {
       delete: (taskId: string, userId: string) =>
         request<any>(`/evaluator/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
     },
+    signature: {
+      get: () => request<any>('/evaluator/signature'),
+      save: (signature: string) => request<any>('/evaluator/signature', { method: 'PUT', body: JSON.stringify({ signature }) }),
+    },
   },
 
   tasks: {
@@ -130,6 +134,22 @@ export const api = {
   },
 
   heartbeat: () => request('/student/heartbeat', { method: 'POST' }).catch(() => {}),
+
+  student: {
+    onboarding: {
+      check: () => request<any>('/student/onboarding'),
+      complete: () => request<any>('/student/onboarding', { method: 'POST' }),
+    },
+    activity: {
+      start: (sessionId: string) => request<any>('/student/activity/start', { method: 'POST', body: JSON.stringify({ sessionId }) }).catch(() => {}),
+      update: (sessionId: string, durationSeconds: number) => request<any>('/student/activity/update', { method: 'PUT', body: JSON.stringify({ sessionId, durationSeconds }) }).catch(() => {}),
+      end: (sessionId: string) => request<any>('/student/activity/end', { method: 'POST', body: JSON.stringify({ sessionId }) }).catch(() => {}),
+      get: (days?: number) => request<any>(`/student/activity${days ? `?days=${days}` : ''}`),
+    },
+    tasks: {
+      submit: (taskId: string, submissionUrl: string) => request<any>(`/student/tasks/${taskId}/submit`, { method: 'PUT', body: JSON.stringify({ submissionUrl }) }),
+    },
+  },
 
   push: {
     vapidKey: () => fetch(`${API_URL}/push/vapid-key`).then((r) => r.json()),
@@ -206,5 +226,25 @@ export const api = {
       removeEnrollment: (username: string, courseId: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
     },
+  },
+  profile: {
+    get: () => request<any>('/user/profile'),
+    update: (body: { name?: string; phone?: string; bio?: string; picture?: string }) =>
+      request<any>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
+  },
+  messages: {
+    contacts: () => request<any>('/messages/contacts'),
+    chats: {
+      list: () => request<any>('/messages/chats'),
+      create: (body: { type: string; targetUserId?: string; courseId?: string; name?: string; participantIds?: string[] }) =>
+        request<any>('/messages/chats', { method: 'POST', body: JSON.stringify(body) }),
+    },
+    get: (chatId: string) => request<any>(`/messages/${chatId}`),
+    send: (chatId: string, text: string) =>
+      request<any>(`/messages/${chatId}`, { method: 'POST', body: JSON.stringify({ text }) }),
+    markRead: (chatId: string) =>
+      request<any>(`/messages/${chatId}/read`, { method: 'PUT' }),
+    react: (chatId: string, ts: string, emoji: string) =>
+      request<any>(`/messages/${chatId}/react`, { method: 'POST', body: JSON.stringify({ ts, emoji }) }),
   },
 };

@@ -19,16 +19,16 @@ export const handler = async (event: Event) => {
       const role = event.requestContext.authorizer?.lambda?.role;
       let courseIdFilter: string[] | undefined;
 
-      // Students see only their enrolled courses (if they have enrollments)
+      // Students see only their enrolled courses — empty list if no enrollments
       if (userId && role === 'STUDENT') {
         const enrolled = await getEnrollments(userId);
-        if (enrolled.length > 0) courseIdFilter = enrolled;
+        courseIdFilter = enrolled; // always set, even if empty
       }
 
       const courses = await prisma.course.findMany({
         where: {
           isActive: true,
-          ...(courseIdFilter ? { id: { in: courseIdFilter } } : {}),
+          ...(courseIdFilter !== undefined ? { id: { in: courseIdFilter } } : {}),
         },
         orderBy: { createdAt: 'asc' },
         include: {

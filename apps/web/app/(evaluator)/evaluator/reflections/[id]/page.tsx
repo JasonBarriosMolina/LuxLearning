@@ -250,12 +250,19 @@ export default function ReflectionDetailPage() {
   const [quizLoading, setQuizLoading] = useState(false);
   const [showQuizModal, setShowQuizModal] = useState(false);
 
+  // Evaluator signature
+  const [signature, setSignature] = useState<string | null>(null);
+
   useEffect(() => {
-    api.evaluator.reflections().then((res) => {
-      const all = (res as any).data ?? [];
+    Promise.all([
+      api.evaluator.reflections(),
+      api.evaluator.signature.get().catch(() => ({ data: { signature: null } })),
+    ]).then(([reflRes, sigRes]) => {
+      const all = (reflRes as any).data ?? [];
       const found = all.find((r: any) => r.userId === userId && r.moduleId === moduleId);
       setReflection(found ?? null);
       if (found?.priority) setPriority(true);
+      setSignature((sigRes as any)?.data?.signature ?? (sigRes as any)?.signature ?? null);
       setLoading(false);
     });
   }, [userId, moduleId]);
@@ -687,6 +694,17 @@ export default function ReflectionDetailPage() {
                 )}
                 {reflection.reviewedAt && (
                   <p className="text-xs text-gray-400 mt-2">Revisada el {formatDate(reflection.reviewedAt)}</p>
+                )}
+                {/* Evaluator signature */}
+                {signature && reflection.status === 'APPROVED' && (
+                  <div className="mt-4 pt-4 border-t border-border flex flex-col items-end gap-1">
+                    <img
+                      src={signature}
+                      alt="Firma del evaluador"
+                      className="h-12 object-contain opacity-80"
+                    />
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Firmado por el evaluador</p>
+                  </div>
                 )}
               </div>
             )}

@@ -1,1 +1,16 @@
-{"projectId":"prj_PRyLhUv3v66Jj771mEP3cozLQjAK","orgId":"team_HlSBZaDwObIPYsWQUIDaBTK1","projectName":"lux-learning"}
+{
+  "projectId": "prj_PRyLhUv3v66Jj771mEP3cozLQjAK",
+  "orgId": "team_HlSBZaDwObIPYsWQUIDaBTK1",
+  "projectName": "lux-learning",
+  "settings": {
+    "createdAt": 1777671376054,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": "apps/web",
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}

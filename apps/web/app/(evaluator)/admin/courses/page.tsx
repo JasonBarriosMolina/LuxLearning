@@ -56,6 +56,8 @@ export default function AdminCoursesPage() {
   const [aiStudentList, setAiStudentList] = useState<{ username: string; email: string; name: string }[]>([]);
   const [aiSelectedStudents, setAiSelectedStudents] = useState<string[]>([]);
   const [aiAssigning, setAiAssigning] = useState(false);
+  const [aiSuggestedTags, setAiSuggestedTags] = useState<string[]>([]);
+  const [aiAcceptedTags, setAiAcceptedTags] = useState<string[]>([]);
 
   const load = async () => {
     try {
@@ -173,8 +175,12 @@ export default function AdminCoursesPage() {
     setAiError('');
     try {
       const res = await api.admin.courses.aiPublish(aiResult);
-      const courseId = (res as any).data?.id ?? (res as any).id;
+      const resData = (res as any).data ?? res;
+      const courseId = resData?.id;
+      const suggested: string[] = Array.isArray(resData?.suggestedTags) ? resData.suggestedTags : [];
       setAiPublishedCourseId(courseId);
+      setAiSuggestedTags(suggested);
+      setAiAcceptedTags(suggested); // all accepted by default
       // Load students for step 4
       const usersRes = await api.admin.users.list();
       const allUsers = (usersRes as any).data ?? [];
@@ -191,20 +197,29 @@ export default function AdminCoursesPage() {
   };
 
   const handleAiAssign = async () => {
-    if (!aiPublishedCourseId || aiSelectedStudents.length === 0) {
-      setAiModalOpen(false);
-      return;
-    }
     setAiAssigning(true);
     try {
-      await Promise.all(
-        aiSelectedStudents.map((username) =>
-          api.admin.users.addEnrollment(username, aiPublishedCourseId).catch(() => {})
-        )
-      );
+      // Save accepted tags if any
+      if (aiPublishedCourseId && aiAcceptedTags.length > 0) {
+        const course = courses.find((c: any) => c.id === aiPublishedCourseId);
+        if (course) {
+          await api.admin.courses.update(aiPublishedCourseId, {
+            ...course,
+            tags: aiAcceptedTags,
+          }).catch(() => {});
+        }
+      }
+      // Enroll selected students
+      if (aiPublishedCourseId && aiSelectedStudents.length > 0) {
+        await Promise.all(
+          aiSelectedStudents.map((username) =>
+            api.admin.users.addEnrollment(username, aiPublishedCourseId).catch(() => {})
+          )
+        );
+      }
       setAiModalOpen(false);
+      await load();
     } catch {
-      // non-fatal
       setAiModalOpen(false);
     } finally {
       setAiAssigning(false);
@@ -627,6 +642,35 @@ export default function AdminCoursesPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Suggested tags */}
+              {aiSuggestedTags.length > 0 && (
+                <div className="p-3 bg-surface rounded-xl border border-border">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tags sugeridos por IA</p>
+                  <div className="flex flex-wrap gap-2">
+                    {aiSuggestedTags.map((tag) => {
+                      const active = aiAcceptedTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setAiAcceptedTags((prev) =>
+                            active ? prev.filter((t) => t !== tag) : [...prev, tag]
+                          )}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                            active
+                              ? 'bg-cta-from text-white border-cta-from'
+                              : 'bg-white text-gray-400 border-border hover:border-gray-400'
+                          }`}
+                        >
+                          {active ? '✓ ' : '+ '}{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Haz clic para activar/desactivar. Se guardarán al asignar.</p>
+                </div>
+              )}
 
               {aiStudentList.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">

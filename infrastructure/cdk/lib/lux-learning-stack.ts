@@ -200,6 +200,33 @@ export class LuxLearningStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    // Activity tracking table (session-level analytics for students)
+    const activityTable = new dynamodb.Table(this, 'Activity', {
+      tableName: 'LuxActivity',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // Communications tables
+    const chatsTable = new dynamodb.Table(this, 'Chats', {
+      tableName: 'LuxChats',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const messagesTable = new dynamodb.Table(this, 'Messages', {
+      tableName: 'LuxMessages',
+      partitionKey: { name: 'chatId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'ts', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // ─── SQS ─────────────────────────────────────────────────────────────────
 
     const reflectionDlq = new sqs.Queue(this, 'ReflectionDLQ', {
@@ -232,6 +259,9 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_TASKS: tasksTable.tableName,
       DYNAMO_TABLE_REPORT_ANALYSIS: reportAnalysisTable.tableName,
       DYNAMO_TABLE_RECOMMENDATIONS: recommendationsTable.tableName,
+      DYNAMO_TABLE_CHATS: chatsTable.tableName,
+      DYNAMO_TABLE_MESSAGES: messagesTable.tableName,
+      DYNAMO_TABLE_ACTIVITY: activityTable.tableName,
       SES_FROM_EMAIL: 'jason.rbm@gmail.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning-mentor.vercel.app',
@@ -331,9 +361,12 @@ export class LuxLearningStack extends cdk.Stack {
       memorySize: 512,
     });
 
+    // Communications Lambda
+    const messagesFn = makeFn('MessagesFn', 'messages/handler.ts', 'handler');
+
     // ─── IAM Permissions ──────────────────────────────────────────────────────
 
-    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn, remindersFn, tasksFn, reportsFn, analysisFn];
+    const allFns = [coursesFn, lessonsFn, quizFn, reflFn, evaluatorFn, adminFn, notifsFn, certsFn, pushFn, sqsConsumerFn, remindersFn, tasksFn, reportsFn, analysisFn, messagesFn];
 
     allFns.forEach((fn) => {
       lessonProgressTable.grantReadWriteData(fn);
@@ -346,6 +379,7 @@ export class LuxLearningStack extends cdk.Stack {
       tasksTable.grantReadWriteData(fn);
       reportAnalysisTable.grantReadWriteData(fn);
       recommendationsTable.grantReadWriteData(fn);
+      activityTable.grantReadWriteData(fn);
     });
 
     reflectionQueue.grantSendMessages(reflFn);
@@ -452,6 +486,14 @@ export class LuxLearningStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    // Messages Lambda — Cognito for name resolution
+    messagesFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminGetUser', 'cognito-idp:ListUsersInGroup'],
+      resources: [userPool.userPoolArn],
+    }));
+    chatsTable.grantReadWriteData(messagesFn);
+    messagesTable.grantReadWriteData(messagesFn);
+
     // Analysis Lambda — Bedrock + Cognito
     analysisFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
@@ -536,6 +578,13 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/lessons/transcript',       apigwv2.HttpMethod.GET,  lessonsFn);
     addRoute('/lessons/chat',             apigwv2.HttpMethod.POST, lessonsFn);
     addRoute('/student/heartbeat',        apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/student/onboarding',       apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/student/onboarding',       apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/student/tasks/{taskId}/submit', apigwv2.HttpMethod.PUT, lessonsFn);
+    addRoute('/student/activity',         apigwv2.HttpMethod.GET,  lessonsFn);
+    addRoute('/student/activity/start',   apigwv2.HttpMethod.POST, lessonsFn);
+    addRoute('/student/activity/update',  apigwv2.HttpMethod.PUT,  lessonsFn);
+    addRoute('/student/activity/end',     apigwv2.HttpMethod.POST, lessonsFn);
 
     // Quiz
     addRoute('/quiz/{moduleId}/submit',   apigwv2.HttpMethod.POST, quizFn);
@@ -551,6 +600,8 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/reflections/review', apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/students',           apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reminder',           apigwv2.HttpMethod.POST, evaluatorFn);
+    addRoute('/evaluator/signature',          apigwv2.HttpMethod.GET,  evaluatorFn);
+    addRoute('/evaluator/signature',          apigwv2.HttpMethod.PUT,  evaluatorFn);
     addRoute('/evaluator/ai-feedback',          apigwv2.HttpMethod.POST, evaluatorFn);
     addRoute('/evaluator/quiz-audit',           apigwv2.HttpMethod.GET,  evaluatorFn);
     addRoute('/evaluator/reflections/priority', apigwv2.HttpMethod.POST, evaluatorFn);
@@ -601,6 +652,10 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/admin/users/{username}/status',        apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/users/{username}',               apigwv2.HttpMethod.DELETE, adminFn);
 
+    // User profile (self-service for ADMIN/EVALUATOR)
+    addRoute('/user/profile',                         apigwv2.HttpMethod.GET,    adminFn);
+    addRoute('/user/profile',                         apigwv2.HttpMethod.PUT,    adminFn);
+
     // Admin — Reports (legacy, keep for backward compat)
     addRoute('/admin/reports', apigwv2.HttpMethod.GET, adminFn);
 
@@ -620,6 +675,15 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/evaluator/tasks',              apigwv2.HttpMethod.POST,   evaluatorFn);
     addRoute('/evaluator/tasks/{taskId}',     apigwv2.HttpMethod.PUT,    evaluatorFn);
     addRoute('/evaluator/tasks/{taskId}',     apigwv2.HttpMethod.DELETE, evaluatorFn);
+
+    // Communications
+    addRoute('/messages/contacts',           apigwv2.HttpMethod.GET,  messagesFn);
+    addRoute('/messages/chats',              apigwv2.HttpMethod.GET,  messagesFn);
+    addRoute('/messages/chats',              apigwv2.HttpMethod.POST, messagesFn);
+    addRoute('/messages/{chatId}',           apigwv2.HttpMethod.GET,  messagesFn);
+    addRoute('/messages/{chatId}',           apigwv2.HttpMethod.POST, messagesFn);
+    addRoute('/messages/{chatId}/read',      apigwv2.HttpMethod.PUT,  messagesFn);
+    addRoute('/messages/{chatId}/react',     apigwv2.HttpMethod.POST, messagesFn);
 
     // ─── Outputs ─────────────────────────────────────────────────────────────
 

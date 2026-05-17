@@ -11,18 +11,21 @@ datasource db {
 }
 
 model Course {
-  id          String    @id @default(cuid())
-  title       String
-  slug        String    @unique
-  description String
-  imageUrl    String?
-  isActive    Boolean   @default(false)
-  isPilot     Boolean   @default(false)
-  tags        String[]  @default([])
-  startDate   DateTime?
-  closeDate   DateTime?
-  createdAt   DateTime  @default(now())
-  modules     Module[]
+  id             String    @id @default(cuid())
+  title          String
+  slug           String    @unique
+  description    String
+  imageUrl       String?
+  isActive       Boolean   @default(false)
+  isPilot        Boolean   @default(false)
+  tags           String[]  @default([])
+  startDate      DateTime?
+  closeDate      DateTime?
+  createdAt      DateTime  @default(now())
+  createdByName  String?
+  evaluatorName  String?
+  evaluatorId    String?
+  modules        Module[]
 }
 
 model Module {
