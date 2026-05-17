@@ -18,7 +18,7 @@ import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/cli
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
 import { upsertChat } from '../shared/db-messages';
-import { ok, created, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
+import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -467,26 +467,46 @@ export const handler = async (event: Event) => {
       ].sort(() => Math.random() - 0.5).join('');
 
       // Create user with SUPPRESS — admin shares password through their own channel
-      const createRes = await cognito.send(new AdminCreateUserCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: email,
-        TemporaryPassword: temporaryPassword,
-        MessageAction: 'SUPPRESS',
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          { Name: 'email_verified', Value: 'true' },
-          ...(name ? [{ Name: 'name', Value: name }] : []),
-        ],
-      }));
+      let createRes: any;
+      try {
+        createRes = await cognito.send(new AdminCreateUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: email,
+          TemporaryPassword: temporaryPassword,
+          MessageAction: 'SUPPRESS',
+          UserAttributes: [
+            { Name: 'email', Value: email },
+            { Name: 'email_verified', Value: 'true' },
+            ...(name ? [{ Name: 'name', Value: name }] : []),
+          ],
+        }));
+      } catch (cognitoErr: any) {
+        const errName: string = cognitoErr?.name ?? cognitoErr?.__type ?? '';
+        console.warn('[Admin] AdminCreateUser error:', errName, cognitoErr?.message);
+        if (errName === 'UsernameExistsException') {
+          return conflict('Este correo ya tiene una cuenta registrada en la plataforma');
+        }
+        if (errName === 'InvalidPasswordException') {
+          return badRequest('Error al generar la contraseña temporal. Contacta soporte.');
+        }
+        if (errName === 'InvalidParameterException') {
+          return badRequest('Email inválido o parámetros incorrectos');
+        }
+        throw cognitoErr;
+      }
 
       const username = createRes.User?.Username ?? email;
 
       // Add to role group
-      await cognito.send(new AdminAddUserToGroupCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: username,
-        GroupName: role === 'EVALUATOR' || role === 'ADMIN' ? role : 'STUDENT',
-      }));
+      try {
+        await cognito.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: username,
+          GroupName: role === 'EVALUATOR' || role === 'ADMIN' ? role : 'STUDENT',
+        }));
+      } catch (groupErr: any) {
+        console.error('[Admin] AddUserToGroup failed (non-fatal for response):', groupErr);
+      }
 
       // Enroll in courses if provided
       let courseNames: string[] = [];

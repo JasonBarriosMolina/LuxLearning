@@ -47,6 +47,14 @@ export function forbidden(error = 'Forbidden'): APIGatewayProxyResultV2 {
   };
 }
 
+export function conflict(error: string): APIGatewayProxyResultV2 {
+  return {
+    statusCode: 409,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({ error, statusCode: 409 }),
+  };
+}
+
 export function notFound(error = 'Not found'): APIGatewayProxyResultV2 {
   return {
     statusCode: 404,

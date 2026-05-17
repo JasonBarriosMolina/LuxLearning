@@ -42,19 +42,23 @@ export default function RegisterPage() {
       await register(email, password, name);
       setStep('confirm');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('UsernameExistsException')) {
+      // Amplify v6 expone el tipo de excepción en err.name, no en err.message
+      const msg = err instanceof Error ? err.message : String(err);
+      const name = (err as any)?.name ?? '';
+      if (name === 'UsernameExistsException' || msg.includes('UsernameExistsException')) {
         setError('Este correo ya está registrado. Inicia sesión o recupera tu contraseña.');
-      } else if (msg.includes('InvalidPasswordException') || msg.includes('Password did not conform')) {
+      } else if (name === 'InvalidPasswordException' || msg.includes('InvalidPasswordException') || msg.includes('Password did not conform')) {
         setError('La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.');
-      } else if (msg.includes('InvalidParameterException')) {
+      } else if (name === 'InvalidParameterException' || msg.includes('InvalidParameterException')) {
         setError('Por favor verifica que todos los campos sean válidos.');
-      } else if (msg.includes('NetworkError') || msg.includes('network')) {
+      } else if (name === 'NotAuthorizedException' || msg.includes('NotAuthorizedException')) {
+        setError('No tienes autorización para crear una cuenta. Solicita una invitación a tu evaluador.');
+      } else if (name === 'NetworkError' || msg.includes('NetworkError') || msg.includes('network')) {
         setError('Error de conexión. Verifica tu internet e intenta de nuevo.');
-      } else if (msg.includes('TooManyRequestsException') || msg.includes('LimitExceededException')) {
+      } else if (name === 'LimitExceededException' || name === 'TooManyRequestsException' || msg.includes('TooManyRequestsException') || msg.includes('LimitExceededException')) {
         setError('Demasiados intentos. Por favor espera unos minutos e intenta de nuevo.');
       } else {
-        setError('Error al crear la cuenta. Por favor intenta de nuevo.');
+        setError(`Error al crear la cuenta. ${msg || name || 'Por favor intenta de nuevo.'}`);
       }
     } finally {
       setLoading(false);
