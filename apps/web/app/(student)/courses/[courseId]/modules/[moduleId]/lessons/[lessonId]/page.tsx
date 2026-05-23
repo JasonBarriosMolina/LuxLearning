@@ -52,6 +52,49 @@ function applyHighlights(text: string, highlights: HighlightItem[]): React.React
   return <>{parts}</>;
 }
 
+// ── Lightweight markdown renderer (for Mentor chat responses) ────────────────
+function renderMarkdown(text: string): React.ReactNode {
+  const formatInline = (line: string): React.ReactNode => {
+    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
+      if (part.startsWith('*') && part.endsWith('*')) return <em key={i}>{part.slice(1, -1)}</em>;
+      return part;
+    });
+  };
+
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = () => {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="list-disc pl-4 space-y-0.5 my-1">
+          {listItems.map((item, i) => <li key={i}>{formatInline(item)}</li>)}
+        </ul>
+      );
+      listItems = [];
+    }
+  };
+
+  lines.forEach((line, i) => {
+    if (/^#{1,3} /.test(line)) {
+      flushList();
+      elements.push(<p key={i} className="font-semibold mt-2 mb-0.5">{line.replace(/^#{1,3} /, '')}</p>);
+    } else if (/^[-*] /.test(line)) {
+      listItems.push(line.slice(2));
+    } else if (line.trim() === '') {
+      flushList();
+    } else {
+      flushList();
+      elements.push(<p key={i} className="mb-1">{formatInline(line)}</p>);
+    }
+  });
+  flushList();
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
 // ── Highlight toolbar (appears on text selection) ─────────────────────────────
 interface ToolbarProps {
   position: { x: number; y: number } | null;
@@ -439,7 +482,7 @@ export default function LessonPage() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-cta-from to-cta-to">
             <div className="flex items-center gap-2">
               <MessageCircle className="w-4 h-4 text-white" />
-              <span className="text-white font-semibold text-sm">Tutor IA</span>
+              <span className="text-white font-semibold text-sm">Mentor</span>
             </div>
             <button onClick={() => setChatOpen(false)} className="text-white/80 hover:text-white transition-colors">
               <X className="w-4 h-4" />
@@ -450,7 +493,7 @@ export default function LessonPage() {
             {chatHistory.length === 0 && (
               <div className="text-center text-sm text-gray-400 mt-8 px-4">
                 <MessageCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p>¡Hola! Soy tu tutor IA. Pregúntame cualquier cosa sobre esta lección.</p>
+                <p>¡Hola! Soy tu Mentor. Pregúntame cualquier cosa sobre esta lección.</p>
               </div>
             )}
             {chatHistory.map((msg, i) => (
@@ -460,7 +503,7 @@ export default function LessonPage() {
                     ? 'bg-gradient-to-br from-cta-from to-cta-to text-white rounded-br-sm'
                     : 'bg-surface dark:bg-[#16213E] text-charcoal rounded-bl-sm border border-border'
                 }`}>
-                  {msg.content}
+                  {msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
                 </div>
               </div>
             ))}
@@ -496,7 +539,7 @@ export default function LessonPage() {
       {/* Floating chat button */}
       <button
         onClick={() => setChatOpen((prev) => !prev)}
-        title="Tutor IA"
+        title="Mentor"
         className="fixed bottom-6 right-4 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-cta-from to-cta-to text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
       >
         {chatOpen ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}

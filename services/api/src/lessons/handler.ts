@@ -130,7 +130,7 @@ export const handler = async (event: Event) => {
       const { lessonId, lessonTitle, lessonContent, moduleTitle, history, message } = JSON.parse(event.body ?? '{}');
       if (!message) return badRequest('message is required');
 
-      const systemPrompt = `Eres un tutor experto en ${moduleTitle ?? 'el tema de la lección'}. El estudiante está viendo la lección "${lessonTitle ?? ''}".${lessonContent ? `\n\nContenido de la lección:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nResponde en español, de forma concisa y pedagógica. Sé amable y motivador.`;
+      const systemPrompt = `Eres el Mentor de Lux Learning, un asistente pedagógico experto en ${moduleTitle ?? 'el tema de la lección'}. El estudiante está viendo la lección "${lessonTitle ?? ''}".${lessonContent ? `\n\nContenido de la lección:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCCIONES:\n- Responde SIEMPRE en español\n- Usa markdown limpio: ## para secciones, - para listas, **negrita** para conceptos clave\n- Máximo 2-3 párrafos cortos por respuesta\n- Sé conciso, pedagógico y motivador\n- NO uses asteriscos triples ni subrayados`;
 
       const messages = [
         ...((Array.isArray(history) ? history : []) as { role: string; content: string }[]).map((h) => ({

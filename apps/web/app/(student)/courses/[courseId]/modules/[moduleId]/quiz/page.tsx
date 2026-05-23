@@ -1,15 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Trophy } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Trophy, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 
 type QuizState = 'answering' | 'submitting' | 'result';
+
+/** Fisher-Yates shuffle — returns a new array */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Build shuffled mappings: shuffledMaps[qIdx][shuffledPos] = originalIdx */
+function buildShuffleMaps(questions: any[]): number[][] {
+  return questions.map((q) => {
+    const indices = q.options.map((_: any, i: number) => i);
+    return shuffle(indices);
+  });
+}
 
 export default function QuizPage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
@@ -22,12 +40,21 @@ export default function QuizPage() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // shuffledMaps[qIdx][visualPos] = originalIdx
+  const shuffledMapsRef = useRef<number[][]>([]);
+
+  const buildAndSetShuffle = (qs: any[]) => {
+    shuffledMapsRef.current = buildShuffleMaps(qs);
+  };
+
   useEffect(() => {
     api.courses.get(courseId).then((res) => {
       const data = (res as any).data;
       setCourse(data);
       const mod = data.modules?.find((m: any) => m.id === moduleId);
-      setAnswers(new Array(mod?.questions?.length ?? 0).fill(null));
+      const qs = mod?.questions ?? [];
+      setAnswers(new Array(qs.length).fill(null));
+      buildAndSetShuffle(qs);
       setLoading(false);
     });
   }, [courseId, moduleId]);
@@ -38,9 +65,11 @@ export default function QuizPage() {
   const answeredCount = answers.filter((a) => a !== null).length;
   const allAnswered = answeredCount === questions.length;
 
-  const handleAnswer = (optionIndex: number) => {
+  const handleAnswer = (visualIndex: number) => {
+    // Map visual position → original index
+    const originalIdx = shuffledMapsRef.current[currentQ]?.[visualIndex] ?? visualIndex;
     const newAnswers = [...answers];
-    newAnswers[currentQ] = optionIndex;
+    newAnswers[currentQ] = originalIdx;
     setAnswers(newAnswers);
 
     // Auto-advance
@@ -70,6 +99,8 @@ export default function QuizPage() {
     setCurrentQ(0);
     setResult(null);
     setState('answering');
+    // Re-shuffle on every new attempt
+    buildAndSetShuffle(questions);
   };
 
   if (loading) {
@@ -97,9 +128,13 @@ export default function QuizPage() {
     );
   }
 
-  // Result screen
+  // ── Result screen ────────────────────────────────────────────────────────
   if (state === 'result' && result) {
     const passed = result.passed;
+    const attemptNumber: number = result.attempt ?? 1;
+    // Show correct answers only from attempt 3 onward when failed
+    const showCorrectAnswers = passed || attemptNumber >= 3;
+
     return (
       <div className="max-w-2xl mx-auto animate-slide-up space-y-5">
         {/* Score summary card */}
@@ -123,6 +158,7 @@ export default function QuizPage() {
             </h2>
             <p className="text-gray-500 mt-2">
               {result.correctCount} de {result.totalQuestions} correctas • Nota mínima: {result.passingScore}%
+              {attemptNumber > 1 && ` • Intento ${attemptNumber}`}
             </p>
           </div>
 
@@ -139,7 +175,29 @@ export default function QuizPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">No te desanimes. Puedes intentarlo de nuevo sin límites.</p>
+              {!showCorrectAnswers && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 text-left space-y-1">
+                  <p className="font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    Repasa estos temas antes del próximo intento:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {result.results
+                      ?.filter((r: any) => !r.isCorrect)
+                      .map((r: any, i: number) => (
+                        <li key={i} className="text-amber-700">{r.questionText}</li>
+                      ))}
+                  </ul>
+                  <p className="text-amber-600 text-xs mt-1">
+                    Te quedan {3 - attemptNumber} intento{3 - attemptNumber !== 1 ? 's' : ''} antes de ver las respuestas.
+                  </p>
+                </div>
+              )}
+              <p className="text-sm text-gray-600">
+                {showCorrectAnswers
+                  ? 'Revisa las respuestas correctas abajo y vuelve a intentarlo.'
+                  : '¡Tú puedes! Estudia el material y vuelve a intentarlo.'}
+              </p>
               <Button onClick={handleRetry} leftIcon={<RotateCcw className="w-4 h-4" />}>
                 Intentar de nuevo
               </Button>
@@ -151,8 +209,8 @@ export default function QuizPage() {
           </Link>
         </div>
 
-        {/* Answer review */}
-        {result.results && result.results.length > 0 && (
+        {/* Answer review — only shown when passed or attempt >= 3 */}
+        {showCorrectAnswers && result.results && result.results.length > 0 && (
           <div className="space-y-3">
             <h3 className="font-heading font-bold text-lg text-charcoal">Revisión de respuestas</h3>
             {result.results.map((r: any, i: number) => (
@@ -200,6 +258,9 @@ export default function QuizPage() {
       </div>
     );
   }
+
+  // ── Answering screen ────────────────────────────────────────────────────
+  const shuffleMap = shuffledMapsRef.current[currentQ] ?? currentQuestion?.options?.map((_: any, i: number) => i) ?? [];
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -250,23 +311,28 @@ export default function QuizPage() {
           </p>
 
           <div className="space-y-2">
-            {currentQuestion.options.map((option: string, i: number) => (
-              <button
-                key={i}
-                onClick={() => handleAnswer(i)}
-                className={cn(
-                  'w-full text-left p-4 rounded-xl border-2 transition-all duration-200 text-sm',
-                  answers[currentQ] === i
-                    ? 'border-cta-from bg-blue-50 text-charcoal font-medium'
-                    : 'border-border hover:border-cta-from hover:bg-surface text-gray-700'
-                )}
-              >
-                <span className="font-bold mr-3 text-gray-400">
-                  {String.fromCharCode(65 + i)}.
-                </span>
-                {option}
-              </button>
-            ))}
+            {shuffleMap.map((originalIdx: number, visualPos: number) => {
+              const option = currentQuestion.options[originalIdx];
+              // answers[currentQ] stores the original index; check if this visual option is selected
+              const isSelected = answers[currentQ] === originalIdx;
+              return (
+                <button
+                  key={originalIdx}
+                  onClick={() => handleAnswer(visualPos)}
+                  className={cn(
+                    'w-full text-left p-4 rounded-xl border-2 transition-all duration-200 text-sm',
+                    isSelected
+                      ? 'border-cta-from bg-blue-50 text-charcoal font-medium'
+                      : 'border-border hover:border-cta-from hover:bg-surface text-gray-700'
+                  )}
+                >
+                  <span className="font-bold mr-3 text-gray-400">
+                    {String.fromCharCode(65 + visualPos)}.
+                  </span>
+                  {option}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

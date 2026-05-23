@@ -17,7 +17,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
-import { upsertChat } from '../shared/db-messages';
+import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
 
@@ -604,7 +604,7 @@ export const handler = async (event: Event) => {
         if (!courseId) return badRequest('courseId es requerido');
         await createEnrollment(username, courseId);
 
-        // Send enrollment notification email
+        // Send enrollment notification email + add to group chat
         try {
           const [userRes, course] = await Promise.all([
             cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username })),
@@ -622,7 +622,14 @@ export const handler = async (event: Event) => {
               },
             }));
           }
-        } catch (e) { console.warn('Enrollment email failed:', e); }
+          // Add student to group chat for this course
+          if (course) {
+            await upsertMembership(username, `group_${courseId}`, {
+              chatName: `Curso: ${course.title}`,
+              chatType: 'GROUP',
+            });
+          }
+        } catch (e) { console.warn('Enrollment email/chat failed:', e); }
 
         return ok({ enrolled: true });
       }
