@@ -5,11 +5,12 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
+import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 
 // ── Highlight colors ──────────────────────────────────────────────────────────
 const COLORS: Record<string, { bg: string; label: string }> = {
@@ -148,6 +149,10 @@ export default function LessonPage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [favLoading, setFavLoading] = useState(false);
 
+  // YouTube error detection
+  const [videoError, setVideoError] = useState(false);
+  const [activeTab, setActiveTab] = useState<'video' | 'text'>('video');
+
   // Transcript
   const [transcript, setTranscript] = useState<string | null>(null);
 
@@ -183,6 +188,25 @@ export default function LessonPage() {
   const nextLesson = lessonIndex < (module?.lessons?.length - 1) ? module?.lessons[lessonIndex + 1] : null;
 
   useEffect(() => { if (lesson?.completed) setCompleted(true); }, [lesson]);
+
+  // ── YouTube postMessage error detection ──────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        // YouTube sends {event:'onError', info: <code>} — codes 100/101=video unavailable, 150=embedding disabled
+        if (data?.event === 'onError' || [100, 101, 150].includes(data?.info)) {
+          setVideoError(true);
+          if (lesson?.content) setActiveTab('text');
+        }
+      } catch { /* ignore non-JSON messages */ }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [lesson]);
+
+  // Reset video error state when lesson changes
+  useEffect(() => { setVideoError(false); setActiveTab('video'); }, [lessonId]);
 
   // ── Highlight logic ──────────────────────────────────────────────────────────
 
@@ -360,23 +384,53 @@ export default function LessonPage() {
       </div>
 
       {/* Lesson content: video player OR text content */}
-      {lesson.youtubeId ? (
+
+      {/* Tabs — only when lesson has both video and text content */}
+      {lesson.youtubeId && lesson.content && !videoError && (
+        <div className="flex gap-2">
+          {(['video', 'text'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                activeTab === tab
+                  ? 'bg-cta-gradient text-white'
+                  : 'bg-surface border border-border text-gray-500 hover:text-charcoal'
+              }`}
+            >
+              {tab === 'video' ? <Video className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
+              {tab === 'video' ? 'Video' : 'Texto'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {lesson.youtubeId && !videoError && activeTab === 'video' ? (
         <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
           <iframe
             className="w-full h-full"
-            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`}
+            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1&enablejsapi=1`}
             title={lesson.title}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />
         </div>
       ) : (
-        <div className="card">
+        <div className="card space-y-3">
+          {videoError && (
+            <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>El video no está disponible — mostrando contenido de texto.</span>
+            </div>
+          )}
           {lesson.content ? (
-            <div
-              className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal"
-              dangerouslySetInnerHTML={{ __html: lesson.content }}
-            />
+            <>
+              <TextToSpeechButton text={lesson.content} className="pb-1" />
+              <div
+                className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                dangerouslySetInnerHTML={{ __html: lesson.content }}
+              />
+            </>
           ) : (
             <p className="text-gray-400 text-sm text-center py-8">El contenido de esta lección no está disponible aún.</p>
           )}

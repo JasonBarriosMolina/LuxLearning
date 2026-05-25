@@ -283,10 +283,11 @@ export const handler = async (event: Event) => {
     if (moduleLessonsMatch && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const moduleId = moduleLessonsMatch[1]!;
-      const { title, duration, youtubeId, imageUrl, points, tip, order } = body;
-      if (!title || !duration || !youtubeId) {
-        return badRequest('title, duration y youtubeId son requeridos');
+      const { title, duration, youtubeId, imageUrl, points, tip, order, type, content } = body;
+      if (!title || !duration) {
+        return badRequest('title y duration son requeridos');
       }
+      const lessonType = type ?? (youtubeId ? 'video' : 'text');
       let lessonOrder = order;
       if (lessonOrder == null) {
         const count = await prisma.lesson.count({ where: { moduleId } });
@@ -294,7 +295,10 @@ export const handler = async (event: Event) => {
       }
       const lesson = await prisma.lesson.create({
         data: {
-          moduleId, title, duration, youtubeId,
+          moduleId, title, duration,
+          youtubeId: youtubeId ?? '',
+          type: lessonType,
+          content: content ?? null,
           imageUrl: imageUrl || null,
           points: Array.isArray(points) ? points : [],
           tip: tip ?? '',
@@ -811,17 +815,17 @@ Determina cuántos módulos necesita este curso según la complejidad del tema (
 Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order, type, content, duration, points (array 3 frases cortas), tip (1 consejo práctico).
 [
 {"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"<p>Escribe 1 párrafo introductorio sobre qué aprenderá el estudiante en ${mod.title} y por qué es importante.</p>","duration":"5 min","points":["Concepto clave 1 de ${mod.title}","Concepto clave 2","Para qué sirve este módulo"],"tip":"Toma notas de los conceptos que te resulten nuevos."},
-{"title":"Subtema A","order":2,"type":"text","content":"<p>Párrafo 1 educativo real sobre subtema de ${mod.title}.</p><p>Párrafo 2 con más detalle y ejemplos.</p>","duration":"8 min","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico aplicable al subtema."},
-{"title":"Subtema B","order":3,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip práctico."},
-{"title":"Subtema C","order":4,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema D","order":5,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema E","order":6,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema F","order":7,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema G","order":8,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-{"title":"Subtema H","order":9,"type":"text","content":"<p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema A","order":2,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo introductorio real sobre el subtema en 2ª persona.</p><ul><li>Punto clave con ejemplo concreto</li><li>Segundo punto importante</li><li>Tercer punto práctico</li></ul><p>Párrafo de cierre con aplicación práctica.</p>","duration":"8 min","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico aplicable al subtema."},
+{"title":"Subtema B","order":3,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><ul><li>Elemento 1</li><li>Elemento 2</li></ul><blockquote>Cita relevante de autor sobre el tema.</blockquote><p>Párrafo de cierre.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip práctico."},
+{"title":"Subtema C","order":4,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><p>Párrafo 2 con ejemplos.</p><ul><li>Ejemplo A</li><li>Ejemplo B</li></ul>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema D","order":5,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema E","order":6,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><p>Párrafo 2.</p><blockquote>Cita de experto relevante.</blockquote>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema F","order":7,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><ul><li>Elemento 1</li><li>Elemento 2</li><li>Elemento 3</li></ul>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema G","order":8,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><p>Párrafo 2.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+{"title":"Subtema H","order":9,"type":"text","content":"<h3>Título de sección</h3><p>Párrafo 1.</p><ul><li>Punto 1</li><li>Punto 2</li></ul><p>Párrafo final.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
 {"title":"Resumen y cierre — ${mod.title}","order":10,"type":"video","content":"<p>Escribe 1 párrafo que resuma los conceptos principales aprendidos en ${mod.title} y los próximos pasos del estudiante.</p>","duration":"5 min","points":["Resumen concepto 1","Resumen concepto 2","Próximos pasos"],"tip":"Completa el quiz para afianzar lo aprendido."}
 ]
-REGLAS ESTRICTAS: 10 lecciones exactas. TODAS deben tener content real en español con etiquetas <p>. points y tip ESPECÍFICOS al tema real. Sin markdown, sin comillas dentro del content. Genera contenido educativo auténtico, no ejemplos genéricos.`, 6000),
+REGLAS ESTRICTAS: 10 lecciones exactas. Lecciones de texto (order 2-9) DEBEN usar HTML rico: <h3> para subtítulos, <ul><li> para listas con al menos 2-3 elementos, <blockquote> para citas relevantes (al menos 2 lecciones por módulo), <p> para párrafos cortos (máx 3-4 líneas). Voz activa en 2ª persona. Sin markdown, sin comillas dentro del content. Genera contenido educativo auténtico y específico, no ejemplos genéricos.`, 6000),
 
               bedrockJSON(`Genera exactamente 10 preguntas de opción múltiple en español para el módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con array JSON válido:
@@ -1010,7 +1014,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
                   title: l.title,
                   order: l.order,
                   duration: l.duration ?? (l.type === 'video' ? '5 min' : '8 min'),
-                  type: l.type ?? 'video',
+                  type: l.content ? 'text' : (l.type ?? 'text'),
                   youtubeId: '',
                   content: l.content ?? null,
                   points: Array.isArray(l.points) ? l.points : [],
