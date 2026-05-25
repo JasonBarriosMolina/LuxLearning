@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { getTasksForUser, updateTask } from '../shared/db-dynamo';
+import { getTasksForUser, updateTask, createNotification } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
 
 /** Minimal JWT payload decode (no signature verification — used only for .ics, low-risk) */
@@ -68,16 +68,19 @@ function buildICS(tasks: ReturnType<typeof normalizeTask>[]): string {
 
 function normalizeTask(item: any) {
   const now = new Date().toISOString().split('T')[0];
+  // Preserve SUBMITTED status — do not override to PENDING or OVERDUE
   const status = item.status === 'COMPLETED'
     ? 'COMPLETED'
+    : item.status === 'SUBMITTED'
+    ? 'SUBMITTED'
     : item.dueDate < now
     ? 'OVERDUE'
     : 'PENDING';
   return { ...item, status } as {
     userId: string; sk: string; taskId: string; title: string; description?: string;
     courseId?: string; moduleId?: string; courseTitle?: string; moduleTitle?: string;
-    type: string; dueDate: string; status: 'PENDING' | 'COMPLETED' | 'OVERDUE';
-    assignedBy: string; createdAt: string; completedAt?: string;
+    type: string; dueDate: string; status: 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
+    assignedBy: string; createdAt: string; completedAt?: string; submittedAt?: string;
   };
 }
 
@@ -114,6 +117,42 @@ export const handler = async (event: Event) => {
       if (!task) return badRequest('Tarea no encontrada');
       await updateTask(userId, task.sk, { status: 'COMPLETED', completedAt: new Date().toISOString() });
       return ok({ completed: true });
+    }
+
+    // POST /tasks/:taskId/submit — student presents/submits a task (notifies evaluator)
+    const submitMatch = path.match(/^\/tasks\/([^/]+)\/submit$/);
+    if (method === 'POST' && submitMatch) {
+      const taskId = submitMatch[1]!;
+      const rawTasks = await getTasksForUser(userId);
+      const task = rawTasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      const now = new Date().toISOString();
+      await updateTask(userId, task.sk, { status: 'SUBMITTED', submittedAt: now });
+      // Notify the evaluator who assigned the task
+      if (task.assignedBy) {
+        await createNotification({
+          userId: task.assignedBy,
+          notifId: `task-sub-${taskId}-${Date.now()}`,
+          type: 'GENERAL',
+          message: `Un estudiante ha presentado la tarea: "${task.title}"`,
+          read: false,
+          createdAt: now,
+        });
+      }
+      return ok({ submitted: true });
+    }
+
+    // POST /tasks/:taskId/undo — student retracts a submitted task (back to PENDING)
+    const undoMatch = path.match(/^\/tasks\/([^/]+)\/undo$/);
+    if (method === 'POST' && undoMatch) {
+      const taskId = undoMatch[1]!;
+      const rawTasks = await getTasksForUser(userId);
+      const task = rawTasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      const today = new Date().toISOString().split('T')[0];
+      if (task.dueDate < today) return badRequest('No puedes deshacer una tarea vencida');
+      await updateTask(userId, task.sk, { status: 'PENDING', submittedAt: undefined });
+      return ok({ undone: true });
     }
 
     // GET /tasks/calendar.ics — download .ics file (public route, token in query param)

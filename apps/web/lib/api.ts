@@ -112,6 +112,8 @@ export const api = {
   tasks: {
     list: () => request<any>('/tasks'),
     complete: (taskId: string) => request<any>(`/tasks/${taskId}/complete`, { method: 'POST' }),
+    submit: (taskId: string) => request<any>(`/tasks/${taskId}/submit`, { method: 'POST' }),
+    undo: (taskId: string) => request<any>(`/tasks/${taskId}/undo`, { method: 'POST' }),
     calendarUrl: async () => {
       const { getIdToken } = await import('./auth');
       const token = await getIdToken();

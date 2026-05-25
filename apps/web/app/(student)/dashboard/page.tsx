@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award, Flame, X, ClipboardList, Calendar, AlertCircle } from 'lucide-react';
+import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award, Flame, X, ClipboardList, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -29,6 +29,7 @@ export default function StudentDashboardPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null);
 
   useEffect(() => {
     // Welcome banner: show unless hidden within the last 8 days
@@ -98,6 +99,14 @@ export default function StudentDashboardPage() {
     return s;
   })();
 
+  const motivational = (progress: number) => {
+    if (progress === 0) return '¡Comienza tu viaje de aprendizaje! 🚀';
+    if (progress <= 30) return '¡Buen comienzo! Sigue así 💪';
+    if (progress <= 70) return '¡Vas a la mitad! No te detengas 🔥';
+    if (progress < 100) return '¡Casi lo logras! Un esfuerzo más ⚡';
+    return '¡Curso completado! 🎉';
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
       {/* Welcome */}
@@ -128,7 +137,7 @@ export default function StudentDashboardPage() {
         </div>
       )}
 
-      {/* Stats row */}
+      {/* Stats row — clickeable */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           {
@@ -136,39 +145,44 @@ export default function StudentDashboardPage() {
             value: `${overallProgress}%`,
             icon: <TrendingUp className="w-5 h-5 text-cta-from" />,
             bg: 'bg-blue-50',
+            href: '/courses',
           },
           {
             label: 'Lecciones completadas',
             value: `${stats.completedLessons}/${stats.totalLessons}`,
             icon: <CheckCircle className="w-5 h-5 text-emerald-500" />,
             bg: 'bg-emerald-50',
+            href: '/courses',
           },
           {
             label: 'Módulos aprobados',
             value: stats.passedModules,
             icon: <BookOpen className="w-5 h-5 text-purple-500" />,
             bg: 'bg-purple-50',
+            href: '/courses',
           },
           {
             label: 'Reflexiones aprobadas',
             value: stats.approvedReflections,
             icon: <Clock className="w-5 h-5 text-amber-500" />,
             bg: 'bg-amber-50',
+            href: '/courses',
           },
           {
             label: streak > 1 ? `🔥 Racha activa` : 'Racha de días',
             value: `${streak}d`,
             icon: <Flame className={`w-5 h-5 ${streak > 0 ? 'text-orange-500' : 'text-gray-400'}`} />,
             bg: streak > 0 ? 'bg-orange-50' : 'bg-gray-50',
+            href: '/activity',
           },
         ].map((stat) => (
-          <div key={stat.label} className="card">
+          <Link key={stat.label} href={stat.href} className="card hover:shadow-card hover:border-cta-from/30 transition-all cursor-pointer block">
             <div className={`w-10 h-10 ${stat.bg} rounded-xl flex items-center justify-center mb-3`}>
               {stat.icon}
             </div>
             <p className="font-heading font-bold text-2xl text-charcoal">{stat.value}</p>
             <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -240,28 +254,45 @@ export default function StudentDashboardPage() {
               (m) => m.unlocked && m.reflectionStatus !== 'APPROVED'
             );
 
+            const isExpanded = expandedCourse === course.id;
+
             return (
               <div key={course.id} className="card space-y-4">
-                {/* Course header */}
-                <div className="flex items-start justify-between gap-4">
+                {/* Course header — click to expand */}
+                <button
+                  onClick={() => setExpandedCourse(isExpanded ? null : course.id)}
+                  className="w-full text-left flex items-start justify-between gap-4"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-heading font-bold text-lg text-charcoal truncate">
                         {course.title}
                       </h3>
                     </div>
-                    <p className="text-sm text-gray-500 line-clamp-2">{course.description}</p>
+                    <p className="text-sm text-gray-500 line-clamp-1">{motivational(progress)}</p>
                   </div>
-                  <Link
-                    href={`/courses/${course.id}`}
-                    className="shrink-0 flex items-center gap-1.5 text-sm font-semibold text-cta-from hover:opacity-80 transition-opacity"
-                  >
-                    Ver curso <ArrowRight className="w-4 h-4" />
-                  </Link>
-                </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className="text-sm font-bold text-cta-from">{progress}%</span>
+                    {isExpanded
+                      ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                      : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                  </div>
+                </button>
 
-                {/* Overall progress */}
-                <ProgressBar value={progress} label="Progreso general" showPercent />
+                {/* Overall progress bar always visible */}
+                <ProgressBar value={progress} showPercent={false} />
+
+                {/* Collapsible: modules + actions */}
+                {isExpanded && (
+                  <div className="space-y-4 pt-1 border-t border-border">
+                    <div className="flex justify-end">
+                      <Link
+                        href={`/courses/${course.id}`}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-cta-from hover:opacity-80 transition-opacity"
+                      >
+                        Ver curso <ArrowRight className="w-4 h-4" />
+                      </Link>
+                    </div>
 
                 {/* Modules mini-list */}
                 {course.modules && (
@@ -338,6 +369,8 @@ export default function StudentDashboardPage() {
                     Continuar — {currentModule.title}
                     <ArrowRight className="w-4 h-4" />
                   </Link>
+                )}
+                  </div>
                 )}
               </div>
             );

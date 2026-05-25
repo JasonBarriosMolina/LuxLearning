@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, ScatterChart, Scatter, Cell,
 } from 'recharts';
-import { BarChart2, Clock, Flame, BookOpen, TrendingUp, CheckCircle2, ClipboardList } from 'lucide-react';
+import { BarChart2, Clock, Flame, BookOpen, TrendingUp, CheckCircle2, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { TASK_TYPE_COLORS, TASK_TYPE_LABELS } from '@/lib/constants/task-colors';
 
@@ -141,6 +141,7 @@ const QuizTooltip = ({ active, payload }: any) => {
 export default function ActivityPage() {
   const [summary, setSummary] = useState<ActivitySummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   useEffect(() => {
     api.student.activity.get(30)
@@ -335,6 +336,42 @@ export default function ActivityPage() {
         </div>
       )}
 
+      {/* Completed tasks — shown FIRST before charts */}
+      {completedTasks.length > 0 && (
+        <div className="card space-y-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-cta-from" />
+            <h2 className="font-heading font-semibold text-base text-charcoal">Tareas Completadas</h2>
+            <span className="ml-auto text-xs text-gray-400">{summary.completedTasks?.length ?? 0} en total</span>
+          </div>
+          <div className="space-y-2">
+            {completedTasks.map((t) => (
+              <div key={t.taskId} className="flex items-center gap-3 p-3 rounded-xl bg-surface">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-charcoal truncate">{t.title}</p>
+                  {t.courseTitle && <p className="text-xs text-gray-400">{t.courseTitle}</p>}
+                </div>
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full text-white shrink-0"
+                  style={{ backgroundColor: TASK_TYPE_COLORS[t.type] ?? '#6B7280' }}
+                >
+                  {TASK_TYPE_LABELS[t.type] ?? t.type}
+                </span>
+                {t.completedAt && (
+                  <span className="text-xs text-gray-400 shrink-0 hidden sm:block">
+                    {new Date(t.completedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          {(summary.completedTasks?.length ?? 0) > 20 && (
+            <p className="text-xs text-gray-400 text-center">Mostrando las últimas 20 tareas</p>
+          )}
+        </div>
+      )}
+
       {/* Quiz grades chart */}
       {quizAttempts.length > 0 && (
         <div className="card space-y-3">
@@ -379,77 +416,51 @@ export default function ActivityPage() {
         </div>
       )}
 
-      {/* Session history */}
+      {/* Session history — collapsed by default */}
       {sessions.length > 0 && (
-        <div className="card space-y-3">
-          <h2 className="font-heading font-semibold text-base text-charcoal">Historial de Sesiones</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Fecha</th>
-                  <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Hora</th>
-                  <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Duración</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {sessions.map((s) => {
-                  const d = new Date(s.startedAt);
-                  return (
-                    <tr key={s.sessionId} className="hover:bg-surface/50 transition-colors">
-                      <td className="py-2 text-charcoal">
-                        {d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
-                      </td>
-                      <td className="py-2 text-gray-500 text-xs">
-                        {d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="py-2 text-right font-medium text-charcoal">
-                        {formatDuration(s.durationSeconds ?? 0)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {(summary.sessions?.length ?? 0) > 20 && (
-            <p className="text-xs text-gray-400 text-center">Mostrando las últimas 20 sesiones</p>
-          )}
-        </div>
-      )}
-
-      {/* Completed tasks */}
-      {completedTasks.length > 0 && (
-        <div className="card space-y-3">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-cta-from" />
-            <h2 className="font-heading font-semibold text-base text-charcoal">Tareas Completadas</h2>
-            <span className="ml-auto text-xs text-gray-400">{summary.completedTasks?.length ?? 0} en total</span>
-          </div>
-          <div className="space-y-2">
-            {completedTasks.map((t) => (
-              <div key={t.taskId} className="flex items-center gap-3 p-3 rounded-xl bg-surface">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-charcoal truncate">{t.title}</p>
-                  {t.courseTitle && <p className="text-xs text-gray-400">{t.courseTitle}</p>}
-                </div>
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full text-white shrink-0"
-                  style={{ backgroundColor: TASK_TYPE_COLORS[t.type] ?? '#6B7280' }}
-                >
-                  {TASK_TYPE_LABELS[t.type] ?? t.type}
-                </span>
-                {t.completedAt && (
-                  <span className="text-xs text-gray-400 shrink-0 hidden sm:block">
-                    {new Date(t.completedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-          {(summary.completedTasks?.length ?? 0) > 20 && (
-            <p className="text-xs text-gray-400 text-center">Mostrando las últimas 20 tareas</p>
+        <div className="card">
+          <button
+            onClick={() => setSessionsOpen(!sessionsOpen)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="font-heading font-semibold text-base text-charcoal">
+              Historial de Sesiones <span className="text-gray-400 font-normal text-sm">({sessions.length})</span>
+            </h2>
+            {sessionsOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          </button>
+          {sessionsOpen && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Fecha</th>
+                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Hora</th>
+                    <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Duración</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {sessions.map((s) => {
+                    const d = new Date(s.startedAt);
+                    return (
+                      <tr key={s.sessionId} className="hover:bg-surface/50 transition-colors">
+                        <td className="py-2 text-charcoal">
+                          {d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </td>
+                        <td className="py-2 text-gray-500 text-xs">
+                          {d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-2 text-right font-medium text-charcoal">
+                          {formatDuration(s.durationSeconds ?? 0)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {(summary.sessions?.length ?? 0) > 20 && (
+                <p className="text-xs text-gray-400 text-center mt-2">Mostrando las últimas 20 sesiones</p>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -121,7 +121,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/activity',
     label: 'Mi Actividad',
-    icon: <BarChart2 className="w-5 h-5" />,
+    icon: <TrendingUp className="w-5 h-5" />,
     roles: ['STUDENT'],
   },
   {

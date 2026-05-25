@@ -5,7 +5,7 @@
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll } from '../shared/db-dynamo';
+import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -85,6 +85,47 @@ function courseStartEmailHtml(name: string, courseTitle: string): string {
       <a href="${FRONTEND_URL}/courses"
          style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
         Ver mis cursos
+      </a>
+      <p style="color:#aaa;font-size:12px;margin-top:32px;">
+        Recibes este email porque estás inscrito en Lux Learning.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function taskReminderEmailHtml(name: string, taskTitle: string, daysLeft: number, courseTitle?: string): string {
+  const urgency = daysLeft <= 3 ? '⏰ ¡Faltan pocos días!' : '📌 Recordatorio de tarea';
+  const urgencyColor = daysLeft <= 3 ? '#F59E0B' : '#00B4D8';
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Claridad que transforma.</p>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">
+        ${name ? `¡Hola ${name}!` : '¡Hola!'}
+      </h2>
+      <p style="color:#555;line-height:1.6;">
+        Tienes una tarea que vence en <strong style="color:${urgencyColor}">${daysLeft} día${daysLeft !== 1 ? 's' : ''}</strong>.
+      </p>
+      <div style="background:#FFFBEB;border-left:4px solid ${urgencyColor};padding:16px 20px;border-radius:4px;margin:24px 0;">
+        <p style="margin:0 0 4px;color:#92400E;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">${urgency}</p>
+        <p style="margin:0;color:#2C2C2C;font-size:18px;font-weight:700;">📋 ${taskTitle}</p>
+        ${courseTitle ? `<p style="margin:4px 0 0;color:#555;font-size:13px;">Curso: ${courseTitle}</p>` : ''}
+      </div>
+      <p style="color:#555;line-height:1.6;">
+        ¡Puedes hacerlo! Revisa los materiales del curso, organiza tus ideas y entrega tu mejor trabajo.
+      </p>
+      <a href="${FRONTEND_URL}/tasks"
+         style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
+        Ver mis tareas
       </a>
       <p style="color:#aaa;font-size:12px;margin-top:32px;">
         Recibes este email porque estás inscrito en Lux Learning.
@@ -218,7 +259,52 @@ export const handler = async () => {
       console.warn('[Reminders] Course-start check failed:', e);
     }
 
-    return { sent, skipped, startSent };
+    // ── Task due-date reminders (5 and 3 days before) ──────────────────────────
+    let taskReminderSent = 0;
+    try {
+      const pendingTasks = await getAllPendingTasks();
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      for (const task of pendingTasks) {
+        const dueMs = new Date(task.dueDate + 'T00:00:00Z').getTime();
+        const daysLeft = Math.round((dueMs - now) / 86400000);
+
+        const needsR5 = daysLeft === 5 && !task.r5;
+        const needsR3 = daysLeft === 3 && !task.r3;
+        if (!needsR5 && !needsR3) continue;
+
+        try {
+          const res = await cognito.send(new AdminGetUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: task.userId,
+          }));
+          const attr = (n: string) => res.UserAttributes?.find((a) => a.Name === n)?.Value ?? '';
+          const email = attr('email');
+          const name  = attr('name') || email.split('@')[0] || '';
+          if (!email) continue;
+
+          await ses.send(new SendEmailCommand({
+            Source: FROM_EMAIL,
+            Destination: { ToAddresses: [email] },
+            Message: {
+              Subject: { Data: `⏰ Tu tarea "${task.title}" vence en ${daysLeft} días`, Charset: 'UTF-8' },
+              Body: { Html: { Data: taskReminderEmailHtml(name, task.title, daysLeft, task.courseTitle), Charset: 'UTF-8' } },
+            },
+          }));
+
+          // Mark reminder as sent
+          const reminderUpdate = needsR5 ? { r5: new Date().toISOString() } : { r3: new Date().toISOString() };
+          await updateTask(task.userId, task.sk, reminderUpdate);
+          taskReminderSent++;
+          console.log(`[Reminders] Task reminder (${daysLeft}d) sent to ${email} for "${task.title}"`);
+        } catch (e) { console.warn('[Reminders] Task reminder failed:', e); }
+      }
+      console.log(`[Reminders] Task reminders sent: ${taskReminderSent}`);
+    } catch (e) {
+      console.warn('[Reminders] Task reminder check failed:', e);
+    }
+
+    return { sent, skipped, startSent, taskReminderSent };
   } catch (err) {
     console.error('[Reminders] Fatal error:', err);
     throw err;

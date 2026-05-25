@@ -502,10 +502,13 @@ export interface Task {
   resourceUrl?: string;
   submissionUrl?: string;
   dueDate: string;      // ISO date string (YYYY-MM-DD)
-  status: 'PENDING' | 'COMPLETED' | 'OVERDUE';
+  status: 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
   assignedBy: string;
   createdAt: string;
   completedAt?: string;
+  submittedAt?: string;
+  r5?: string;          // ISO timestamp when 5-day reminder was sent
+  r3?: string;          // ISO timestamp when 3-day reminder was sent
 }
 
 export async function createTask(task: Omit<Task, 'sk'>): Promise<Task> {
@@ -534,7 +537,7 @@ export async function getTasksByCourse(courseId: string): Promise<Task[]> {
   return (result.Items ?? []) as Task[];
 }
 
-export async function updateTask(userId: string, sk: string, updates: Partial<Pick<Task, 'title' | 'description' | 'dueDate' | 'status' | 'completedAt'>>): Promise<void> {
+export async function updateTask(userId: string, sk: string, updates: Partial<Pick<Task, 'title' | 'description' | 'dueDate' | 'status' | 'completedAt' | 'submittedAt' | 'r5' | 'r3'>>): Promise<void> {
   const exprs: string[] = [];
   const names: Record<string, string> = {};
   const vals: Record<string, any> = {};
@@ -544,6 +547,9 @@ export async function updateTask(userId: string, sk: string, updates: Partial<Pi
   if (updates.dueDate !== undefined) { exprs.push('#dd = :dd'); names['#dd'] = 'dueDate'; vals[':dd'] = updates.dueDate; }
   if (updates.status !== undefined) { exprs.push('#s = :s'); names['#s'] = 'status'; vals[':s'] = updates.status; }
   if (updates.completedAt !== undefined) { exprs.push('#ca = :ca'); names['#ca'] = 'completedAt'; vals[':ca'] = updates.completedAt; }
+  if (updates.submittedAt !== undefined) { exprs.push('#sa = :sa'); names['#sa'] = 'submittedAt'; vals[':sa'] = updates.submittedAt; }
+  if (updates.r5 !== undefined) { exprs.push('#r5 = :r5'); names['#r5'] = 'r5'; vals[':r5'] = updates.r5; }
+  if (updates.r3 !== undefined) { exprs.push('#r3 = :r3'); names['#r3'] = 'r3'; vals[':r3'] = updates.r3; }
 
   if (!exprs.length) return;
 
@@ -554,6 +560,17 @@ export async function updateTask(userId: string, sk: string, updates: Partial<Pi
     ExpressionAttributeNames: names,
     ExpressionAttributeValues: vals,
   }));
+}
+
+export async function getAllPendingTasks(): Promise<Task[]> {
+  // Scan for PENDING and SUBMITTED tasks — used by reminders Lambda for due-date alerts
+  const result = await ddb.send(new ScanCommand({
+    TableName: TABLES.TASKS,
+    FilterExpression: '#s IN (:pending, :submitted)',
+    ExpressionAttributeNames: { '#s': 'status' },
+    ExpressionAttributeValues: { ':pending': 'PENDING', ':submitted': 'SUBMITTED' },
+  }));
+  return (result.Items ?? []) as Task[];
 }
 
 export async function deleteTask(userId: string, sk: string): Promise<void> {

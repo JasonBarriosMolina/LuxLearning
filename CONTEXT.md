@@ -1,6 +1,6 @@
 # Lux Learning — Contexto Técnico y Reglas de Negocio
 
-> **Última actualización:** 2026-05-15 — Batch 10 completo (A-1, A-3, A-4, A-5, A-9, A-10, B-4, B-5)  
+> **Última actualización:** 2026-05-24 — Sprint 1-3 + Fix YouTube + Chat + Actividad + Perfil Estudiante  
 > **Actualizar este archivo en cada deploy significativo.**
 
 ---
@@ -115,6 +115,34 @@ integratedScore = reflectionApprovalRate * 0.6 + avgQuizScore * 0.4
 ### Recordatorios (RemindersFn — 09:00 UTC)
 - Envía email a estudiantes inactivos >7 días
 - Solo envía si el estudiante tiene email en Cognito
+- **Recordatorios de tareas:** escanea `ScheduledTasks` con status PENDING/SUBMITTED; si `daysLeft === 5` o `daysLeft === 3` envía email SES al estudiante. Deduplicado con flags `r5`/`r3` en el item.
+
+### Tareas — Estados
+```
+PENDING → SUBMITTED (estudiante presenta) → COMPLETED (evaluador marca)
+PENDING → OVERDUE (automático cuando dueDate < hoy)
+SUBMITTED (dentro de plazo) → PENDING (deshacer presentación)
+```
+- `POST /tasks/:taskId/submit` → SUBMITTED + notificación in-app al evaluador
+- `POST /tasks/:taskId/undo` → PENDING (solo si no está OVERDUE)
+- Al presentar: `createNotification()` al evaluador asignado o al primero del grupo EVALUATOR
+
+### Chat — Flujos
+- `chatId` determinista: DIRECT = `direct_{[userA,userB].sort().join('_')}`, GROUP = `group_{courseId}`
+- Contactos para STUDENT: compañeros inscritos en los mismos cursos + evaluadores (badge diferenciado)
+- GROUP chat se auto-crea al publicar un curso (`upsertChat` en ai-publish)
+- Polling frontend 5s para chats y mensajes activos
+- Reacciones con emoji: toggle (agrega si no existe, quita si ya existe)
+
+### Quiz — Comportamiento
+- Opciones mezcladas con Fisher-Yates en cada intento (frontend guarda mapping `shuffledIdx → originalIdx`)
+- Feedback progresivo: intentos 1-2 no muestran respuesta correcta; intento 3+ sí la muestra
+- Siempre envía `originalIndex` al backend (no la posición visual)
+
+### Perfil Estudiante
+- Foto: URL manual guardada en Cognito `picture` attribute
+- Restricción nombre: máximo 1 cambio sin aprobación admin; contador en `localStorage` key `lux-name-change-count`
+- Si `count >= 1`: campo deshabilitado con mensaje explicativo
 
 ---
 
@@ -129,9 +157,12 @@ integratedScore = reflectionApprovalRate * 0.6 + avgQuizScore * 0.4
 | `Enrollments` (`DYNAMO_TABLE_ENROLLMENTS`) | `userId` | `COURSE#courseId` | — | Inscripciones a cursos |
 | `Certificates` (`DYNAMO_TABLE_CERTIFICATES`) | `certId` | — | `userId-courseId-index` | Certificados generados |
 | `PushSubscriptions` (`DYNAMO_TABLE_PUSH_SUBS`) | `userId` | `sha256(endpoint)` | — | Suscripciones Web Push por dispositivo |
-| `ScheduledTasks` (`DYNAMO_TABLE_TASKS`) | `userId` | `dueDate#taskId` | `courseId-index` (PK: courseId, SK: dueDate) | Tareas asignadas por evaluador |
+| `ScheduledTasks` (`DYNAMO_TABLE_TASKS`) | `userId` | `dueDate#taskId` | `courseId-index` (PK: courseId, SK: dueDate) | Tareas asignadas. Status: PENDING/SUBMITTED/COMPLETED/OVERDUE. Campos: `r5`, `r3` (reminder flags), `submittedAt` |
 | `ReportAnalysis` (`DYNAMO_TABLE_REPORT_ANALYSIS`) | `moduleId` | `'ANALYSIS'` (fijo) | — | Análisis IA nocturno: temas clave, resumen, quiz débil |
 | `CurriculumRecommendations` (`DYNAMO_TABLE_RECOMMENDATIONS`) | `moduleId` | `'RECS'` (fijo) | — | Recursos sugeridos por IA, editables |
+| `LuxChats` (`DYNAMO_TABLE_CHATS`) | `pk` (USER#/CHAT#) | `sk` | — | Membresías (`USER#{userId}` / `chatId`) y metadata de chats (`CHAT#{chatId}` / `META`) |
+| `LuxMessages` (`DYNAMO_TABLE_MESSAGES`) | `chatId` | `ts#msgId` | — | Mensajes de chat ordenados cronológicamente. Attrs: `senderId`, `senderName`, `text`, `reactions` |
+| `LuxActivity` (`DYNAMO_TABLE_ACTIVITY`) | `userId` | `SESSION#{isoTs}` | — | Sesiones de actividad. Attrs: `startedAt`, `endedAt`, `durationSeconds`. TTL 90 días |
 
 ---
 
@@ -149,13 +180,21 @@ integratedScore = reflectionApprovalRate * 0.6 + avgQuizScore * 0.4
 | `NotifsFn` | `lux-notifs` | 30s / 256MB | HTTP | `GET /notifications`, `POST /notifications/read` |
 | `CertsFn` | `lux-certs` | 30s / 256MB | HTTP | `GET /certificates/{certId}` (público), `GET /my-certificates`, `POST /my-certificates/generate` |
 | `PushFn` | `lux-push` | 30s / 256MB | HTTP | `GET /push/vapid-key` (público), `POST /push/subscribe`, `DELETE /push/subscribe` |
-| `TasksFn` | `lux-tasks` | 15s / 256MB | HTTP | `GET /tasks`, `GET /tasks/calendar.ics` (público, token en query), `POST /tasks/{id}/complete` |
+| `TasksFn` | `lux-tasks` | 15s / 256MB | HTTP | `GET /tasks`, `GET /tasks/calendar.ics` (público, token en query), `POST /tasks/{id}/complete`, `POST /tasks/{id}/submit`, `POST /tasks/{id}/undo` |
+| `MessagesFn` | `lux-messages` | 30s / 256MB | HTTP | `GET /messages/contacts`, `GET/POST /messages/chats`, `GET/POST /messages/{chatId}`, `PUT /messages/{chatId}/read`, `POST /messages/{chatId}/react` |
 | `ReportsFn` | `lux-reports` | 60s / 512MB | HTTP | `GET /reports?mode=master\|student\|course&studentId=&courseId=`, `POST /reports/email`, `GET/PUT /reports/recommendations/{moduleId}` |
 | `SQSConsumerFn` | `lux-sqsconsumer` | 120s / 512MB | SQS batch 5 | Análisis IA de reflexiones (Bedrock) |
-| `RemindersFn` | `lux-reminders` | 300s / 256MB | EventBridge 09:00 UTC | Emails recordatorio a estudiantes inactivos |
+| `RemindersFn` | `lux-reminders` | 300s / 256MB | EventBridge 09:00 UTC | Emails recordatorio a estudiantes inactivos + recordatorios de tareas 5/3 días antes del vencimiento |
 | `AnalysisFn` | `lux-analysis` | 300s / 512MB | EventBridge 02:00 UTC | Análisis nocturno de reflexiones + recomendaciones |
 
 **Rutas públicas (sin auth):** `/push/vapid-key`, `/certificates/{certId}`, `/tasks/calendar.ics`
+
+**Variables de entorno adicionales (Lambdas nuevas):**
+```
+DYNAMO_TABLE_CHATS=LuxChats
+DYNAMO_TABLE_MESSAGES=LuxMessages
+DYNAMO_TABLE_ACTIVITY=LuxActivity
+```
 
 ---
 
@@ -189,23 +228,30 @@ Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
 
 ### Core (Estudiante)
 - ✅ Cursos con módulos secuenciales bloqueados
-- ✅ Lecciones con video YouTube embed, puntos clave
+- ✅ Lecciones tipo `video` (YouTube embed) y `text` (HTML rico: h3, ul, blockquote, p)
+- ✅ **YouTube error fallback**: si el video falla (postMessage código 100/101/150), muestra texto automáticamente con aviso ⚠. Tabs Video/Texto cuando la lección tiene ambos. Requiere `enablejsapi=1` en iframe.
 - ✅ Resaltado de texto en 4 colores (amarillo/verde/azul/rosa), persiste en DDB
 - ✅ Favoritos de lecciones y módulos, persiste en DDB
 - ✅ Transcripción de video (youtube-transcript, caché en DDB)
-- ✅ Chatbot IA por lección (Bedrock, historial de conversación, contexto de la lección)
-- ✅ Quiz por módulo con intentos múltiples y auditoría
+- ✅ **TTS (Text-to-Speech)** en lecciones de texto — Web Speech API, selector de velocidad (0.75x-2x), voz es-ES, preferencias en localStorage. Componente: `apps/web/components/shared/TextToSpeechButton.tsx`
+- ✅ **Tutor IA → "Mentor"**: chatbot por lección (Bedrock), renderiza markdown, panel deslizante
+- ✅ Quiz por módulo — **opciones mezcladas** (Fisher-Yates), **feedback progresivo** (sin respuesta correcta en intentos 1-2), múltiples intentos
 - ✅ Reflexión con análisis IA previo al envío ("¿Listo para enviar?")
 - ✅ Progreso personal con score de calidad del evaluador y feedback expandible
 - ✅ Certificados descargables (PDF via print)
-- ✅ Sistema de tareas asignadas con calendario .ics exportable
+- ✅ **Tareas con estados**: PENDING → SUBMITTED (Presentar) → COMPLETED. Botones Presentar/Deshacer/Completar según estado. Notifica evaluador al presentar. Tab "Presentadas" en filtros.
+- ✅ Recordatorios automáticos de tareas por SES: 5 y 3 días antes del vencimiento
+- ✅ Calendario .ics exportable (RFC 5545)
+- ✅ **Calendario visual** `/calendar` — react-big-calendar, colores por tipo de tarea (`task-colors.ts`), filtro por curso
+- ✅ **Dashboard acordeón**: cursos colapsables, mensajes motivacionales por % progreso, stats cards clickeables (→ /courses, → /activity)
+- ✅ **Mi Actividad** `/activity` — tareas completadas arriba, gráficas recharts, historial de sesiones colapsado por defecto
+- ✅ **Mi Perfil** estudiante — foto URL, restricción de cambio de nombre (1 vez, contador localStorage)
+- ✅ **Comunicaciones** `/communications` — chat DIRECT y GROUP, polling 5s, contactos filtrados por curso, reacciones emoji, badge no leídos en sidebar, tabs Directos/Grupos
 - ✅ Racha de actividad (streak) en dashboard
 - ✅ Dark mode (toggle persistente, sin FOUC)
-- ✅ Onboarding tour (4 pasos, localStorage guard)
-- ✅ Push notifications (Web Push PWA)
-- ✅ **Calendario visual** `/calendar` — react-big-calendar, colores por tipo de tarea, filtro por curso
-- ✅ **Mi Actividad** `/activity` — sesiones, quiz scores (ScatterChart), tareas completadas (recharts)
-- ✅ **Mi Perfil** en sidebar del estudiante
+- ✅ **Onboarding tour** — 6 pasos con spotlight, flag server-side en DDB, botón Omitir
+- ✅ **Push notifications prompt** al primer login (AppShell, solo STUDENT, si `Notification.permission === 'default'`)
+- ✅ Sesiones de actividad tracking (AppShell: start/update/end cada 2min, beforeunload)
 
 ### Evaluador
 - ✅ Dashboard con workqueue por curso/estudiante, alertas urgentes (>36h)
@@ -214,19 +260,21 @@ Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
 - ✅ "Comprobar IA" — detecta si reflexión fue generada con IA
 - ✅ Priority flag por reflexión
 - ✅ Score de calidad 1-10 al aprobar
-- ✅ Tareas a estudiantes individuales o cursos completos
-- ✅ **Reportes:** 5 pilares (KPIs, progreso integral, análisis cualitativo IA, mapa de calor quiz, recomendaciones editables), filtros master/estudiante/curso, export PDF + email SES
-- ✅ **Lista estudiantes** como tabla limpia (nombre+fecha registro+estado+cursos+acciones, sin PresenceBadge)
+- ✅ **Firma digital** — canvas en perfil evaluador, guardada como base64 en DDB (`LessonProgress` sk=`SIGNATURE`). Mostrada en aprobación de reflexiones y certificado.
+- ✅ Tareas a estudiantes individuales o cursos completos (tipos: custom, complete_module, submit_reflection, pass_quiz, upload_link, watch_video, read_resource)
+- ✅ **Comunicaciones** `/evaluator/communications` — misma UI compartida (`CommunicationsPanel.tsx`)
+- ✅ **Reportes:** 5 pilares, filtros master/estudiante/curso, export PDF + email SES
+- ✅ **Lista estudiantes** como tabla limpia (nombre+fecha+estado+cursos+acciones)
 - ✅ Badge ⚠ en tareas con UUID como título
-- ✅ Botón submit deshabilitado durante guardado (previene doble envío)
+- ✅ Botón submit deshabilitado durante guardado
 
 ### Admin
 - ✅ Gestión de cursos, módulos, lecciones, preguntas (solo ADMIN)
-- ✅ Creación de cursos con IA (topic o URL → estructura 7-10 módulos → preview → publicar)
-- ✅ **Tags generados por IA persisten en Prisma** al publicar curso (fix A-5)
-- ✅ Label correcto en invitación: "obligatorio para Estudiantes — sin cursos asignados no verá contenido"
+- ✅ Creación de cursos con IA — lecciones tipo `text` con HTML rico (h3, ul, blockquote, voz activa 2ª persona)
+- ✅ Tags generados por IA persisten en Prisma al publicar (fix A-5)
+- ✅ Auto-create GROUP chat al publicar curso
 - ✅ Gestión de usuarios: invitar, cambiar rol, activar/desactivar
-- ✅ Gestión de inscripciones por usuario
+- ✅ Gestión de inscripciones — al inscribir estudiante se agrega como miembro del GROUP chat del curso
 
 ---
 
@@ -312,14 +360,63 @@ cd apps/web && npx next build
 
 ---
 
+## Prisma Schema — Campos relevantes
+
+```prisma
+model Lesson {
+  type      String   @default("video")  // "video" | "text"
+  youtubeId String   @default("")       // vacío para lecciones text
+  content   String?                      // HTML rico para lecciones text
+}
+model Course {
+  evaluatorId   String?   // userId del evaluador asignado
+  evaluatorName String?
+  createdByName String?
+}
+```
+- Al crear lección manual: `youtubeId` es **opcional** — si no se provee, `type` se infiere como `text`
+- AI-publish: lecciones con `content` se guardan como `type: 'text'` automáticamente
+
+---
+
+## Componentes Compartidos Clave
+
+| Componente | Ruta | Propósito |
+|-----------|------|-----------|
+| `AppShell` | `components/shared/AppShell.tsx` | Layout base, heartbeat, session tracking, push prompt |
+| `CommunicationsPanel` | `components/shared/CommunicationsPanel.tsx` | Chat DIRECT/GROUP compartido entre estudiante y evaluador |
+| `TaskCalendar` | `components/shared/TaskCalendar.tsx` | Vista calendario react-big-calendar, colores por tipo |
+| `TextToSpeechButton` | `components/shared/TextToSpeechButton.tsx` | TTS Web Speech API para lecciones de texto |
+| `OnboardingWizard` | `components/shared/OnboardingWizard.tsx` | Tour 6 pasos con spotlight, flag DDB |
+| `Sidebar` | `components/shared/Sidebar.tsx` | Navegación + UnreadBadge chat + iconos por rol |
+| `Topbar` | `components/shared/Topbar.tsx` | Bell notificaciones, dark mode toggle, menú móvil |
+
+---
+
 ## Historial de Deploys
 
 | Fecha | Descripción |
 |-------|-------------|
-| 2026-05-15 | **Batch 10:** A-1 label invitación, A-3 Mi Perfil sidebar, A-4 tabla estudiantes limpia, A-5 tags IA persisten, A-9 badge UUID, A-10 submit guard, B-4 calendario visual + colores tipo, B-5 actividad extendida (quiz scores + sesiones + tareas) |
+| 2026-05-24 | **Fix YouTube**: postMessage error detection, tabs Video/Texto, fallback automático a texto |
+| 2026-05-24 | **Sprint 3**: perfil estudiante (foto+nombre), dashboard acordeón motivacional, stats clickeables, Mi Actividad reorden, ícono TrendingUp, contactos chat filtrados por curso, push prompt login |
+| 2026-05-24 | **Sprint 2**: tareas SUBMITTED/UNDO, recordatorios 5/3 días, TTS lecciones, HTML rico en prompts IA |
+| 2026-05-24 | **Sprint 1**: quiz shuffle + feedback progresivo, chat names fix, Mentor rename + markdown render |
+| 2026-05-15 | **Batch 10:** A-1 label invitación, A-3 Mi Perfil sidebar, A-4 tabla estudiantes limpia, A-5 tags IA persisten, A-9 badge UUID, A-10 submit guard, B-4 calendario visual + colores tipo, B-5 actividad extendida |
 | 2026-05-07 | Bug fixes: error rate quiz, reports filter guard, dashboard nav router.push |
-| 2026-05-07 | Reports feature: ReportsFn + AnalysisFn Lambdas, 2 nuevas tablas DDB, EventBridge nightly, UI 5 pilares, filtros, PDF + email SES |
-| 2026-05-07 | Mejora prompt ai-preview reflexión (evaluador pedagógico especializado), model ID → global.* en todos los handlers, IAM bedrock fix (`arn:aws:bedrock:*::`) |
-| 2026-05-07 | Role enforcement: EVALUATOR pierde gestión de contenido, gana /reports; Sidebar actualizado |
-| 2026-05-06 | Tier 0-4: highlights, favoritos, transcripción, chatbot IA lección, creación curso con IA, tareas + calendario .ics, dark mode, onboarding tour, push al estudiante |
-| 2026-04-30 | Phase 1-4: evaluador dashboard, feedback IA, score calidad, priority flag, notificaciones push, reportes básicos admin, recordatorios email, streak |
+| 2026-05-07 | Reports: ReportsFn + AnalysisFn Lambdas, 2 tablas DDB, EventBridge nightly, UI 5 pilares, PDF + email SES |
+| 2026-05-06 | Tier 0-4: highlights, favoritos, transcripción, chatbot IA, creación curso IA, tareas, dark mode, onboarding, push |
+| 2026-04-30 | Phase 1-4: evaluador dashboard, feedback IA, score calidad, priority, push, reportes, recordatorios, streak |
+
+---
+
+## Pendiente (Sprint 4)
+
+| Item | Descripción | Complejidad |
+|------|-------------|-------------|
+| X-1 | Regenerar curso/módulo/lección con IA | Alta |
+| X-2 | Marcar cursos legacy (solo video) | Media |
+| M-5 | Importar .ics externo | Media |
+| M-7 | Tareas automáticas al crear curso | Media |
+| X-3 | Stable Diffusion imágenes (Bedrock) | Muy alta |
+| UT | Unit tests BE + integration tests mocks AWS (Vitest, ~2-3 días) | Media |
+| E2E | Playwright tests flujos críticos (~1 día adicional) | Media |

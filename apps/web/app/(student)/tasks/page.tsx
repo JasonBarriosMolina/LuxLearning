@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardList, Calendar, CheckCircle, AlertCircle, Clock, BookOpen, Loader2, ExternalLink, List, CalendarDays, Upload } from 'lucide-react';
+import { ClipboardList, Calendar, CheckCircle, AlertCircle, Clock, BookOpen, Loader2, ExternalLink, List, CalendarDays, Upload, Send, Undo2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
 
-type TaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE';
+type TaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
 interface Task {
   taskId: string;
   sk: string;
@@ -23,6 +23,7 @@ interface Task {
   assignedBy: string;
   createdAt: string;
   completedAt?: string;
+  submittedAt?: string;
   submissionUrl?: string;
 }
 
@@ -30,12 +31,14 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   PENDING: 'Pendiente',
   COMPLETED: 'Completada',
   OVERDUE: 'Vencida',
+  SUBMITTED: 'Presentada',
 };
 
 const URL_TASK_TYPES = ['upload_link', 'watch_video', 'read_resource'];
 
 function taskColor(task: Task) {
   if (task.status === 'COMPLETED') return 'text-emerald-500';
+  if (task.status === 'SUBMITTED') return 'text-purple-500';
   if (task.status === 'OVERDUE') return 'text-red-500';
   const days = (new Date(task.dueDate + 'T00:00:00').getTime() - Date.now()) / 86400000;
   if (days <= 3) return 'text-amber-500';
@@ -44,6 +47,7 @@ function taskColor(task: Task) {
 
 function taskBg(task: Task) {
   if (task.status === 'COMPLETED') return 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-900/40';
+  if (task.status === 'SUBMITTED') return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-900/40';
   if (task.status === 'OVERDUE') return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900/40';
   const days = (new Date(task.dueDate + 'T00:00:00').getTime() - Date.now()) / 86400000;
   if (days <= 3) return 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900/40';
@@ -52,6 +56,7 @@ function taskBg(task: Task) {
 
 function TaskIcon({ task }: { task: Task }) {
   if (task.status === 'COMPLETED') return <CheckCircle className="w-5 h-5 text-emerald-500" />;
+  if (task.status === 'SUBMITTED') return <Send className="w-5 h-5 text-purple-500" />;
   if (task.status === 'OVERDUE') return <AlertCircle className="w-5 h-5 text-red-500" />;
   return <Clock className="w-5 h-5 text-blue-400" />;
 }
@@ -73,7 +78,9 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'PENDING' | 'COMPLETED' | 'OVERDUE'>('all');
+  const [presenting, setPresenting] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'PENDING' | 'SUBMITTED' | 'COMPLETED' | 'OVERDUE'>('all');
   const [exportLoading, setExportLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [submissionUrls, setSubmissionUrls] = useState<Record<string, string>>({});
@@ -95,6 +102,24 @@ export default function TasksPage() {
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'COMPLETED' as const, completedAt: new Date().toISOString() } : t));
     } catch { alert('Error al marcar como completada'); }
     finally { setCompleting(null); }
+  };
+
+  const handlePresent = async (taskId: string) => {
+    setPresenting(taskId);
+    try {
+      await api.tasks.submit(taskId);
+      setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'SUBMITTED' as const, submittedAt: new Date().toISOString() } : t));
+    } catch { alert('Error al presentar la tarea'); }
+    finally { setPresenting(null); }
+  };
+
+  const handleUndo = async (taskId: string) => {
+    setUndoing(taskId);
+    try {
+      await api.tasks.undo(taskId);
+      setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'PENDING' as const, submittedAt: undefined } : t));
+    } catch { alert('Error al deshacer la presentación'); }
+    finally { setUndoing(null); }
   };
 
   const handleSubmitUrl = async (taskId: string) => {
@@ -123,6 +148,7 @@ export default function TasksPage() {
   const counts = {
     all: tasks.length,
     PENDING: tasks.filter((t) => t.status === 'PENDING').length,
+    SUBMITTED: tasks.filter((t) => t.status === 'SUBMITTED').length,
     COMPLETED: tasks.filter((t) => t.status === 'COMPLETED').length,
     OVERDUE: tasks.filter((t) => t.status === 'OVERDUE').length,
   };
@@ -192,6 +218,7 @@ export default function TasksPage() {
             {([
               { key: 'all', label: 'Todas' },
               { key: 'PENDING', label: 'Pendientes' },
+              { key: 'SUBMITTED', label: 'Presentadas' },
               { key: 'OVERDUE', label: 'Vencidas' },
               { key: 'COMPLETED', label: 'Completadas' },
             ] as const).map(({ key, label }) => (
@@ -218,7 +245,7 @@ export default function TasksPage() {
               <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="font-heading font-semibold text-charcoal">No hay tareas</p>
               <p className="text-sm text-gray-400 mt-1">
-                {filter === 'all' ? 'Tu evaluador aún no ha asignado tareas.' : `No hay tareas ${STATUS_LABELS[filter as TaskStatus]?.toLowerCase() ?? ''}.`}
+                {filter === 'all' ? 'Tu evaluador aún no ha asignado tareas.' : `No hay tareas ${STATUS_LABELS[filter as TaskStatus]?.toLowerCase() ?? filter.toLowerCase()}.`}
               </p>
             </div>
           ) : (
@@ -244,7 +271,11 @@ export default function TasksPage() {
                           </span>
                         )}
                         <span className={`text-xs font-medium ${taskColor(task)}`}>
-                          {task.status === 'COMPLETED' ? `Completada ${task.completedAt ? new Date(task.completedAt).toLocaleDateString('es') : ''}` : `Vence: ${task.dueDate}`}
+                          {task.status === 'COMPLETED'
+                            ? `Completada ${task.completedAt ? new Date(task.completedAt).toLocaleDateString('es') : ''}`
+                            : task.status === 'SUBMITTED'
+                            ? `Presentada ${task.submittedAt ? new Date(task.submittedAt).toLocaleDateString('es') : ''}`
+                            : `Vence: ${task.dueDate}`}
                         </span>
                       </div>
 
@@ -290,17 +321,54 @@ export default function TasksPage() {
                       )}
                     </div>
 
-                    {/* Complete button (non-URL tasks) */}
-                    {task.status !== 'COMPLETED' && !isUrlType && (
-                      <button
-                        onClick={() => handleComplete(task.taskId)}
-                        disabled={completing === task.taskId}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors disabled:opacity-50"
-                      >
-                        {completing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                        Completar
-                      </button>
-                    )}
+                    {/* Action buttons */}
+                    <div className="shrink-0 flex flex-col gap-1.5">
+                      {/* PENDING non-URL tasks: Presentar + Completar */}
+                      {task.status === 'PENDING' && !isUrlType && (
+                        <>
+                          <button
+                            onClick={() => handlePresent(task.taskId)}
+                            disabled={presenting === task.taskId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 transition-colors disabled:opacity-50"
+                          >
+                            {presenting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Presentar
+                          </button>
+                          <button
+                            onClick={() => handleComplete(task.taskId)}
+                            disabled={completing === task.taskId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors disabled:opacity-50"
+                          >
+                            {completing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                            Completar
+                          </button>
+                        </>
+                      )}
+
+                      {/* SUBMITTED: Deshacer (only if not overdue) */}
+                      {task.status === 'SUBMITTED' && task.dueDate >= new Date().toISOString().split('T')[0] && (
+                        <button
+                          onClick={() => handleUndo(task.taskId)}
+                          disabled={undoing === task.taskId}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                        >
+                          {undoing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                          Deshacer
+                        </button>
+                      )}
+
+                      {/* OVERDUE non-URL: still allow marking complete */}
+                      {task.status === 'OVERDUE' && !isUrlType && (
+                        <button
+                          onClick={() => handleComplete(task.taskId)}
+                          disabled={completing === task.taskId}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors disabled:opacity-50"
+                        >
+                          {completing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                          Completar
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

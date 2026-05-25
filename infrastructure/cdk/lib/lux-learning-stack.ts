@@ -669,6 +669,8 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/tasks',                        apigwv2.HttpMethod.GET,  tasksFn);
     addRoute('/tasks/calendar.ics',           apigwv2.HttpMethod.GET,  tasksFn, false); // public — token in query param
     addRoute('/tasks/{taskId}/complete',      apigwv2.HttpMethod.POST, tasksFn);
+    addRoute('/tasks/{taskId}/submit',        apigwv2.HttpMethod.POST, tasksFn);
+    addRoute('/tasks/{taskId}/undo',          apigwv2.HttpMethod.POST, tasksFn);
 
     // Tasks (evaluator)
     addRoute('/evaluator/tasks',              apigwv2.HttpMethod.GET,    evaluatorFn);

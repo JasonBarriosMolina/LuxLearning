@@ -16,6 +16,7 @@ import {
   putMessage,
   reactToMessage,
 } from '../shared/db-messages.js';
+import { getAllEnrollments } from '../shared/db-dynamo.js';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response.js';
 
 type AuthContext = { userId: string; email: string; role: string };
@@ -73,12 +74,39 @@ export const handler = async (event: Event) => {
     // ── GET /messages/contacts — lista de contactos según rol ───────────────
     if (method === 'GET' && path === '/messages/contacts') {
       if (role === 'STUDENT') {
-        // Estudiantes ven evaluadores y admins
+        // Get the student's enrolled courses
+        const allEnrollments = await getAllEnrollments();
+        const myEnrollments = allEnrollments.filter((e) => e.userId === userId);
+        const myCourseIds = new Set(myEnrollments.map((e) => e.courseId));
+
+        // Get all coursemates (students in the same courses)
+        const coursemates = myCourseIds.size > 0
+          ? allEnrollments
+              .filter((e) => e.userId !== userId && myCourseIds.has(e.courseId))
+              .map((e) => e.userId)
+          : [];
+        const coursemateIds = [...new Set(coursemates)];
+
+        // Fetch evaluators + coursemate details from Cognito in parallel
         const [evaluators, admins] = await Promise.all([
           listGroupUsers('EVALUATOR'),
           listGroupUsers('ADMIN'),
         ]);
-        return ok([...evaluators, ...admins]);
+
+        // Fetch coursemate names from Cognito
+        const coursemateDetails = await Promise.all(
+          coursemateIds.slice(0, 30).map(async (uid) => {
+            try {
+              const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid }));
+              const attr = (n: string) => res.UserAttributes?.find((a) => a.Name === n)?.Value ?? '';
+              return { username: uid, name: attr('name'), email: attr('email'), badge: 'Compañero' };
+            } catch { return null; }
+          })
+        );
+
+        const evalWithBadge = [...evaluators, ...admins].map((u) => ({ ...u, badge: 'Evaluador' }));
+        const validCoursemates = coursemateDetails.filter(Boolean) as any[];
+        return ok([...evalWithBadge, ...validCoursemates]);
       } else {
         // Evaluadores/Admins ven estudiantes
         const students = await listGroupUsers('STUDENT');
