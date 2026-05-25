@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "npm install --workspace=apps/web --workspace=packages/types --include-workspace-root",
+  "installCommand": "npm install --no-audit --no-fund --ignore-scripts",
   "buildCommand": "npm run build",
   "alias": ["lux-learning-mentor.vercel.app"]
 }
