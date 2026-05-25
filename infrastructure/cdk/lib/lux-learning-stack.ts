@@ -13,6 +13,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 
 export class LuxLearningStack extends cdk.Stack {
@@ -262,6 +263,7 @@ export class LuxLearningStack extends cdk.Stack {
       DYNAMO_TABLE_CHATS: chatsTable.tableName,
       DYNAMO_TABLE_MESSAGES: messagesTable.tableName,
       DYNAMO_TABLE_ACTIVITY: activityTable.tableName,
+      S3_IMAGES_BUCKET: 'lux-learning-images',
       SES_FROM_EMAIL: 'jason.rbm@gmail.com',
       BEDROCK_REGION: 'us-east-1',
       FRONTEND_URL: 'https://lux-learning-mentor.vercel.app',
@@ -336,7 +338,7 @@ export class LuxLearningStack extends cdk.Stack {
     const quizFn     = makeFn('QuizFn',     'quiz/handler.ts',           'handler', { memorySize: 512 });
     const reflFn     = makeFn('ReflectionFn', 'reflection/handler.ts',  'handler', { memorySize: 512 });
     const evaluatorFn = makeFn('EvaluatorFn', 'evaluator/handler.ts',   'handler', { memorySize: 512, timeout: cdk.Duration.seconds(60) });
-    const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 512, timeout: cdk.Duration.seconds(120) });
+    const adminFn    = makeFn('AdminFn',    'admin/handler.ts',          'handler', { memorySize: 1024, timeout: cdk.Duration.seconds(300) });
     const notifsFn   = makeFn('NotifsFn',   'notifications/handler.ts', 'handler');
     const certsFn    = makeFn('CertsFn',    'certificates/handler.ts',  'handler');
     const pushFn     = makeFn('PushFn',     'push/handler.ts',           'handler');
@@ -455,6 +457,27 @@ export class LuxLearningStack extends cdk.Stack {
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
       resources: [`arn:aws:lambda:us-east-1:${this.account}:function:lux-admin`],
+    }));
+
+    // S3 bucket for AI-generated lesson images (Nova Canvas)
+    const imagesBucket = new s3.Bucket(this, 'ImagesBucket', {
+      bucketName: 'lux-learning-images',
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      blockPublicAccess: new s3.BlockPublicAccess({ blockPublicAcls: false, ignorePublicAcls: false, blockPublicPolicy: false, restrictPublicBuckets: false }),
+      cors: [{ allowedMethods: [s3.HttpMethods.GET], allowedOrigins: ['*'], allowedHeaders: ['*'] }],
+    });
+    imagesBucket.addToResourcePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      principals: [new iam.AnyPrincipal()],
+      actions: ['s3:GetObject'],
+      resources: [imagesBucket.arnForObjects('*')],
+    }));
+    imagesBucket.grantWrite(adminFn);
+
+    // Nova Canvas (text-to-image) for lesson image generation
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: ['arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-canvas-v1:0'],
     }));
 
     // Bedrock for lesson chatbot
@@ -616,12 +639,15 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.GET,    adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/courses/{courseId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/courses/{courseId}/regenerate',  apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/courses/{courseId}/modules',     apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/modules/{moduleId}',             apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/modules/{moduleId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/modules/{moduleId}/regenerate',  apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/modules/{moduleId}/lessons',     apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/lessons/{lessonId}',             apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/lessons/{lessonId}',             apigwv2.HttpMethod.DELETE, adminFn);
+    addRoute('/admin/lessons/{lessonId}/regenerate',  apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/modules/{moduleId}/questions',   apigwv2.HttpMethod.POST,   adminFn);
     addRoute('/admin/questions/{questionId}',         apigwv2.HttpMethod.PUT,    adminFn);
     addRoute('/admin/questions/{questionId}',         apigwv2.HttpMethod.DELETE, adminFn);
@@ -671,6 +697,7 @@ export class LuxLearningStack extends cdk.Stack {
     addRoute('/tasks/{taskId}/complete',      apigwv2.HttpMethod.POST, tasksFn);
     addRoute('/tasks/{taskId}/submit',        apigwv2.HttpMethod.POST, tasksFn);
     addRoute('/tasks/{taskId}/undo',          apigwv2.HttpMethod.POST, tasksFn);
+    addRoute('/student/tasks/import',         apigwv2.HttpMethod.POST, tasksFn);
 
     // Tasks (evaluator)
     addRoute('/evaluator/tasks',              apigwv2.HttpMethod.GET,    evaluatorFn);

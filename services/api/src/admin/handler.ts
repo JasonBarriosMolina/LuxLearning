@@ -15,8 +15,10 @@ import {
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import sharp from 'sharp';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask } from '../shared/db-dynamo';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
@@ -24,6 +26,53 @@ import { jsonrepair } from 'jsonrepair';
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
+
+// ── Nova Canvas image generation helper ─────────────────────────────────────
+async function generateLessonImage(lessonTitle: string, moduleTitle: string, order: number): Promise<string | null> {
+  const prompts: Record<number, string> = {
+    2:  `Clean minimal educational mind map diagram about "${lessonTitle.slice(0, 60)}" in the context of "${moduleTitle.slice(0, 60)}", light blue background, professional illustration, no text labels, vector style`,
+    6:  `Professional educational illustration depicting "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, vivid colors, no text, clean composition`,
+    10: `Clean professional educational infographic layout about "${lessonTitle.slice(0, 60)}" summarizing "${moduleTitle.slice(0, 60)}", structured sections, modern design, geometric shapes`,
+  };
+  const prompt = prompts[order];
+  if (!prompt) return null;
+  try {
+    const resp = await bedrock.send(new InvokeModelCommand({
+      modelId: 'amazon.nova-canvas-v1:0',
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        taskType: 'TEXT_IMAGE',
+        textToImageParams: { text: prompt, negativeText: 'blurry, low quality, text, watermark, letters, words, nsfw' },
+        imageGenerationConfig: { numberOfImages: 1, quality: 'standard', width: 1024, height: 1024 },
+      }),
+    }));
+    const result = JSON.parse(new TextDecoder().decode(resp.body));
+    const base64 = result.images?.[0];
+    if (!base64) return null;
+    const imgBuffer = Buffer.from(base64, 'base64');
+    const svgWatermark = Buffer.from(
+      `<svg width="220" height="28"><text x="4" y="20" font-size="16" fill="rgba(255,255,255,0.55)" font-family="Arial,sans-serif">Lux Learning</text></svg>`
+    );
+    const watermarked = await sharp(imgBuffer)
+      .composite([{ input: svgWatermark, gravity: 'southeast' }])
+      .png()
+      .toBuffer();
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_IMAGES_BUCKET,
+      Key: key,
+      Body: watermarked,
+      ContentType: 'image/png',
+    }));
+    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('[ImageGen] Error generating lesson image:', err);
+    return null;
+  }
+}
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
 
@@ -142,11 +191,17 @@ export const handler = async (event: Event) => {
             select: {
               id: true, order: true, title: true, duration: true, passingScore: true,
               _count: { select: { lessons: true, questions: true } },
+              lessons: { select: { type: true, content: true } },
             },
           },
         },
       });
-      return ok(courses);
+      const coursesWithLegacy = courses.map((c) => {
+        const isLegacy = c.modules.length > 0 &&
+          c.modules.every((m) => (m.lessons as any[]).every((l: any) => l.type === 'video' && !l.content));
+        return { ...c, isLegacy };
+      });
+      return ok(coursesWithLegacy);
     }
 
     // ── POST /admin/courses ─────────────────────────────────────────────────
@@ -635,6 +690,37 @@ export const handler = async (event: Event) => {
           }
         } catch (e) { console.warn('Enrollment email/chat failed:', e); }
 
+        // M-7: Auto-create tasks for each module (one per module, due in 7×order days)
+        try {
+          const courseModules = await prisma.module.findMany({
+            where: { courseId },
+            orderBy: { order: 'asc' },
+            select: { id: true, title: true, order: true },
+          });
+          const courseForTasks = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+          const enrollDate = new Date();
+          await Promise.all(courseModules.map((mod) => {
+            const due = new Date(enrollDate);
+            due.setDate(due.getDate() + 7 * mod.order);
+            const dueDate = due.toISOString().slice(0, 10);
+            return createTask({
+              userId: username,
+              taskId: `auto-${courseId}-${mod.id}`,
+              title: `Completar módulo: ${mod.title}`,
+              description: `Completa todas las lecciones y el quiz del módulo ${mod.order}.`,
+              type: 'complete_module',
+              dueDate,
+              courseId,
+              moduleId: mod.id,
+              courseTitle: courseForTasks?.title ?? '',
+              moduleTitle: mod.title,
+              assignedBy: 'system',
+              status: 'PENDING',
+              createdAt: new Date().toISOString(),
+            });
+          }));
+        } catch (e) { console.warn('Auto-task creation failed:', e); }
+
         return ok({ enrolled: true });
       }
 
@@ -856,7 +942,7 @@ REGLAS: exactamente 10 preguntas, opciones con texto real (no genérico), espec�
                 `Genera la lección ${order} de 10 del módulo "${mod.title}" del curso "${structure.title}".
 Responde ÚNICAMENTE con JSON: {"title":"Título real","order":${order},"type":"${isVideo ? 'video' : 'text'}","content":"<p>Contenido educativo real.</p><p>Segundo párrafo.</p>","duration":"${isVideo ? '5' : '8'} min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo práctico."}`, 600
               );
-              return { order, type: isVideo ? 'video' : 'text', duration: isVideo ? '5 min' : '8 min', ...fallback, order };
+              return { type: isVideo ? 'video' : 'text', duration: isVideo ? '5 min' : '8 min', ...fallback, order };
             }));
 
             const allLessons = [...validLessons, ...extraLessons].sort((a: any, b: any) => a.order - b.order);
@@ -1010,7 +1096,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
               duration: `${(m.lessons?.length ?? 0) * 5} min`,
               passingScore: 70,
               lessons: {
-                create: (m.lessons ?? []).map((l) => ({
+                create: (m.lessons ?? []).map((l: any) => ({
                   title: l.title,
                   order: l.order,
                   duration: l.duration ?? (l.type === 'video' ? '5 min' : '8 min'),
@@ -1049,7 +1135,176 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
         participants: [],
       }).catch(() => {});
 
+      // X-3: Generate images for lessons at orders 2, 6, 10 (non-fatal)
+      try {
+        await Promise.all(
+          course.modules.flatMap((mod) =>
+            mod.lessons
+              .filter((l) => [2, 6, 10].includes(l.order))
+              .map(async (lesson) => {
+                const url = await generateLessonImage(lesson.title, mod.title, lesson.order);
+                if (url) await prisma.lesson.update({ where: { id: lesson.id }, data: { imageUrl: url } });
+              })
+          )
+        );
+      } catch (e) { console.warn('[ImageGen] Batch image generation error:', e); }
+
       return created({ ...course, suggestedTags });
+    }
+
+    // ── POST /admin/lessons/:lessonId/regenerate (X-1) ─────────────────────────
+    const lessonRegenMatch = path.match(/^\/admin\/lessons\/([^/]+)\/regenerate$/);
+    if (lessonRegenMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const lessonId = lessonRegenMatch[1]!;
+      const lesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
+        include: { module: { select: { title: true, course: { select: { title: true } } } } },
+      });
+      if (!lesson) return notFound('Lección no encontrada');
+      const modTitle = lesson.module.title;
+      const courseTitle = lesson.module.course.title;
+
+      const bedrockJSONSimple = async (prompt: string, maxTokens = 2000): Promise<any> => {
+        const res = await bedrock.send(new InvokeModelCommand({
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
+        }));
+        const raw = (JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+        const match = raw.match(/[\[{][\s\S]*/);
+        try { return JSON.parse(match?.[0] ?? '{}'); } catch { try { return JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { return {}; } }
+      };
+
+      const regen = await bedrockJSONSimple(
+        `Eres experto en diseño instruccional. Regenera la lección "${lesson.title}" (orden ${lesson.order}) del módulo "${modTitle}" del curso "${courseTitle}".
+Responde ÚNICAMENTE con JSON: {"title":"Título específico","content":"<h3>Subtítulo</h3><p>Párrafo 1 educativo real.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Párrafo de cierre.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
+Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en 2ª persona.`, 4000
+      );
+      const updated = await prisma.lesson.update({
+        where: { id: lessonId },
+        data: {
+          title: regen.title ?? lesson.title,
+          content: regen.content ?? lesson.content,
+          points: Array.isArray(regen.points) ? regen.points : lesson.points,
+          tip: regen.tip ?? lesson.tip,
+        },
+      });
+      return ok(updated);
+    }
+
+    // ── POST /admin/modules/:moduleId/regenerate (X-1) ──────────────────────────
+    const moduleRegenMatch = path.match(/^\/admin\/modules\/([^/]+)\/regenerate$/);
+    if (moduleRegenMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const moduleId = moduleRegenMatch[1]!;
+      const mod = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: { course: { select: { title: true } } },
+      });
+      if (!mod) return notFound('Módulo no encontrado');
+
+      // Async job pattern (same as ai-generate)
+      const jobId = `regen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAiJob(jobId, { status: 'processing' });
+
+      const asyncPayload = {
+        requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+        rawPath: '/admin/modules/_regen_worker',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ _jobId: jobId, _moduleId: moduleId, _moduleTitle: mod.title, _courseTitle: mod.course.title, _moduleOrder: mod.order }),
+      };
+      await lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify(asyncPayload)),
+      }));
+      return ok({ jobId });
+    }
+
+    // ── Async worker for module regeneration ─────────────────────────────────
+    if (path === '/admin/modules/_regen_worker' && method === 'POST') {
+      const { _jobId, _moduleId, _moduleTitle, _courseTitle, _moduleOrder } = body as any;
+      if (!_jobId || !_moduleId) return ok({ ok: true });
+      try {
+        const bedrockJSON2 = async (prompt: string, maxTokens = 2000): Promise<any> => {
+          const res = await bedrock.send(new InvokeModelCommand({
+            modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+            contentType: 'application/json', accept: 'application/json',
+            body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
+          }));
+          const raw = (JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+          const match = raw.match(/[\[{][\s\S]*/);
+          try { return JSON.parse(match?.[0] ?? '{}'); } catch { try { return JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { return {}; } }
+        };
+
+        const [newLessons, newQuestions] = await Promise.all([
+          bedrockJSON2(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".
+Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order, type, content, duration, points (array 3 frases), tip.
+Lección 1 y 10: type "video". Lecciones 2-9: type "text" con HTML rico (<h3>,<ul><li>,<blockquote>,<p>). Voz activa 2ª persona.`, 6000),
+          bedrockJSON2(`Genera exactamente 10 preguntas de opción múltiple sobre "${_moduleTitle}" del curso "${_courseTitle}".
+Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas.`, 2000),
+        ]);
+
+        // Replace all lessons and questions
+        await prisma.$transaction([
+          prisma.lesson.deleteMany({ where: { moduleId: _moduleId } }),
+          prisma.question.deleteMany({ where: { moduleId: _moduleId } }),
+        ]);
+        const lessons = Array.isArray(newLessons) ? newLessons.slice(0, 10) : [];
+        const questions = Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : [];
+        await prisma.lesson.createMany({
+          data: lessons.map((l: any, i: number) => ({
+            moduleId: _moduleId,
+            title: l.title ?? `Lección ${i + 1}`,
+            order: l.order ?? i + 1,
+            duration: l.duration ?? '8 min',
+            type: l.content ? 'text' : (l.type ?? 'text'),
+            youtubeId: '',
+            content: l.content ?? null,
+            points: Array.isArray(l.points) ? l.points : [],
+            tip: l.tip ?? '',
+          })),
+        });
+        await prisma.question.createMany({
+          data: questions.map((q: any, i: number) => ({
+            moduleId: _moduleId,
+            text: q.text ?? `Pregunta ${i + 1}`,
+            options: Array.isArray(q.options) ? q.options : ['A', 'B', 'C', 'D'],
+            correctIndex: Number(q.correctIndex ?? 0),
+            order: q.order ?? i + 1,
+          })),
+        });
+        await saveAiJob(_jobId, { status: 'done', result: { moduleId: _moduleId, lessonsCreated: lessons.length, questionsCreated: questions.length } });
+      } catch (err: any) {
+        await saveAiJob(_jobId, { status: 'error', error: err.message ?? 'Error' });
+      }
+      return ok({ ok: true });
+    }
+
+    // ── POST /admin/courses/:courseId/regenerate (X-1) ───────────────────────
+    const courseRegenMatch = path.match(/^\/admin\/courses\/([^/]+)\/regenerate$/);
+    if (courseRegenMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const courseId = courseRegenMatch[1]!;
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true, description: true } });
+      if (!course) return notFound('Curso no encontrado');
+      // Run FASE 1 synchronously (structure only — no publish)
+      const structureRes = await bedrock.send(new InvokeModelCommand({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json', accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31', max_tokens: 1200,
+          messages: [{ role: 'user', content: `Eres un experto en diseño instruccional. Para el curso "${course.title}" sobre: "${(course.description ?? '').slice(0, 500)}"
+Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"modules":[{"order":1,"title":"Módulo 1","description":"Descripción breve"},...]}` }],
+        }),
+      }));
+      const raw = (JSON.parse(new TextDecoder().decode(structureRes.body)).content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+      const match = raw.match(/[\[{][\s\S]*/);
+      let structure: any = {};
+      try { structure = JSON.parse(match?.[0] ?? '{}'); } catch { try { structure = JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { structure = {}; } }
+      return ok({ courseId, title: course.title, modules: structure.modules ?? [] });
     }
 
     // ── GET /user/profile ───────────────────────────────────────────────────────

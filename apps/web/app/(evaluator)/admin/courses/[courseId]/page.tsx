@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
-  BookOpen, ClipboardCheck, PlayCircle, GripVertical, X,
+  BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -272,6 +272,13 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    try { await api.admin.lessons.regenerate(lesson.id); onRefresh(); }
+    catch { /* ignore */ } finally { setRegenerating(false); }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
@@ -299,6 +306,9 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
           )}
         </div>
         <div className="flex gap-1 shrink-0">
+          <button onClick={handleRegenerate} disabled={regenerating} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50">
+            {regenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          </button>
           <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-white transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
           <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>
@@ -336,6 +346,16 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [questionModal, setQuestionModal] = useState(false);
   const [questionForm, setQuestionForm] = useState<QuestionForm>(newQuestionForm());
   const [savingQuestion, setSavingQuestion] = useState(false);
+  const [regeneratingMod, setRegeneratingMod] = useState(false);
+  const [regenJobId, setRegenJobId] = useState<string | null>(null);
+
+  const handleRegenerateMod = async () => {
+    setRegeneratingMod(true);
+    try {
+      const res = await api.admin.modules.regenerate(mod.id);
+      if (res?.data?.jobId) setRegenJobId(res.data.jobId);
+    } catch { /* ignore */ } finally { setRegeneratingMod(false); }
+  };
 
   const handleSaveMod = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
@@ -383,9 +403,18 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
           </div>
         </button>
         <div className="flex gap-1 shrink-0">
+          <button onClick={handleRegenerateMod} disabled={regeneratingMod} title="Regenerar módulo con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50">
+            {regeneratingMod ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
           <button onClick={() => setEditingMod(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"><Pencil className="w-4 h-4" /></button>
           <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-4 h-4" /></button>
         </div>
+        {regenJobId && (
+          <div className="ml-2 flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Regenerando... (jobId: {regenJobId.slice(-6)})
+          </div>
+        )}
       </div>
 
       {/* Expanded content */}

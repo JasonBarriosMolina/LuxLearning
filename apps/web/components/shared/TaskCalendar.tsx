@@ -19,7 +19,7 @@ interface Task {
   taskId: string;
   title: string;
   dueDate: string;
-  status: 'PENDING' | 'COMPLETED' | 'OVERDUE';
+  status: 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
   type: string;
   courseTitle?: string;
   moduleTitle?: string;

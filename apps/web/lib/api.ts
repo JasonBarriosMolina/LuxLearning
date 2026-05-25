@@ -114,6 +114,8 @@ export const api = {
     complete: (taskId: string) => request<any>(`/tasks/${taskId}/complete`, { method: 'POST' }),
     submit: (taskId: string) => request<any>(`/tasks/${taskId}/submit`, { method: 'POST' }),
     undo: (taskId: string) => request<any>(`/tasks/${taskId}/undo`, { method: 'POST' }),
+    importIcs: (events: { summary: string; dtstart: string; description?: string }[]) =>
+      request<any>('/student/tasks/import', { method: 'POST', body: JSON.stringify({ events }) }),
     calendarUrl: async () => {
       const { getIdToken } = await import('./auth');
       const token = await getIdToken();
@@ -175,18 +177,24 @@ export const api = {
         request<any>(`/admin/courses/ai-job?jobId=${encodeURIComponent(jobId)}`),
       aiPublish: (body: any) =>
         request<any>('/admin/courses/ai-publish', { method: 'POST', body: JSON.stringify(body) }),
+      regenerate: (courseId: string) =>
+        request<any>(`/admin/courses/${courseId}/regenerate`, { method: 'POST' }),
     },
     // Modules
     modules: {
       create: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}/modules`, { method: 'POST', body: JSON.stringify(body) }),
       update: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (moduleId: string) => request<any>(`/admin/modules/${moduleId}`, { method: 'DELETE' }),
+      regenerate: (moduleId: string) =>
+        request<any>(`/admin/modules/${moduleId}/regenerate`, { method: 'POST' }),
     },
     // Lessons
     lessons: {
       create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/lessons`, { method: 'POST', body: JSON.stringify(body) }),
       update: (lessonId: string, body: any) => request<any>(`/admin/lessons/${lessonId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (lessonId: string) => request<any>(`/admin/lessons/${lessonId}`, { method: 'DELETE' }),
+      regenerate: (lessonId: string) =>
+        request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST' }),
     },
     // Questions
     questions: {

@@ -126,7 +126,11 @@
       "Bash(npm show *)",
       "Bash(vercel build *)",
       "Bash(ls \"D:\\\\InHouse\\\\Lux\\\\.claude\" 2>&1 && ls \"C:\\\\Users\\\\jason\\\\.claude\" 2>&1)",
-      "Bash(git commit -m 'docs: actualizar CONTEXT.md con Batch 10 \\(2026-05-15\\) *)"
+      "Bash(git commit -m 'docs: actualizar CONTEXT.md con Batch 10 \\(2026-05-15\\) *)",
+      "PowerShell($token = \"vca_04lZR7fNHjovuiHhTq4bMAczXprf5vGyA7IjjDbqmMaf84sl1t3vKHVg\"; $resp = Invoke-RestMethod -Uri \"https://api.vercel.com/v6/deployments?limit=5&teamId=team_HlSBZaDwObIPYsWQUIDaBTK1\" -Headers @{Authorization=\"Bearer $token\"}; $resp.deployments | Select-Object url, state, createdAt | Format-Table -AutoSize)",
+      "Bash(cat /c/Users/jason/AppData/Local/Temp/claude/D--InHouse-Lux/7a94b293-bc02-4e85-ab99-fb069fe85e2a/tasks/bfqead1lq.output 2>/dev/null | tail -15)",
+      "Bash(curl -s 'https://api.vercel.com/v2/deployments/dpl_5iDa1EazLzZMotDM4iA7QtesWwPC/events?limit=20&direction=backward' -H 'Authorization: Bearer vca_5hvYjp3brAJKhwuxIkSxksYzDUzAIchrY6FP8uzXNf1AhvVxir4F3kAQ')",
+      "mcp__mcp-registry__search_mcp_registry"
     ]
   }
 }

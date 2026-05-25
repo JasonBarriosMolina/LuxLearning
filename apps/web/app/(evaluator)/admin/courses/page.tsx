@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -39,6 +39,8 @@ export default function AdminCoursesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [regeneratingCourse, setRegeneratingCourse] = useState<string | null>(null);
+  const [regenPreview, setRegenPreview] = useState<{ courseId: string; title: string; modules: any[] } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tagInput, setTagInput] = useState('');
 
@@ -277,12 +279,15 @@ export default function AdminCoursesPage() {
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   <p className="font-semibold text-charcoal truncate">{course.title}</p>
                   {course.isPilot && <Badge variant="info">Piloto</Badge>}
                   <Badge variant={course.isActive ? 'success' : 'default'}>
                     {course.isActive ? 'Activo' : 'Inactivo'}
                   </Badge>
+                  {course.isLegacy && (
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ Solo video</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <p className="text-xs text-gray-500">
@@ -310,6 +315,20 @@ export default function AdminCoursesPage() {
                   title="Editar información"
                 >
                   <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={async () => {
+                    setRegeneratingCourse(course.id);
+                    try {
+                      const res = await api.admin.courses.regenerate(course.id);
+                      if (res?.data?.modules) setRegenPreview({ courseId: course.id, title: res.data.title, modules: res.data.modules });
+                    } catch { /* ignore */ } finally { setRegeneratingCourse(null); }
+                  }}
+                  disabled={regeneratingCourse === course.id}
+                  className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                  title="Regenerar estructura con IA"
+                >
+                  {regeneratingCourse === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={() => setConfirmDelete(course.id)}
@@ -742,6 +761,45 @@ export default function AdminCoursesPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* Regenerate course preview modal (X-1) */}
+      <Modal
+        open={!!regenPreview}
+        onClose={() => setRegenPreview(null)}
+        title="Nueva estructura del curso"
+        size="md"
+      >
+        {regenPreview && (
+          <>
+            <p className="text-sm text-gray-600 mb-3">
+              La IA propone la siguiente estructura para <strong>{regenPreview.title}</strong>. Si confirmas, se regenerará cada módulo (proceso asíncrono).
+            </p>
+            <ol className="space-y-1 mb-5 max-h-48 overflow-y-auto text-sm">
+              {regenPreview.modules.map((m: any) => (
+                <li key={m.order} className="flex gap-2 text-gray-700">
+                  <span className="font-semibold text-indigo-600 shrink-0">{m.order}.</span>
+                  <span>{m.title}</span>
+                </li>
+              ))}
+            </ol>
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setRegenPreview(null)}>Cancelar</Button>
+              <Button
+                onClick={async () => {
+                  const { courseId, modules } = regenPreview;
+                  setRegenPreview(null);
+                  for (const m of modules) {
+                    try { await api.admin.modules.regenerate(m.id ?? m.moduleId); } catch { /* continue */ }
+                  }
+                  load();
+                }}
+              >
+                Confirmar y regenerar
+              </Button>
+            </div>
+          </>
+        )}
       </Modal>
 
       {/* Delete confirmation */}

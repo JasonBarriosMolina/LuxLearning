@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { getTasksForUser, updateTask, createNotification } from '../shared/db-dynamo';
+import { getTasksForUser, updateTask, createNotification, createTask } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
 
 /** Minimal JWT payload decode (no signature verification — used only for .ics, low-risk) */
@@ -90,6 +90,7 @@ export const handler = async (event: Event) => {
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;
   const path = event.rawPath;
+  const body = event.body ? JSON.parse(event.body) : {};
 
   try {
     // GET /tasks — list tasks for the current student
@@ -153,6 +154,35 @@ export const handler = async (event: Event) => {
       if (task.dueDate < today) return badRequest('No puedes deshacer una tarea vencida');
       await updateTask(userId, task.sk, { status: 'PENDING', submittedAt: undefined });
       return ok({ undone: true });
+    }
+
+    // POST /student/tasks/import — import events from .ics (M-5)
+    if (method === 'POST' && path === '/student/tasks/import') {
+      if (!userId) return badRequest('userId requerido');
+      const { events: icsEvents } = body as { events?: { summary?: string; dtstart?: string; description?: string }[] };
+      if (!Array.isArray(icsEvents) || icsEvents.length === 0) return badRequest('events es requerido y debe ser un array no vacío');
+      const created: string[] = [];
+      for (const ev of icsEvents.slice(0, 50)) { // limit 50 per import
+        if (!ev.summary || !ev.dtstart) continue;
+        // Normalize dtstart to YYYY-MM-DD
+        const ds = ev.dtstart.replace(/T.*$/, '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) continue;
+        const taskId = `ics-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        await createTask({
+          userId,
+          taskId,
+          title: ev.summary.slice(0, 120),
+          description: ev.description?.slice(0, 500) ?? '',
+          type: 'custom',
+          dueDate: ds,
+          assignedBy: 'import',
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+        });
+        created.push(taskId);
+        await new Promise((r) => setTimeout(r, 20)); // small delay to avoid duplicate taskIds
+      }
+      return ok({ created: created.length });
     }
 
     // GET /tasks/calendar.ics — download .ics file (public route, token in query param)
