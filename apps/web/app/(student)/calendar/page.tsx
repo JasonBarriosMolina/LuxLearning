@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Loader2, Upload, X, CheckSquare, Square } from 'lucide-react';
 import { api } from '@/lib/api';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
+import { parseIcsText, normalizeDtstart } from '@/lib/parseIcs';
 import { Button } from '@/components/ui/Button';
 
 interface Task {
@@ -47,19 +48,7 @@ export default function CalendarPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     const text = await file.text();
-    // Parse .ics manually (no ical.js needed for basic VEVENT parsing)
-    const events: IcsEvent[] = [];
-    const blocks = text.split('BEGIN:VEVENT');
-    for (const block of blocks.slice(1)) {
-      const get = (key: string) => {
-        const m = block.match(new RegExp(`${key}[^:]*:([^\\r\\n]+)`));
-        return m?.[1]?.trim() ?? '';
-      };
-      const summary = get('SUMMARY');
-      const dtstart = get('DTSTART');
-      const description = get('DESCRIPTION');
-      if (summary && dtstart) events.push({ summary, dtstart, description: description || undefined });
-    }
+    const events = parseIcsText(text);
     setIcsEvents(events);
     setSelectedEvents(new Set(events.map((_, i) => i)));
     e.target.value = '';
@@ -175,7 +164,7 @@ export default function CalendarPage() {
                   : <Square className="w-4 h-4 text-gray-300 shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-charcoal truncate">{ev.summary}</p>
-                  <p className="text-xs text-gray-400">{ev.dtstart.replace(/T.*$/, '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}</p>
+                  <p className="text-xs text-gray-400">{normalizeDtstart(ev.dtstart)}</p>
                 </div>
               </button>
             ))}

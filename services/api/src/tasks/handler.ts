@@ -100,12 +100,12 @@ export const handler = async (event: Event) => {
       const tasks = rawTasks.map(normalizeTask);
 
       // Auto-update OVERDUE status in DB (fire-and-forget)
-      const toMark = tasks.filter((t) => t.status === 'OVERDUE' && t.dueDate < now);
+      const toMark = tasks.filter((t: any) => t.status === 'OVERDUE' && t.dueDate < now);
       Promise.allSettled(
-        toMark.map((t) => updateTask(t.userId, t.sk, { status: 'OVERDUE' }))
+        toMark.map((t: any) => updateTask(t.userId, t.sk, { status: 'OVERDUE' }))
       ).catch(() => {});
 
-      tasks.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      tasks.sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate));
       return ok(tasks);
     }
 
@@ -198,6 +198,7 @@ export const handler = async (event: Event) => {
         headers: {
           'Content-Type': 'text/calendar; charset=utf-8',
           'Content-Disposition': 'attachment; filename="lux-tareas.ics"',
+          'Cache-Control': 'private, no-store',
           'Access-Control-Allow-Origin': '*',
         },
         body: ics,

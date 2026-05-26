@@ -1,6 +1,6 @@
 # Lux Learning — Contexto Técnico y Reglas de Negocio
 
-> **Última actualización:** 2026-05-24 — Sprint 1-3 + Fix YouTube + Chat + Actividad + Perfil Estudiante  
+> **Última actualización:** 2026-05-25 — Sprint 4: X-1 Regenerar IA, X-2 Legacy badge, X-3 Nova Canvas images, M-5 ICS import, M-7 Auto-tasks  
 > **Actualizar este archivo en cada deploy significativo.**
 
 ---
@@ -144,6 +144,31 @@ SUBMITTED (dentro de plazo) → PENDING (deshacer presentación)
 - Restricción nombre: máximo 1 cambio sin aprobación admin; contador en `localStorage` key `lux-name-change-count`
 - Si `count >= 1`: campo deshabilitado con mensaje explicativo
 
+### Tareas Automáticas (M-7)
+- Trigger: `POST /admin/users/:username/enrollments` — después de crear el enrollment
+- Crea 1 tarea por módulo del curso: `type: 'complete_module'`, `title: 'Completar módulo: {mod.title}'`
+- `dueDate = fechaEnrollment + (7 × module.order) días`
+- `assignedBy: 'system'`, `status: 'PENDING'`, `taskId: 'auto-{courseId}-{moduleId}'`
+
+### Regenerar con IA (X-1)
+- **Lección**: `POST /admin/lessons/{lessonId}/regenerate` — síncrono, actualiza `title/content/points/tip` en Prisma
+- **Módulo**: `POST /admin/modules/{moduleId}/regenerate` — devuelve `{ jobId }`, Lambda self-invoke async (FASE 2: lecciones + preguntas). Frontend hace polling con `GET /admin/courses/ai-job?jobId=`
+- **Curso**: `POST /admin/courses/{courseId}/regenerate` — solo devuelve preview de nueva estructura FASE 1. NO modifica datos. El admin confirma → llama regenerate por cada módulo en secuencia.
+
+### Imágenes Nova Canvas (X-3)
+- Model ID: `amazon.nova-canvas-v1:0` (heredado, no requiere access request)
+- Prompts en inglés obligatorio
+- Generación en lecciones con `order` 2, 6 y 10 de cada módulo
+- Bucket S3: `lux-learning-images` (público, `blockPublicAccess: false`)
+- URL guardada en `lesson.imageUrl` (campo Prisma)
+- Non-fatal: si Nova Canvas falla, el curso se publica igual sin imagen
+
+### Importar .ics (M-5)
+- Endpoint: `POST /student/tasks/import` — body `{ events: [{ summary, dtstart, description? }] }`
+- Normaliza `dtstart` a `YYYY-MM-DD` (soporta `20260601` y `20260601T120000Z`)
+- Límite 50 eventos por importación
+- `type: 'custom'`, `assignedBy: 'import'`, `status: 'PENDING'`
+
 ---
 
 ## DynamoDB — Tablas y Estructura de Keys
@@ -176,11 +201,11 @@ SUBMITTED (dentro de plazo) → PENDING (deshacer presentación)
 | `QuizFn` | `lux-quiz` | 30s / 512MB | HTTP | `POST /quiz/{moduleId}/submit`, `GET /quiz/{moduleId}/attempts` |
 | `ReflectionFn` | `lux-reflection` | 30s / 512MB | HTTP | `POST /reflection`, `GET /reflection/{moduleId}`, `POST /reflection/ai-preview` |
 | `EvaluatorFn` | `lux-evaluator` | 60s / 512MB | HTTP | `GET /evaluator/reflections`, `POST /evaluator/reflections/review`, `GET /evaluator/students`, `POST /evaluator/ai-feedback`, `GET /evaluator/quiz-audit`, `POST /evaluator/reflections/priority`, `POST /evaluator/ai-check`, `GET/POST/PUT/DELETE /evaluator/tasks` |
-| `AdminFn` | `lux-admin` | 30s / 512MB | HTTP | `GET/POST/PUT/DELETE /admin/courses`, `/admin/modules`, `/admin/lessons`, `/admin/questions`, `/admin/users`, `/admin/users/{u}/enrollments`, `/admin/users/{u}/role`, `/admin/users/{u}/status` |
+| `AdminFn` | `lux-admin` | 300s / 1024MB | HTTP | `GET/POST/PUT/DELETE /admin/courses`, `/admin/modules`, `/admin/lessons`, `/admin/questions`, `/admin/users`, `/admin/users/{u}/enrollments`, `/admin/users/{u}/role`, `/admin/users/{u}/status`, `POST /admin/courses/{id}/regenerate`, `POST /admin/modules/{id}/regenerate`, `POST /admin/lessons/{id}/regenerate` |
 | `NotifsFn` | `lux-notifs` | 30s / 256MB | HTTP | `GET /notifications`, `POST /notifications/read` |
 | `CertsFn` | `lux-certs` | 30s / 256MB | HTTP | `GET /certificates/{certId}` (público), `GET /my-certificates`, `POST /my-certificates/generate` |
 | `PushFn` | `lux-push` | 30s / 256MB | HTTP | `GET /push/vapid-key` (público), `POST /push/subscribe`, `DELETE /push/subscribe` |
-| `TasksFn` | `lux-tasks` | 15s / 256MB | HTTP | `GET /tasks`, `GET /tasks/calendar.ics` (público, token en query), `POST /tasks/{id}/complete`, `POST /tasks/{id}/submit`, `POST /tasks/{id}/undo` |
+| `TasksFn` | `lux-tasks` | 15s / 256MB | HTTP | `GET /tasks`, `GET /tasks/calendar.ics` (público, token en query), `POST /tasks/{id}/complete`, `POST /tasks/{id}/submit`, `POST /tasks/{id}/undo`, `POST /student/tasks/import` |
 | `MessagesFn` | `lux-messages` | 30s / 256MB | HTTP | `GET /messages/contacts`, `GET/POST /messages/chats`, `GET/POST /messages/{chatId}`, `PUT /messages/{chatId}/read`, `POST /messages/{chatId}/react` |
 | `ReportsFn` | `lux-reports` | 60s / 512MB | HTTP | `GET /reports?mode=master\|student\|course&studentId=&courseId=`, `POST /reports/email`, `GET/PUT /reports/recommendations/{moduleId}` |
 | `SQSConsumerFn` | `lux-sqsconsumer` | 120s / 512MB | SQS batch 5 | Análisis IA de reflexiones (Bedrock) |
@@ -194,6 +219,7 @@ SUBMITTED (dentro de plazo) → PENDING (deshacer presentación)
 DYNAMO_TABLE_CHATS=LuxChats
 DYNAMO_TABLE_MESSAGES=LuxMessages
 DYNAMO_TABLE_ACTIVITY=LuxActivity
+S3_IMAGES_BUCKET=lux-learning-images
 ```
 
 ---
@@ -275,6 +301,13 @@ Errores: `{ "error": "mensaje", "statusCode": 400|403|404|500 }`
 - ✅ Auto-create GROUP chat al publicar curso
 - ✅ Gestión de usuarios: invitar, cambiar rol, activar/desactivar
 - ✅ Gestión de inscripciones — al inscribir estudiante se agrega como miembro del GROUP chat del curso
+
+### Sprint 4 (2026-05-25)
+- ✅ **X-1 — Regenerar con IA**: botón 🔄 en cada lección/módulo/curso en admin UI. Lección: síncrono (~3s). Módulo: async job (Lambda self-invoke, polling con jobId). Curso: devuelve preview FASE 1 para confirmar antes de aplicar.
+- ✅ **X-2 — Badge "Solo video"**: cursos donde todos los módulos tienen solo lecciones `type=video` sin `content` muestran badge ⚠ en admin. Computed at runtime, sin migración Prisma.
+- ✅ **X-3 — Imágenes Nova Canvas**: al publicar curso con IA, genera imágenes para lecciones 2, 6 y 10 de cada módulo via `amazon.nova-canvas-v1:0`. Sharp watermark "Lux Learning". Subidas a S3 `lux-learning-images` (público). Non-fatal si falla.
+- ✅ **M-5 — Importar .ics**: botón en `/calendar`, parseo client-side (regex VEVENT), modal de selección, `POST /student/tasks/import`, max 50 eventos por importación.
+- ✅ **M-7 — Tareas automáticas**: al inscribir estudiante (`POST /admin/users/:username/enrollments`) se crean tareas `type: 'complete_module'` para cada módulo del curso. `dueDate = enrollDate + 7×module.order días`. `assignedBy: 'system'`.
 
 ---
 
@@ -409,14 +442,17 @@ model Course {
 
 ---
 
-## Pendiente (Sprint 4)
+## Historial de Deploys — Sprint 4
+
+| Fecha | Descripción |
+|-------|-------------|
+| 2026-05-25 | **Sprint 4**: X-1 regenerar IA (lección/módulo/curso), X-2 badge legacy, X-3 Nova Canvas imágenes S3, M-5 importar .ics, M-7 tareas automáticas en enrollment |
+| 2026-05-25 | **Infra**: CDK S3 bucket `lux-learning-images`, 4 rutas nuevas API GW, AdminFn 1024MB/300s, `.vercelignore` fix build timeout Vercel |
+
+## Pendiente (Sprint 5+)
 
 | Item | Descripción | Complejidad |
 |------|-------------|-------------|
-| X-1 | Regenerar curso/módulo/lección con IA | Alta |
-| X-2 | Marcar cursos legacy (solo video) | Media |
-| M-5 | Importar .ics externo | Media |
-| M-7 | Tareas automáticas al crear curso | Media |
-| X-3 | Stable Diffusion imágenes (Bedrock) | Muy alta |
-| UT | Unit tests BE + integration tests mocks AWS (Vitest, ~2-3 días) | Media |
-| E2E | Playwright tests flujos críticos (~1 día adicional) | Media |
+| SEC | Security headers CSP/HSTS, CORS restrictivo, rate limiting, SSRF guard | Media |
+| UT | Unit tests Vitest: tasks handler, admin M-7, ICS parser, TaskCalendar | Media |
+| E2E | Playwright tests flujos críticos | Alta |

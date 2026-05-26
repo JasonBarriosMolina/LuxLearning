@@ -1,7 +1,19 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 
+const ALLOWED_ORIGINS = [
+  'https://lux-learning-tau.vercel.app',
+  'https://lux-learning-mentor.vercel.app',
+  'https://lux-learning.vercel.app',
+  'http://localhost:3000',
+];
+
+function getCorsOrigin(requestOrigin?: string): string {
+  if (!requestOrigin) return ALLOWED_ORIGINS[0]!;
+  return ALLOWED_ORIGINS.includes(requestOrigin) ? requestOrigin : ALLOWED_ORIGINS[0]!;
+}
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': process.env.FRONTEND_URL ?? '*',
+  'Access-Control-Allow-Origin': process.env.FRONTEND_URL ?? getCorsOrigin(),
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
   'Content-Type': 'application/json',

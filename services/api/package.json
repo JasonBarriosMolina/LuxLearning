@@ -9,7 +9,10 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.600.0",
@@ -38,8 +41,10 @@
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^20.14.0",
     "@types/ws": "^8.5.11",
+    "@vitest/coverage-v8": "^4.1.7",
     "prisma": "^5.15.0",
     "tsx": "^4.15.7",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.7"
   }
 }

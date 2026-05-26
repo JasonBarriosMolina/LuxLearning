@@ -486,6 +486,7 @@ export const handler = async (event: Event) => {
         const email = attr(u, 'email') || username; // fallback to username (which is email for admin-created users)
         return {
           username,
+          sub: attr(u, 'sub'),   // Cognito UUID — matches userId stored in tasks/enrollments
           email,
           name: attr(u, 'name'),
           role,
@@ -994,6 +995,17 @@ Responde ÚNICAMENTE con JSON: {"title":"Título real específico","content":"<p
 
       // ── DISPATCH: first call — save job and fire async ────────────────────
       if (!input) return badRequest('input es requerido');
+      // SSRF guard: block private IPs, metadata service, and non-HTTP schemes
+      if (genMethod === 'url') {
+        try {
+          const parsed = new URL(input);
+          if (!['http:', 'https:'].includes(parsed.protocol)) return badRequest('URL no permitida');
+          const h = parsed.hostname;
+          const blocked = [/^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^169\.254\./];
+          if (blocked.some((r) => r.test(h)) || h === 'localhost' || h.endsWith('.local'))
+            return badRequest('URL no permitida');
+        } catch { return badRequest('URL inválida'); }
+      }
       let context = input;
       if (genMethod === 'url') {
         try {

@@ -40,6 +40,9 @@ jobs:
           NEXT_PUBLIC_COGNITO_CLIENT_ID: placeholder
           NEXT_PUBLIC_API_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
 
+      - name: Run frontend tests
+        run: npm test --workspace=apps/web
+
       - name: Build
         run: npm run build --workspace=apps/web
         env:

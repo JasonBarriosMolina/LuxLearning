@@ -87,7 +87,11 @@ export default function EvaluatorTasksPage() {
       const allUsers: any[] = (usersRes.value as any).data ?? [];
       const studentUsers = allUsers
         .filter((u: any) => u.role === 'STUDENT')
-        .map((u: any) => ({ userId: u.username, studentName: u.name || u.email }));
+        .map((u: any) => ({
+          userId: u.username,
+          sub: u.sub ?? '',          // Cognito UUID — what tasks store as userId
+          studentName: u.name || u.email,
+        }));
       setStudents(studentUsers);
     }
     if (coursesRes.status === 'fulfilled') setCourses((coursesRes.value as any).data ?? []);
@@ -177,7 +181,8 @@ export default function EvaluatorTasksPage() {
   }, {});
 
   const getStudentName = (userId: string) => {
-    const s = students.find((s: any) => s.userId === userId);
+    // userId in tasks is the Cognito sub UUID; match by sub first, then username
+    const s = students.find((s: any) => s.sub === userId || s.userId === userId);
     return s?.studentName ?? userId.split('@')[0] ?? userId;
   };
 
