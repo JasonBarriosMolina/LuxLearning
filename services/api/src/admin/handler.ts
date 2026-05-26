@@ -177,9 +177,10 @@ export const handler = async (event: Event) => {
 
   const method = event.requestContext.http.method;
   const path = event.rawPath;
-  const prisma = getPrismaClient();
 
   try {
+    // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
+    const prisma = getPrismaClient();
     const body = event.body ? JSON.parse(event.body) : {};
 
     // ── GET /admin/courses ──────────────────────────────────────────────────

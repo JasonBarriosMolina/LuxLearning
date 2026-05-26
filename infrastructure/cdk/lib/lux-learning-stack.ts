@@ -511,6 +511,9 @@ export class LuxLearningStack extends cdk.Stack {
     }));
     chatsTable.grantReadWriteData(messagesFn);
     messagesTable.grantReadWriteData(messagesFn);
+    // adminFn creates group chats when creating/publishing courses
+    chatsTable.grantReadWriteData(adminFn);
+    messagesTable.grantReadWriteData(adminFn);
 
     // Analysis Lambda — Bedrock + Cognito
     analysisFn.addToRolePolicy(new iam.PolicyStatement({

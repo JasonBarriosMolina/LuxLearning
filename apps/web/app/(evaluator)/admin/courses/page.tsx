@@ -33,6 +33,7 @@ function slugify(text: string) {
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any | null>(null);
   const [form, setForm] = useState<CourseForm>(EMPTY_FORM);
@@ -65,6 +66,8 @@ export default function AdminCoursesPage() {
     try {
       const res = await api.admin.courses.list();
       setCourses((res as any).data ?? []);
+    } catch (err: any) {
+      setLoadError(err.message ?? 'Error al cargar cursos');
     } finally {
       setLoading(false);
     }
@@ -259,12 +262,19 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
+      {/* Load error */}
+      {loadError && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          Error al cargar cursos: {loadError}
+        </div>
+      )}
+
       {/* Courses list */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((n) => <div key={n} className="card h-24 animate-pulse" />)}
         </div>
-      ) : courses.length === 0 ? (
+      ) : !loadError && courses.length === 0 ? (
         <div className="card text-center py-16">
           <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="font-heading font-bold text-charcoal">No hay cursos todavía</p>

@@ -16,6 +16,7 @@ export default function AssignCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // By-course mode
   const [selectedCourseId, setSelectedCourseId] = useState('');
@@ -47,7 +48,7 @@ export default function AssignCoursesPage() {
       setCourses(allCourses);
       setStudents(allUsers.filter((u) => u.role === 'STUDENT' && u.enabled));
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err: any) => { setLoadError(err.message ?? 'Error al cargar datos'); setLoading(false); });
   }, []);
 
   // Load enrollments when a course is selected
@@ -150,6 +151,12 @@ export default function AssignCoursesPage() {
         </h1>
         <p className="text-gray-500 mt-1 text-sm">Inscribe estudiantes a cursos de forma individual o masiva</p>
       </div>
+
+      {loadError && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          Error al cargar datos: {loadError}
+        </div>
+      )}
 
       {/* Mode toggle */}
       <div className="flex bg-surface rounded-xl p-1 gap-1 w-fit">
