@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AmplifyProvider } from '@/components/shared/AmplifyProvider';
+import { PwaUpdatePrompt } from '@/components/shared/PwaUpdatePrompt';
 
 export const metadata: Metadata = {
   title: { default: 'Lux Learning', template: '%s — Lux Learning' },
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AmplifyProvider>
           {children}
+          <PwaUpdatePrompt />
         </AmplifyProvider>
       </body>
     </html>
