@@ -286,7 +286,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
     if (enrollments[username] !== undefined) return enrollments[username];
     try {
       const res = await api.admin.users.getEnrollments(username);
-      const ids: string[] = (res as any).data ?? [];
+      const ids: string[] = (res as any).data?.courseIds ?? (res as any).data ?? [];
       setEnrollments((prev) => ({ ...prev, [username]: ids }));
       return ids;
     } catch {

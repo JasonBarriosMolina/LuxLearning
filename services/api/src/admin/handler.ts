@@ -1122,9 +1122,10 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
               duration: `${(m.lessons?.length ?? 0) * 5} min`,
               passingScore: 70,
               lessons: {
-                create: (m.lessons ?? []).map((l: any) => ({
+                // Use array index as order to avoid duplicate (moduleId, order) constraint
+                create: (m.lessons ?? []).map((l: any, li: number) => ({
                   title: l.title,
-                  order: l.order,
+                  order: li + 1,
                   duration: l.duration ?? (l.type === 'video' ? '5 min' : '8 min'),
                   type: l.content ? 'text' : (l.type ?? 'text'),
                   youtubeId: '',
@@ -1134,11 +1135,12 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
                 })),
               },
               questions: {
-                create: (m.questions ?? []).map((q) => ({
+                // Use array index as order to avoid duplicate (moduleId, order) constraint
+                create: (m.questions ?? []).map((q, qi: number) => ({
                   text: q.text,
                   options: q.options,
                   correctIndex: Number(q.correctIndex),
-                  order: q.order,
+                  order: qi + 1,
                 })),
               },
             })),
