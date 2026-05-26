@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
@@ -514,17 +515,23 @@ export const handler = async (event: Event) => {
       if (!email) return badRequest('email es requerido');
       if (!['STUDENT', 'EVALUATOR', 'ADMIN'].includes(role)) return badRequest('rol inválido');
 
-      // Generate a secure temporary password that meets Cognito policy
-      // (8+ chars, uppercase, lowercase, digits)
+      // Generate a cryptographically secure temporary password (Cognito policy: 8+ chars,
+      // uppercase, lowercase, digits). Use crypto.randomInt (Node 18+) + Fisher-Yates shuffle.
       const chars = 'abcdefghijklmnopqrstuvwxyz';
       const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
       const digits = '0123456789';
-      const rand = (s: string) => s[Math.floor(Math.random() * s.length)];
-      const temporaryPassword = [
-        rand(uppers), rand(uppers),
-        rand(chars), rand(chars), rand(chars), rand(chars),
-        rand(digits), rand(digits),
-      ].sort(() => Math.random() - 0.5).join('');
+      const cryptoItem = (s: string) => s[randomInt(s.length)]!;
+      const pwChars = [
+        cryptoItem(uppers), cryptoItem(uppers),
+        cryptoItem(chars), cryptoItem(chars), cryptoItem(chars), cryptoItem(chars),
+        cryptoItem(digits), cryptoItem(digits),
+      ];
+      // Unbiased Fisher-Yates shuffle
+      for (let i = pwChars.length - 1; i > 0; i--) {
+        const j = randomInt(i + 1);
+        [pwChars[i], pwChars[j]] = [pwChars[j]!, pwChars[i]!];
+      }
+      const temporaryPassword = pwChars.join('');
 
       // Create user with SUPPRESS — admin shares password through their own channel
       let createRes: any;

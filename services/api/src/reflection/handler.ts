@@ -147,6 +147,17 @@ Responde ÚNICAMENTE con JSON válido:
         deadline,
       };
 
+      // Guard: do not allow overwriting an approved or in-review reflection
+      const existing = await getReflection(userId, moduleId);
+      if (existing) {
+        if (existing.status === 'APPROVED') {
+          return badRequest('Esta reflexión ya fue aprobada y no puede reescribirse');
+        }
+        if (existing.status === 'PENDING_AI' || existing.status === 'PENDING_EVAL') {
+          return badRequest('Tu reflexión está siendo revisada. Espera el resultado antes de reenviar');
+        }
+      }
+
       await saveReflection(reflection);
 
       // Send to SQS for AI processing

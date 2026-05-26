@@ -27,19 +27,35 @@ const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGI
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 
-// Cache userId -> email to avoid repeated Cognito calls within a Lambda invocation
-const emailCache = new Map<string, string>();
-const roleCache = new Map<string, string>();
+// Cache userId -> email/role — bounded LRU with 5-minute TTL to prevent unbounded growth
+// on long-running warm Lambda instances.
+const MAX_CACHE = 500;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+interface CacheEntry { value: string; expiresAt: number }
+const emailCache = new Map<string, CacheEntry>();
+const roleCache = new Map<string, CacheEntry>();
+
+function cacheGet(map: Map<string, CacheEntry>, key: string): string | undefined {
+  const entry = map.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) { map.delete(key); return undefined; }
+  return entry.value;
+}
+function cacheSet(map: Map<string, CacheEntry>, key: string, value: string): void {
+  if (map.size >= MAX_CACHE) map.delete(map.keys().next().value!); // evict oldest entry
+  map.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
 
 async function getCognitoUser(userId: string): Promise<{ email: string; role: string } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
-  if (emailCache.has(userId)) return { email: emailCache.get(userId)!, role: roleCache.get(userId) ?? '' };
+  const cachedEmail = cacheGet(emailCache, userId);
+  if (cachedEmail !== undefined) return { email: cachedEmail, role: cacheGet(roleCache, userId) ?? '' };
   try {
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
     const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value ?? userId;
     const role = res.UserAttributes?.find((a) => a.Name === 'custom:role')?.Value ?? '';
-    emailCache.set(userId, email);
-    roleCache.set(userId, role);
+    cacheSet(emailCache, userId, email);
+    cacheSet(roleCache, userId, role);
     return { email, role };
   } catch {
     return null;
@@ -48,13 +64,15 @@ async function getCognitoUser(userId: string): Promise<{ email: string; role: st
 
 async function resolveStudentName(userId: string, storedEmail?: string): Promise<string> {
   if (storedEmail) return storedEmail;
-  if (emailCache.has(userId)) return emailCache.get(userId)!;
+  const cached = cacheGet(emailCache, userId);
+  if (cached !== undefined) return cached;
   const user = await getCognitoUser(userId);
   return user?.email ?? userId;
 }
 
 async function isStudentRole(userId: string): Promise<boolean> {
-  if (roleCache.has(userId)) return roleCache.get(userId) === 'STUDENT';
+  const cached = cacheGet(roleCache, userId);
+  if (cached !== undefined) return cached === 'STUDENT';
   const user = await getCognitoUser(userId);
   return user?.role === 'STUDENT';
 }
@@ -717,18 +735,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
       if (!assignees.length) return badRequest('No se encontraron destinatarios');
 
-      // Server-side dedup: if same title+dueDate+assignedBy exists in last 30s, return existing
-      const cutoff = new Date(Date.now() - 30_000).toISOString();
-      const recentScan = await ddb.send(new ScanCommand({
-        TableName: TABLES.TASKS,
-        FilterExpression: '#t = :title AND dueDate = :dd AND assignedBy = :aid AND createdAt >= :cutoff',
-        ExpressionAttributeNames: { '#t': 'title' },
-        ExpressionAttributeValues: { ':title': title, ':dd': dueDate, ':aid': assignerUserId, ':cutoff': cutoff },
-      })).catch(() => ({ Items: [] }));
-      if ((recentScan.Items ?? []).length > 0) {
-        return ok({ created: (recentScan.Items ?? []).length, deduplicated: true });
-      }
-
+      // Each task gets a unique taskId from cuid2 — no Scan-based dedup needed
       const tasks = await Promise.all(
         assignees.map((uid) =>
           createTask({
@@ -770,12 +777,20 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
     // GET /evaluator/tasks — list all tasks assigned by this evaluator
     if (path === '/evaluator/tasks' && method === 'GET') {
       const assignerUserId = event.requestContext.authorizer?.lambda?.userId!;
-      const scan = await ddb.send(new ScanCommand({
-        TableName: TABLES.TASKS,
-        FilterExpression: 'assignedBy = :aid',
-        ExpressionAttributeValues: { ':aid': assignerUserId },
-      }));
-      const tasks = (scan.Items ?? []).sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate));
+      // Paginate through full Scan to avoid silent data loss after 1MB
+      let lastKey: Record<string, any> | undefined;
+      const allItems: any[] = [];
+      do {
+        const page = await ddb.send(new ScanCommand({
+          TableName: TABLES.TASKS,
+          FilterExpression: 'assignedBy = :aid',
+          ExpressionAttributeValues: { ':aid': assignerUserId },
+          ExclusiveStartKey: lastKey,
+        }));
+        allItems.push(...(page.Items ?? []));
+        lastKey = page.LastEvaluatedKey;
+      } while (lastKey);
+      const tasks = allItems.sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate));
       return ok(tasks);
     }
 
@@ -789,7 +804,30 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
       const tasks = await getTasksForUser(targetUserId);
       const task = tasks.find((t: any) => t.taskId === taskId);
       if (!task) return badRequest('Tarea no encontrada');
-      await updateTask(targetUserId, task.sk, { title, description, dueDate });
+      // dueDate is part of the DynamoDB SK — changing it requires delete + recreate
+      if (dueDate && dueDate !== task.dueDate) {
+        await deleteTask(targetUserId, task.sk);
+        await createTask({
+          userId: targetUserId,
+          taskId: task.taskId,
+          title: title ?? task.title,
+          description: description ?? task.description,
+          type: task.type,
+          dueDate,
+          courseId: task.courseId,
+          moduleId: task.moduleId,
+          courseTitle: task.courseTitle,
+          moduleTitle: task.moduleTitle,
+          assignedBy: task.assignedBy,
+          status: task.status,
+          createdAt: task.createdAt,
+        });
+      } else {
+        const updates: any = {};
+        if (title !== undefined) updates.title = title;
+        if (description !== undefined) updates.description = description;
+        if (Object.keys(updates).length) await updateTask(targetUserId, task.sk, updates);
+      }
       return ok({ updated: true });
     }
 
@@ -808,12 +846,15 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // GET /evaluator/signature — obtener firma digital del evaluador
     if (method === 'GET' && path === '/evaluator/signature') {
+      const userId = event.requestContext.authorizer?.lambda?.userId!;
       const signature = await getSignature(userId);
       return ok({ signature });
     }
 
     // PUT /evaluator/signature — guardar firma digital del evaluador
     if (method === 'PUT' && path === '/evaluator/signature') {
+      const userId = event.requestContext.authorizer?.lambda?.userId!;
+      const body = JSON.parse(event.body ?? '{}');
       const { signature } = body as { signature?: string };
       if (!signature) return badRequest('signature es requerido');
       await saveSignature(userId, signature);

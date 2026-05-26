@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getTasksForUser, updateTask, createNotification, createTask } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
+import { createId } from '@paralleldrive/cuid2';
 
 /** Minimal JWT payload decode (no signature verification — used only for .ics, low-risk) */
 function decodeJwtUserId(token: string): string | null {
@@ -167,7 +168,7 @@ export const handler = async (event: Event) => {
         // Normalize dtstart to YYYY-MM-DD
         const ds = ev.dtstart.replace(/T.*$/, '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) continue;
-        const taskId = `ics-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const taskId = `ics-${createId()}`;
         await createTask({
           userId,
           taskId,
@@ -180,7 +181,6 @@ export const handler = async (event: Event) => {
           createdAt: new Date().toISOString(),
         });
         created.push(taskId);
-        await new Promise((r) => setTimeout(r, 20)); // small delay to avoid duplicate taskIds
       }
       return ok({ created: created.length });
     }

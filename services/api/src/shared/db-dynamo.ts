@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { createId } from '@paralleldrive/cuid2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
@@ -66,7 +67,10 @@ export async function isLessonComplete(
 // ─── Quiz Attempts ────────────────────────────────────────────────────────────
 
 export async function saveQuizAttempt(attempt: QuizAttempt) {
-  const sk = `${attempt.moduleId}#${String(attempt.attemptNumber).padStart(4, '0')}`;
+  // Use a unique cuid2 instead of attemptNumber as the SK suffix to prevent
+  // concurrent submissions from overwriting each other (race condition).
+  // attemptNumber is stored as an attribute for display purposes only.
+  const sk = `${attempt.moduleId}#${createId()}`;
   await ddb.send(new PutCommand({
     TableName: TABLES.QUIZ,
     Item: { userId: attempt.userId, sk, ...attempt },
@@ -237,11 +241,12 @@ export async function isModuleUnlocked(
   moduleOrder: number,
   allModules: { id: string; order: number }[]
 ): Promise<boolean> {
-  if (moduleOrder === 1) return true;
-  // Find the module whose order is exactly one before this one.
-  // Using order values (not array indices) is safe when orders are non-contiguous.
-  const prevModule = allModules.find((m) => m.order === moduleOrder - 1);
-  if (!prevModule) return false; // previous module doesn't exist — treat as locked
+  // Sort modules by order and find the one immediately before moduleOrder,
+  // without assuming order values are contiguous (e.g. 1, 3, 5 is valid).
+  const sorted = [...allModules].sort((a, b) => a.order - b.order);
+  const currentIndex = sorted.findIndex((m) => m.order === moduleOrder);
+  if (currentIndex <= 0) return true; // first module (or not found) is always unlocked
+  const prevModule = sorted[currentIndex - 1]!;
   const reflection = await getReflection(userId, prevModule.id);
   return reflection?.status === 'APPROVED';
 }
