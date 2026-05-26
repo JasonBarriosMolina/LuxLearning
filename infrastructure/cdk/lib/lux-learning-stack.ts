@@ -83,15 +83,10 @@ export class LuxLearningStack extends cdk.Stack {
       },
     });
 
-    // VAPID keys for Web Push (private key must stay out of CloudFormation template)
-    const vapidSecret = new secretsmanager.Secret(this, 'VapidSecret', {
-      secretName: 'lux/vapid',
-      description: 'VAPID keypair for Web Push notifications',
-      secretObjectValue: {
-        VAPID_PUBLIC_KEY:  cdk.SecretValue.unsafePlainText('BD-Lc9oupPptQmoDMPCjFFapaUmaEnBTpotB7zrjdLAMHWAvXlZOzGp7uhCcJQHVW1Qof9KpDb00RSkJ2AV0OFw'),
-        VAPID_PRIVATE_KEY: cdk.SecretValue.unsafePlainText('SrodpnU4gkq5FH_caq4vYKP1hxz_g5iisTkCI_ONqwo'),
-      },
-    });
+    // VAPID keys — managed in Secrets Manager, NOT in source code.
+    // To rotate: aws secretsmanager put-secret-value --secret-id lux/vapid --secret-string '{"VAPID_PUBLIC_KEY":"...","VAPID_PRIVATE_KEY":"..."}'
+    // Then run cdk deploy to refresh Lambda env vars + clear DynamoDB PushSubscriptions.
+    const vapidSecret = secretsmanager.Secret.fromSecretNameV2(this, 'VapidSecret', 'lux/vapid');
 
     // ─── DynamoDB Tables ──────────────────────────────────────────────────────
 
@@ -564,12 +559,26 @@ export class LuxLearningStack extends cdk.Stack {
       apiName: 'lux-learning-api',
       description: 'Lux Learning REST API',
       corsPreflight: {
-        allowOrigins: ['*'],
+        allowOrigins: [
+          'https://lux-learning-tau.vercel.app',
+          'https://lux-learning-mentor.vercel.app',
+          'https://lux-learning.vercel.app',
+          'http://localhost:3000',
+        ],
         allowHeaders: ['Content-Type', 'Authorization'],
         allowMethods: [apigwv2.CorsHttpMethod.ANY],
         maxAge: cdk.Duration.hours(24),
       },
     });
+
+    // Rate limiting via L1 escape hatch — 100 req/s sustained, 200 burst
+    const cfnStage = api.defaultStage?.node.defaultChild as apigwv2.CfnStage;
+    if (cfnStage) {
+      cfnStage.defaultRouteSettings = {
+        throttlingBurstLimit: 200,
+        throttlingRateLimit: 100,
+      };
+    }
 
     const i = (fn: lambda.IFunction) =>
       new apigwv2Integrations.HttpLambdaIntegration(`${fn.node.id}Int`, fn);
