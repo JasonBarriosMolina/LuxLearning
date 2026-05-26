@@ -17,7 +17,12 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import sharp from 'sharp';
+// sharp is a native module — lazy import to avoid crashing Lambda on ARM64 if binary is missing
+let sharpLib: typeof import('sharp') | null = null;
+async function getSharp() {
+  if (!sharpLib) sharpLib = (await import('sharp')).default as any;
+  return sharpLib!;
+}
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask } from '../shared/db-dynamo';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
@@ -57,6 +62,7 @@ async function generateLessonImage(lessonTitle: string, moduleTitle: string, ord
     const svgWatermark = Buffer.from(
       `<svg width="220" height="28"><text x="4" y="20" font-size="16" fill="rgba(255,255,255,0.55)" font-family="Arial,sans-serif">Lux Learning</text></svg>`
     );
+    const sharp = await getSharp();
     const watermarked = await sharp(imgBuffer)
       .composite([{ input: svgWatermark, gravity: 'southeast' }])
       .png()
