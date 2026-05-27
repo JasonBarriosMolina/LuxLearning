@@ -9,20 +9,12 @@ interface Props {
   className?: string;
 }
 
-// ── Web Speech fallback — Voice profiles ────────────────────────────────────
+// ── Web Speech fallback — Voice profiles (2 options, Polly is preferred) ────
 const VOICE_PROFILES = [
-  { id: 'carlos',    label: 'Carlos ♂',    gender: 'male',   lang: 'es-ES',
-    hints: ['pablo', 'jorge', 'carlos', 'raul', 'juan', 'diego', 'miguel', 'martin', 'gabriel', 'male'] },
-  { id: 'miguel',    label: 'Miguel ♂',    gender: 'male',   lang: 'es-MX',
-    hints: ['raul', 'juan', 'miguel', 'pablo', 'jorge', 'carlos', 'male'] },
-  { id: 'diego',     label: 'Diego ♂',     gender: 'male',   lang: 'es-US',
-    hints: ['jorge', 'juan', 'diego', 'pablo', 'raul', 'carlos', 'male'] },
-  { id: 'sofia',     label: 'Sofia ♀',     gender: 'female', lang: 'es-ES',
-    hints: ['helena', 'monica', 'lucia', 'sofia', 'laura', 'female'] },
-  { id: 'valentina', label: 'Valentina ♀', gender: 'female', lang: 'es-MX',
-    hints: ['sabina', 'paulina', 'valentina', 'maria', 'female'] },
-  { id: 'isabella',  label: 'Isabella ♀',  gender: 'female', lang: 'es-US',
-    hints: ['sabina', 'helena', 'camila', 'isabella', 'diana', 'female'] },
+  { id: 'masculino', label: '♂ Masculino', gender: 'male',   lang: 'es-ES',
+    hints: ['pablo', 'raul', 'jorge', 'juan', 'carlos', 'miguel', 'diego', 'martin', 'gabriel', 'male'] },
+  { id: 'femenino',  label: '♀ Femenino',  gender: 'female', lang: 'es-ES',
+    hints: ['helena', 'sabina', 'monica', 'paulina', 'lucia', 'laura', 'sofia', 'maria', 'female'] },
 ] as const;
 
 type VoiceProfileId = (typeof VOICE_PROFILES)[number]['id'];
@@ -169,7 +161,7 @@ function WebSpeechPlayer({ text, className = '' }: { text: string; className?: s
   const [voiceProfile, setVoiceProfile] = useState<VoiceProfileId>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('tts-voice-profile');
-      return (VOICE_PROFILES.find((p) => p.id === saved)?.id ?? 'carlos') as VoiceProfileId;
+      return (VOICE_PROFILES.find((p) => p.id === saved)?.id ?? 'masculino') as VoiceProfileId;
     }
     return 'carlos';
   });

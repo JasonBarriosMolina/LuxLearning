@@ -255,6 +255,30 @@ export const handler = async (event: Event) => {
     // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
     const prisma = getPrismaClient();
     const body = event.body ? JSON.parse(event.body) : {};
+    const action = (body as any)._action as string | undefined;
+
+    // ── Async audio generation workers (self-invoked via Lambda Event) ──────
+    if (action === 'bulk-audio') {
+      const { lessonIds, voiceId = 'Mia' } = body as any;
+      const lessons = await prisma.lesson.findMany({ where: { id: { in: lessonIds } } });
+      await Promise.allSettled(lessons.map(async (lesson: any) => {
+        const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
+        const audioUrl = await generateLessonAudio(lesson.id, text, voiceId);
+        if (audioUrl) await prisma.lesson.update({ where: { id: lesson.id }, data: { audioUrl } });
+      }));
+      return ok({ generated: lessonIds.length });
+    }
+
+    if (action === 'single-audio') {
+      const { lessonId, voiceId = 'Mia' } = body as any;
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      if (lesson) {
+        const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
+        const audioUrl = await generateLessonAudio(lesson.id, text, voiceId);
+        if (audioUrl) await prisma.lesson.update({ where: { id: lesson.id }, data: { audioUrl } });
+      }
+      return ok({ generated: 1 });
+    }
 
     // ── GET /admin/courses ──────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'GET') {
@@ -449,6 +473,19 @@ export const handler = async (event: Event) => {
           order: Number(lessonOrder),
         },
       });
+
+      // Auto-generate Polly audio asynchronously (fire-and-forget)
+      lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify({
+          requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+          rawPath: '/_internal/audio',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ _action: 'single-audio', lessonId: lesson.id, voiceId: 'Mia' }),
+        })),
+      })).catch(() => {});
+
       return created(lesson);
     }
 
@@ -1267,6 +1304,21 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
           )
         );
       } catch (e) { console.warn('[ImageGen] Batch image generation error:', e); }
+
+      // X-4: Generate Polly audio for all lessons asynchronously (fire-and-forget)
+      try {
+        const allLessonIds = course.modules.flatMap((m: any) => m.lessons.map((l: any) => l.id));
+        await lambdaClient.send(new LambdaInvokeCommand({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+          InvocationType: 'Event', // async — returns immediately
+          Payload: Buffer.from(JSON.stringify({
+            requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+            rawPath: '/_internal/audio',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ _action: 'bulk-audio', lessonIds: allLessonIds, voiceId: 'Mia' }),
+          })),
+        }));
+      } catch (e) { console.warn('[Polly] Failed to schedule bulk audio generation:', e); }
 
       return created({ ...course, suggestedTags });
     }
