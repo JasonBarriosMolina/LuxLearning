@@ -168,8 +168,16 @@ export const handler = async (event: Event) => {
     if (chatMatch && method === 'GET') {
       const chatId = chatMatch[1]!;
 
-      // Ensure user is a participant
-      const membership = await getUserMembership(userId, chatId);
+      // Ensure user is a participant (auto-join group chats for legacy/unlisted members)
+      let membership = await getUserMembership(userId, chatId);
+      if (!membership && chatId.startsWith('group_')) {
+        const meta = await getChatMeta(chatId);
+        await upsertMembership(userId, chatId, {
+          chatName: meta?.name ?? 'Chat del curso',
+          chatType: 'GROUP',
+        });
+        membership = { chatId, chatName: meta?.name ?? 'Chat del curso' };
+      }
       if (!membership) return forbidden('No eres participante de este chat');
 
       const messages = await getMessages(chatId, 50);
@@ -184,7 +192,15 @@ export const handler = async (event: Event) => {
       const { text } = body as { text?: string };
       if (!text?.trim()) return badRequest('El mensaje no puede estar vacío');
 
-      const membership = await getUserMembership(userId, chatId);
+      let membership = await getUserMembership(userId, chatId);
+      if (!membership && chatId.startsWith('group_')) {
+        const meta = await getChatMeta(chatId);
+        await upsertMembership(userId, chatId, {
+          chatName: meta?.name ?? 'Chat del curso',
+          chatType: 'GROUP',
+        });
+        membership = { chatId, chatName: meta?.name ?? 'Chat del curso' };
+      }
       if (!membership) return forbidden('No eres participante de este chat');
 
       const meta = await getChatMeta(chatId);

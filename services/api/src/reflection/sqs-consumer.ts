@@ -1,6 +1,15 @@
 import type { SQSEvent, SQSRecord } from 'aws-lambda';
-import { getReflection, updateReflectionStatus } from '../shared/db-dynamo';
+import webpush from 'web-push';
+import { createId } from '@paralleldrive/cuid2';
+import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { detectAI } from './detect-ai';
+
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? '';
+const VAPID_EMAIL = process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
+}
 
 const AI_CONFIDENCE_THRESHOLD = 60;
 
@@ -28,6 +37,21 @@ async function processRecord(record: SQSRecord) {
     console.error('[AI Detection] Bedrock error:', err);
     // On Bedrock failure, forward to evaluator instead of blocking student
     await updateReflectionStatus(userId, moduleId, { status: 'PENDING_EVAL', analyzedAt });
+    // Still notify evaluator
+    if (reflection.evaluatorId) {
+      const evaluatorId = reflection.evaluatorId as string;
+      const moduleTitle = (reflection.moduleTitle as string | undefined) ?? moduleId;
+      try {
+        await createNotification({
+          userId: evaluatorId,
+          notifId: createId(),
+          type: 'GENERAL',
+          message: `📋 Reflexión lista para evaluar — ${moduleTitle}`,
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+      } catch { /* non-fatal */ }
+    }
     return;
   }
 
@@ -43,6 +67,41 @@ async function processRecord(record: SQSRecord) {
   });
 
   console.log(`[AI Detection] Updated status to ${newStatus}`);
+
+  // Notify evaluator when reflection is ready to review
+  if (newStatus === 'PENDING_EVAL' && reflection.evaluatorId) {
+    const evaluatorId = reflection.evaluatorId as string;
+    const moduleTitle = (reflection.moduleTitle as string | undefined) ?? moduleId;
+    try {
+      await createNotification({
+        userId: evaluatorId,
+        notifId: createId(),
+        type: 'GENERAL',
+        message: `📋 Reflexión lista para evaluar — ${moduleTitle}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('[AI Detection] Failed to create in-app notification:', e);
+    }
+    try {
+      if (VAPID_PUBLIC && VAPID_PRIVATE) {
+        const subs = await getPushSubscriptionsByUserId(evaluatorId);
+        if (subs.length > 0) {
+          const payload = JSON.stringify({
+            title: 'Reflexión lista para evaluar',
+            body: moduleTitle,
+            url: '/evaluator/reflections',
+          });
+          await Promise.allSettled(
+            subs.map((sub) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload))
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('[AI Detection] Failed to send push notification:', e);
+    }
+  }
 }
 
 export const handler = async (event: SQSEvent): Promise<void> => {

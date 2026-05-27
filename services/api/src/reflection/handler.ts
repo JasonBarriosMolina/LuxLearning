@@ -146,6 +146,11 @@ Responde ÚNICAMENTE con JSON válido:
         status: 'PENDING_AI' as const,
         submittedAt,
         deadline,
+        ...(module.course.evaluatorId ? {
+          evaluatorId: module.course.evaluatorId,
+          moduleTitle: module.title,
+          courseTitle: module.course.title,
+        } : {}),
       };
 
       // Guard: do not allow overwriting an approved or in-review reflection

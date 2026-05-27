@@ -60,10 +60,11 @@ export async function upsertMembership(userId: string, chatId: string, meta: {
   chatName: string; chatType: string;
 }): Promise<void> {
   const now = new Date().toISOString();
-  await ddb.send(new PutCommand({
+  await ddb.send(new UpdateCommand({
     TableName: CHATS_TABLE,
-    Item: { pk: `USER#${userId}`, sk: chatId, chatId, ...meta, unread: 0, lastTs: now },
-    ConditionExpression: 'attribute_not_exists(pk)',
+    Key: { pk: `USER#${userId}`, sk: chatId },
+    UpdateExpression: 'SET chatId = if_not_exists(chatId, :cid), chatName = if_not_exists(chatName, :name), chatType = if_not_exists(chatType, :type), unread = if_not_exists(unread, :zero), lastTs = if_not_exists(lastTs, :now)',
+    ExpressionAttributeValues: { ':cid': chatId, ':name': meta.chatName, ':type': meta.chatType, ':zero': 0, ':now': now },
   })).catch(() => {});
 }
 

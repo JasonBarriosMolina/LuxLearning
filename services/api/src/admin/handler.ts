@@ -858,8 +858,13 @@ export const handler = async (event: Event) => {
               },
             }));
           }
-          // Add student to group chat for this course
+          // Add student to group chat for this course (ensure META + membership both exist)
           if (course) {
+            await upsertChat(`group_${courseId}`, {
+              type: 'GROUP',
+              name: `Curso: ${course.title}`,
+              participants: [username],
+            });
             await upsertMembership(username, `group_${courseId}`, {
               chatName: `Curso: ${course.title}`,
               chatType: 'GROUP',
