@@ -59,8 +59,8 @@ async function generateLessonImage(
     6:  `Professional educational illustration depicting "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, vivid colors, no text, clean composition`,
     10: `Clean professional educational infographic layout about "${lessonTitle.slice(0, 60)}" summarizing "${moduleTitle.slice(0, 60)}", structured sections, modern design, geometric shapes`,
   };
-  let prompt = override?.promptText ?? basePrompts[order];
-  if (!prompt) return null;
+  let prompt = override?.promptText ?? basePrompts[order]
+    ?? `Educational illustration for lesson "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, professional, no text, clean composition`;
   if (override?.style && STYLE_SUFFIXES[override.style]) {
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }

@@ -334,17 +334,15 @@ export default function AdminCoursesPage() {
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <p className="font-semibold text-charcoal truncate">{course.title}</p>
-                  {course.isPilot && <Badge variant="info">Piloto</Badge>}
+                <p className="font-semibold text-charcoal truncate mb-0.5">{course.title}</p>
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant={course.isActive ? 'success' : 'default'}>
                     {course.isActive ? 'Activo' : 'Inactivo'}
                   </Badge>
+                  {course.isPilot && <Badge variant="info">Piloto</Badge>}
                   {course.isLegacy && (
                     <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ Solo video</span>
                   )}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   <p className="text-xs text-gray-500">
                     {course.modules?.length ?? 0} módulos
                   </p>
