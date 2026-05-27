@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2, Volume2,
+  ShieldCheck, CheckCircle2, AlertCircle, ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -691,6 +692,25 @@ export default function AdminCourseDetailPage() {
   const [savingModule, setSavingModule] = useState(false);
   const [moduleError, setModuleError] = useState('');
 
+  // ── Validate videos ──────────────────────────────────────────────────────────
+  const [validateOpen, setValidateOpen] = useState(false);
+  const [validateLoading, setValidateLoading] = useState(false);
+  const [validateResult, setValidateResult] = useState<{ videos: any[]; broken: number; total: number } | null>(null);
+
+  const handleValidateVideos = async () => {
+    setValidateOpen(true);
+    if (validateResult) return; // cached
+    setValidateLoading(true);
+    try {
+      const res = await api.admin.courses.validateVideos(courseId);
+      setValidateResult((res as any).data);
+    } catch (e: any) {
+      setValidateResult({ videos: [], broken: 0, total: 0 });
+    } finally {
+      setValidateLoading(false);
+    }
+  };
+
   const load = useCallback(async () => {
     try {
       const res = await api.admin.courses.get(courseId);
@@ -738,12 +758,21 @@ export default function AdminCourseDetailPage() {
           <p className="text-sm text-gray-500">{course.description}</p>
           <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
         </div>
-        <Button
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => { setModuleForm({ ...EMPTY_MODULE, order: (course.modules?.length ?? 0) + 1 }); setModuleModal(true); }}
-        >
-          Nuevo módulo
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            leftIcon={<ShieldCheck className="w-4 h-4" />}
+            onClick={handleValidateVideos}
+          >
+            Validar videos
+          </Button>
+          <Button
+            leftIcon={<Plus className="w-4 h-4" />}
+            onClick={() => { setModuleForm({ ...EMPTY_MODULE, order: (course.modules?.length ?? 0) + 1 }); setModuleModal(true); }}
+          >
+            Nuevo módulo
+          </Button>
+        </div>
       </div>
 
       {/* Modules */}
@@ -760,6 +789,50 @@ export default function AdminCourseDetailPage() {
           ))}
         </div>
       )}
+
+      {/* Validate videos modal */}
+      <Modal open={validateOpen} onClose={() => setValidateOpen(false)} title="Validar videos del curso" size="md">
+        {validateLoading ? (
+          <div className="flex flex-col items-center py-10 gap-3 text-gray-400">
+            <Loader2 className="w-8 h-8 animate-spin" />
+            <span className="text-sm">Verificando enlaces de YouTube…</span>
+          </div>
+        ) : validateResult ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+              <span>{validateResult.total} videos •</span>
+              {validateResult.broken === 0
+                ? <span className="text-green-600 font-semibold flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Todos disponibles</span>
+                : <span className="text-red-600 font-semibold flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {validateResult.broken} roto{validateResult.broken !== 1 ? 's' : ''}</span>
+              }
+            </div>
+            <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+              {validateResult.videos.map((v: any) => (
+                <div key={v.lessonId} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${v.ok ? 'bg-green-50 dark:bg-green-900/10' : 'bg-red-50 dark:bg-red-900/10'}`}>
+                  {v.ok
+                    ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                    : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                  }
+                  <span className={`flex-1 truncate ${v.ok ? 'text-gray-700 dark:text-gray-200' : 'text-red-700 dark:text-red-300 font-medium'}`}>{v.title}</span>
+                  <a href={`https://www.youtube.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-gray-400 hover:text-cta-from flex items-center gap-0.5 shrink-0">
+                    {v.youtubeId} <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              ))}
+              {validateResult.total === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">Este curso no tiene lecciones con youtubeId.</p>
+              )}
+            </div>
+            <div className="flex justify-end pt-2 gap-2">
+              <Button variant="secondary" size="sm" onClick={() => { setValidateResult(null); handleValidateVideos(); }}>
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Verificar de nuevo
+              </Button>
+              <Button size="sm" onClick={() => setValidateOpen(false)}>Cerrar</Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       {/* Add module modal */}
       <Modal open={moduleModal} onClose={() => setModuleModal(false)} title="Nuevo módulo" size="lg">

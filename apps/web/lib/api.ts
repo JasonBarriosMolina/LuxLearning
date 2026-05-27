@@ -181,6 +181,7 @@ export const api = {
         request<any>(`/admin/courses/${courseId}/regenerate`, { method: 'POST' }),
       assignEvaluator: (courseId: string, body: { evaluatorId: string; evaluatorName: string }) =>
         request<any>(`/admin/courses/${courseId}/evaluator`, { method: 'PUT', body: JSON.stringify(body) }),
+      validateVideos: (courseId: string) => request<any>(`/admin/courses/${courseId}/validate-videos`),
     },
     // Modules
     modules: {

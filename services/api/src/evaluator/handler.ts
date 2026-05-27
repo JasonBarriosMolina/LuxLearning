@@ -705,73 +705,78 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // POST /evaluator/tasks — create task(s) for individual or all students in a course
     if (path === '/evaluator/tasks' && method === 'POST') {
-      const body = JSON.parse(event.body ?? '{}');
-      const { title, description, type = 'custom', dueDate, courseId, moduleId, courseTitle, moduleTitle, assignTo, userId: targetUserId, targetCourseId } = body as any;
-      if (!title || !dueDate) return badRequest('title y dueDate son requeridos');
+      try {
+        const body = JSON.parse(event.body ?? '{}');
+        const { title, description, type = 'custom', dueDate, courseId, moduleId, courseTitle, moduleTitle, assignTo, userId: targetUserId, targetCourseId } = body as any;
+        if (!title || !dueDate) return badRequest('title y dueDate son requeridos');
 
-      const assignerUserId = event.requestContext.authorizer?.lambda?.userId!;
-      let assignees: string[] = [];
+        const assignerUserId = event.requestContext.authorizer?.lambda?.userId ?? 'system';
+        let assignees: string[] = [];
 
-      if (assignTo === 'course' && targetCourseId) {
-        // Fetch all enrolled students in a course
-        const all = await ddb.send(new QueryCommand({
-          TableName: TABLES.ENROLLMENTS,
-          IndexName: 'courseId-users-index',
-          KeyConditionExpression: 'courseId = :cid',
-          ExpressionAttributeValues: { ':cid': targetCourseId },
-        })).catch(async () => {
-          // Fallback: scan enrollments for this course
-          const scan = await ddb.send(new ScanCommand({
+        if (assignTo === 'course' && targetCourseId) {
+          // Fetch all enrolled students in a course
+          const all = await ddb.send(new QueryCommand({
             TableName: TABLES.ENROLLMENTS,
-            FilterExpression: 'courseId = :cid',
+            IndexName: 'courseId-users-index',
+            KeyConditionExpression: 'courseId = :cid',
             ExpressionAttributeValues: { ':cid': targetCourseId },
-          }));
-          return { Items: scan.Items ?? [] };
-        });
-        assignees = [...new Set((all.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))];
-      } else if (targetUserId) {
-        assignees = [targetUserId];
-      }
+          })).catch(async () => {
+            // Fallback: scan enrollments for this course
+            const scan = await ddb.send(new ScanCommand({
+              TableName: TABLES.ENROLLMENTS,
+              FilterExpression: 'courseId = :cid',
+              ExpressionAttributeValues: { ':cid': targetCourseId },
+            }));
+            return { Items: scan.Items ?? [] };
+          });
+          assignees = [...new Set((all.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))];
+        } else if (targetUserId) {
+          assignees = [targetUserId];
+        }
 
-      if (!assignees.length) return badRequest('No se encontraron destinatarios');
+        if (!assignees.length) return badRequest('No se encontraron destinatarios para asignar la tarea');
 
-      // Each task gets a unique taskId from cuid2 — no Scan-based dedup needed
-      const tasks = await Promise.all(
-        assignees.map((uid) =>
-          createTask({
-            userId: uid,
-            taskId: createId(),
-            title,
-            description,
-            courseId,
-            moduleId,
-            courseTitle,
-            moduleTitle,
-            type,
-            dueDate,
-            status: 'PENDING',
-            assignedBy: assignerUserId,
-            createdAt: new Date().toISOString(),
+        // Each task gets a unique taskId from cuid2 — no Scan-based dedup needed
+        const tasks = await Promise.all(
+          assignees.map((uid) =>
+            createTask({
+              userId: uid,
+              taskId: createId(),
+              title,
+              description,
+              courseId,
+              moduleId,
+              courseTitle,
+              moduleTitle,
+              type,
+              dueDate,
+              status: 'PENDING',
+              assignedBy: assignerUserId,
+              createdAt: new Date().toISOString(),
+            })
+          )
+        );
+
+        // Push notifications (non-fatal)
+        Promise.allSettled(
+          assignees.map(async (uid) => {
+            const subs = await getPushSubscriptionsByUserId(uid);
+            await Promise.allSettled(
+              subs.map((sub: any) =>
+                webpush.sendNotification(sub, JSON.stringify({
+                  title: '📋 Nueva tarea asignada',
+                  body: `${title} — Vence: ${dueDate}`,
+                }))
+              )
+            );
           })
-        )
-      );
+        ).catch(() => {});
 
-      // Push notifications (non-fatal)
-      Promise.allSettled(
-        assignees.map(async (uid) => {
-          const subs = await getPushSubscriptionsByUserId(uid);
-          await Promise.allSettled(
-            subs.map((sub: any) =>
-              webpush.sendNotification(sub, JSON.stringify({
-                title: '📋 Nueva tarea asignada',
-                body: `${title} — Vence: ${dueDate}`,
-              }))
-            )
-          );
-        })
-      ).catch(() => {});
-
-      return ok({ created: tasks.length });
+        return ok({ created: tasks.length });
+      } catch (e: any) {
+        console.error('[tasks/create] Error:', e?.message, e?.code, e?.name);
+        return serverError(e?.message ?? 'Error al crear tarea');
+      }
     }
 
     // GET /evaluator/tasks — list all tasks assigned by this evaluator

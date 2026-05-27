@@ -340,6 +340,39 @@ export const handler = async (event: Event) => {
       return ok(job);
     }
 
+    // ── GET /admin/courses/:courseId/validate-videos ────────────────────────
+    const validateVideosMatch = path.match(/^\/admin\/courses\/([^/]+)\/validate-videos$/);
+    if (validateVideosMatch && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const courseId = validateVideosMatch[1]!;
+      const course = await prisma.course.findUnique({
+        where: { id: courseId },
+        include: { modules: { include: { lessons: { select: { id: true, title: true, youtubeId: true, order: true, moduleId: true } } } } },
+      });
+      if (!course) return notFound('Curso no encontrado');
+
+      const allLessons = course.modules.flatMap(m =>
+        m.lessons.filter(l => l.youtubeId && l.youtubeId.trim())
+      );
+
+      const results = await Promise.allSettled(
+        allLessons.map(async (l) => {
+          try {
+            const res = await fetch(
+              `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${l.youtubeId}&format=json`,
+              { signal: AbortSignal.timeout(5000) }
+            );
+            return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: res.ok, status: res.status };
+          } catch {
+            return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: false, status: 0 };
+          }
+        })
+      );
+
+      const videos = results.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
+      return ok({ videos, broken: videos.filter(v => !v!.ok).length, total: videos.length });
+    }
+
     // ── PUT /admin/courses/:courseId/evaluator ──────────────────────────────
     const courseEvaluatorMatch = path.match(/^\/admin\/courses\/([^/]+)\/evaluator$/);
     if (courseEvaluatorMatch && method === 'PUT') {
@@ -1327,26 +1360,31 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
     const lessonAudioMatch = path.match(/^\/admin\/lessons\/([^/]+)\/audio$/);
     if (lessonAudioMatch && method === 'POST') {
       if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-      const lessonId = lessonAudioMatch[1]!;
-      const voiceId = (body as any).voiceId ?? 'Mia';
-      const allowedVoices = ['Mia', 'Lupe', 'Lucia', 'Sergio', 'Pedro'];
-      if (!allowedVoices.includes(voiceId)) return badRequest('Voz no válida');
+      try {
+        const lessonId = lessonAudioMatch[1]!;
+        const voiceId = (body as any).voiceId ?? 'Mia';
+        const allowedVoices = ['Mia', 'Lupe', 'Lucia', 'Sergio', 'Pedro'];
+        if (!allowedVoices.includes(voiceId)) return badRequest('Voz no válida');
 
-      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
-      if (!lesson) return notFound('Lección no encontrada');
+        const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+        if (!lesson) return notFound('Lección no encontrada');
 
-      // Delete old audio from S3 if exists
-      if (lesson.audioUrl) {
-        const oldKey = s3KeyFromUrl(lesson.audioUrl);
-        if (oldKey) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: oldKey })).catch(() => {});
+        // Delete old audio from S3 if exists
+        if (lesson.audioUrl) {
+          const oldKey = s3KeyFromUrl(lesson.audioUrl);
+          if (oldKey) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: oldKey })).catch(() => {});
+        }
+
+        const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
+        const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
+        if (!audioUrl) return serverError('No se pudo generar el audio. Verifica permisos IAM de Polly.');
+
+        const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
+        return ok(updated);
+      } catch (e: any) {
+        console.error('[audio] Error:', e?.message, e?.code, e?.name);
+        return serverError(e?.message ?? 'Error generando audio con Polly');
       }
-
-      const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
-      const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
-      if (!audioUrl) return serverError('No se pudo generar el audio con Polly');
-
-      const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
-      return ok(updated);
     }
 
     // ── POST /admin/lessons/:lessonId/regenerate (X-1) ─────────────────────────
