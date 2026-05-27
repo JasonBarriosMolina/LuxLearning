@@ -18,12 +18,6 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
-// sharp is a native module — lazy import to avoid crashing Lambda on ARM64 if binary is missing
-let sharpLib: typeof import('sharp') | null = null;
-async function getSharp() {
-  if (!sharpLib) sharpLib = (await import('sharp')).default as any;
-  return sharpLib!;
-}
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask } from '../shared/db-dynamo';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
@@ -79,19 +73,11 @@ async function generateLessonImage(
     const base64 = result.images?.[0];
     if (!base64) return null;
     const imgBuffer = Buffer.from(base64, 'base64');
-    const svgWatermark = Buffer.from(
-      `<svg width="220" height="28"><text x="4" y="20" font-size="16" fill="rgba(255,255,255,0.55)" font-family="Arial,sans-serif">Lux Learning</text></svg>`
-    );
-    const sharp = await getSharp();
-    const watermarked = await sharp(imgBuffer)
-      .composite([{ input: svgWatermark, gravity: 'southeast' }])
-      .png()
-      .toBuffer();
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,
-      Body: watermarked,
+      Body: imgBuffer,
       ContentType: 'image/png',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
@@ -140,6 +126,20 @@ async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mi
     console.error('[Polly] Error generating audio:', err);
     return null;
   }
+}
+
+/** Shuffle options array in-place and update correctIndex so the correct answer moves with it */
+function shuffleQuestionOptions(questions: any[]): any[] {
+  return questions.map((q) => {
+    if (!Array.isArray(q.options) || q.options.length < 2) return q;
+    const correctAnswer = q.options[Number(q.correctIndex)];
+    const opts = [...q.options];
+    for (let i = opts.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [opts[i], opts[j]] = [opts[j], opts[i]];
+    }
+    return { ...q, options: opts, correctIndex: opts.indexOf(correctAnswer) };
+  });
 }
 
 function s3KeyFromUrl(url: string): string | null {
@@ -1151,7 +1151,7 @@ Responde ÚNICAMENTE con JSON: {"title":"Título real específico","content":"<p
               );
               if (Array.isArray(extraQ)) finalQuestions = [...finalQuestions, ...extraQ].slice(0, 10);
             }
-            finalQuestions = finalQuestions.map((q: any, i: number) => ({ ...q, order: i + 1 }));
+            finalQuestions = shuffleQuestionOptions(finalQuestions).map((q: any, i: number) => ({ ...q, order: i + 1 }));
 
             return { order: mod.order, title: mod.title, description: mod.description,
               lessons: finalLessons,
@@ -1298,7 +1298,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
               },
               questions: {
                 // Use array index as order to avoid duplicate (moduleId, order) constraint
-                create: (m.questions ?? []).map((q, qi: number) => ({
+                create: shuffleQuestionOptions(m.questions ?? []).map((q, qi: number) => ({
                   text: q.text,
                   options: q.options,
                   correctIndex: Number(q.correctIndex),
@@ -1404,10 +1404,34 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       const modTitle = lesson.module.title;
       const courseTitle = lesson.module.course.title;
 
-      // Parse type/level/style from request body (all optional, defaults to text/intermediate)
+      // Parse type/level/style/preview flags from request body
       const regenType = (body as any).type as 'text' | 'image' | 'infographic' | undefined ?? 'text';
       const regenLevel = (body as any).level as 'basic' | 'intermediate' | 'advanced' | undefined ?? 'intermediate';
       const regenStyle = (body as any).style as string | undefined;
+      const previewMode = (body as any).preview as boolean ?? false;
+      const combineMode = (body as any).combineMode as boolean ?? false;
+      const previewData = (body as any).previewData as any;
+
+      // ── Confirm phase: apply already-generated previewData to DB ────────────
+      if (previewData && !previewMode) {
+        if (regenType === 'text') {
+          const updateData = combineMode ? {
+            points: [...new Set([...(lesson.points ?? []), ...(Array.isArray(previewData.points) ? previewData.points : [])])],
+            tip: previewData.tip ?? lesson.tip,
+          } : {
+            title: previewData.title ?? lesson.title,
+            content: previewData.content ?? lesson.content,
+            points: Array.isArray(previewData.points) ? previewData.points : lesson.points,
+            tip: previewData.tip ?? lesson.tip,
+          };
+          const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
+          return ok(updated);
+        }
+        if ((regenType === 'image' || regenType === 'infographic') && previewData.imageUrl) {
+          const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl: previewData.imageUrl } });
+          return ok(updated);
+        }
+      }
 
       const bedrockJSONSimple = async (prompt: string, maxTokens = 2000): Promise<any> => {
         const res = await bedrock.send(new InvokeModelCommand({
@@ -1422,9 +1446,10 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       };
 
       if (regenType === 'image') {
-        // Regenerate the lesson image only
+        // Regenerate the lesson image only (generate+upload to S3, then optionally save to DB)
         const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle });
         if (!imageUrl) return badRequest('No se pudo generar la imagen (posición de lección no soportada o error en Nova Canvas)');
+        if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
         return ok(updated);
       }
@@ -1434,6 +1459,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
         const promptText = `Educational infographic for lesson "${lesson.title.slice(0, 60)}" from module "${modTitle.slice(0, 60)}", structured layout with sections and icons, professional design, no text labels, clean composition`;
         const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { promptText, style: regenStyle });
         if (!imageUrl) return badRequest('No se pudo generar la infografía');
+        if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
         return ok(updated);
       }
@@ -1452,15 +1478,18 @@ Nivel de dificultad: ${regenLevel} — ${levelNote}
 Responde ÚNICAMENTE con JSON: {"title":"Título específico","content":"<h3>Subtítulo</h3><p>Párrafo 1 educativo real.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Párrafo de cierre.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
 Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en 2ª persona.`, 4000
       );
-      const updated = await prisma.lesson.update({
-        where: { id: lessonId },
-        data: {
-          title: regen.title ?? lesson.title,
-          content: regen.content ?? lesson.content,
-          points: Array.isArray(regen.points) ? regen.points : lesson.points,
-          tip: regen.tip ?? lesson.tip,
-        },
-      });
+      const regenPayload = {
+        title: regen.title ?? lesson.title,
+        content: regen.content ?? lesson.content,
+        points: Array.isArray(regen.points) ? regen.points : lesson.points,
+        tip: regen.tip ?? lesson.tip,
+      };
+      if (previewMode) return ok({ ...regenPayload, preview: true }); // return without saving
+      const updateData = combineMode ? {
+        points: [...new Set([...(lesson.points ?? []), ...regenPayload.points])],
+        tip: regenPayload.tip,
+      } : regenPayload;
+      const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
       return ok(updated);
     }
 
@@ -1523,7 +1552,7 @@ Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,
           prisma.question.deleteMany({ where: { moduleId: _moduleId } }),
         ]);
         const lessons = Array.isArray(newLessons) ? newLessons.slice(0, 10) : [];
-        const questions = Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : [];
+        const questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
         await prisma.lesson.createMany({
           data: lessons.map((l: any, i: number) => ({
             moduleId: _moduleId,

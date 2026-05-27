@@ -198,7 +198,7 @@ export const api = {
       delete: (lessonId: string) => request<any>(`/admin/lessons/${lessonId}`, { method: 'DELETE' }),
       regenerate: (lessonId: string) =>
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST' }),
-      regenerateFormat: (lessonId: string, body: { type: 'text' | 'image' | 'infographic'; level?: 'basic' | 'intermediate' | 'advanced'; style?: string }) =>
+      regenerateFormat: (lessonId: string, body: { type: 'text' | 'image' | 'infographic'; level?: 'basic' | 'intermediate' | 'advanced'; style?: string; preview?: boolean; combineMode?: boolean; previewData?: any }) =>
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
       generateAudio: (lessonId: string, voiceId = 'Mia') =>
         request<any>(`/admin/lessons/${lessonId}/audio`, { method: 'POST', body: JSON.stringify({ voiceId }) }),

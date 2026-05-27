@@ -19,7 +19,14 @@ export async function getChatsForUser(userId: string): Promise<any[]> {
     KeyConditionExpression: 'pk = :pk',
     ExpressionAttributeValues: { ':pk': `USER#${userId}` },
   }));
-  return (res.Items ?? []).sort((a, b) => (b.lastTs ?? '').localeCompare(a.lastTs ?? ''));
+  const items = (res.Items ?? []).sort((a, b) => (b.lastTs ?? '').localeCompare(a.lastTs ?? ''));
+  // Enrich any membership records missing chatName by fetching the chat META record
+  const missing = items.filter((i) => !i.chatName);
+  if (missing.length > 0) {
+    const metas = await Promise.all(missing.map((i) => getChatMeta(i.chatId)));
+    metas.forEach((meta, idx) => { if (meta?.name) missing[idx].chatName = meta.name; });
+  }
+  return items;
 }
 
 export async function getChatMeta(chatId: string): Promise<any | null> {

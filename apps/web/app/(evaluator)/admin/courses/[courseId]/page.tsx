@@ -279,27 +279,59 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
   const [regenStyle, setRegenStyle] = useState('');
   const [regenLoading, setRegenLoading] = useState(false);
   const [regenError, setRegenError] = useState('');
+  const [regenPhase, setRegenPhase] = useState<'config' | 'preview'>('config');
+  const [regenPreviewData, setRegenPreviewData] = useState<any>(null);
   const [audioOpen, setAudioOpen] = useState(false);
   const [audioVoice, setAudioVoice] = useState('Mia');
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioError, setAudioError] = useState('');
 
-  const handleRegenerate = async () => {
+  // Phase 1: generate preview without saving
+  const handlePreview = async () => {
+    setRegenLoading(true);
+    setRegenError('');
+    try {
+      const res = await api.admin.lessons.regenerateFormat(lesson.id, {
+        type: regenType,
+        ...(regenType === 'text' ? { level: regenLevel } : {}),
+        ...(regenStyle ? { style: regenStyle } : {}),
+        preview: true,
+      });
+      setRegenPreviewData((res as any).data ?? res);
+      setRegenPhase('preview');
+    } catch (err: any) {
+      setRegenError(err.message ?? 'Error al generar previsualización');
+    } finally {
+      setRegenLoading(false);
+    }
+  };
+
+  // Phase 2: apply confirmed previewData
+  const handleConfirmRegen = async (combineMode = false) => {
     setRegenLoading(true);
     setRegenError('');
     try {
       await api.admin.lessons.regenerateFormat(lesson.id, {
         type: regenType,
-        ...(regenType === 'text' ? { level: regenLevel } : {}),
-        ...(regenStyle ? { style: regenStyle } : {}),
+        previewData: regenPreviewData,
+        combineMode,
       });
       setRegenOpen(false);
+      setRegenPhase('config');
+      setRegenPreviewData(null);
       onRefresh();
     } catch (err: any) {
-      setRegenError(err.message ?? 'Error al regenerar');
+      setRegenError(err.message ?? 'Error al guardar');
     } finally {
       setRegenLoading(false);
     }
+  };
+
+  const handleCloseRegen = () => {
+    setRegenOpen(false);
+    setRegenPhase('config');
+    setRegenPreviewData(null);
+    setRegenError('');
   };
 
   const handleGenerateAudio = async () => {
@@ -352,7 +384,7 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-white" />
             )}
           </button>
-          <button onClick={() => { setRegenOpen(true); setRegenError(''); }} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
+          <button onClick={() => { setRegenOpen(true); setRegenPhase('config'); setRegenPreviewData(null); setRegenError(''); }} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
           <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-white transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
@@ -405,77 +437,132 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
         </Modal>
 
         {/* Regenerate Modal */}
-        <Modal open={regenOpen} onClose={() => setRegenOpen(false)} title={`Regenerar — ${lesson.title}`} size="sm">
+        <Modal open={regenOpen} onClose={handleCloseRegen} title={`Regenerar — ${lesson.title}`} size="sm">
           <div className="space-y-4">
-            {/* Type tabs */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
-              <div className="flex rounded-lg border border-border overflow-hidden">
-                {(['text', 'image', 'infographic'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => { setRegenType(t); setRegenStyle(''); }}
-                    className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                  >
-                    {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Level (text only) */}
-            {regenType === 'text' && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Nivel</p>
-                <div className="flex rounded-lg border border-border overflow-hidden">
-                  {([['basic', 'Básico'], ['intermediate', 'Intermedio'], ['advanced', 'Avanzado']] as const).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => setRegenLevel(val)}
-                      className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenLevel === val ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+            {regenPhase === 'config' ? (
+              <>
+                {/* Type tabs */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
+                  <div className="flex rounded-lg border border-border overflow-hidden">
+                    {(['text', 'image', 'infographic'] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => { setRegenType(t); setRegenStyle(''); }}
+                        className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">
-                  {regenLevel === 'basic' ? 'Vocabulario simple, ejemplos cotidianos, sin tecnicismos.' :
-                   regenLevel === 'advanced' ? 'Profundidad técnica, terminología especializada.' :
-                   'Lenguaje claro, ejemplos prácticos, estructura definida.'}
-                </p>
-              </div>
-            )}
 
-            {/* Style (image/infographic) */}
-            {(regenType === 'image' || regenType === 'infographic') && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(regenType === 'image'
-                    ? [['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['diagram', '📐 Diagrama'], ['comic', '💥 Cómic']]
-                    : [['minimal', '⬜ Minimal'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']]
-                  ).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => setRegenStyle(regenStyle === val ? '' : val)}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors ${regenStyle === val ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-border text-gray-500 hover:bg-gray-50'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                {/* Level (text only) */}
+                {regenType === 'text' && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Nivel</p>
+                    <div className="flex rounded-lg border border-border overflow-hidden">
+                      {([['basic', 'Básico'], ['intermediate', 'Intermedio'], ['advanced', 'Avanzado']] as const).map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setRegenLevel(val)}
+                          className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenLevel === val ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">
+                      {regenLevel === 'basic' ? 'Vocabulario simple, ejemplos cotidianos, sin tecnicismos.' :
+                       regenLevel === 'advanced' ? 'Profundidad técnica, terminología especializada.' :
+                       'Lenguaje claro, ejemplos prácticos, estructura definida.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Style (image/infographic) */}
+                {(regenType === 'image' || regenType === 'infographic') && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(regenType === 'image'
+                        ? [['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['diagram', '📐 Diagrama'], ['comic', '💥 Cómic']]
+                        : [['minimal', '⬜ Minimal'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']]
+                      ).map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setRegenStyle(regenStyle === val ? '' : val)}
+                          className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors ${regenStyle === val ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-border text-gray-500 hover:bg-gray-50'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">Opcional — deja vacío para estilo automático.</p>
+                  </div>
+                )}
+
+                {regenError && <p className="text-xs text-red-500">{regenError}</p>}
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button variant="secondary" size="sm" onClick={handleCloseRegen}>Cancelar</Button>
+                  <Button size="sm" loading={regenLoading} onClick={handlePreview}>
+                    Previsualizar
+                  </Button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">Opcional — deja vacío para estilo automático.</p>
-              </div>
+              </>
+            ) : (
+              <>
+                {/* Preview phase */}
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                  {(regenType === 'image' || regenType === 'infographic') && regenPreviewData?.imageUrl ? (
+                    <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
+                  ) : regenType === 'text' && regenPreviewData ? (
+                    <div className="space-y-1.5 text-xs text-gray-700">
+                      {regenPreviewData.title && (
+                        <p><span className="font-semibold text-gray-500">Título:</span> {regenPreviewData.title}</p>
+                      )}
+                      {Array.isArray(regenPreviewData.points) && regenPreviewData.points.length > 0 && (
+                        <div>
+                          <p className="font-semibold text-gray-500 mb-0.5">Puntos clave:</p>
+                          <ul className="space-y-0.5 pl-3">
+                            {regenPreviewData.points.map((p: string, i: number) => (
+                              <li key={i} className="list-disc">{p}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {regenPreviewData.tip && (
+                        <p><span className="font-semibold text-gray-500">Consejo:</span> {regenPreviewData.tip}</p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+                {regenError && <p className="text-xs text-red-500">{regenError}</p>}
+
+                <div className="space-y-2 pt-1">
+                  {regenType === 'text' ? (
+                    <>
+                      <Button size="sm" className="w-full" loading={regenLoading} onClick={() => handleConfirmRegen(false)}>
+                        Sí, reemplaza todo
+                      </Button>
+                      <Button size="sm" variant="secondary" className="w-full" loading={regenLoading} onClick={() => handleConfirmRegen(true)}>
+                        Combina los materiales nuevos con los existentes
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" className="w-full" loading={regenLoading} onClick={() => handleConfirmRegen(false)}>
+                      Usar esta imagen
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" className="w-full" onClick={() => { setRegenPhase('config'); setRegenPreviewData(null); setRegenError(''); }}>
+                    No, generar otra opción
+                  </Button>
+                </div>
+              </>
             )}
-
-            {regenError && <p className="text-xs text-red-500">{regenError}</p>}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="secondary" size="sm" onClick={() => setRegenOpen(false)}>Cancelar</Button>
-              <Button size="sm" loading={regenLoading} onClick={handleRegenerate}>
-                Regenerar
-              </Button>
-            </div>
           </div>
         </Modal>
       </div>

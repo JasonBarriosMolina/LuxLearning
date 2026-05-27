@@ -143,6 +143,7 @@ export default function LessonPage() {
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
   const [toolbar, setToolbar] = useState<{ x: number; y: number; selectedText: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const savingRef = useRef(false);
 
   // Favorites
@@ -215,10 +216,12 @@ export default function LessonPage() {
     const selText = selection?.toString().trim() ?? '';
     if (!selText || selText.length < 3 || selText.length > 300) { setToolbar(null); return; }
 
-    // Only highlight inside the content area
-    if (!contentRef.current) { setToolbar(null); return; }
+    // Only highlight inside the key-points card or the lesson body
     const range = selection?.getRangeAt(0);
-    if (!range || !contentRef.current.contains(range.commonAncestorContainer)) { setToolbar(null); return; }
+    if (!range) { setToolbar(null); return; }
+    const inContent = contentRef.current?.contains(range.commonAncestorContainer);
+    const inBody = bodyRef.current?.contains(range.commonAncestorContainer);
+    if (!inContent && !inBody) { setToolbar(null); return; }
 
     const rect = range.getBoundingClientRect();
     setToolbar({ x: rect.left + rect.width / 2, y: rect.top + window.scrollY, selectedText: selText });
@@ -416,7 +419,7 @@ export default function LessonPage() {
           />
         </div>
       ) : (
-        <div className="card space-y-3">
+        <div className="card space-y-3" ref={bodyRef}>
           {videoError && (
             <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -437,8 +440,8 @@ export default function LessonPage() {
         </div>
       )}
 
-      {/* Transcript toggle — only for video lessons */}
-      {(lesson.type !== 'text' && lesson.youtubeId) && (
+      {/* Transcript toggle — for any lesson with a youtubeId */}
+      {lesson.youtubeId && (
         <div className="rounded-xl border border-border overflow-hidden">
           <button
             onClick={handleTranscriptToggle}
