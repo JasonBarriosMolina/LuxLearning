@@ -27,7 +27,7 @@ async function getSharp() {
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask } from '../shared/db-dynamo';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
-import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors } from '../shared/response';
+import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -246,6 +246,7 @@ async function getCallerName(event: Event): Promise<string | null> {
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
   const method = event.requestContext.http.method;
@@ -1363,6 +1364,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       try {
         const lessonId = lessonAudioMatch[1]!;
         const voiceId = (body as any).voiceId ?? 'Mia';
+        console.log('[audio] START lessonId=%s voiceId=%s bucket=%s', lessonId, voiceId, S3_IMAGES_BUCKET);
         const allowedVoices = ['Mia', 'Lupe', 'Lucia', 'Sergio', 'Pedro'];
         if (!allowedVoices.includes(voiceId)) return badRequest('Voz no válida');
 
@@ -1376,7 +1378,9 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
         }
 
         const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
+        console.log('[audio] calling Polly, text length=%d', text.length);
         const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
+        console.log('[audio] Polly result=%s', audioUrl ?? 'NULL');
         if (!audioUrl) return serverError('No se pudo generar el audio. Verifica permisos IAM de Polly.');
 
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });

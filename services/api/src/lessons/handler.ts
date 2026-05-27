@@ -15,7 +15,7 @@ import {
 } from '../shared/db-dynamo';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
-import { ok, badRequest, serverError, cors } from '../shared/response';
+import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -24,6 +24,7 @@ type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestCont
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;

@@ -14,7 +14,7 @@ import { getPrismaClient } from '../shared/db-neon';
 import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
-import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
+import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { createId } from '@paralleldrive/cuid2';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -214,6 +214,7 @@ function approvedWithCertEmailHtml(studentName: string, moduleTitle: string, fee
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const auth = event.requestContext.authorizer?.lambda;
   if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN') return forbidden('Evaluator role required');
