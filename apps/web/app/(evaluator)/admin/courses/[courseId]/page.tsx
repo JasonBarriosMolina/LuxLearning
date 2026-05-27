@@ -697,14 +697,15 @@ export default function AdminCourseDetailPage() {
   const [validateLoading, setValidateLoading] = useState(false);
   const [validateResult, setValidateResult] = useState<{ videos: any[]; broken: number; total: number } | null>(null);
 
-  const handleValidateVideos = async () => {
+  const handleValidateVideos = async (force = false) => {
     setValidateOpen(true);
-    if (validateResult) return; // cached
+    if (validateResult && !force) return; // use cache unless forced
     setValidateLoading(true);
+    setValidateResult(null);
     try {
       const res = await api.admin.courses.validateVideos(courseId);
       setValidateResult((res as any).data);
-    } catch (e: any) {
+    } catch {
       setValidateResult({ videos: [], broken: 0, total: 0 });
     } finally {
       setValidateLoading(false);
@@ -825,7 +826,7 @@ export default function AdminCourseDetailPage() {
               )}
             </div>
             <div className="flex justify-end pt-2 gap-2">
-              <Button variant="secondary" size="sm" onClick={() => { setValidateResult(null); handleValidateVideos(); }}>
+              <Button variant="secondary" size="sm" onClick={() => handleValidateVideos(true)}>
                 <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Verificar de nuevo
               </Button>
               <Button size="sm" onClick={() => setValidateOpen(false)}>Cerrar</Button>

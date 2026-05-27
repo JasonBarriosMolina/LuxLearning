@@ -119,7 +119,7 @@ export const handler = async (event: Event) => {
         return ok({ transcript: text, cached: false });
       } catch (ytErr: any) {
         console.error('[Transcript] YouTube fetch failed:', ytErr?.message ?? ytErr);
-        return ok({ transcript: null, cached: false, error: 'Transcripción no disponible para este video' });
+        return ok({ transcript: null, cached: false });
       }
     }
 
