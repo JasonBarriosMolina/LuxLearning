@@ -9,31 +9,60 @@ interface Props {
 }
 
 // ── Voice profiles (6 personas: 3M, 3F) ──────────────────────────────────────
+// Hints include actual voice names across platforms:
+//   Windows/Edge: Helena (es-ES F), Pablo (es-ES M), Sabina (es-MX F), Raul (es-MX M)
+//   macOS: Mónica (es-ES F), Jorge (es-ES M), Paulina (es-MX F), Juan (es-MX M)
+//   Android: varies, often has "female"/"male" in the name
 const VOICE_PROFILES = [
-  { id: 'carlos',    label: 'Carlos',    lang: 'es-ES', hints: ['carlos', 'jorge', 'diego'] },
-  { id: 'miguel',    label: 'Miguel',    lang: 'es-MX', hints: ['miguel', 'juan', 'pablo'] },
-  { id: 'diego',     label: 'Diego',     lang: 'es-AR', hints: ['diego', 'martin', 'gabriel'] },
-  { id: 'sofia',     label: 'Sofia',     lang: 'es-ES', hints: ['sofia', 'monica', 'lucia'] },
-  { id: 'valentina', label: 'Valentina', lang: 'es-MX', hints: ['valentina', 'paulina', 'maria'] },
-  { id: 'isabella',  label: 'Isabella',  lang: 'es-CO', hints: ['isabella', 'camila', 'diana'] },
+  { id: 'carlos',    label: 'Carlos ♂',    gender: 'male',   lang: 'es-ES',
+    hints: ['pablo', 'jorge', 'carlos', 'raul', 'juan', 'diego', 'miguel', 'martin', 'gabriel', 'male'] },
+  { id: 'miguel',    label: 'Miguel ♂',    gender: 'male',   lang: 'es-MX',
+    hints: ['raul', 'juan', 'miguel', 'pablo', 'jorge', 'carlos', 'male'] },
+  { id: 'diego',     label: 'Diego ♂',     gender: 'male',   lang: 'es-US',
+    hints: ['jorge', 'juan', 'diego', 'pablo', 'raul', 'carlos', 'male'] },
+  { id: 'sofia',     label: 'Sofia ♀',     gender: 'female', lang: 'es-ES',
+    hints: ['helena', 'monica', 'lucia', 'sofia', 'laura', 'female'] },
+  { id: 'valentina', label: 'Valentina ♀', gender: 'female', lang: 'es-MX',
+    hints: ['sabina', 'paulina', 'valentina', 'maria', 'female'] },
+  { id: 'isabella',  label: 'Isabella ♀',  gender: 'female', lang: 'es-US',
+    hints: ['sabina', 'helena', 'camila', 'isabella', 'diana', 'female'] },
 ] as const;
 
 type VoiceProfileId = (typeof VOICE_PROFILES)[number]['id'];
+
+// Common female name fragments to detect gender when no hint matches
+const FEMALE_NAME_HINTS = ['helena', 'sabina', 'monica', 'paulina', 'lucia', 'laura',
+  'sofia', 'maria', 'camila', 'isabella', 'valentina', 'diana', 'female', 'mujer'];
+const MALE_NAME_HINTS   = ['pablo', 'raul', 'jorge', 'juan', 'carlos', 'miguel',
+  'diego', 'martin', 'gabriel', 'male'];
 
 function resolveVoice(profileId: VoiceProfileId): SpeechSynthesisVoice | null {
   const profile = VOICE_PROFILES.find((p) => p.id === profileId);
   if (!profile) return null;
   const voices = window.speechSynthesis.getVoices();
-  // 1. Try name match (case-insensitive hint in voice name)
-  const byName = voices.find(
-    (v) => profile.hints.some((h) => v.name.toLowerCase().includes(h)) && v.lang.startsWith('es')
+  const spanish = voices.filter((v) => v.lang.startsWith('es'));
+  if (spanish.length === 0) return voices[0] ?? null;
+
+  // 1. Try hint match within Spanish voices
+  const byHint = spanish.find(
+    (v) => profile.hints.some((h) => v.name.toLowerCase().includes(h))
   );
-  if (byName) return byName;
-  // 2. Try locale match
-  const byLang = voices.find((v) => v.lang === profile.lang);
+  if (byHint) return byHint;
+
+  // 2. Try gender detection — scan Spanish voices for gender-indicating names
+  const genderVoice = spanish.find((v) => {
+    const name = v.name.toLowerCase();
+    if (profile.gender === 'female') return FEMALE_NAME_HINTS.some((h) => name.includes(h));
+    return MALE_NAME_HINTS.some((h) => name.includes(h));
+  });
+  if (genderVoice) return genderVoice;
+
+  // 3. Try locale match
+  const byLang = spanish.find((v) => v.lang === profile.lang);
   if (byLang) return byLang;
-  // 3. Any Spanish voice
-  return voices.find((v) => v.lang.startsWith('es')) ?? null;
+
+  // 4. Fallback: first Spanish voice
+  return spanish[0] ?? null;
 }
 
 function stripHtml(html: string): string {
