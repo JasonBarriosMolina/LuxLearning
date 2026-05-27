@@ -425,7 +425,7 @@ export default function LessonPage() {
           )}
           {lesson.content ? (
             <>
-              <TextToSpeechButton text={lesson.content} className="pb-1" />
+              <TextToSpeechButton text={lesson.content} audioUrl={lesson.audioUrl} className="pb-1" />
               <div
                 className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
                 dangerouslySetInnerHTML={{ __html: lesson.content }}

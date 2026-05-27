@@ -53,6 +53,7 @@ model Lesson {
   youtubeId String   @default("")
   content   String?
   imageUrl  String?
+  audioUrl  String?
   points    String[]
   tip       String
   module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)

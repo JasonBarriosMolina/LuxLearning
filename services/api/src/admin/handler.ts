@@ -16,7 +16,8 @@ import {
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 // sharp is a native module — lazy import to avoid crashing Lambda on ARM64 if binary is missing
 let sharpLib: typeof import('sharp') | null = null;
 async function getSharp() {
@@ -33,6 +34,7 @@ const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
 // ── Nova Canvas image generation helper ─────────────────────────────────────
@@ -98,6 +100,53 @@ async function generateLessonImage(
     return null;
   }
 }
+// ── Amazon Polly audio generation helper ────────────────────────────────────
+const POLLY_VOICE_LANGUAGE: Record<string, string> = {
+  Mia: 'es-MX', Lupe: 'es-US', Pedro: 'es-US', Lucia: 'es-ES', Sergio: 'es-ES',
+};
+
+async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mia'): Promise<string | null> {
+  try {
+    const plain = text
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 2900); // Polly Neural limit per request
+
+    const resp = await pollyClient.send(new SynthesizeSpeechCommand({
+      Text: plain,
+      VoiceId: voiceId as VoiceId,
+      Engine: 'neural',
+      OutputFormat: 'mp3',
+      LanguageCode: (POLLY_VOICE_LANGUAGE[voiceId] ?? 'es-MX') as any,
+    }));
+
+    if (!resp.AudioStream) return null;
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of resp.AudioStream as any) chunks.push(chunk);
+    const audioBuffer = Buffer.concat(chunks);
+
+    const key = `audio/${lessonId}-${voiceId.toLowerCase()}.mp3`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_IMAGES_BUCKET,
+      Key: key,
+      Body: audioBuffer,
+      ContentType: 'audio/mpeg',
+    }));
+    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('[Polly] Error generating audio:', err);
+    return null;
+  }
+}
+
+function s3KeyFromUrl(url: string): string | null {
+  const match = url.match(/\.amazonaws\.com\/(.+)$/);
+  return match?.[1] ?? null;
+}
+
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
 
@@ -429,6 +478,16 @@ export const handler = async (event: Event) => {
 
       if (method === 'DELETE') {
         if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+        // Clean up S3 files before deleting DB record
+        const lessonToDelete = await prisma.lesson.findUnique({ where: { id: lessonId } });
+        if (lessonToDelete?.imageUrl) {
+          const key = s3KeyFromUrl(lessonToDelete.imageUrl);
+          if (key) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key })).catch(() => {});
+        }
+        if (lessonToDelete?.audioUrl) {
+          const key = s3KeyFromUrl(lessonToDelete.audioUrl);
+          if (key) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key })).catch(() => {});
+        }
         await prisma.lesson.delete({ where: { id: lessonId } });
         return ok({ deleted: true });
       }
@@ -1210,6 +1269,32 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       } catch (e) { console.warn('[ImageGen] Batch image generation error:', e); }
 
       return created({ ...course, suggestedTags });
+    }
+
+    // ── POST /admin/lessons/:lessonId/audio (Polly TTS) ────────────────────────
+    const lessonAudioMatch = path.match(/^\/admin\/lessons\/([^/]+)\/audio$/);
+    if (lessonAudioMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const lessonId = lessonAudioMatch[1]!;
+      const voiceId = (body as any).voiceId ?? 'Mia';
+      const allowedVoices = ['Mia', 'Lupe', 'Lucia', 'Sergio', 'Pedro'];
+      if (!allowedVoices.includes(voiceId)) return badRequest('Voz no válida');
+
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      if (!lesson) return notFound('Lección no encontrada');
+
+      // Delete old audio from S3 if exists
+      if (lesson.audioUrl) {
+        const oldKey = s3KeyFromUrl(lesson.audioUrl);
+        if (oldKey) await s3Client.send(new DeleteObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: oldKey })).catch(() => {});
+      }
+
+      const text = [lesson.title, lesson.content ?? '', ...(lesson.points ?? []), lesson.tip ?? ''].join('. ');
+      const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
+      if (!audioUrl) return serverError('No se pudo generar el audio con Polly');
+
+      const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
+      return ok(updated);
     }
 
     // ── POST /admin/lessons/:lessonId/regenerate (X-1) ─────────────────────────

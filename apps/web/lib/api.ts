@@ -199,6 +199,8 @@ export const api = {
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST' }),
       regenerateFormat: (lessonId: string, body: { type: 'text' | 'image' | 'infographic'; level?: 'basic' | 'intermediate' | 'advanced'; style?: string }) =>
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
+      generateAudio: (lessonId: string, voiceId = 'Mia') =>
+        request<any>(`/admin/lessons/${lessonId}/audio`, { method: 'POST', body: JSON.stringify({ voiceId }) }),
     },
     // Questions
     questions: {
