@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 
 type QuizState = 'answering' | 'submitting' | 'result';
 
@@ -309,6 +310,7 @@ export default function QuizPage() {
           <p className="font-heading font-semibold text-lg text-charcoal leading-snug">
             {currentQuestion.text}
           </p>
+          <TextToSpeechButton key={currentQ} text={currentQuestion.text} />
 
           <div className="space-y-2">
             {shuffleMap.map((originalIdx: number, visualPos: number) => {

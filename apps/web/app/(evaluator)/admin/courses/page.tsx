@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -44,6 +44,14 @@ export default function AdminCoursesPage() {
   const [regenPreview, setRegenPreview] = useState<{ courseId: string; title: string; modules: any[] } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tagInput, setTagInput] = useState('');
+
+  // Evaluator assignment modal state
+  const [evalModal, setEvalModal] = useState<{ courseId: string; courseName: string } | null>(null);
+  const [evaluators, setEvaluators] = useState<{ sub: string; email: string; name: string; username: string }[]>([]);
+  const [selectedEval, setSelectedEval] = useState('');
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalSaving, setEvalSaving] = useState(false);
+  const [evalError, setEvalError] = useState('');
 
   // AI wizard state
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -244,6 +252,43 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const openEvalModal = async (courseId: string, courseName: string) => {
+    setEvalModal({ courseId, courseName });
+    setSelectedEval('');
+    setEvalError('');
+    setEvalLoading(true);
+    try {
+      const res = await api.admin.users.list();
+      const allUsers = (res as any).data ?? [];
+      const evls = allUsers.filter((u: any) => u.role === 'EVALUATOR' && u.enabled !== false);
+      setEvaluators(evls.map((u: any) => ({ sub: u.sub ?? u.username, email: u.email, name: u.name ?? u.email, username: u.username })));
+    } catch {
+      setEvaluators([]);
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const handleAssignEvaluator = async () => {
+    if (!evalModal || !selectedEval) return;
+    const evaluator = evaluators.find((e) => e.sub === selectedEval || e.username === selectedEval);
+    if (!evaluator) return;
+    setEvalSaving(true);
+    setEvalError('');
+    try {
+      await api.admin.courses.assignEvaluator(evalModal.courseId, {
+        evaluatorId: evaluator.sub,
+        evaluatorName: evaluator.name,
+      });
+      setEvalModal(null);
+      await load();
+    } catch (err: any) {
+      setEvalError(err.message ?? 'Error al asignar evaluador');
+    } finally {
+      setEvalSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
@@ -303,6 +348,11 @@ export default function AdminCoursesPage() {
                   <p className="text-xs text-gray-500">
                     {course.modules?.length ?? 0} módulos
                   </p>
+                  {course.evaluatorName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-teal-50 text-teal-700 font-medium">
+                      <UserCircle className="w-2.5 h-2.5" />{course.evaluatorName}
+                    </span>
+                  )}
                   {course.tags?.map((tag: string) => (
                     <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-600 font-medium">
                       <Tag className="w-2.5 h-2.5" />{tag}
@@ -339,6 +389,13 @@ export default function AdminCoursesPage() {
                   title="Regenerar estructura con IA"
                 >
                   {regeneratingCourse === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => openEvalModal(course.id, course.title)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                  title={course.evaluatorName ? `Evaluador: ${course.evaluatorName}` : 'Asignar evaluador'}
+                >
+                  <UserCircle className={`w-4 h-4 ${course.evaluatorName ? 'text-teal-500' : ''}`} />
                 </button>
                 <button
                   onClick={() => setConfirmDelete(course.id)}
@@ -810,6 +867,49 @@ export default function AdminCoursesPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* Assign Evaluator Modal */}
+      <Modal
+        open={!!evalModal}
+        onClose={() => setEvalModal(null)}
+        title={`Asignar Evaluador — ${evalModal?.courseName ?? ''}`}
+        size="sm"
+      >
+        <div className="space-y-4">
+          {evalLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : evaluators.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">No hay evaluadores registrados en el sistema.</p>
+          ) : (
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-charcoal">Evaluador</label>
+              <select
+                value={selectedEval}
+                onChange={(e) => setSelectedEval(e.target.value)}
+                className="input-field w-full"
+              >
+                <option value="">— Seleccionar evaluador —</option>
+                {evaluators.map((ev) => (
+                  <option key={ev.username} value={ev.username}>{ev.name} ({ev.email})</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {evalError && <p className="text-xs text-red-500">{evalError}</p>}
+          <div className="flex justify-end gap-3 pt-1">
+            <Button variant="secondary" onClick={() => setEvalModal(null)}>Cancelar</Button>
+            <Button
+              loading={evalSaving}
+              disabled={!selectedEval}
+              onClick={handleAssignEvaluator}
+            >
+              Asignar
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Delete confirmation */}

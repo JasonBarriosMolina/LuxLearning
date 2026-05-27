@@ -36,14 +36,32 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
 // ── Nova Canvas image generation helper ─────────────────────────────────────
-async function generateLessonImage(lessonTitle: string, moduleTitle: string, order: number): Promise<string | null> {
-  const prompts: Record<number, string> = {
+const STYLE_SUFFIXES: Record<string, string> = {
+  realistic:    ', photorealistic style, high detail, professional photography look',
+  illustration: ', flat illustration style, colorful, modern vector art',
+  diagram:      ', clean technical diagram style, clear labels, professional schematic',
+  comic:        ', comic book style, bold outlines, vibrant colors, graphic novel look',
+  minimal:      ', minimal design, clean white space, simple geometric shapes',
+  colorful:     ', vibrant multicolor palette, energetic infographic style',
+  corporate:    ', professional corporate style, blue and gray tones, business presentation',
+};
+
+async function generateLessonImage(
+  lessonTitle: string,
+  moduleTitle: string,
+  order: number,
+  override?: { promptText?: string; style?: string }
+): Promise<string | null> {
+  const basePrompts: Record<number, string> = {
     2:  `Clean minimal educational mind map diagram about "${lessonTitle.slice(0, 60)}" in the context of "${moduleTitle.slice(0, 60)}", light blue background, professional illustration, no text labels, vector style`,
     6:  `Professional educational illustration depicting "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, vivid colors, no text, clean composition`,
     10: `Clean professional educational infographic layout about "${lessonTitle.slice(0, 60)}" summarizing "${moduleTitle.slice(0, 60)}", structured sections, modern design, geometric shapes`,
   };
-  const prompt = prompts[order];
+  let prompt = override?.promptText ?? basePrompts[order];
   if (!prompt) return null;
+  if (override?.style && STYLE_SUFFIXES[override.style]) {
+    prompt = prompt + STYLE_SUFFIXES[override.style];
+  }
   try {
     const resp = await bedrock.send(new InvokeModelCommand({
       modelId: 'amazon.nova-canvas-v1:0',
@@ -247,6 +265,20 @@ export const handler = async (event: Event) => {
       const job = await getAiJob(jobId);
       if (!job) return notFound('Job no encontrado');
       return ok(job);
+    }
+
+    // ── PUT /admin/courses/:courseId/evaluator ──────────────────────────────
+    const courseEvaluatorMatch = path.match(/^\/admin\/courses\/([^/]+)\/evaluator$/);
+    if (courseEvaluatorMatch && method === 'PUT') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador');
+      const courseId = courseEvaluatorMatch[1]!;
+      const { evaluatorId, evaluatorName } = body as { evaluatorId?: string; evaluatorName?: string };
+      if (!evaluatorId) return badRequest('evaluatorId es requerido');
+      const updated = await prisma.course.update({
+        where: { id: courseId },
+        data: { evaluatorId, evaluatorName: evaluatorName ?? null },
+      });
+      return ok(updated);
     }
 
     // ── /admin/courses/:courseId ────────────────────────────────────────────
@@ -1193,6 +1225,11 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       const modTitle = lesson.module.title;
       const courseTitle = lesson.module.course.title;
 
+      // Parse type/level/style from request body (all optional, defaults to text/intermediate)
+      const regenType = (body as any).type as 'text' | 'image' | 'infographic' | undefined ?? 'text';
+      const regenLevel = (body as any).level as 'basic' | 'intermediate' | 'advanced' | undefined ?? 'intermediate';
+      const regenStyle = (body as any).style as string | undefined;
+
       const bedrockJSONSimple = async (prompt: string, maxTokens = 2000): Promise<any> => {
         const res = await bedrock.send(new InvokeModelCommand({
           modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -1205,8 +1242,34 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
         try { return JSON.parse(match?.[0] ?? '{}'); } catch { try { return JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { return {}; } }
       };
 
+      if (regenType === 'image') {
+        // Regenerate the lesson image only
+        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle });
+        if (!imageUrl) return badRequest('No se pudo generar la imagen (posición de lección no soportada o error en Nova Canvas)');
+        const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
+        return ok(updated);
+      }
+
+      if (regenType === 'infographic') {
+        // Generate infographic-style image with structured prompt
+        const promptText = `Educational infographic for lesson "${lesson.title.slice(0, 60)}" from module "${modTitle.slice(0, 60)}", structured layout with sections and icons, professional design, no text labels, clean composition`;
+        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { promptText, style: regenStyle });
+        if (!imageUrl) return badRequest('No se pudo generar la infografía');
+        const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
+        return ok(updated);
+      }
+
+      // Default: type === 'text' — regenerate lesson content at specified level
+      const levelInstructions: Record<string, string> = {
+        basic:        'vocabulario simple y didáctico, frases cortas, ejemplos cotidianos, sin tecnicismos. Ideal para principiantes.',
+        intermediate: 'lenguaje claro, ejemplos prácticos, estructura bien definida. Para estudiantes con conocimiento básico.',
+        advanced:     'profundidad técnica, conceptos avanzados, terminología especializada. Para estudiantes con experiencia.',
+      };
+      const levelNote = levelInstructions[regenLevel] ?? levelInstructions.intermediate;
+
       const regen = await bedrockJSONSimple(
         `Eres experto en diseño instruccional. Regenera la lección "${lesson.title}" (orden ${lesson.order}) del módulo "${modTitle}" del curso "${courseTitle}".
+Nivel de dificultad: ${regenLevel} — ${levelNote}
 Responde ÚNICAMENTE con JSON: {"title":"Título específico","content":"<h3>Subtítulo</h3><p>Párrafo 1 educativo real.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Párrafo de cierre.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
 Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en 2ª persona.`, 4000
       );

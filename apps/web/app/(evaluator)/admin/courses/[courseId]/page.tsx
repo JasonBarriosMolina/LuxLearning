@@ -272,12 +272,29 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenType, setRegenType] = useState<'text' | 'image' | 'infographic'>('text');
+  const [regenLevel, setRegenLevel] = useState<'basic' | 'intermediate' | 'advanced'>('intermediate');
+  const [regenStyle, setRegenStyle] = useState('');
+  const [regenLoading, setRegenLoading] = useState(false);
+  const [regenError, setRegenError] = useState('');
 
   const handleRegenerate = async () => {
-    setRegenerating(true);
-    try { await api.admin.lessons.regenerate(lesson.id); onRefresh(); }
-    catch { /* ignore */ } finally { setRegenerating(false); }
+    setRegenLoading(true);
+    setRegenError('');
+    try {
+      await api.admin.lessons.regenerateFormat(lesson.id, {
+        type: regenType,
+        ...(regenType === 'text' ? { level: regenLevel } : {}),
+        ...(regenStyle ? { style: regenStyle } : {}),
+      });
+      setRegenOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      setRegenError(err.message ?? 'Error al regenerar');
+    } finally {
+      setRegenLoading(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -306,13 +323,88 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
           )}
         </div>
         <div className="flex gap-1 shrink-0">
-          <button onClick={handleRegenerate} disabled={regenerating} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50">
-            {regenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          <button onClick={() => { setRegenOpen(true); setRegenError(''); }} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
           <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-white transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
           <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>
         <ConfirmDelete open={confirmDel} onClose={() => setConfirmDel(false)} onConfirm={handleDelete} loading={deleting} label="lección" />
+
+        {/* Regenerate Modal */}
+        <Modal open={regenOpen} onClose={() => setRegenOpen(false)} title={`Regenerar — ${lesson.title}`} size="sm">
+          <div className="space-y-4">
+            {/* Type tabs */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
+              <div className="flex rounded-lg border border-border overflow-hidden">
+                {(['text', 'image', 'infographic'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => { setRegenType(t); setRegenStyle(''); }}
+                    className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Level (text only) */}
+            {regenType === 'text' && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Nivel</p>
+                <div className="flex rounded-lg border border-border overflow-hidden">
+                  {([['basic', 'Básico'], ['intermediate', 'Intermedio'], ['advanced', 'Avanzado']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setRegenLevel(val)}
+                      className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenLevel === val ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {regenLevel === 'basic' ? 'Vocabulario simple, ejemplos cotidianos, sin tecnicismos.' :
+                   regenLevel === 'advanced' ? 'Profundidad técnica, terminología especializada.' :
+                   'Lenguaje claro, ejemplos prácticos, estructura definida.'}
+                </p>
+              </div>
+            )}
+
+            {/* Style (image/infographic) */}
+            {(regenType === 'image' || regenType === 'infographic') && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(regenType === 'image'
+                    ? [['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['diagram', '📐 Diagrama'], ['comic', '💥 Cómic']]
+                    : [['minimal', '⬜ Minimal'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']]
+                  ).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setRegenStyle(regenStyle === val ? '' : val)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-colors ${regenStyle === val ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-border text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">Opcional — deja vacío para estilo automático.</p>
+              </div>
+            )}
+
+            {regenError && <p className="text-xs text-red-500">{regenError}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="secondary" size="sm" onClick={() => setRegenOpen(false)}>Cancelar</Button>
+              <Button size="sm" loading={regenLoading} onClick={handleRegenerate}>
+                Regenerar
+              </Button>
+            </div>
+          </div>
+        </Modal>
       </div>
     );
   }

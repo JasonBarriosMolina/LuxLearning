@@ -1,11 +1,39 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Volume2, VolumeX, Pause, Play, Square } from 'lucide-react';
+import { Volume2, Pause, Play, Square } from 'lucide-react';
 
 interface Props {
   text: string;
   className?: string;
+}
+
+// ── Voice profiles (6 personas: 3M, 3F) ──────────────────────────────────────
+const VOICE_PROFILES = [
+  { id: 'carlos',    label: 'Carlos',    lang: 'es-ES', hints: ['carlos', 'jorge', 'diego'] },
+  { id: 'miguel',    label: 'Miguel',    lang: 'es-MX', hints: ['miguel', 'juan', 'pablo'] },
+  { id: 'diego',     label: 'Diego',     lang: 'es-AR', hints: ['diego', 'martin', 'gabriel'] },
+  { id: 'sofia',     label: 'Sofia',     lang: 'es-ES', hints: ['sofia', 'monica', 'lucia'] },
+  { id: 'valentina', label: 'Valentina', lang: 'es-MX', hints: ['valentina', 'paulina', 'maria'] },
+  { id: 'isabella',  label: 'Isabella',  lang: 'es-CO', hints: ['isabella', 'camila', 'diana'] },
+] as const;
+
+type VoiceProfileId = (typeof VOICE_PROFILES)[number]['id'];
+
+function resolveVoice(profileId: VoiceProfileId): SpeechSynthesisVoice | null {
+  const profile = VOICE_PROFILES.find((p) => p.id === profileId);
+  if (!profile) return null;
+  const voices = window.speechSynthesis.getVoices();
+  // 1. Try name match (case-insensitive hint in voice name)
+  const byName = voices.find(
+    (v) => profile.hints.some((h) => v.name.toLowerCase().includes(h)) && v.lang.startsWith('es')
+  );
+  if (byName) return byName;
+  // 2. Try locale match
+  const byLang = voices.find((v) => v.lang === profile.lang);
+  if (byLang) return byLang;
+  // 3. Any Spanish voice
+  return voices.find((v) => v.lang.startsWith('es')) ?? null;
 }
 
 function stripHtml(html: string): string {
@@ -36,6 +64,13 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
     }
     return 1;
   });
+  const [voiceProfile, setVoiceProfile] = useState<VoiceProfileId>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('tts-voice-profile');
+      return (VOICE_PROFILES.find((p) => p.id === saved)?.id ?? 'carlos') as VoiceProfileId;
+    }
+    return 'carlos';
+  });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
@@ -50,6 +85,15 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  const handleVoiceChange = (profileId: VoiceProfileId) => {
+    setVoiceProfile(profileId);
+    localStorage.setItem('tts-voice-profile', profileId);
+    if (state === 'speaking') {
+      window.speechSynthesis?.cancel();
+      setState('idle');
+    }
+  };
 
   const handlePlay = useCallback(() => {
     if (!window.speechSynthesis) return;
@@ -70,10 +114,9 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
     utterance.lang = 'es-ES';
     utterance.rate = rate;
 
-    // Try to pick a Spanish voice
-    const voices = window.speechSynthesis.getVoices();
-    const spanish = voices.find((v) => v.lang.startsWith('es'));
-    if (spanish) utterance.voice = spanish;
+    // Use selected voice profile
+    const voice = resolveVoice(voiceProfile);
+    if (voice) utterance.voice = voice;
 
     utterance.onstart = () => setState('speaking');
     utterance.onpause = () => setState('paused');
@@ -84,7 +127,7 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
     setState('speaking');
-  }, [state, text, rate]);
+  }, [state, text, rate, voiceProfile]);
 
   const handlePause = useCallback(() => {
     window.speechSynthesis?.pause();
@@ -109,12 +152,12 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
   if (!supported) return null;
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <div className={`flex items-center gap-2 flex-wrap ${className}`}>
       {/* Play / Pause button */}
       {state === 'idle' && (
         <button
           onClick={handlePlay}
-          title="Escuchar lección"
+          title="Escuchar"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white dark:bg-[#1A1A2E] text-gray-600 dark:text-gray-300 hover:border-cta-from hover:text-cta-from text-xs font-medium transition-colors"
         >
           <Volume2 className="w-3.5 h-3.5" />
@@ -154,6 +197,18 @@ export function TextToSpeechButton({ text, className = '' }: Props) {
           <Square className="w-3.5 h-3.5" />
         </button>
       )}
+
+      {/* Voice profile selector */}
+      <select
+        value={voiceProfile}
+        onChange={(e) => handleVoiceChange(e.target.value as VoiceProfileId)}
+        className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
+        title="Perfil de voz"
+      >
+        {VOICE_PROFILES.map((p) => (
+          <option key={p.id} value={p.id}>{p.label}</option>
+        ))}
+      </select>
 
       {/* Speed selector */}
       <select

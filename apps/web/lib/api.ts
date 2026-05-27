@@ -179,6 +179,8 @@ export const api = {
         request<any>('/admin/courses/ai-publish', { method: 'POST', body: JSON.stringify(body) }),
       regenerate: (courseId: string) =>
         request<any>(`/admin/courses/${courseId}/regenerate`, { method: 'POST' }),
+      assignEvaluator: (courseId: string, body: { evaluatorId: string; evaluatorName: string }) =>
+        request<any>(`/admin/courses/${courseId}/evaluator`, { method: 'PUT', body: JSON.stringify(body) }),
     },
     // Modules
     modules: {
@@ -195,6 +197,8 @@ export const api = {
       delete: (lessonId: string) => request<any>(`/admin/lessons/${lessonId}`, { method: 'DELETE' }),
       regenerate: (lessonId: string) =>
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST' }),
+      regenerateFormat: (lessonId: string, body: { type: 'text' | 'image' | 'infographic'; level?: 'basic' | 'intermediate' | 'advanced'; style?: string }) =>
+        request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     // Questions
     questions: {
