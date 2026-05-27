@@ -11,9 +11,9 @@ interface Props {
 
 // ── Web Speech fallback — Voice profiles (2 options, Polly is preferred) ────
 const VOICE_PROFILES = [
-  { id: 'masculino', label: '♂ Masculino', gender: 'male',   lang: 'es-ES',
+  { id: 'masculino', label: 'Carlos', gender: 'male',   lang: 'es-ES',
     hints: ['pablo', 'raul', 'jorge', 'juan', 'carlos', 'miguel', 'diego', 'martin', 'gabriel', 'male'] },
-  { id: 'femenino',  label: '♀ Femenino',  gender: 'female', lang: 'es-ES',
+  { id: 'femenino',  label: 'Sofía',  gender: 'female', lang: 'es-ES',
     hints: ['helena', 'sabina', 'monica', 'paulina', 'lucia', 'laura', 'sofia', 'maria', 'female'] },
 ] as const;
 
