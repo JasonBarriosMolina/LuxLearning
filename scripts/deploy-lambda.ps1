@@ -13,6 +13,9 @@ $ErrorActionPreference = "Stop"
 $ROOT      = "D:\InHouse\Lux"
 $API_SRC   = "$ROOT\services\api\src"
 $DIST      = "$ROOT\services\api\dist"
+
+# Engine binary path inside the Lambda zip (must match where .prisma/client is staged)
+$ENGINE_PATH = "/var/task/node_modules/.prisma/client/libquery_engine-linux-arm64-openssl-3.0.x.so.node"
 $MODULES   = "$ROOT\node_modules"
 $PRISMA_PKG    = "$MODULES\@prisma\client"
 $PRISMA_GEN    = "$MODULES\.prisma\client"
@@ -87,13 +90,30 @@ function Deploy-Lambda([string]$name) {
   $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
   Write-Host "   Zip: $sizeMB MB" -ForegroundColor Gray
 
-  # 4. Deploy
+  # 4. Deploy code
   $codeSize = aws lambda update-function-code `
     --function-name $name `
     --zip-file "fileb://$zipPath" `
     --query "CodeSize" --output text
   if ($LASTEXITCODE -ne 0) { throw "Deploy failed for $name" }
   Write-Host "   Deployed: $([math]::Round([int]$codeSize / 1MB, 1)) MB" -ForegroundColor Green
+
+  # 5. Ensure PRISMA_QUERY_ENGINE_LIBRARY is set (merge, never wipe other vars)
+  #    DATABASE_URL persists automatically — update-function-code never touches env vars
+  if ($usesPrisma) {
+    $tmpEnv = "$DIST\env-tmp.json"
+    aws lambda get-function-configuration --function-name $name --query "Environment.Variables" --output json | Out-File -Encoding utf8 $tmpEnv
+    python -c @"
+import json
+with open(r'$tmpEnv', encoding='utf-8') as f:
+  d = json.loads(f.read().strip().lstrip('\xef\xbb\xbf'))
+d['PRISMA_QUERY_ENGINE_LIBRARY'] = '$ENGINE_PATH'
+with open(r'$tmpEnv', 'w', encoding='utf-8') as f:
+  json.dump({'Variables': d}, f)
+"@
+    aws lambda update-function-configuration --function-name $name --environment "file://$tmpEnv" --query "FunctionName" --output text | Out-Null
+    Write-Host "   Env vars synced" -ForegroundColor Gray
+  }
 }
 
 # Resolve target list
