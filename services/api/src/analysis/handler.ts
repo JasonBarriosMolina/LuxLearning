@@ -39,7 +39,7 @@ function parseJSON(raw: string): any {
 
 export const handler = async () => {
   console.log('[Analysis] Starting nightly analysis job...');
-  const prisma = getPrismaClient();
+  const prisma = await getPrismaClient();
 
   try {
     const [allReflections, allAttempts, modules] = await Promise.all([

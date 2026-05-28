@@ -11,7 +11,7 @@ export const handler = async (event: Event) => {
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
   const path = event.rawPath;
-  const prisma = getPrismaClient();
+  const prisma = await getPrismaClient();
 
   try {
     // GET /courses

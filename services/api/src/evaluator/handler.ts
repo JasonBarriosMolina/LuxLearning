@@ -221,7 +221,7 @@ export const handler = async (event: Event) => {
 
   const method = event.requestContext.http.method;
   const path = event.rawPath;
-  const prisma = getPrismaClient();
+  const prisma = await getPrismaClient();
 
   try {
     // GET /evaluator/reflections — list ALL reflections (frontend filters by status)
@@ -654,10 +654,10 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
       const [attempts, module] = await Promise.all([
         getQuizAttempts(studentId, moduleId),
-        getPrismaClient().module.findUnique({
+        getPrismaClient().then((p) => p.module.findUnique({
           where: { id: moduleId },
           include: { questions: { orderBy: { order: 'asc' } } },
-        }),
+        })),
       ]);
 
       if (!module) return notFound('Module not found');

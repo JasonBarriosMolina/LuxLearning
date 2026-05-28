@@ -254,7 +254,7 @@ export const handler = async (event: Event) => {
 
   try {
     // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
-    const prisma = getPrismaClient();
+    const prisma = await getPrismaClient();
     const body = event.body ? JSON.parse(event.body) : {};
     const action = (body as any)._action as string | undefined;
 

@@ -216,7 +216,7 @@ export const handler = async () => {
     // ── Course-start notifications (1 day before startDate) ──────────────────
     let startSent = 0;
     try {
-      const prisma = getPrismaClient();
+      const prisma = await getPrismaClient();
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowStart = new Date(tomorrow); tomorrowStart.setHours(0, 0, 0, 0);

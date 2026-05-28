@@ -59,7 +59,7 @@ export const handler = async (event: Event) => {
       if (existing) return ok(existing);
 
       // Verify all modules are approved
-      const prisma = getPrismaClient();
+      const prisma = await getPrismaClient();
       const course = await prisma.course.findUnique({
         where: { id: courseId },
         include: { modules: { select: { id: true } } },

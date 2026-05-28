@@ -48,7 +48,7 @@ export const handler = async (event: Event) => {
 
   const method = event.requestContext.http.method;
   const path = event.rawPath;
-  const prisma = getPrismaClient();
+  const prisma = await getPrismaClient();
 
   try {
     // ── GET /reports — filtered report data ─────────────────────────────────
