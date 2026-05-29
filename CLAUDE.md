@@ -111,6 +111,12 @@ PRISMA_QUERY_ENGINE_LIBRARY  /var/task/node_modules/.prisma/client/libquery_engi
 DB_SECRET_ARN             arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/neon-db-bp488g
 ```
 
+### lux-certs
+```
+DYNAMO_TABLE_CERT_TEMPLATES  LuxCertTemplates   (added 2026-05-29)
+```
+Requires `pdfkit` — already installed in `services/api`. Lazy `require('pdfkit')` inside handler to avoid cold-start cost.
+
 ### lux-admin
 ```
 S3_IMAGES_BUCKET          lux-learning-images
@@ -146,13 +152,16 @@ VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_EMAIL (evaluator only)
 aws lambda update-function-configuration --environment Variables={KEY=val}
 ```
 
-### Always merge env vars
+### Always merge env vars (PowerShell — no backslash continuation)
 ```powershell
-aws lambda get-function-configuration --function-name lux-X \
-  --query "Environment.Variables" --output json > tmp.json
-# edit tmp.json — add/change only what you need
-aws lambda update-function-configuration --function-name lux-X \
-  --environment file://tmp.json
+$vars = (aws lambda get-function-configuration --function-name lux-X --query "Environment.Variables" --output json) -join ""
+$d = $vars | ConvertFrom-Json; $h = @{}
+$d.PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value }
+$h['NEW_VAR'] = 'value'   # add/change only what you need
+$body = @{ Variables = $h } | ConvertTo-Json -Compress
+$noBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$env:TEMP\env-patch.json", $body, $noBom)
+aws lambda update-function-configuration --function-name lux-X --environment "file://$env:TEMP\env-patch.json"
 ```
 
 ### DATABASE_URL is self-healing
@@ -177,6 +186,8 @@ Allowed origins are in `shared/response.ts` `ALLOWED_ORIGINS[]`. Add new Vercel 
 | LuxMessages | chatId | ts | `ts = ISO#randomId` |
 | PushSubscriptions | userId | endpoint | VAPID push subs |
 | ScheduledTasks | userId | taskId | per-student tasks |
+| LuxCertTemplates | `TEMPLATE` | `GLOBAL` | Certificate template (colors, logo, watermark) — env: `DYNAMO_TABLE_CERT_TEMPLATES` |
+| LessonProgress (`_AIJOB`) | `_AIJOB` | jobId | AI generation jobs — reuses LessonProgress table with special userId. Status: `processing` → `done`\|`error` |
 
 ---
 
