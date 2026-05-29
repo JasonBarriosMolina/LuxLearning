@@ -227,6 +227,76 @@ Allowed origins are in `shared/response.ts` `ALLOWED_ORIGINS[]`. Add new Vercel 
 | `Runtime.ImportModuleError` on cold start | Wrong zip structure | Always use `deploy-lambda.ps1` |
 | Reflection 403 "pass quiz first" | Student hasn't passed the quiz for that module | Expected behavior — not a bug |
 | Push notification silent | VAPID keys not set or subscription stale | Check `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` env vars |
+| `Application error: client-side exception` on page load | React hook (e.g. `useRef`, `useCallback`) used in component but not imported | Check the import line — add all used hooks to `import { ... } from 'react'` |
+| `Failed to fetch` on new API call | New backend route exists in handler but was never registered in API Gateway | See "API Gateway — adding new routes" section below |
+
+---
+
+## API Gateway — adding new routes
+
+**Every new route in a Lambda handler MUST be registered in API Gateway + given a Lambda invoke permission. Forgetting either causes `Failed to fetch` on the frontend.**
+
+### Checklist when adding a new route to any handler
+
+1. **Create the API GW route:**
+```powershell
+aws apigatewayv2 create-route \
+  --api-id v4vabtmerb \
+  --route-key "POST /admin/example/{id}" \
+  --authorization-type CUSTOM --authorizer-id zsk60q \
+  --target "integrations/6aoajo2"   # lux-admin integration
+```
+
+2. **Add Lambda invoke permission:**
+```powershell
+aws lambda add-permission \
+  --function-name lux-admin \
+  --statement-id ApiGw-POST-example-id \
+  --action lambda:InvokeFunction \
+  --principal apigateway.amazonaws.com \
+  --source-arn "arn:aws:execute-api:us-east-1:798694628803:v4vabtmerb/*/POST/admin/example/*"
+```
+
+3. **Verify the route exists:**
+```powershell
+aws apigatewayv2 get-routes --api-id v4vabtmerb \
+  --query "Items[?contains(RouteKey, 'example')].RouteKey" --output json
+```
+
+### Integration IDs per Lambda
+| Lambda | Integration ID |
+|---|---|
+| lux-admin | `6aoajo2` |
+| lux-evaluator | check with `aws apigatewayv2 get-integrations --api-id v4vabtmerb` |
+| lux-courses | same |
+| (others) | same |
+
+### Authorizer
+All protected routes use `--authorizer-id zsk60q` (the `lux-authorizer` JWT verifier). Public routes omit `--authorization-type` and `--authorizer-id`.
+
+### Async job pattern (module/course AI regeneration)
+Long-running AI tasks use Lambda self-invoke (`InvocationType: 'Event'`):
+- Initial HTTP call saves `jobId` to DynamoDB (`LessonProgress` table, `userId='_AIJOB'`) and returns immediately
+- Worker runs in background, updates status to `done` or `error`
+- Frontend **must poll** `GET /admin/courses/ai-job?jobId=...` every 3 s to detect completion
+- lux-admin has `lambda:InvokeFunction` on its own ARN in the execution role — self-invoke works
+- Debug stuck jobs: `aws dynamodb query --table-name LessonProgress --key-condition-expression "userId = :uid" --expression-attribute-values file://expr.json` where expr.json = `{":uid":{"S":"_AIJOB"}}`
+
+---
+
+## React — common mistakes
+
+### Always import every hook you use
+```tsx
+// Wrong — useRef used in component body but not imported → crashes with "Application error"
+import { useEffect, useState } from 'react';
+const myRef = useRef(null);  // ← ReferenceError at runtime
+
+// Correct
+import { useEffect, useState, useRef } from 'react';
+```
+
+Common hooks to remember: `useRef`, `useCallback`, `useMemo`, `useReducer`, `useContext`, `useId`.
 
 ---
 
