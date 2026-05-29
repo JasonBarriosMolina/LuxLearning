@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface CourseForm {
   title: string;
@@ -34,6 +35,8 @@ export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'draft' | 'archived'>('active');
+  const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<any | null>(null);
   const [form, setForm] = useState<CourseForm>(EMPTY_FORM);
@@ -53,6 +56,12 @@ export default function AdminCoursesPage() {
   const [evalSaving, setEvalSaving] = useState(false);
   const [evalError, setEvalError] = useState('');
 
+  // Choice modal state (unified "Nuevo Curso" menu)
+  const [choiceModalOpen, setChoiceModalOpen] = useState(false);
+
+  // AI wizard close-confirmation state
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+
   // AI wizard state
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiStep, setAiStep] = useState<1 | 2 | 3 | 4>(1);
@@ -69,10 +78,15 @@ export default function AdminCoursesPage() {
   const [aiAssigning, setAiAssigning] = useState(false);
   const [aiSuggestedTags, setAiSuggestedTags] = useState<string[]>([]);
   const [aiAcceptedTags, setAiAcceptedTags] = useState<string[]>([]);
+  // G2-B: per-module edit/regen in wizard step 3
+  const [editingModTitle, setEditingModTitle] = useState<{ idx: number; value: string } | null>(null);
+  const [regenModIdx, setRegenModIdx] = useState<number | null>(null);
 
-  const load = async () => {
+  const load = async (tab = activeTab) => {
+    setLoading(true);
+    setLoadError('');
     try {
-      const res = await api.admin.courses.list();
+      const res = await api.admin.courses.listByStatus(tab);
       setCourses((res as any).data ?? []);
     } catch (err: any) {
       setLoadError(err.message ?? 'Error al cargar cursos');
@@ -81,7 +95,7 @@ export default function AdminCoursesPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(activeTab); }, [activeTab]);
 
   const openCreate = () => {
     setEditingCourse(null);
@@ -135,9 +149,9 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const openAiModal = () => {
-    setAiStep(1);
-    setAiMethod('topic');
+  const openAiModal = (method: 'topic' | 'url' = 'topic', startStep: 1 | 2 | 3 | 4 = 1) => {
+    setAiStep(startStep);
+    setAiMethod(method);
     setAiInput('');
     setAiResult(null);
     setAiError('');
@@ -289,6 +303,34 @@ export default function AdminCoursesPage() {
     }
   };
 
+  const handlePublish = async (courseId: string) => {
+    try {
+      await api.admin.courses.publish(courseId);
+      await load();
+    } catch (err: any) {
+      alert(err.message ?? 'Error al publicar');
+    }
+  };
+
+  const handleArchive = async (courseId: string) => {
+    try {
+      await api.admin.courses.archive(courseId);
+      setArchiveConfirm(null);
+      await load();
+    } catch (err: any) {
+      alert(err.message ?? 'Error al archivar');
+    }
+  };
+
+  const handleRestore = async (courseId: string) => {
+    try {
+      await api.admin.courses.restore(courseId);
+      await load();
+    } catch (err: any) {
+      alert(err.message ?? 'Error al restaurar');
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
@@ -298,13 +340,31 @@ export default function AdminCoursesPage() {
           <p className="text-gray-500 mt-1 text-sm">Crea y administra cursos, módulos, lecciones y evaluaciones</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="secondary" onClick={openAiModal} leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}>
-            Crear con IA
-          </Button>
-          <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
-            Nuevo curso
+          <Button onClick={() => setChoiceModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
+            Nuevo Curso
           </Button>
         </div>
+      </div>
+
+      {/* Status tabs */}
+      <div className="flex gap-1 bg-surface rounded-xl p-1 w-fit">
+        {([
+          { key: 'active', label: 'Activos' },
+          { key: 'draft', label: 'Borradores' },
+          { key: 'archived', label: 'Archivados' },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? 'bg-white text-charcoal shadow-sm'
+                : 'text-gray-500 hover:text-charcoal'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Load error */}
@@ -322,23 +382,37 @@ export default function AdminCoursesPage() {
       ) : !loadError && courses.length === 0 ? (
         <div className="card text-center py-16">
           <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">No hay cursos todavía</p>
-          <p className="text-gray-500 text-sm mt-1">Crea el primer curso con el botón de arriba.</p>
+          <p className="font-heading font-bold text-charcoal">
+            {activeTab === 'draft' ? 'Sin borradores' : activeTab === 'archived' ? 'Sin cursos archivados' : 'No hay cursos activos'}
+          </p>
+          <p className="text-gray-500 text-sm mt-1">
+            {activeTab === 'active' ? 'Crea el primer curso con el botón de arriba.' : ''}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
           {courses.map((course) => (
-            <div key={course.id} className="card flex items-center gap-4">
+            <div key={course.id} className={`card flex items-center gap-4 ${course.isArchived ? 'opacity-70' : ''}`}>
               {/* Status indicator */}
-              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${course.isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                course.isArchived ? 'bg-gray-300' :
+                course.isDraft ? 'bg-yellow-400' :
+                course.isActive ? 'bg-emerald-500' : 'bg-gray-300'
+              }`} />
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-charcoal truncate mb-0.5">{course.title}</p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant={course.isActive ? 'success' : 'default'}>
-                    {course.isActive ? 'Activo' : 'Inactivo'}
-                  </Badge>
+                  {course.isArchived ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 font-medium">Archivado</span>
+                  ) : course.isDraft ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">Borrador</span>
+                  ) : (
+                    <Badge variant={course.isActive ? 'success' : 'default'}>
+                      {course.isActive ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  )}
                   {course.isPilot && <Badge variant="info">Piloto</Badge>}
                   {course.isLegacy && (
                     <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ Solo video</span>
@@ -361,52 +435,131 @@ export default function AdminCoursesPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 shrink-0">
-                <Link
-                  href={`/admin/courses/${course.id}`}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-cta-from hover:bg-blue-50 transition-colors"
-                >
-                  Editar contenido <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-                <button
-                  onClick={() => openEdit(course)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"
-                  title="Editar información"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={async () => {
-                    setRegeneratingCourse(course.id);
-                    try {
-                      const res = await api.admin.courses.regenerate(course.id);
-                      if (res?.data?.modules) setRegenPreview({ courseId: course.id, title: res.data.title, modules: res.data.modules });
-                    } catch { /* ignore */ } finally { setRegeneratingCourse(null); }
-                  }}
-                  disabled={regeneratingCourse === course.id}
-                  className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-                  title="Regenerar estructura con IA"
-                >
-                  {regeneratingCourse === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={() => openEvalModal(course.id, course.title)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                  title={course.evaluatorName ? `Evaluador: ${course.evaluatorName}` : 'Asignar evaluador'}
-                >
-                  <UserCircle className={`w-4 h-4 ${course.evaluatorName ? 'text-teal-500' : ''}`} />
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(course.id)}
-                  className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="Eliminar"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {course.isArchived ? (
+                  // Archived: only restore
+                  <button
+                    onClick={() => handleRestore(course.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 border border-border hover:bg-surface transition-colors"
+                  >
+                    Restaurar
+                  </button>
+                ) : (
+                  <>
+                    {course.isDraft && (
+                      <button
+                        onClick={() => handlePublish(course.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                      >
+                        Publicar
+                      </button>
+                    )}
+                    <Link
+                      href={`/admin/courses/${course.id}`}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-cta-from hover:bg-blue-50 transition-colors"
+                    >
+                      Editar contenido <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                    <button
+                      onClick={() => openEdit(course)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"
+                      title="Editar información"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setRegeneratingCourse(course.id);
+                        try {
+                          const res = await api.admin.courses.regenerate(course.id);
+                          if (res?.data?.modules) setRegenPreview({ courseId: course.id, title: res.data.title, modules: res.data.modules });
+                        } catch { /* ignore */ } finally { setRegeneratingCourse(null); }
+                      }}
+                      disabled={regeneratingCourse === course.id}
+                      className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                      title="Regenerar estructura con IA"
+                    >
+                      {regeneratingCourse === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => openEvalModal(course.id, course.title)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                      title={course.evaluatorName ? `Evaluador: ${course.evaluatorName}` : 'Asignar evaluador'}
+                    >
+                      <UserCircle className={`w-4 h-4 ${course.evaluatorName ? 'text-teal-500' : ''}`} />
+                    </button>
+                    {!course.isDraft && (
+                      <button
+                        onClick={() => setArchiveConfirm(course.id)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors"
+                        title="Archivar curso"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setConfirmDelete(course.id)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Nuevo Curso — choice modal */}
+      <Modal
+        open={choiceModalOpen}
+        onClose={() => setChoiceModalOpen(false)}
+        title="Nuevo Curso"
+        size="md"
+      >
+        <div className="grid grid-cols-2 gap-3 pb-2">
+          {/* Manual */}
+          <button
+            type="button"
+            onClick={() => { setChoiceModalOpen(false); openCreate(); }}
+            className="text-left p-4 rounded-xl border-2 border-border hover:border-cta-from hover:bg-blue-50 transition-colors"
+          >
+            <div className="text-2xl mb-2">📝</div>
+            <p className="font-semibold text-charcoal text-sm">Crear manualmente</p>
+            <p className="text-xs text-gray-500 mt-0.5">Rellena el formulario paso a paso</p>
+          </button>
+
+          {/* AI — topic */}
+          <button
+            type="button"
+            onClick={() => { setChoiceModalOpen(false); openAiModal('topic', 2); }}
+            className="text-left p-4 rounded-xl border-2 border-border hover:border-purple-400 hover:bg-purple-50 transition-colors"
+          >
+            <div className="text-2xl mb-2">💡</div>
+            <p className="font-semibold text-charcoal text-sm">Tema libre (IA)</p>
+            <p className="text-xs text-gray-500 mt-0.5">Describe el tema y la IA genera todo</p>
+          </button>
+
+          {/* AI — URL */}
+          <button
+            type="button"
+            onClick={() => { setChoiceModalOpen(false); openAiModal('url', 2); }}
+            className="text-left p-4 rounded-xl border-2 border-border hover:border-purple-400 hover:bg-purple-50 transition-colors"
+          >
+            <div className="text-2xl mb-2">🌐</div>
+            <p className="font-semibold text-charcoal text-sm">Desde URL (IA)</p>
+            <p className="text-xs text-gray-500 mt-0.5">Pega una URL y la IA extrae el contenido</p>
+          </button>
+
+          {/* PDF — disabled */}
+          <div className="text-left p-4 rounded-xl border-2 border-dashed border-gray-200 opacity-50 cursor-not-allowed">
+            <div className="text-2xl mb-2">📄</div>
+            <p className="font-semibold text-charcoal text-sm">Desde PDF</p>
+            <p className="text-xs text-gray-400 mt-0.5">Próximamente</p>
+          </div>
+        </div>
+      </Modal>
 
       {/* Create/Edit Modal */}
       <Modal
@@ -551,9 +704,17 @@ export default function AdminCoursesPage() {
       {/* AI Wizard Modal */}
       <Modal
         open={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
+        onClose={() => {
+          // Guard: ask for confirmation mid-flow (steps 2 and 3); step 4 = already published, close freely
+          if (aiStep >= 2 && aiStep < 4) {
+            setConfirmCloseOpen(true);
+          } else {
+            setAiModalOpen(false);
+          }
+        }}
         title="Crear curso con IA"
         size="2xl"
+        closeOnOverlay={false}
       >
         <div className="space-y-5">
           {/* Step indicator */}
@@ -677,15 +838,82 @@ export default function AdminCoursesPage() {
                 {(aiResult.modules ?? []).map((m: any, i: number) => (
                   <div key={i} className="border border-border rounded-xl overflow-hidden">
                     {/* Module header */}
-                    <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
-                      <p className="font-semibold text-sm text-charcoal">{m.order}. {m.title}</p>
-                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <div className="bg-gray-50 dark:bg-gray-800 px-3 py-2 flex items-center justify-between gap-2">
+                      {editingModTitle?.idx === i ? (
+                        <input
+                          autoFocus
+                          value={editingModTitle.value}
+                          onChange={(e) => setEditingModTitle({ idx: i, value: e.target.value })}
+                          onBlur={() => {
+                            if (editingModTitle.value.trim()) {
+                              setAiResult((prev: any) => {
+                                const modules = [...(prev.modules ?? [])];
+                                modules[i] = { ...modules[i], title: editingModTitle.value.trim() };
+                                return { ...prev, modules };
+                              });
+                            }
+                            setEditingModTitle(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            if (e.key === 'Escape') setEditingModTitle(null);
+                          }}
+                          className="input-field text-sm font-semibold py-0.5 flex-1 min-w-0"
+                        />
+                      ) : (
+                        <p className="font-semibold text-sm text-charcoal truncate flex-1">{m.order}. {m.title}</p>
+                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
                           {(m.lessons ?? []).length} lec
                         </span>
                         <span className="text-xs bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-medium">
                           {(m.questions ?? []).length} quiz
                         </span>
+                        {editingModTitle?.idx !== i && (
+                          <button
+                            type="button"
+                            title="Editar título"
+                            onClick={() => setEditingModTitle({ idx: i, value: m.title })}
+                            className="p-1 rounded text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Regenerar módulo con IA"
+                          disabled={regenModIdx !== null}
+                          onClick={async () => {
+                            setRegenModIdx(i);
+                            try {
+                              const res = await api.admin.courses.aiGenerateModule({
+                                topic: m.title,
+                                courseTitle: aiResult?.title,
+                              });
+                              const generated = (res as any).data ?? res;
+                              if (generated?.title) {
+                                setAiResult((prev: any) => {
+                                  const modules = [...(prev.modules ?? [])];
+                                  modules[i] = {
+                                    ...generated,
+                                    order: m.order,
+                                    // keep question count display working
+                                    questions: generated.questions ?? modules[i].questions,
+                                  };
+                                  return { ...prev, modules };
+                                });
+                              }
+                            } catch { /* silent */ } finally { setRegenModIdx(null); }
+                          }}
+                          className="p-1 rounded text-gray-400 hover:text-purple-500 hover:bg-purple-50 transition-colors disabled:opacity-40"
+                        >
+                          {regenModIdx === i ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3" />
+                          )}
+                        </button>
                       </div>
                     </div>
                     {/* Lessons list — single column */}
@@ -933,6 +1161,29 @@ export default function AdminCoursesPage() {
           </Button>
         </div>
       </Modal>
+      {/* Archive confirmation */}
+      <ConfirmDialog
+        open={!!archiveConfirm}
+        title="¿Archivar curso?"
+        message="El curso dejará de estar activo y no aparecerá para los estudiantes. Podrás restaurarlo en cualquier momento."
+        confirmLabel="Sí, archivar"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={() => archiveConfirm && handleArchive(archiveConfirm)}
+        onCancel={() => setArchiveConfirm(null)}
+      />
+
+      {/* AI wizard — close confirmation */}
+      <ConfirmDialog
+        open={confirmCloseOpen}
+        title="¿Salir del asistente?"
+        message="Si sales ahora perderás el progreso del curso en construcción. ¿Seguro que quieres salir?"
+        confirmLabel="Sí, salir"
+        cancelLabel="Seguir editando"
+        variant="danger"
+        onConfirm={() => { setConfirmCloseOpen(false); setAiModalOpen(false); }}
+        onCancel={() => setConfirmCloseOpen(false)}
+      />
     </div>
   );
 }

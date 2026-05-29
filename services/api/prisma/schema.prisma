@@ -21,6 +21,8 @@ model Course {
   tags           String[]  @default([])
   startDate      DateTime?
   closeDate      DateTime?
+  isDraft        Boolean   @default(false)
+  isArchived     Boolean   @default(false)
   createdAt      DateTime  @default(now())
   createdByName  String?
   evaluatorName  String?

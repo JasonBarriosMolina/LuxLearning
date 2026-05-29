@@ -28,6 +28,8 @@ export const handler = async (event: Event) => {
       const courses = await prisma.course.findMany({
         where: {
           isActive: true,
+          isDraft: false,
+          isArchived: false,
           ...(courseIdFilter !== undefined ? { id: { in: courseIdFilter } } : {}),
         },
         orderBy: { createdAt: 'asc' },

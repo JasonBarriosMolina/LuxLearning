@@ -11,7 +11,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
   webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
 }
 import { getPrismaClient } from '../shared/db-neon';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
@@ -865,6 +865,14 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
       if (!signature) return badRequest('signature es requerido');
       await saveSignature(userId, signature);
       return ok({ ok: true });
+    }
+
+    // GET /evaluator/students/:userId/certificates
+    const studentCertsMatch = path.match(/^\/evaluator\/students\/([^/]+)\/certificates$/);
+    if (studentCertsMatch && method === 'GET') {
+      const targetUserId = studentCertsMatch[1]!;
+      const certs = await getCertificatesByUser(targetUserId);
+      return ok(certs);
     }
 
     return badRequest('Unknown route');

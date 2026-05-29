@@ -6,8 +6,9 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2, Volume2,
-  ShieldCheck, CheckCircle2, AlertCircle, ExternalLink,
+  ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Eye, GraduationCap, Sparkles,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
@@ -281,6 +282,8 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
   const [regenError, setRegenError] = useState('');
   const [regenPhase, setRegenPhase] = useState<'config' | 'preview'>('config');
   const [regenPreviewData, setRegenPreviewData] = useState<any>(null);
+  const [lessonPreviewOpen, setLessonPreviewOpen] = useState(false);
+  const [regenExtraContext, setRegenExtraContext] = useState('');
   const [audioOpen, setAudioOpen] = useState(false);
   const [audioVoice, setAudioVoice] = useState('Mia');
   const [audioLoading, setAudioLoading] = useState(false);
@@ -295,6 +298,7 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
         type: regenType,
         ...(regenType === 'text' ? { level: regenLevel } : {}),
         ...(regenStyle ? { style: regenStyle } : {}),
+        ...(regenExtraContext.trim() ? { extraContext: regenExtraContext.trim() } : {}),
         preview: true,
       });
       setRegenPreviewData((res as any).data ?? res);
@@ -332,6 +336,7 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
     setRegenPhase('config');
     setRegenPreviewData(null);
     setRegenError('');
+    setRegenExtraContext('');
   };
 
   const handleGenerateAudio = async () => {
@@ -374,6 +379,9 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
           )}
         </div>
         <div className="flex gap-1 shrink-0 items-center">
+          <button onClick={() => setLessonPreviewOpen(true)} title="Vista previa de la lección" className="p-1.5 rounded-lg text-gray-400 hover:text-teal-500 hover:bg-teal-50 transition-colors">
+            <Eye className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={() => { setAudioOpen(true); setAudioError(''); }}
             title={lesson.audioUrl ? 'Regenerar audio Polly' : 'Generar audio Polly'}
@@ -391,6 +399,50 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
           <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>
         <ConfirmDelete open={confirmDel} onClose={() => setConfirmDel(false)} onConfirm={handleDelete} loading={deleting} label="lección" />
+
+        {/* Lesson preview modal */}
+        <Modal open={lessonPreviewOpen} onClose={() => setLessonPreviewOpen(false)} title={`Vista previa — ${lesson.title}`} size="xl">
+          <div className="space-y-5 overflow-y-auto max-h-[70vh] pr-1">
+            {lesson.youtubeId && (
+              <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                <iframe
+                  src={`https://www.youtube.com/embed/${lesson.youtubeId}`}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            )}
+            {lesson.content && (
+              <div
+                className="prose prose-sm max-w-none text-charcoal"
+                dangerouslySetInnerHTML={{ __html: lesson.content }}
+              />
+            )}
+            {lesson.points?.filter((p: string) => p).length > 0 && (
+              <div className="bg-blue-50 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Puntos clave</p>
+                <ul className="space-y-1.5">
+                  {lesson.points.filter((p: string) => p).map((p: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-charcoal">
+                      <span className="w-5 h-5 rounded-full bg-blue-200 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {lesson.tip && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Consejo</p>
+                <p className="text-sm text-amber-800">{lesson.tip}</p>
+              </div>
+            )}
+            {!lesson.youtubeId && !lesson.content && !lesson.tip && lesson.points?.filter((p: string) => p).length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-8">Esta lección aún no tiene contenido.</p>
+            )}
+          </div>
+        </Modal>
 
         {/* Audio Modal */}
         <Modal open={audioOpen} onClose={() => setAudioOpen(false)} title={`Audio Polly — ${lesson.title}`} size="sm">
@@ -502,6 +554,23 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                   </div>
                 )}
 
+                {/* Extra context for instructor (text only) */}
+                {regenType === 'text' && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Contexto adicional <span className="font-normal text-gray-400">(opcional)</span>
+                    </label>
+                    <textarea
+                      value={regenExtraContext}
+                      onChange={(e) => setRegenExtraContext(e.target.value.slice(0, 500))}
+                      placeholder="Ej. Enfócate en ejemplos prácticos para pequeñas empresas…"
+                      className="input-field text-xs min-h-[60px] resize-none w-full"
+                      maxLength={500}
+                    />
+                    <p className="text-xs text-gray-400 text-right">{regenExtraContext.length}/500</p>
+                  </div>
+                )}
+
                 {regenError && <p className="text-xs text-red-500">{regenError}</p>}
 
                 <div className="flex justify-end gap-2 pt-1">
@@ -513,32 +582,48 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
               </>
             ) : (
               <>
-                {/* Preview phase */}
-                <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                  <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
-                  {(regenType === 'image' || regenType === 'infographic') && regenPreviewData?.imageUrl ? (
-                    <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
-                  ) : regenType === 'text' && regenPreviewData ? (
-                    <div className="space-y-1.5 text-xs text-gray-700">
-                      {regenPreviewData.title && (
-                        <p><span className="font-semibold text-gray-500">Título:</span> {regenPreviewData.title}</p>
+                {/* Preview phase — two-column comparison for text */}
+                {regenType === 'text' && regenPreviewData ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Left: current (gray) */}
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Actual</p>
+                      {lesson.title && <p className="text-xs"><span className="font-semibold text-gray-500">Título:</span> {lesson.title}</p>}
+                      {lesson.points?.filter((p: string) => p).length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500">Puntos:</p>
+                          <ul className="text-xs text-gray-600 pl-3 space-y-0.5">
+                            {lesson.points.filter((p: string) => p).map((p: string, i: number) => (
+                              <li key={i} className="list-disc">{p}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
+                      {lesson.tip && <p className="text-xs"><span className="font-semibold text-gray-500">Consejo:</span> {lesson.tip}</p>}
+                    </div>
+                    {/* Right: generated (blue) */}
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 space-y-1.5">
+                      <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide">Generado</p>
+                      {regenPreviewData.title && <p className="text-xs"><span className="font-semibold text-gray-500">Título:</span> {regenPreviewData.title}</p>}
                       {Array.isArray(regenPreviewData.points) && regenPreviewData.points.length > 0 && (
                         <div>
-                          <p className="font-semibold text-gray-500 mb-0.5">Puntos clave:</p>
-                          <ul className="space-y-0.5 pl-3">
+                          <p className="text-xs font-semibold text-gray-500">Puntos:</p>
+                          <ul className="text-xs text-gray-700 pl-3 space-y-0.5">
                             {regenPreviewData.points.map((p: string, i: number) => (
                               <li key={i} className="list-disc">{p}</li>
                             ))}
                           </ul>
                         </div>
                       )}
-                      {regenPreviewData.tip && (
-                        <p><span className="font-semibold text-gray-500">Consejo:</span> {regenPreviewData.tip}</p>
-                      )}
+                      {regenPreviewData.tip && <p className="text-xs"><span className="font-semibold text-gray-500">Consejo:</span> {regenPreviewData.tip}</p>}
                     </div>
-                  ) : null}
-                </div>
+                  </div>
+                ) : (regenType === 'image' || regenType === 'infographic') && regenPreviewData?.imageUrl ? (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                    <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
+                  </div>
+                ) : null}
 
                 {regenError && <p className="text-xs text-red-500">{regenError}</p>}
 
@@ -600,6 +685,23 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [regeneratingMod, setRegeneratingMod] = useState(false);
   const [regenJobId, setRegenJobId] = useState<string | null>(null);
+  const [modPreviewOpen, setModPreviewOpen] = useState(false);
+  const [aiLessonOpen, setAiLessonOpen] = useState(false);
+  const [aiLessonTopic, setAiLessonTopic] = useState('');
+  const [aiLessonLoading, setAiLessonLoading] = useState(false);
+  const [aiLessonError, setAiLessonError] = useState('');
+
+  const handleAiLesson = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiLessonTopic.trim()) return;
+    setAiLessonLoading(true); setAiLessonError('');
+    try {
+      await api.admin.lessons.aiGenerate(mod.id, { topic: aiLessonTopic.trim() });
+      setAiLessonOpen(false); setAiLessonTopic(''); onRefresh();
+    } catch (err: any) {
+      setAiLessonError(err.message ?? 'Error al generar lección');
+    } finally { setAiLessonLoading(false); }
+  };
 
   const handleRegenerateMod = async () => {
     setRegeneratingMod(true);
@@ -655,6 +757,9 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
           </div>
         </button>
         <div className="flex gap-1 shrink-0">
+          <button onClick={() => setModPreviewOpen(true)} title="Vista previa del módulo" className="p-1.5 rounded-lg text-gray-400 hover:text-teal-500 hover:bg-teal-50 transition-colors">
+            <Eye className="w-4 h-4" />
+          </button>
           <button onClick={handleRegenerateMod} disabled={regeneratingMod} title="Regenerar módulo con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50">
             {regeneratingMod ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </button>
@@ -680,10 +785,16 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
                 <BookOpen className="w-4 h-4 text-cta-from" />
                 Lecciones ({mod.lessons?.length ?? 0})
               </h4>
-              <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => { setLessonForm(newLessonForm((mod.lessons?.length ?? 0) + 1)); setLessonModal(true); }}>
-                Agregar lección
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
+                  onClick={() => { setAiLessonTopic(''); setAiLessonError(''); setAiLessonOpen(true); }}>
+                  IA
+                </Button>
+                <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => { setLessonForm(newLessonForm((mod.lessons?.length ?? 0) + 1)); setLessonModal(true); }}>
+                  Agregar
+                </Button>
+              </div>
             </div>
             {(mod.lessons?.length ?? 0) === 0 && (
               <p className="text-xs text-gray-400 text-center py-4 bg-white rounded-xl border border-dashed border-border">
@@ -741,6 +852,31 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
         </form>
       </Modal>
 
+      {/* AI lesson generation modal */}
+      <Modal open={aiLessonOpen} onClose={() => setAiLessonOpen(false)} title="Crear lección con IA" size="sm">
+        <form onSubmit={handleAiLesson} className="space-y-4">
+          <p className="text-sm text-gray-500">La IA generará una lección completa (contenido HTML, puntos clave, consejo) sobre el tema que indiques.</p>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Tema de la lección</label>
+            <input
+              autoFocus
+              value={aiLessonTopic}
+              onChange={(e) => setAiLessonTopic(e.target.value)}
+              placeholder="ej. Gestión del tiempo en proyectos"
+              className="input-field text-sm w-full"
+              required
+            />
+          </div>
+          {aiLessonError && <p className="text-xs text-red-500">{aiLessonError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAiLessonOpen(false)}>Cancelar</Button>
+            <Button type="submit" size="sm" loading={aiLessonLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+              Generar lección
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Add lesson modal */}
       <Modal open={lessonModal} onClose={() => setLessonModal(false)} title="Nueva lección" size="xl">
         <form onSubmit={handleAddLesson} className="space-y-4">
@@ -764,6 +900,31 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
       </Modal>
 
       <ConfirmDelete open={confirmDel} onClose={() => setConfirmDel(false)} onConfirm={handleDeleteMod} loading={deleting} label="módulo" />
+
+      {/* Module preview modal */}
+      <Modal open={modPreviewOpen} onClose={() => setModPreviewOpen(false)} title={`Vista previa — ${mod.title}`} size="lg">
+        <div className="space-y-4 overflow-y-auto max-h-[65vh] pr-1">
+          {mod.description && (
+            <p className="text-sm text-gray-600">{mod.description}</p>
+          )}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              {mod.lessons?.length ?? 0} lecciones
+            </p>
+            {(mod.lessons ?? []).map((l: any, i: number) => (
+              <div key={l.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border bg-surface text-sm">
+                <PlayCircle className="w-4 h-4 text-cta-from shrink-0" />
+                <span className="text-gray-400 text-xs font-bold w-5 shrink-0">{i + 1}.</span>
+                <span className="text-charcoal flex-1 truncate">{l.title}</span>
+                {l.duration && <span className="text-xs text-gray-400 shrink-0">{formatCourseDuration(l.duration)}</span>}
+              </div>
+            ))}
+            {(!mod.lessons || mod.lessons.length === 0) && (
+              <p className="text-sm text-gray-400 py-4 text-center">Este módulo aún no tiene lecciones.</p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -772,12 +933,31 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
 
 export default function AdminCourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
+  const router = useRouter();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [moduleModal, setModuleModal] = useState(false);
   const [moduleForm, setModuleForm] = useState<ModuleForm>(EMPTY_MODULE);
   const [savingModule, setSavingModule] = useState(false);
   const [moduleError, setModuleError] = useState('');
+
+  // ── AI module generation ─────────────────────────────────────────────────────
+  const [aiModuleOpen, setAiModuleOpen] = useState(false);
+  const [aiModuleTopic, setAiModuleTopic] = useState('');
+  const [aiModuleLoading, setAiModuleLoading] = useState(false);
+  const [aiModuleError, setAiModuleError] = useState('');
+
+  const handleAiModule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiModuleTopic.trim()) return;
+    setAiModuleLoading(true); setAiModuleError('');
+    try {
+      await api.admin.modules.aiGenerate(courseId, { topic: aiModuleTopic.trim() });
+      setAiModuleOpen(false); setAiModuleTopic(''); await load();
+    } catch (err: any) {
+      setAiModuleError(err.message ?? 'Error al generar módulo');
+    } finally { setAiModuleLoading(false); }
+  };
 
   // ── Validate videos ──────────────────────────────────────────────────────────
   const [validateOpen, setValidateOpen] = useState(false);
@@ -846,13 +1026,27 @@ export default function AdminCourseDetailPage() {
           <p className="text-sm text-gray-500">{course.description}</p>
           <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Button
+            variant="secondary"
+            leftIcon={<GraduationCap className="w-4 h-4" />}
+            onClick={() => router.push(`/admin/courses/${courseId}/preview`)}
+          >
+            Ver como Estudiante
+          </Button>
           <Button
             variant="secondary"
             leftIcon={<ShieldCheck className="w-4 h-4" />}
             onClick={handleValidateVideos}
           >
             Validar videos
+          </Button>
+          <Button
+            variant="secondary"
+            leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}
+            onClick={() => { setAiModuleTopic(''); setAiModuleError(''); setAiModuleOpen(true); }}
+          >
+            Módulo con IA
           </Button>
           <Button
             leftIcon={<Plus className="w-4 h-4" />}
@@ -920,6 +1114,31 @@ export default function AdminCourseDetailPage() {
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      {/* AI module generation modal */}
+      <Modal open={aiModuleOpen} onClose={() => setAiModuleOpen(false)} title="Crear módulo con IA" size="sm">
+        <form onSubmit={handleAiModule} className="space-y-4">
+          <p className="text-sm text-gray-500">La IA generará un módulo completo (10 lecciones + 10 preguntas de quiz) sobre el tema que indiques.</p>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Tema del módulo</label>
+            <input
+              autoFocus
+              value={aiModuleTopic}
+              onChange={(e) => setAiModuleTopic(e.target.value)}
+              placeholder="ej. Estrategias de comunicación efectiva"
+              className="input-field text-sm w-full"
+              required
+            />
+          </div>
+          {aiModuleError && <p className="text-xs text-red-500">{aiModuleError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAiModuleOpen(false)}>Cancelar</Button>
+            <Button type="submit" size="sm" loading={aiModuleLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+              Generar módulo
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Add module modal */}

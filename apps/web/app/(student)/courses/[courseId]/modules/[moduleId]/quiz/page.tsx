@@ -10,25 +10,12 @@ import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 
+import { shuffle, buildShuffleMaps, buildQuestionOrder } from './shuffleUtils';
+
+// Re-export for backwards compatibility if needed
+export { shuffle, buildShuffleMaps, buildQuestionOrder };
+
 type QuizState = 'answering' | 'submitting' | 'result';
-
-/** Fisher-Yates shuffle — returns a new array */
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/** Build shuffled mappings: shuffledMaps[qIdx][shuffledPos] = originalIdx */
-function buildShuffleMaps(questions: any[]): number[][] {
-  return questions.map((q) => {
-    const indices = q.options.map((_: any, i: number) => i);
-    return shuffle(indices);
-  });
-}
 
 export default function QuizPage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
@@ -43,9 +30,12 @@ export default function QuizPage() {
 
   // shuffledMaps[qIdx][visualPos] = originalIdx
   const shuffledMapsRef = useRef<number[][]>([]);
+  // shuffledQuestionsRef[visualPos] = originalQuestionIdx
+  const shuffledQuestionsRef = useRef<number[]>([]);
 
   const buildAndSetShuffle = (qs: any[]) => {
     shuffledMapsRef.current = buildShuffleMaps(qs);
+    shuffledQuestionsRef.current = buildQuestionOrder(qs);
   };
 
   useEffect(() => {
@@ -62,15 +52,16 @@ export default function QuizPage() {
 
   const module = course?.modules?.find((m: any) => m.id === moduleId);
   const questions = module?.questions ?? [];
-  const currentQuestion = questions[currentQ];
   const answeredCount = answers.filter((a) => a !== null).length;
   const allAnswered = answeredCount === questions.length;
 
   const handleAnswer = (visualIndex: number) => {
-    // Map visual position → original index
-    const originalIdx = shuffledMapsRef.current[currentQ]?.[visualIndex] ?? visualIndex;
+    // Map visual question position → original question index
+    const origQIdx = shuffledQuestionsRef.current[currentQ] ?? currentQ;
+    // Map visual option position → original option index
+    const originalIdx = shuffledMapsRef.current[origQIdx]?.[visualIndex] ?? visualIndex;
     const newAnswers = [...answers];
-    newAnswers[currentQ] = originalIdx;
+    newAnswers[origQIdx] = originalIdx;
     setAnswers(newAnswers);
 
     // Auto-advance
@@ -261,7 +252,9 @@ export default function QuizPage() {
   }
 
   // ── Answering screen ────────────────────────────────────────────────────
-  const shuffleMap = shuffledMapsRef.current[currentQ] ?? currentQuestion?.options?.map((_: any, i: number) => i) ?? [];
+  const origQIdx = shuffledQuestionsRef.current[currentQ] ?? currentQ;
+  const currentQuestion = questions[origQIdx];
+  const shuffleMap = shuffledMapsRef.current[origQIdx] ?? currentQuestion?.options?.map((_: any, i: number) => i) ?? [];
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -285,22 +278,25 @@ export default function QuizPage() {
 
       {/* Question navigator dots */}
       <div className="flex gap-2 flex-wrap">
-        {questions.map((_: any, i: number) => (
-          <button
-            key={i}
-            onClick={() => setCurrentQ(i)}
-            className={cn(
-              'w-8 h-8 rounded-full text-xs font-bold transition-all',
-              i === currentQ
-                ? 'bg-cta-gradient text-white'
-                : answers[i] !== null
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-surface text-gray-400 hover:bg-border'
-            )}
-          >
-            {i + 1}
-          </button>
-        ))}
+        {questions.map((_: any, i: number) => {
+          const origIdx = shuffledQuestionsRef.current[i] ?? i;
+          return (
+            <button
+              key={i}
+              onClick={() => setCurrentQ(i)}
+              className={cn(
+                'w-8 h-8 rounded-full text-xs font-bold transition-all',
+                i === currentQ
+                  ? 'bg-cta-gradient text-white'
+                  : answers[origIdx] !== null
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-surface text-gray-400 hover:bg-border'
+              )}
+            >
+              {i + 1}
+            </button>
+          );
+        })}
       </div>
 
       {/* Current question */}
@@ -315,8 +311,8 @@ export default function QuizPage() {
           <div className="space-y-2">
             {shuffleMap.map((originalIdx: number, visualPos: number) => {
               const option = currentQuestion.options[originalIdx];
-              // answers[currentQ] stores the original index; check if this visual option is selected
-              const isSelected = answers[currentQ] === originalIdx;
+              // answers[origQIdx] stores the original option index; check if this visual option is selected
+              const isSelected = answers[origQIdx] === originalIdx;
               return (
                 <button
                   key={originalIdx}

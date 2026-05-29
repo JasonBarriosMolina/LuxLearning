@@ -125,6 +125,10 @@ function HighlightToolbar({ position, onHighlight, onClose }: ToolbarProps) {
   );
 }
 
+// ── Progress Gate ─────────────────────────────────────────────────────────────
+import { computeGate } from './lessonProgressGate';
+export { computeGate }; // Re-export for backwards compatibility
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function LessonPage() {
@@ -153,6 +157,10 @@ export default function LessonPage() {
   // YouTube error detection
   const [videoError, setVideoError] = useState(false);
   const [activeTab, setActiveTab] = useState<'video' | 'text'>('video');
+
+  // Progress gate — student must visit all available content tabs before marking complete
+  const [videoVisited, setVideoVisited] = useState(false);
+  const [textVisited, setTextVisited] = useState(false);
 
   // Transcript
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -206,8 +214,14 @@ export default function LessonPage() {
     return () => window.removeEventListener('message', handler);
   }, [lesson]);
 
-  // Reset video error state when lesson changes
-  useEffect(() => { setVideoError(false); setActiveTab('video'); }, [lessonId]);
+  // Reset video error state and visited flags when lesson changes
+  useEffect(() => { setVideoError(false); setActiveTab('video'); setVideoVisited(false); setTextVisited(false); }, [lessonId]);
+
+  // Track which tabs have been visited (gate: student must see all available content)
+  useEffect(() => {
+    if (activeTab === 'video') setVideoVisited(true);
+    if (activeTab === 'text') setTextVisited(true);
+  }, [activeTab]);
 
   // ── Highlight logic ──────────────────────────────────────────────────────────
 
@@ -327,6 +341,9 @@ export default function LessonPage() {
     } catch (err) { console.error(err); }
     finally { setMarkingDone(false); }
   };
+
+  // Progress gate — disable "mark complete" until all content tabs have been visited
+  const gatePassed = computeGate(lesson, videoVisited, textVisited, videoError);
 
   if (loading || !lesson) {
     return (
@@ -621,6 +638,8 @@ export default function LessonPage() {
             <Button
               onClick={handleMarkComplete}
               loading={markingDone}
+              disabled={!gatePassed}
+              title={!gatePassed ? 'Revisa todo el contenido de la lección antes de continuar' : undefined}
               className="flex items-center gap-2"
             >
               <CheckCircle className="w-4 h-4" />

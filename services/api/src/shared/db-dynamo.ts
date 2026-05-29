@@ -22,6 +22,7 @@ export const TABLES = {
   REPORT_ANALYSIS: process.env.DYNAMO_TABLE_REPORT_ANALYSIS ?? 'ReportAnalysis',
   RECOMMENDATIONS: process.env.DYNAMO_TABLE_RECOMMENDATIONS ?? 'CurriculumRecommendations',
   ACTIVITY: process.env.DYNAMO_TABLE_ACTIVITY ?? 'LuxActivity',
+  CERT_TEMPLATES: process.env.DYNAMO_TABLE_CERT_TEMPLATES ?? 'LuxCertTemplates',
 } as const;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
@@ -708,6 +709,37 @@ export async function saveSignature(userId: string, signature: string): Promise<
   await ddb.send(new PutCommand({
     TableName: TABLES.PROGRESS,
     Item: { userId, sk: 'SIGNATURE', signature, updatedAt: new Date().toISOString() },
+  }));
+}
+
+// ─── Certificate Templates ────────────────────────────────────────────────────
+
+export interface CertTemplate {
+  logoUrl?: string;
+  watermarkText?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  footerText?: string;
+  fields?: { studentName: boolean; courseTitle: boolean; issuedAt: boolean; };
+}
+
+const CERT_TEMPLATE_PK = 'TEMPLATE';
+const CERT_TEMPLATE_SK = 'GLOBAL';
+
+export async function getCertTemplate(): Promise<CertTemplate | null> {
+  const res = await ddb.send(new GetCommand({
+    TableName: TABLES.CERT_TEMPLATES,
+    Key: { pk: CERT_TEMPLATE_PK, sk: CERT_TEMPLATE_SK },
+  }));
+  if (!res.Item) return null;
+  const { pk, sk, ...rest } = res.Item;
+  return rest as CertTemplate;
+}
+
+export async function saveCertTemplate(template: CertTemplate): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.CERT_TEMPLATES,
+    Item: { pk: CERT_TEMPLATE_PK, sk: CERT_TEMPLATE_SK, ...template, updatedAt: new Date().toISOString() },
   }));
 }
 

@@ -147,6 +147,26 @@ function s3KeyFromUrl(url: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** Lightweight Bedrock / Claude Haiku JSON caller — used in synchronous routes */
+async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Promise<any> {
+  const res = await bedrock.send(new InvokeModelCommand({
+    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify({
+      anthropic_version: 'bedrock-2023-05-31',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  }));
+  const parsed = JSON.parse(new TextDecoder().decode(res.body));
+  const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+  const match = raw.match(/[\[{][\s\S]*/);
+  const jsonStr = match?.[0] ?? '{}';
+  try { return JSON.parse(jsonStr); }
+  catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
+}
+
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
 
@@ -283,7 +303,20 @@ export const handler = async (event: Event) => {
 
     // ── GET /admin/courses ──────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'GET') {
+      const statusFilter = event.queryStringParameters?.status;
+      let whereClause: Record<string, any> = {};
+      if (statusFilter === 'draft') {
+        whereClause = { isDraft: true, isArchived: false };
+      } else if (statusFilter === 'archived') {
+        whereClause = { isArchived: true };
+      } else if (statusFilter === 'active') {
+        whereClause = { isDraft: false, isArchived: false };
+      } else {
+        // Default: all non-archived (show active + drafts together in admin)
+        whereClause = { isArchived: false };
+      }
       const courses = await prisma.course.findMany({
+        where: whereClause,
         orderBy: { createdAt: 'desc' },
         include: {
           modules: {
@@ -316,6 +349,7 @@ export const handler = async (event: Event) => {
           imageUrl: imageUrl || null,
           isActive: isActive ?? false,
           isPilot: isPilot ?? false,
+          isDraft: true, // new manual courses start as drafts
           tags: Array.isArray(tags) ? tags : [],
           startDate: startDate ? new Date(startDate) : null,
           closeDate: closeDate ? new Date(closeDate) : null,
@@ -388,6 +422,42 @@ export const handler = async (event: Event) => {
       return ok(updated);
     }
 
+    // ── PUT /admin/courses/:courseId/publish ────────────────────────────────
+    const coursePublishMatch = path.match(/^\/admin\/courses\/([^/]+)\/publish$/);
+    if (coursePublishMatch && method === 'PUT') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const courseId = coursePublishMatch[1]!;
+      const course = await prisma.course.update({
+        where: { id: courseId },
+        data: { isDraft: false },
+      });
+      return ok(course);
+    }
+
+    // ── PUT /admin/courses/:courseId/archive ────────────────────────────────
+    const courseArchiveMatch = path.match(/^\/admin\/courses\/([^/]+)\/archive$/);
+    if (courseArchiveMatch && method === 'PUT') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const courseId = courseArchiveMatch[1]!;
+      const course = await prisma.course.update({
+        where: { id: courseId },
+        data: { isArchived: true, isActive: false },
+      });
+      return ok(course);
+    }
+
+    // ── PUT /admin/courses/:courseId/restore ────────────────────────────────
+    const courseRestoreMatch = path.match(/^\/admin\/courses\/([^/]+)\/restore$/);
+    if (courseRestoreMatch && method === 'PUT') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const courseId = courseRestoreMatch[1]!;
+      const course = await prisma.course.update({
+        where: { id: courseId },
+        data: { isArchived: false },
+      });
+      return ok(course);
+    }
+
     // ── /admin/courses/:courseId ────────────────────────────────────────────
     const courseMatch = path.match(/^\/admin\/courses\/([^/]+)$/);
     if (courseMatch) {
@@ -412,14 +482,17 @@ export const handler = async (event: Event) => {
 
       if (method === 'PUT') {
         if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-        const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate } = body;
+        const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate, isDraft, isArchived } = body;
         if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
         const course = await prisma.course.update({
           where: { id: courseId },
           data: {
             title, slug, description,
             imageUrl: imageUrl || null,
-            isActive, isPilot,
+            isActive,
+            isPilot,
+            ...(isDraft !== undefined ? { isDraft } : {}),
+            ...(isArchived !== undefined ? { isArchived } : {}),
             tags: Array.isArray(tags) ? tags : [],
             startDate: startDate ? new Date(startDate) : null,
             closeDate: closeDate ? new Date(closeDate) : null,
@@ -523,6 +596,144 @@ export const handler = async (event: Event) => {
       return created(lesson);
     }
 
+    // ── POST /admin/courses/ai-generate-module (no-save preview for wizard) ──
+    if (path === '/admin/courses/ai-generate-module' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const { topic, courseTitle } = body as { topic?: string; courseTitle?: string };
+      if (!topic) return badRequest('topic es requerido');
+      const ctx = courseTitle ? `Curso: ${courseTitle}\nTema del módulo: ${topic}` : topic;
+      const mod = await invokeBedrockForJson(
+        `Eres experto en diseño instruccional. Genera la estructura de UN módulo sobre "${ctx}".
+Responde ÚNICAMENTE con JSON válido:
+{"title":"Título del módulo","description":"Descripción 1-2 oraciones","lessons":[{"title":"Lección 1","order":1,"type":"video"},{"title":"Lección 2","order":2,"type":"text"},{"title":"Lección 3","order":3,"type":"text"},{"title":"Lección 4","order":4,"type":"text"},{"title":"Lección 5","order":5,"type":"text"},{"title":"Lección 6","order":6,"type":"text"},{"title":"Lección 7","order":7,"type":"text"},{"title":"Lección 8","order":8,"type":"text"},{"title":"Lección 9","order":9,"type":"text"},{"title":"Lección 10","order":10,"type":"video"}],"questions":[{"text":"¿Pregunta 1?"},{"text":"¿Pregunta 2?"},{"text":"¿Pregunta 3?"},{"text":"¿Pregunta 4?"},{"text":"¿Pregunta 5?"}]}
+Exactamente 10 lecciones y 5 preguntas de muestra. Títulos reales y específicos. Sin markdown.`, 1500);
+      if (!mod.title) return badRequest('No se pudo generar la estructura del módulo');
+      return ok(mod);
+    }
+
+    // ── POST /admin/courses/:courseId/modules/ai-generate ─────────────────────
+    const courseModuleAiMatch = path.match(/^\/admin\/courses\/([^/]+)\/modules\/ai-generate$/);
+    if (courseModuleAiMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const courseId = courseModuleAiMatch[1]!;
+      const { topic, description: topicDesc } = body as { topic?: string; description?: string };
+      if (!topic) return badRequest('topic es requerido');
+
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+      if (!course) return notFound('Curso no encontrado');
+
+      const modCount = await prisma.module.count({ where: { courseId } });
+      const modOrder = modCount + 1;
+
+      // Phase 1: module title + description
+      const modMeta = await invokeBedrockForJson(
+        `Eres experto en diseño instruccional. Genera título y descripción para un módulo sobre "${topic}" dentro del curso "${course.title}".
+Responde ÚNICAMENTE con JSON: {"title":"Título real del módulo","description":"Descripción de 1-2 oraciones."}`, 400);
+
+      const modTitle = (modMeta.title as string) || topic;
+      const modDesc = (modMeta.description as string) || topicDesc || `Módulo sobre ${topic}`;
+
+      // Phase 2: lessons + questions in parallel
+      const [rawLessons, rawQuestions] = await Promise.all([
+        invokeBedrockForJson(
+          `Genera exactamente 10 lecciones para el módulo "${modTitle}" del curso "${course.title}".
+Array JSON (10 elementos):
+[{"title":"Introducción — ${modTitle}","order":1,"type":"video","content":"<p>Párrafo introductorio.</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo."},
+{"title":"Subtema A","order":2,"type":"text","content":"<h3>Subtema</h3><p>Párrafo.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Cierre.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
+...9 más con el mismo formato...
+{"title":"Resumen — ${modTitle}","order":10,"type":"video","content":"<p>Resumen.</p>","duration":"5 min","points":["Resumen 1","Resumen 2","Próximos pasos"],"tip":"Completa el quiz."}]
+Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 6000),
+        invokeBedrockForJson(
+          `Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
+Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":1}]
+10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.`, 2000),
+      ]);
+
+      const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
+      const questions = shuffleQuestionOptions(Array.isArray(rawQuestions) ? rawQuestions.slice(0, 10) : []);
+
+      const createdMod = await prisma.module.create({
+        data: {
+          courseId, title: modTitle, description: modDesc,
+          duration: `${lessons.length * 8} min`, passingScore: 70, order: modOrder,
+        },
+      });
+
+      if (lessons.length > 0) {
+        await prisma.lesson.createMany({
+          data: lessons.map((l: any, i: number) => ({
+            moduleId: createdMod.id,
+            title: l.title || `Lección ${i + 1}`,
+            type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
+            content: l.content || null,
+            youtubeId: '',
+            imageUrl: null,
+            duration: l.duration || (i === 0 || i === 9 ? '5 min' : '8 min'),
+            points: Array.isArray(l.points) ? l.points : [],
+            tip: l.tip || '',
+            order: l.order || i + 1,
+          })),
+        });
+      }
+
+      if (questions.length > 0) {
+        await prisma.question.createMany({
+          data: questions.map((q: any, i: number) => ({
+            moduleId: createdMod.id,
+            text: q.text,
+            options: q.options,
+            correctIndex: Number(q.correctIndex),
+            order: i + 1,
+          })),
+        });
+      }
+
+      const result = await prisma.module.findUnique({
+        where: { id: createdMod.id },
+        include: { lessons: { orderBy: { order: 'asc' } }, questions: { orderBy: { order: 'asc' } } },
+      });
+      return created(result);
+    }
+
+    // ── POST /admin/modules/:moduleId/lessons/ai-generate ─────────────────────
+    const moduleLessonAiMatch = path.match(/^\/admin\/modules\/([^/]+)\/lessons\/ai-generate$/);
+    if (moduleLessonAiMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const moduleId = moduleLessonAiMatch[1]!;
+      const { topic } = body as { topic?: string };
+      if (!topic) return badRequest('topic es requerido');
+
+      const mod = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: { course: { select: { title: true } } },
+      });
+      if (!mod) return notFound('Módulo no encontrado');
+
+      const lessonCount = await prisma.lesson.count({ where: { moduleId } });
+      const lessonOrder = lessonCount + 1;
+
+      const lessonData = await invokeBedrockForJson(
+        `Genera una lección educativa sobre "${topic}" para el módulo "${mod.title}" del curso "${(mod as any).course?.title ?? ''}".
+Responde ÚNICAMENTE con JSON: {"title":"Título específico de la lección","type":"text","content":"<h3>Sección</h3><p>Párrafo 1 educativo con 2ª persona.</p><ul><li>Punto clave 1</li><li>Punto clave 2</li><li>Punto clave 3</li></ul><blockquote>Cita relevante sobre el tema.</blockquote><p>Párrafo de cierre práctico.</p>","duration":"8 min","points":["Concepto 1","Concepto 2","Concepto 3"],"tip":"Consejo práctico aplicable."}
+HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
+
+      const lesson = await prisma.lesson.create({
+        data: {
+          moduleId, order: lessonOrder,
+          title: lessonData.title || topic,
+          type: lessonData.type || 'text',
+          content: lessonData.content || `<p>Contenido sobre ${topic}.</p>`,
+          youtubeId: '',
+          imageUrl: null,
+          duration: lessonData.duration || '8 min',
+          points: Array.isArray(lessonData.points) ? lessonData.points : [],
+          tip: lessonData.tip || '',
+        },
+      });
+
+      return created(lesson);
+    }
+
     // ── /admin/lessons/:lessonId ────────────────────────────────────────────
     const lessonMatch = path.match(/^\/admin\/lessons\/([^/]+)$/);
     if (lessonMatch) {
@@ -578,8 +789,10 @@ export const handler = async (event: Event) => {
         const count = await prisma.question.count({ where: { moduleId } });
         questionOrder = count + 1;
       }
+      // Shuffle options so correct answer is distributed across A/B/C/D positions
+      const [shuffled] = shuffleQuestionOptions([{ text, options, correctIndex: Number(correctIndex) }]);
       const question = await prisma.question.create({
-        data: { moduleId, text, options, correctIndex: Number(correctIndex), order: Number(questionOrder) },
+        data: { moduleId, text: shuffled.text, options: shuffled.options, correctIndex: shuffled.correctIndex, order: Number(questionOrder) },
       });
       return created(question);
     }
@@ -1416,6 +1629,9 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       const previewMode = (body as any).preview as boolean ?? false;
       const combineMode = (body as any).combineMode as boolean ?? false;
       const previewData = (body as any).previewData as any;
+      // extraContext: sanitize (strip control chars) and truncate to 500 chars
+      const rawExtra = typeof (body as any).extraContext === 'string' ? (body as any).extraContext : '';
+      const extraContext = rawExtra.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, 500);
 
       // ── Confirm phase: apply already-generated previewData to DB ────────────
       if (previewData && !previewMode) {
@@ -1477,11 +1693,14 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
       };
       const levelNote = levelInstructions[regenLevel] ?? levelInstructions.intermediate;
 
+      const extraContextSuffix = extraContext
+        ? `\n\nContexto adicional del instructor: ${extraContext}`
+        : '';
       const regen = await bedrockJSONSimple(
         `Eres experto en diseño instruccional. Regenera la lección "${lesson.title}" (orden ${lesson.order}) del módulo "${modTitle}" del curso "${courseTitle}".
 Nivel de dificultad: ${regenLevel} — ${levelNote}
 Responde ÚNICAMENTE con JSON: {"title":"Título específico","content":"<h3>Subtítulo</h3><p>Párrafo 1 educativo real.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Párrafo de cierre.</p>","points":["Punto clave 1","Punto clave 2","Punto clave 3"],"tip":"Consejo práctico."}
-Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en 2ª persona.`, 4000
+Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en 2ª persona.${extraContextSuffix}`, 4000
       );
       const regenPayload = {
         title: regen.title ?? lesson.title,

@@ -51,7 +51,7 @@ export default function CertificatePage() {
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 print:p-0 print:bg-white">
 
       {/* Print button — hidden when printing */}
-      <div className="mb-6 flex gap-3 print:hidden">
+      <div className="mb-6 flex gap-3 print:hidden flex-wrap justify-center">
         <button
           onClick={() => window.print()}
           className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white text-sm shadow-lg"
@@ -62,6 +62,16 @@ export default function CertificatePage() {
           </svg>
           Imprimir / Guardar como PDF
         </button>
+        <a
+          href={api.certificates.pdfUrl(certId)}
+          download={`certificado-${certId}.pdf`}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-gray-700 text-sm bg-white shadow border border-gray-200 hover:bg-gray-50 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Descargar PDF
+        </a>
         <a
           href="/"
           className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-gray-600 text-sm bg-white shadow border border-gray-200"

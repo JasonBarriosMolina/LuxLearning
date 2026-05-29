@@ -342,22 +342,36 @@ export default function StudentDashboardPage() {
                   </div>
                 )}
 
-                {/* Certificate banner — course complete */}
+                {/* Certificate mini-card — course complete */}
                 {isCourseComplete && courseCert && (
-                  <a
-                    href={`/certificado/${courseCert.certId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-4 rounded-xl text-white font-semibold text-sm transition-opacity hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #00B4D8, #7B2FBE)' }}
-                  >
-                    <Award className="w-5 h-5 shrink-0" />
-                    <div className="flex-1">
-                      <p className="font-bold">¡Curso completado!</p>
-                      <p className="text-white/80 text-xs font-normal">Haz clic para ver y descargar tu certificado</p>
+                  <div className="rounded-xl overflow-hidden border border-purple-200 shadow-sm">
+                    {/* Gradient header strip */}
+                    <div className="h-2 w-full" style={{ background: 'linear-gradient(90deg, #00B4D8, #7B2FBE)' }} />
+                    <div className="p-4 flex items-center gap-4 bg-white">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #00B4D8, #7B2FBE)' }}>
+                        <Award className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Certificado de finalización</p>
+                        <p className="font-bold text-charcoal text-sm truncate">{courseCert.courseTitle ?? course.title}</p>
+                        {courseCert.studentName && (
+                          <p className="text-xs text-gray-500 mt-0.5">{courseCert.studentName}</p>
+                        )}
+                        {courseCert.issuedAt && (
+                          <p className="text-xs text-gray-400">{new Date(courseCert.issuedAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        )}
+                      </div>
+                      <a
+                        href={`/certificado/${courseCert.certId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white shrink-0 transition-opacity hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #00B4D8, #7B2FBE)' }}
+                      >
+                        Ver certificado <ArrowRight className="w-3.5 h-3.5" />
+                      </a>
                     </div>
-                    <ArrowRight className="w-4 h-4 shrink-0" />
-                  </a>
+                  </div>
                 )}
 
                 {/* Continue CTA */}

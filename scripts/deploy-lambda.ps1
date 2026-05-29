@@ -64,6 +64,7 @@ function Deploy-Lambda([string]$name) {
     $entry,
     "--bundle", "--platform=node", "--target=node20",
     "--external:@prisma/client", "--external:sharp",
+    "--external:@aws-sdk/client-secrets-manager",
     "--outfile=$outDir\index.js", "--minify"
   )
   & npx esbuild @esbuildArgs

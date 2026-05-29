@@ -81,7 +81,7 @@ vi.mock('jsonrepair', () => ({ jsonrepair: vi.fn((s: string) => s) }));
 
 import { createEnrollment, createTask } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
-import { upsertMembership } from '../shared/db-messages';
+import { upsertMembership, upsertChat } from '../shared/db-messages';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function makeEvent(method: string, path: string, body?: object, role = 'EVALUATOR') {
@@ -133,6 +133,7 @@ beforeEach(() => {
   vi.mocked(createEnrollment).mockResolvedValue(undefined as any);
   vi.mocked(createTask).mockResolvedValue(undefined as any);
   vi.mocked(upsertMembership).mockResolvedValue(undefined as any);
+  vi.mocked(upsertChat).mockResolvedValue(undefined as any);
   vi.mocked(getPrismaClient).mockReturnValue(makePrisma() as any);
 });
 
@@ -291,5 +292,191 @@ describe('DELETE /admin/users/:username/enrollments', () => {
     ) as any;
     expect(res.statusCode).toBe(200);
     expect(vi.mocked(deleteEnrollment)).toHaveBeenCalledWith('student-1', 'course-1');
+  });
+});
+
+// ── POST /admin/modules/:moduleId/questions — shuffle correctIndex ─────────
+describe('POST /admin/modules/:moduleId/questions — shuffle on creation', () => {
+  const MODULE_ID = 'mod-shuffle-1';
+
+  beforeEach(() => {
+    vi.mocked(getPrismaClient).mockReturnValue(
+      makePrisma({
+        question: {
+          count: vi.fn().mockResolvedValue(0),
+          create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'q-1', ...data })),
+        },
+      }) as any,
+    );
+  });
+
+  it('returns 400 when text is missing', async () => {
+    const res = await handler(
+      makeEvent('POST', `/admin/modules/${MODULE_ID}/questions`, {
+        options: ['A', 'B', 'C', 'D'], correctIndex: 0,
+      }, 'ADMIN'),
+    ) as any;
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 400 when options has fewer than 2 items', async () => {
+    const res = await handler(
+      makeEvent('POST', `/admin/modules/${MODULE_ID}/questions`, {
+        text: '¿Pregunta?', options: ['Solo una'], correctIndex: 0,
+      }, 'ADMIN'),
+    ) as any;
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('creates question and the correctIndex points to the correct answer text after shuffle', async () => {
+    const options = ['Respuesta correcta', 'Opción B', 'Opción C', 'Opción D'];
+    const correctIndex = 0; // Correct answer is initially at index 0
+
+    const res = await handler(
+      makeEvent('POST', `/admin/modules/${MODULE_ID}/questions`, {
+        text: '¿Cuál es la correcta?', options, correctIndex,
+      }, 'ADMIN'),
+    ) as any;
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+
+    // The saved correctIndex should still point to "Respuesta correcta"
+    expect(body.data.options[body.data.correctIndex]).toBe('Respuesta correcta');
+  });
+
+  it('distributes correctIndex across positions over multiple calls', async () => {
+    // Run 20 question creations — the correct answer position should not always be 0
+    const positions = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      const res = await handler(
+        makeEvent('POST', `/admin/modules/${MODULE_ID}/questions`, {
+          text: `¿Pregunta ${i}?`,
+          options: ['Correcta', 'Opción B', 'Opción C', 'Opción D'],
+          correctIndex: 0,
+        }, 'ADMIN'),
+      ) as any;
+      const body = JSON.parse(res.body);
+      positions.add(body.data.correctIndex);
+    }
+    // Over 20 calls, we expect the correct answer to land in more than 1 position
+    expect(positions.size).toBeGreaterThan(1);
+  });
+
+  it('returns 403 for non-admin role', async () => {
+    const res = await handler(
+      makeEvent('POST', `/admin/modules/${MODULE_ID}/questions`, {
+        text: '¿Pregunta?', options: ['A', 'B'], correctIndex: 0,
+      }, 'STUDENT'),
+    ) as any;
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+// ── GET /admin/courses?status — draft/archive filter ───────────────────────
+describe('GET /admin/courses?status — draft/archive filter', () => {
+  const draftCourse = { id: 'c-draft', title: 'Borrador', isDraft: true, isArchived: false, modules: [] };
+  const activeCourse = { id: 'c-active', title: 'Activo', isDraft: false, isArchived: false, modules: [] };
+  const archivedCourse = { id: 'c-arch', title: 'Archivado', isDraft: false, isArchived: true, modules: [] };
+
+  beforeEach(() => {
+    vi.mocked(getPrismaClient).mockReturnValue(
+      makePrisma({
+        course: {
+          findMany: vi.fn().mockImplementation(({ where }: any) => {
+            const all = [draftCourse, activeCourse, archivedCourse];
+            if (where?.isDraft === true && where?.isArchived === false) return Promise.resolve([draftCourse]);
+            if (where?.isArchived === true) return Promise.resolve([archivedCourse]);
+            if (where?.isDraft === false && where?.isArchived === false) return Promise.resolve([activeCourse]);
+            // default: isArchived: false
+            if (where?.isArchived === false) return Promise.resolve([draftCourse, activeCourse]);
+            return Promise.resolve(all);
+          }),
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'new-course', isDraft: true }),
+          update: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'course-1', ...data })),
+        },
+      }) as any,
+    );
+  });
+
+  it('?status=draft returns only drafts', async () => {
+    const res = await handler(makeEvent('GET', '/admin/courses?status=draft', undefined, 'ADMIN')) as any;
+    // Note: queryStringParameters won't be set from the path string; set it explicitly
+    const event = makeEvent('GET', '/admin/courses', undefined, 'ADMIN');
+    event.queryStringParameters = { status: 'draft' };
+    const res2 = await handler(event) as any;
+    expect(res2.statusCode).toBe(200);
+    const body = JSON.parse(res2.body);
+    const ids = body.data.map((c: any) => c.id);
+    expect(ids).toContain('c-draft');
+    expect(ids).not.toContain('c-active');
+    expect(ids).not.toContain('c-arch');
+  });
+
+  it('?status=archived returns only archived', async () => {
+    const event = makeEvent('GET', '/admin/courses', undefined, 'ADMIN');
+    event.queryStringParameters = { status: 'archived' };
+    const res = await handler(event) as any;
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    const ids = body.data.map((c: any) => c.id);
+    expect(ids).toContain('c-arch');
+    expect(ids).not.toContain('c-draft');
+    expect(ids).not.toContain('c-active');
+  });
+
+  it('no status param excludes archived (default)', async () => {
+    const event = makeEvent('GET', '/admin/courses', undefined, 'ADMIN');
+    event.queryStringParameters = {};
+    const res = await handler(event) as any;
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    const ids = body.data.map((c: any) => c.id);
+    expect(ids).not.toContain('c-arch');
+  });
+
+  it('POST /admin/courses creates with isDraft=true', async () => {
+    const res = await handler(
+      makeEvent('POST', '/admin/courses', {
+        title: 'Mi Curso', slug: 'mi-curso', description: 'Desc',
+      }, 'ADMIN'),
+    ) as any;
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.data.isDraft).toBe(true);
+  });
+
+  it('PUT /admin/courses/:id/publish sets isDraft=false', async () => {
+    const res = await handler(
+      makeEvent('PUT', '/admin/courses/course-1/publish', undefined, 'ADMIN'),
+    ) as any;
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.isDraft).toBe(false);
+  });
+
+  it('PUT /admin/courses/:id/archive sets isArchived=true and isActive=false', async () => {
+    const res = await handler(
+      makeEvent('PUT', '/admin/courses/course-1/archive', undefined, 'ADMIN'),
+    ) as any;
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data.isArchived).toBe(true);
+    expect(body.data.isActive).toBe(false);
+  });
+
+  it('publish returns 403 for non-admin', async () => {
+    const res = await handler(
+      makeEvent('PUT', '/admin/courses/course-1/publish', undefined, 'EVALUATOR'),
+    ) as any;
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('archive returns 403 for non-admin', async () => {
+    const res = await handler(
+      makeEvent('PUT', '/admin/courses/course-1/archive', undefined, 'EVALUATOR'),
+    ) as any;
+    expect(res.statusCode).toBe(403);
   });
 });

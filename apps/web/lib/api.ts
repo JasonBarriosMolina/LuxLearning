@@ -84,6 +84,7 @@ export const api = {
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
     students: () => request('/evaluator/students'),
+    studentCertificates: (userId: string) => request<any>(`/evaluator/students/${userId}/certificates`),
     sendReminder: (body: { userId: string; studentEmail: string; studentName?: string; hoursInactive?: number; courseTitle?: string }) =>
       request<any>('/evaluator/reminder', { method: 'POST', body: JSON.stringify(body) }),
     aiFeedback: (text: string, moduleTitle?: string) =>
@@ -135,6 +136,12 @@ export const api = {
     mine: () => request<any>('/my-certificates'),
     generate: (courseId: string) =>
       request<any>('/my-certificates/generate', { method: 'POST', body: JSON.stringify({ courseId }) }),
+    pdfUrl: (certId: string) => `${API_URL}/certificates/${certId}/pdf`,
+    template: {
+      get: () => request<any>('/admin/certificates/template'),
+      save: (body: { logoUrl?: string; watermarkText?: string; primaryColor?: string; secondaryColor?: string; fields?: any; footerText?: string }) =>
+        request<any>('/admin/certificates/template', { method: 'PUT', body: JSON.stringify(body) }),
+    },
   },
 
   heartbeat: () => request('/student/heartbeat', { method: 'POST' }).catch(() => {}),
@@ -173,6 +180,8 @@ export const api = {
       delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
         request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
+      aiGenerateModule: (body: { topic: string; courseTitle?: string }) =>
+        request<any>('/admin/courses/ai-generate-module', { method: 'POST', body: JSON.stringify(body) }),
       aiJob: (jobId: string) =>
         request<any>(`/admin/courses/ai-job?jobId=${encodeURIComponent(jobId)}`),
       aiPublish: (body: any) =>
@@ -182,6 +191,14 @@ export const api = {
       assignEvaluator: (courseId: string, body: { evaluatorId: string; evaluatorName: string }) =>
         request<any>(`/admin/courses/${courseId}/evaluator`, { method: 'PUT', body: JSON.stringify(body) }),
       validateVideos: (courseId: string) => request<any>(`/admin/courses/${courseId}/validate-videos`),
+      publish: (courseId: string) =>
+        request<any>(`/admin/courses/${courseId}/publish`, { method: 'PUT' }),
+      archive: (courseId: string) =>
+        request<any>(`/admin/courses/${courseId}/archive`, { method: 'PUT' }),
+      restore: (courseId: string) =>
+        request<any>(`/admin/courses/${courseId}/restore`, { method: 'PUT' }),
+      listByStatus: (status: 'active' | 'draft' | 'archived') =>
+        request<any>(`/admin/courses?status=${status}`),
     },
     // Modules
     modules: {
@@ -190,6 +207,8 @@ export const api = {
       delete: (moduleId: string) => request<any>(`/admin/modules/${moduleId}`, { method: 'DELETE' }),
       regenerate: (moduleId: string) =>
         request<any>(`/admin/modules/${moduleId}/regenerate`, { method: 'POST' }),
+      aiGenerate: (courseId: string, body: { topic: string; description?: string }) =>
+        request<any>(`/admin/courses/${courseId}/modules/ai-generate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     // Lessons
     lessons: {
@@ -202,6 +221,8 @@ export const api = {
         request<any>(`/admin/lessons/${lessonId}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
       generateAudio: (lessonId: string, voiceId = 'Mia') =>
         request<any>(`/admin/lessons/${lessonId}/audio`, { method: 'POST', body: JSON.stringify({ voiceId }) }),
+      aiGenerate: (moduleId: string, body: { topic: string }) =>
+        request<any>(`/admin/modules/${moduleId}/lessons/ai-generate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     // Questions
     questions: {
