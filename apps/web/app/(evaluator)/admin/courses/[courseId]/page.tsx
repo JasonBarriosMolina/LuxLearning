@@ -685,11 +685,18 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [regeneratingMod, setRegeneratingMod] = useState(false);
   const [regenJobId, setRegenJobId] = useState<string | null>(null);
+  const [regenModError, setRegenModError] = useState<string | null>(null);
+  const regenJobIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [modPreviewOpen, setModPreviewOpen] = useState(false);
   const [aiLessonOpen, setAiLessonOpen] = useState(false);
   const [aiLessonTopic, setAiLessonTopic] = useState('');
   const [aiLessonLoading, setAiLessonLoading] = useState(false);
   const [aiLessonError, setAiLessonError] = useState('');
+
+  // Cleanup polling interval on unmount
+  useEffect(() => {
+    return () => { if (regenJobIntervalRef.current) clearInterval(regenJobIntervalRef.current); };
+  }, []);
 
   const handleAiLesson = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -705,10 +712,42 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
 
   const handleRegenerateMod = async () => {
     setRegeneratingMod(true);
+    setRegenModError(null);
     try {
       const res = await api.admin.modules.regenerate(mod.id);
-      if (res?.data?.jobId) setRegenJobId(res.data.jobId);
-    } catch { /* ignore */ } finally { setRegeneratingMod(false); }
+      const jobId = res?.data?.jobId;
+      if (!jobId) return;
+      setRegenJobId(jobId);
+      // Poll every 3 s, give up after 90 s
+      let elapsed = 0;
+      regenJobIntervalRef.current = setInterval(async () => {
+        elapsed += 3;
+        try {
+          const poll = await api.admin.courses.aiJob(jobId);
+          const status = poll?.data?.status ?? poll?.status;
+          if (status === 'done') {
+            clearInterval(regenJobIntervalRef.current!);
+            regenJobIntervalRef.current = null;
+            setRegenJobId(null);
+            onRefresh();
+          } else if (status === 'error') {
+            clearInterval(regenJobIntervalRef.current!);
+            regenJobIntervalRef.current = null;
+            setRegenJobId(null);
+            setRegenModError('Error al regenerar el módulo. Intenta de nuevo.');
+          } else if (elapsed >= 90) {
+            clearInterval(regenJobIntervalRef.current!);
+            regenJobIntervalRef.current = null;
+            setRegenJobId(null);
+            setRegenModError('Tiempo de espera agotado. Recarga la página para ver si se aplicaron los cambios.');
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 3000);
+    } catch {
+      setRegenModError('No se pudo iniciar la regeneración.');
+    } finally {
+      setRegeneratingMod(false);
+    }
   };
 
   const handleSaveMod = async (e: React.FormEvent) => {
@@ -770,6 +809,12 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
           <div className="ml-2 flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
             <Loader2 className="w-3 h-3 animate-spin" />
             Regenerando... (jobId: {regenJobId.slice(-6)})
+          </div>
+        )}
+        {regenModError && (
+          <div className="ml-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-lg">
+            {regenModError}
+            <button onClick={() => setRegenModError(null)} className="ml-1 font-bold hover:opacity-70">×</button>
           </div>
         )}
       </div>
