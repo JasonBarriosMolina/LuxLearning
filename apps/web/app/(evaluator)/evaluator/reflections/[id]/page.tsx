@@ -234,6 +234,11 @@ export default function ReflectionDetailPage() {
 
   // Priority
   const [priority, setPriority] = useState<boolean>(false);
+
+  // Reconsideration modal (for REJECTED reflections)
+  const [showReconsider, setShowReconsider] = useState(false);
+  const [reconsiderReason, setReconsiderReason] = useState('');
+  const [reconsidering, setReconsidering] = useState(false);
   const [priorityLoading, setPriorityLoading] = useState(false);
 
   // AI feedback generator
@@ -289,6 +294,21 @@ export default function ReflectionDetailPage() {
     setFeedback((prev) => (prev ? `${prev}\n\n${text}` : text));
     setCopiedIdx(idx);
     setTimeout(() => setCopiedIdx(null), 1500);
+  };
+
+  const handleReconsider = async () => {
+    if (reconsiderReason.trim().length < 20) return;
+    setReconsidering(true);
+    try {
+      await api.evaluator.reconsiderReflection(userId, moduleId, reconsiderReason.trim());
+      setReflection((prev: any) => prev ? { ...prev, status: 'APPROVED', reconsiderationReason: reconsiderReason.trim() } : prev);
+      setShowReconsider(false);
+      setReconsiderReason('');
+    } catch (e: any) {
+      alert('Error al reconsiderar: ' + (e?.message ?? 'intenta de nuevo'));
+    } finally {
+      setReconsidering(false);
+    }
   };
 
   const generateAiFeedback = async () => {
@@ -511,11 +531,22 @@ export default function ReflectionDetailPage() {
           </div>
         )}
 
+        {/* aiSuspect badge — shown when AI flagged 70-84% confidence */}
+        {reflection.aiSuspect && reflection.status === 'PENDING_EVAL' && (
+          <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="text-sm font-semibold text-amber-700">Revisión manual requerida</span>
+            <span className="text-xs text-amber-600">El sistema detectó posible uso de IA ({reflection.aiResult?.confidence}%) pero por debajo del umbral de rechazo automático. Revisa con cuidado.</span>
+          </div>
+        )}
+
         {/* AI Analysis (compact) — se oculta si ya hay un resultado manual fresco */}
         {reflection.aiResult && !aiCheckResult && (
           <div className={`rounded-xl border-2 px-4 py-3 flex items-center gap-3 ${
-            reflection.aiResult.isAI && reflection.aiResult.confidence >= 60
+            reflection.aiResult.isAI && reflection.aiResult.confidence >= 85
               ? 'border-red-200 bg-red-50'
+              : reflection.aiResult.isAI && reflection.aiResult.confidence >= 70
+              ? 'border-amber-200 bg-amber-50'
               : 'border-emerald-200 bg-emerald-50'
           }`}>
             <Brain className={`w-4 h-4 shrink-0 ${reflection.aiResult.isAI ? 'text-red-500' : 'text-emerald-600'}`} />
@@ -692,8 +723,24 @@ export default function ReflectionDetailPage() {
                     {reflection.evaluatorFeedback}
                   </div>
                 )}
+                {reflection.reconsiderationReason && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800 mt-2">
+                    <p className="text-xs font-semibold text-emerald-600 mb-1">RAZÓN DE RECONSIDERACIÓN</p>
+                    {reflection.reconsiderationReason}
+                  </div>
+                )}
                 {reflection.reviewedAt && (
                   <p className="text-xs text-gray-400 mt-2">Revisada el {formatDate(reflection.reviewedAt)}</p>
+                )}
+                {/* Reconsider button — only for REJECTED reflections */}
+                {reflection.status === 'REJECTED' && (
+                  <button
+                    onClick={() => setShowReconsider(true)}
+                    className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm font-semibold hover:bg-amber-100 transition-colors"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Reconsiderar y Aprobar
+                  </button>
                 )}
                 {/* Evaluator signature */}
                 {signature && reflection.status === 'APPROVED' && (
@@ -790,6 +837,47 @@ export default function ReflectionDetailPage() {
           </div>
         </div>
       </div>
+      {/* Reconsideration modal */}
+      {showReconsider && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowReconsider(false)} />
+          <div className="relative bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-6 h-6 text-amber-500 shrink-0" />
+              <h2 className="font-heading font-bold text-lg text-charcoal">Reconsiderar y Aprobar</h2>
+            </div>
+            <p className="text-sm text-gray-500">
+              Esta reflexión fue rechazada por el sistema de IA. Al reconsiderarla, la apruebas directamente. Explica por qué estás anulando la decisión del sistema.
+            </p>
+            <textarea
+              value={reconsiderReason}
+              onChange={(e) => setReconsiderReason(e.target.value)}
+              placeholder="Razón de la reconsideración (mín. 20 caracteres)..."
+              rows={4}
+              className="w-full border border-border rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 bg-surface"
+            />
+            <p className={`text-xs ${reconsiderReason.length >= 20 ? 'text-emerald-600' : 'text-gray-400'}`}>
+              {reconsiderReason.length} / 20 mín.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowReconsider(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm font-semibold text-gray-600 hover:bg-surface transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleReconsider}
+                disabled={reconsiderReason.trim().length < 20 || reconsidering}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {reconsidering ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Confirmar Aprobación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

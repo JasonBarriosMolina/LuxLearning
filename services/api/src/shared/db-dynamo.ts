@@ -121,7 +121,7 @@ export async function getReflection(userId: string, moduleId: string): Promise<R
 export async function updateReflectionStatus(
   userId: string,
   moduleId: string,
-  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt' | 'analyzedAt' | 'qualityScore'>>
+  updates: Partial<Pick<Reflection, 'status' | 'aiResult' | 'evaluatorFeedback' | 'reviewedAt' | 'analyzedAt' | 'qualityScore' | 'aiSuspect' | 'reconsideredBy' | 'reconsiderationReason'>>
 ) {
   const expressions: string[] = [];
   const names: Record<string, string> = {};
@@ -151,6 +151,18 @@ export async function updateReflectionStatus(
   if (updates.qualityScore !== undefined) {
     expressions.push('qualityScore = :qualityScore');
     values[':qualityScore'] = updates.qualityScore;
+  }
+  if (updates.aiSuspect !== undefined) {
+    expressions.push('aiSuspect = :aiSuspect');
+    values[':aiSuspect'] = updates.aiSuspect;
+  }
+  if (updates.reconsideredBy !== undefined) {
+    expressions.push('reconsideredBy = :reconsideredBy');
+    values[':reconsideredBy'] = updates.reconsideredBy;
+  }
+  if (updates.reconsiderationReason !== undefined) {
+    expressions.push('reconsiderationReason = :reconsiderationReason');
+    values[':reconsiderationReason'] = updates.reconsiderationReason;
   }
 
   await ddb.send(new UpdateCommand({

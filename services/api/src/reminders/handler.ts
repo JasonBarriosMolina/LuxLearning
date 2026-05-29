@@ -7,6 +7,7 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
+import { sendTemplatedEmail } from '../shared/email';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -283,14 +284,12 @@ export const handler = async () => {
           const name  = attr('name') || email.split('@')[0] || '';
           if (!email) continue;
 
-          await ses.send(new SendEmailCommand({
-            Source: FROM_EMAIL,
-            Destination: { ToAddresses: [email] },
-            Message: {
-              Subject: { Data: `⏰ Tu tarea "${task.title}" vence en ${daysLeft} días`, Charset: 'UTF-8' },
-              Body: { Html: { Data: taskReminderEmailHtml(name, task.title, daysLeft, task.courseTitle), Charset: 'UTF-8' } },
-            },
-          }));
+          await sendTemplatedEmail(email, 'TASK_DUE_SOON', {
+            studentName: name,
+            taskTitle: task.title,
+            courseTitle: task.courseTitle ?? '',
+            daysLeft: String(daysLeft),
+          });
 
           // Mark reminder as sent
           const reminderUpdate = needsR5 ? { r5: new Date().toISOString() } : { r3: new Date().toISOString() };

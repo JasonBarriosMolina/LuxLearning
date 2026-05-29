@@ -19,6 +19,7 @@ import {
   CalendarDays,
   UserPlus,
   MessageSquare,
+  Mail,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -95,6 +96,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['EVALUATOR', 'ADMIN'],
   },
   {
+    href: '/evaluator/my-courses',
+    label: 'Mis Cursos',
+    icon: <BookOpen className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
     href: '/admin/courses',
     label: 'Gestión de Contenido',
     icon: <Settings2 className="w-5 h-5" />,
@@ -116,6 +123,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/users',
     label: 'Usuarios',
     icon: <UserCog className="w-5 h-5" />,
+    roles: ['ADMIN'],
+  },
+  {
+    href: '/admin/email-templates',
+    label: 'Templates de Email',
+    icon: <Mail className="w-5 h-5" />,
     roles: ['ADMIN'],
   },
   {

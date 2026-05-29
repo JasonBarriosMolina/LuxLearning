@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Menu, Bell, CheckCheck, Clock, CheckCircle, XCircle, BookOpen } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { api } from '@/lib/api';
@@ -19,6 +20,7 @@ type Notif = {
   message: string;
   read: boolean;
   createdAt: string;
+  actionUrl?: string;
 };
 
 function NotifIcon({ type }: { type: string }) {
@@ -30,6 +32,7 @@ function NotifIcon({ type }: { type: string }) {
 
 export function Topbar({ title, onMenuClick }: TopbarProps) {
   const { role } = useAuth();
+  const router = useRouter();
   const isEvaluator = role === 'EVALUATOR' || role === 'ADMIN';
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
@@ -141,7 +144,11 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
                 notifs.map((n) => (
                   <button
                     key={n.notifId}
-                    onClick={() => markRead(n.notifId)}
+                    onClick={() => {
+                      markRead(n.notifId);
+                      if (n.actionUrl) router.push(n.actionUrl);
+                      setOpen(false);
+                    }}
                     className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-surface transition-colors text-left ${!n.read ? 'bg-blue-50/40' : ''}`}
                   >
                     <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center shrink-0 mt-0.5">

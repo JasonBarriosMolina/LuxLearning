@@ -1,3 +1,4 @@
+// TODO FASE 5: recursos por curso (LuxResources DDB + S3) — carpetas, colores, papelera 60 días
 import { randomInt } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import {
@@ -19,7 +20,8 @@ import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/cli
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification } from '../shared/db-dynamo';
+import { getAllEmailTemplates, saveEmailTemplate } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
@@ -1057,7 +1059,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
         try {
           const [userRes, course] = await Promise.all([
             cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username })),
-            prisma.course.findUnique({ where: { id: courseId }, select: { title: true } }),
+            prisma.course.findUnique({ where: { id: courseId }, select: { title: true, evaluatorId: true } }),
           ]);
           const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
           const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value;
@@ -1070,6 +1072,18 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
                 Body: { Html: { Data: enrollmentEmailHtml(nameAttr || emailAttr.split('@')[0], course.title), Charset: 'UTF-8' } },
               },
             }));
+          }
+          // Notify evaluator when a student is enrolled in their course
+          if (course?.evaluatorId) {
+            createNotification({
+              userId: course.evaluatorId,
+              notifId: `enroll-${username}-${courseId}-${Date.now()}`,
+              type: 'GENERAL',
+              message: `Nuevo estudiante inscrito en "${course.title}": ${nameAttr || username}`,
+              read: false,
+              createdAt: new Date().toISOString(),
+              actionUrl: '/evaluator/my-courses',
+            }).catch(() => { /* non-fatal */ });
           }
           // Add student to group chat for this course (ensure META + membership both exist)
           if (course) {
@@ -1865,6 +1879,23 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
         UserAttributes: attrs,
       }));
       return ok({ updated: true });
+    }
+
+    // GET /admin/email-templates — list all email templates
+    if (method === 'GET' && path === '/admin/email-templates') {
+      const templates = await getAllEmailTemplates();
+      return ok(templates);
+    }
+
+    // PUT /admin/email-templates/:type — update a template
+    const emailTemplateMatch = path.match(/^\/admin\/email-templates\/([A-Z_]+)$/);
+    if (method === 'PUT' && emailTemplateMatch) {
+      const type = emailTemplateMatch[1]!;
+      const body = JSON.parse(event.body ?? '{}');
+      const { subject, htmlBody } = body as { subject: string; htmlBody: string };
+      if (!subject || !htmlBody) return badRequest('subject and htmlBody required');
+      await saveEmailTemplate(type, subject, htmlBody, userId);
+      return ok({ saved: true });
     }
 
     return notFound('Ruta no encontrada');

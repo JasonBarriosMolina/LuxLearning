@@ -84,6 +84,9 @@ export interface Reflection {
   evaluatorFeedback?: string;
   qualityScore?: number;   // 1-10 assigned by evaluator on approval
   priority?: boolean;      // evaluator-flagged high priority
+  aiSuspect?: boolean;     // true when AI confidence is 70–84% (manual review needed)
+  reconsideredBy?: string;
+  reconsiderationReason?: string;
   submittedAt: string;
   deadline?: string;       // ISO — submittedAt + 48h
   analyzedAt?: string;
@@ -100,10 +103,12 @@ export interface AIDetectionResult {
 export interface Notification {
   userId: string;
   notifId: string;
-  type: 'REFLECTION_APPROVED' | 'REFLECTION_REJECTED' | 'MODULE_UNLOCKED' | 'GENERAL';
+  type: 'REFLECTION_APPROVED' | 'REFLECTION_REJECTED' | 'MODULE_UNLOCKED' | 'GENERAL'
+    | 'TASK_SUBMITTED' | 'REFLECTION_RECONSIDERED' | 'COURSE_UPDATED' | 'MESSAGE_UNREAD';
   message: string;
   read: boolean;
   createdAt: string;
+  actionUrl?: string;
 }
 
 export interface Certificate {

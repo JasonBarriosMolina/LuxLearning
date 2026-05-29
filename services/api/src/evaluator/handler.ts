@@ -11,6 +11,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
   webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
 }
 import { getPrismaClient } from '../shared/db-neon';
+import { sendTemplatedEmail } from '../shared/email';
 import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
@@ -212,6 +213,20 @@ function approvedWithCertEmailHtml(studentName: string, moduleTitle: string, fee
 </html>`;
 }
 
+function reconsideredEmailHtml(studentName: string, moduleTitle: string, reason: string, certId: string | null): string {
+  const frontendUrl = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
+  const certLink = certId ? `<p style="margin-top:16px;"><a href="${frontendUrl}/certificado/${certId}" style="background:#059669;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;">Ver Certificado</a></p>` : '';
+  return `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+  <h2 style="color:#059669;">✅ Tu reflexión fue reconsiderada y aprobada</h2>
+  <p>Hola <strong>${studentName}</strong>,</p>
+  <p>Tu reflexión del módulo <strong>${moduleTitle}</strong> fue rechazada inicialmente por el sistema de detección de IA, pero un evaluador la revisó manualmente y decidió aprobarla.</p>
+  <p><strong>Razón de la reconsideración:</strong></p>
+  <blockquote style="border-left:4px solid #059669;padding-left:12px;color:#555;">${reason}</blockquote>
+  ${certLink}
+  <p style="margin-top:24px;color:#888;font-size:12px;">— Lux Learning Team | <a href="${frontendUrl}">Lux Learning</a></p>
+</body></html>`;
+}
+
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
@@ -304,6 +319,7 @@ export const handler = async (event: Event) => {
           : `Tu reflexión de "${module?.title}" necesita revisión.`,
         read: false,
         createdAt: reviewedAt,
+        actionUrl: '/student/reflections',
       });
 
       // ── Fire-and-forget push notification to the student ─────────────────────
@@ -360,6 +376,7 @@ export const handler = async (event: Event) => {
                 message: `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
                 read: false,
                 createdAt: reviewedAt,
+                actionUrl: `/certificado/${certId}`,
               });
               console.log(`[Evaluator] Certificate generated: ${certId} for student ${studentId}`);
             } else {
@@ -371,28 +388,27 @@ export const handler = async (event: Event) => {
         }
       }
 
-      // ── Send SES email ────────────────────────────────────────────────────────
+      // ── Send SES email via shared template system ────────────────────────────
       try {
         const moduleTitle = module?.title ?? 'módulo';
         const { email: studentEmail, name: studentName } = await resolveStudentContact(studentId, reflection);
         if (studentEmail) {
           if (action === 'APPROVE') {
-            const emailHtml = certId
-              ? approvedWithCertEmailHtml(studentName, moduleTitle, feedback, module?.course?.title ?? '', certId)
-              : approvedEmailHtml(studentName, moduleTitle, feedback);
-            await sendEmail(
-              studentEmail,
-              certId
-                ? `🎓 ¡Curso completado! Certificado disponible — ${module?.course?.title ?? moduleTitle}`
-                : `¡Reflexión aprobada! — ${moduleTitle}`,
-              emailHtml
-            );
+            const templateType = certId ? 'REFLECTION_APPROVED' : 'REFLECTION_APPROVED';
+            await sendTemplatedEmail(studentEmail, templateType, {
+              studentName,
+              moduleTitle,
+              feedback,
+              courseTitle: module?.course?.title ?? '',
+              certId: certId ?? '',
+              certUrl: certId ? `${process.env.FRONTEND_URL ?? ''}/certificado/${certId}` : '',
+            });
           } else {
-            await sendEmail(
-              studentEmail,
-              `Reflexión requiere revisión — ${moduleTitle}`,
-              rejectedEmailHtml(studentName, moduleTitle, feedback, 'El evaluador ha dejado comentarios.')
-            );
+            await sendTemplatedEmail(studentEmail, 'REFLECTION_REJECTED', {
+              studentName,
+              moduleTitle,
+              feedback,
+            });
           }
         } else {
           console.warn(`[Evaluator] No email found for student ${studentId} — skipping email`);
@@ -402,6 +418,33 @@ export const handler = async (event: Event) => {
       }
 
       return ok({ status: newStatus, reviewedAt, certId });
+    }
+
+    // GET /evaluator/my-courses — courses owned by this evaluator
+    if (method === 'GET' && path === '/evaluator/my-courses') {
+      const courses = await prisma.course.findMany({
+        where: { evaluatorId: userId },
+        include: { modules: { select: { id: true, title: true, order: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const allEnrollments = await getAllEnrollments();
+      const allReflections = await getAllReflections();
+
+      const enriched = courses.map((course) => {
+        const enrollmentCount = allEnrollments.filter((e) => e.courseId === course.id).length;
+        const pendingReflections = allReflections.filter(
+          (r) => r.status === 'PENDING_EVAL' && course.modules.some((m) => m.id === r.moduleId)
+        ).length;
+        return {
+          ...course,
+          enrollmentCount,
+          pendingReflections,
+          groupChatId: `group_${course.id}`,
+        };
+      });
+
+      return ok(enriched);
     }
 
     // GET /evaluator/students — full progress per student
@@ -582,6 +625,70 @@ export const handler = async (event: Event) => {
       return ok({ sent: true });
     }
 
+    // POST /evaluator/reflections/reconsider — override AI rejection, approve with reason
+    if (method === 'POST' && path === '/evaluator/reflections/reconsider') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { userId: studentId, moduleId, reason } = body as { userId: string; moduleId: string; reason: string };
+      if (!studentId || !moduleId || !reason) return badRequest('userId, moduleId, reason required');
+      if (reason.length < 20) return badRequest('La razón debe tener al menos 20 caracteres');
+
+      const reflection = await getReflection(studentId, moduleId);
+      if (!reflection) return notFound('Reflexión no encontrada');
+      if (reflection.status !== 'REJECTED') return badRequest('Solo se pueden reconsiderar reflexiones rechazadas');
+
+      const reviewedAt = new Date().toISOString();
+      await updateReflectionStatus(studentId, moduleId, {
+        status: 'APPROVED',
+        reviewedAt,
+        reconsideredBy: userId,
+        reconsiderationReason: reason,
+      });
+
+      // Notify student
+      await createNotification({
+        userId: studentId,
+        notifId: createId(),
+        type: 'REFLECTION_RECONSIDERED',
+        message: `Tu reflexión fue reconsiderada y aprobada por un evaluador.`,
+        read: false,
+        createdAt: reviewedAt,
+        actionUrl: '/student/reflections',
+      });
+
+      // Check if all modules approved → generate certificate
+      let certId: string | null = null;
+      try {
+        const module = await prisma.module.findUnique({ where: { id: moduleId }, include: { course: true } });
+        if (module?.course) {
+          const allModules = await prisma.module.findMany({ where: { courseId: module.courseId }, select: { id: true } });
+          const allReflections = await Promise.all(allModules.map((m) => getReflection(studentId, m.id)));
+          const allApproved = allReflections.every((r) => r?.status === 'APPROVED');
+          if (allApproved) {
+            const existing = await getCertificateByUserAndCourse(studentId, module.courseId);
+            if (!existing) {
+              certId = createId();
+              const { name: studentName } = await resolveStudentContact(studentId, reflection);
+              await saveCertificate({ certId, userId: studentId, courseId: module.courseId, studentName, courseTitle: module.course.title, issuedAt: reviewedAt });
+              await createNotification({ userId: studentId, notifId: createId(), type: 'GENERAL', message: `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`, read: false, createdAt: reviewedAt, actionUrl: `/certificado/${certId}` });
+            } else {
+              certId = existing.certId;
+            }
+          }
+          // Send email
+          try {
+            const { email: studentEmail, name: studentName } = await resolveStudentContact(studentId, reflection);
+            if (studentEmail) {
+              await sendEmail(studentEmail, 'Lux Learning - Tu reflexión fue reconsiderada y aprobada', reconsideredEmailHtml(studentName, module.title, reason, certId));
+            }
+          } catch { /* non-fatal */ }
+        }
+      } catch (e) {
+        console.warn('[Evaluator] Reconsider post-processing failed (non-fatal):', e);
+      }
+
+      return ok({ status: 'APPROVED', reviewedAt, certId });
+    }
+
     // POST /evaluator/reflections/priority — toggle priority flag
     if (method === 'POST' && path === '/evaluator/reflections/priority') {
       const body2 = JSON.parse(event.body ?? '{}');
@@ -623,7 +730,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({
-          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+          modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
@@ -758,10 +865,10 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
           )
         );
 
-        // Push notifications (non-fatal)
+        // Push + email notifications (non-fatal)
         Promise.allSettled(
           assignees.map(async (uid) => {
-            const subs = await getPushSubscriptionsByUserId(uid);
+            const [subs] = await Promise.all([getPushSubscriptionsByUserId(uid)]);
             await Promise.allSettled(
               subs.map((sub: any) =>
                 webpush.sendNotification(sub, JSON.stringify({
@@ -770,6 +877,17 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
                 }))
               )
             );
+            try {
+              const { email: studentEmail, name: studentName } = await resolveStudentContact(uid, {});
+              if (studentEmail) {
+                await sendTemplatedEmail(studentEmail, 'TASK_ASSIGNED', {
+                  studentName,
+                  taskTitle: title,
+                  courseTitle: courseTitle ?? '',
+                  dueDate,
+                });
+              }
+            } catch { /* non-fatal */ }
           })
         ).catch(() => {});
 

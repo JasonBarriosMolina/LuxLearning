@@ -1,3 +1,5 @@
+// TODO FASE 4: auto-completado de tareas por progreso del estudiante (módulo completado → marcar COMPLETED)
+// TODO FASE 4: 10 tipos de tarea + entrega de archivos S3 + cloudlink
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getTasksForUser, updateTask, createNotification, createTask } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
@@ -135,10 +137,11 @@ export const handler = async (event: Event) => {
         await createNotification({
           userId: task.assignedBy,
           notifId: `task-sub-${taskId}-${Date.now()}`,
-          type: 'GENERAL',
+          type: 'TASK_SUBMITTED',
           message: `Un estudiante ha presentado la tarea: "${task.title}"`,
           read: false,
           createdAt: now,
+          actionUrl: '/evaluator/tasks',
         });
       }
       return ok({ submitted: true });

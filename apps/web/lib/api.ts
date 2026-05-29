@@ -80,6 +80,7 @@ export const api = {
   },
 
   evaluator: {
+    myCourses: () => request<any>('/evaluator/my-courses'),
     reflections: () => request('/evaluator/reflections'),
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
@@ -93,6 +94,8 @@ export const api = {
       request<any>(`/evaluator/quiz-audit?userId=${encodeURIComponent(userId)}&moduleId=${encodeURIComponent(moduleId)}`),
     setPriority: (userId: string, moduleId: string, priority: boolean) =>
       request<any>('/evaluator/reflections/priority', { method: 'POST', body: JSON.stringify({ userId, moduleId, priority }) }),
+    reconsiderReflection: (userId: string, moduleId: string, reason: string) =>
+      request<any>('/evaluator/reflections/reconsider', { method: 'POST', body: JSON.stringify({ userId, moduleId, reason }) }),
     aiCheck: (userId: string, moduleId: string) =>
       request<any>('/evaluator/ai-check', { method: 'POST', body: JSON.stringify({ userId, moduleId }) }),
     tasks: {
@@ -263,6 +266,11 @@ export const api = {
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId }) }),
       removeEnrollment: (username: string, courseId: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
+    },
+    emailTemplates: {
+      list: () => request<any>('/admin/email-templates'),
+      update: (type: string, subject: string, htmlBody: string) =>
+        request<any>(`/admin/email-templates/${type}`, { method: 'PUT', body: JSON.stringify({ subject, htmlBody }) }),
     },
   },
   profile: {

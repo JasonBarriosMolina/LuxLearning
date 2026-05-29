@@ -1,6 +1,6 @@
 /**
  * Nightly Analysis Lambda — triggered by EventBridge at 02:00 UTC
- * Analyzes reflections and quiz data per module using Bedrock Haiku 4.5
+ * Analyzes reflections and quiz data per module using Bedrock Sonnet 4.5
  * Stores results in ReportAnalysis + CurriculumRecommendations tables
  */
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
@@ -12,7 +12,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
-const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
+const MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 const MIN_REFLECTIONS = 3; // minimum reflections needed to run AI analysis
 
 async function callBedrock(prompt: string, maxTokens = 1024): Promise<string> {

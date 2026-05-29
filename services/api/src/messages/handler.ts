@@ -4,6 +4,7 @@ import {
   AdminGetUserCommand,
   ListUsersInGroupCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
+import { SchedulerClient, CreateScheduleCommand, DeleteScheduleCommand } from '@aws-sdk/client-scheduler';
 import {
   getChatsForUser,
   getChatMeta,
@@ -17,7 +18,18 @@ import {
   reactToMessage,
 } from '../shared/db-messages.js';
 import { getAllEnrollments } from '../shared/db-dynamo.js';
+import { sendTemplatedEmail } from '../shared/email.js';
 import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response.js';
+
+const scheduler = new SchedulerClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const SCHEDULER_ROLE_ARN = process.env.SCHEDULER_ROLE_ARN ?? '';
+const LAMBDA_ARN = `arn:aws:lambda:us-east-1:798694628803:function:lux-messages`;
+
+function schedulerName(chatId: string, recipientId: string): string {
+  return `msg-email-${chatId}-${recipientId}`
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .slice(0, 64);
+}
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<
@@ -210,6 +222,35 @@ export const handler = async (event: Event) => {
       const result = await putMessage({ chatId, senderId: userId, senderName, text: text.trim() });
       await updateChatLastMessage(chatId, participants, userId, text.trim());
 
+      // Schedule delayed email (1 hour) for each recipient who hasn't read yet
+      if (SCHEDULER_ROLE_ARN) {
+        const recipients = participants.filter((p) => p !== userId);
+        const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+        const scheduleExpr = `at(${oneHourFromNow.toISOString().slice(0, 19)})`;
+        await Promise.allSettled(
+          recipients.map(async (recipientId) => {
+            const name = schedulerName(chatId, recipientId);
+            try { await scheduler.send(new DeleteScheduleCommand({ Name: name })); } catch { /* ok if not exists */ }
+            await scheduler.send(new CreateScheduleCommand({
+              Name: name,
+              ScheduleExpression: scheduleExpr,
+              FlexibleTimeWindow: { Mode: 'OFF' },
+              Target: {
+                Arn: LAMBDA_ARN,
+                RoleArn: SCHEDULER_ROLE_ARN,
+                Input: JSON.stringify({
+                  action: 'SEND_MESSAGE_EMAIL',
+                  chatId,
+                  recipientId,
+                  senderName,
+                  messagePreview: text.trim().slice(0, 100),
+                }),
+              },
+            }));
+          })
+        );
+      }
+
       return ok({ ...result, senderId: userId, senderName, text: text.trim() });
     }
 
@@ -218,7 +259,34 @@ export const handler = async (event: Event) => {
     if (readMatch && method === 'PUT') {
       const chatId = readMatch[1]!;
       await markChatRead(userId, chatId);
+      // Cancel pending email scheduler if it exists
+      if (SCHEDULER_ROLE_ARN) {
+        const name = schedulerName(chatId, userId);
+        try { await scheduler.send(new DeleteScheduleCommand({ Name: name })); } catch { /* ok if not exists */ }
+      }
       return ok({ ok: true });
+    }
+
+    // ── Invoked by EventBridge Scheduler — send delayed message email ────────
+    if ((event as any).action === 'SEND_MESSAGE_EMAIL') {
+      const { chatId, recipientId, senderName: senderDisplayName, messagePreview } = event as any;
+      try {
+        const recipientRes = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: recipientId }));
+        const attr = (n: string) => recipientRes.UserAttributes?.find((a) => a.Name === n)?.Value ?? '';
+        const recipientEmail = attr('email');
+        const recipientName = attr('name') || recipientEmail.split('@')[0] || recipientId;
+        if (recipientEmail) {
+          await sendTemplatedEmail(recipientEmail, 'MESSAGE_UNREAD', {
+            recipientName,
+            senderName: senderDisplayName,
+            messagePreview,
+            chatUrl: `${process.env.FRONTEND_URL ?? ''}/messages`,
+          });
+        }
+      } catch (e) {
+        console.error('[Messages] Failed to send delayed email:', e);
+      }
+      return ok({ sent: true });
     }
 
     // ── POST /messages/{chatId}/react — toggle emoji reaction ───────────────

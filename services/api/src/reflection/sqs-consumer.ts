@@ -11,7 +11,12 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
 }
 
-const AI_CONFIDENCE_THRESHOLD = 60;
+// AI detection thresholds:
+// ≥ 85%  → REJECTED automatically
+// 70–84% → PENDING_EVAL with aiSuspect flag (evaluator must review manually)
+// < 70%  → PENDING_EVAL (treated as human)
+const AI_REJECT_THRESHOLD = 85;
+const AI_SUSPECT_THRESHOLD = 70;
 
 async function processRecord(record: SQSRecord) {
   const { userId, moduleId } = JSON.parse(record.body) as { userId: string; moduleId: string };
@@ -49,6 +54,7 @@ async function processRecord(record: SQSRecord) {
           message: `📋 Reflexión lista para evaluar — ${moduleTitle}`,
           read: false,
           createdAt: new Date().toISOString(),
+          actionUrl: `/evaluator/reflections/${userId}?moduleId=${moduleId}`,
         });
       } catch { /* non-fatal */ }
     }
@@ -57,29 +63,44 @@ async function processRecord(record: SQSRecord) {
 
   console.log(`[AI Detection] Result: ${JSON.stringify(aiResult)}`);
 
-  const isAI = aiResult.isAI && aiResult.confidence >= AI_CONFIDENCE_THRESHOLD;
-  const newStatus = isAI ? 'REJECTED' : 'PENDING_EVAL';
+  // Tri-level decision
+  let newStatus: 'REJECTED' | 'PENDING_EVAL';
+  let aiSuspect = false;
+
+  if (aiResult.isAI && aiResult.confidence >= AI_REJECT_THRESHOLD) {
+    newStatus = 'REJECTED';
+  } else if (aiResult.isAI && aiResult.confidence >= AI_SUSPECT_THRESHOLD) {
+    newStatus = 'PENDING_EVAL';
+    aiSuspect = true;
+  } else {
+    newStatus = 'PENDING_EVAL';
+  }
 
   await updateReflectionStatus(userId, moduleId, {
     status: newStatus,
     aiResult,
     analyzedAt,
+    aiSuspect,
   });
 
-  console.log(`[AI Detection] Updated status to ${newStatus}`);
+  console.log(`[AI Detection] Updated status to ${newStatus}${aiSuspect ? ' (aiSuspect)' : ''}`);
 
   // Notify evaluator when reflection is ready to review
   if (newStatus === 'PENDING_EVAL' && reflection.evaluatorId) {
     const evaluatorId = reflection.evaluatorId as string;
     const moduleTitle = (reflection.moduleTitle as string | undefined) ?? moduleId;
+    const notifMessage = aiSuspect
+      ? `⚠️ Reflexión con posible IA (${aiResult.confidence}%) — requiere revisión manual: ${moduleTitle}`
+      : `📋 Reflexión lista para evaluar — ${moduleTitle}`;
     try {
       await createNotification({
         userId: evaluatorId,
         notifId: createId(),
         type: 'GENERAL',
-        message: `📋 Reflexión lista para evaluar — ${moduleTitle}`,
+        message: notifMessage,
         read: false,
         createdAt: new Date().toISOString(),
+        actionUrl: `/evaluator/reflections/${userId}?moduleId=${moduleId}`,
       });
     } catch (e) {
       console.warn('[AI Detection] Failed to create in-app notification:', e);
@@ -89,9 +110,9 @@ async function processRecord(record: SQSRecord) {
         const subs = await getPushSubscriptionsByUserId(evaluatorId);
         if (subs.length > 0) {
           const payload = JSON.stringify({
-            title: 'Reflexión lista para evaluar',
+            title: aiSuspect ? '⚠️ Revisión manual requerida' : 'Reflexión lista para evaluar',
             body: moduleTitle,
-            url: '/evaluator/reflections',
+            url: `/evaluator/reflections/${userId}?moduleId=${moduleId}`,
           });
           await Promise.allSettled(
             subs.map((sub) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload))
