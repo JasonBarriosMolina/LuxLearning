@@ -991,17 +991,41 @@ export default function AdminCourseDetailPage() {
   const [aiModuleTopic, setAiModuleTopic] = useState('');
   const [aiModuleLoading, setAiModuleLoading] = useState(false);
   const [aiModuleError, setAiModuleError] = useState('');
+  const aiModuleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleAiModule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiModuleTopic.trim()) return;
     setAiModuleLoading(true); setAiModuleError('');
     try {
-      await api.admin.modules.aiGenerate(courseId, { topic: aiModuleTopic.trim() });
-      setAiModuleOpen(false); setAiModuleTopic(''); await load();
+      const res = await api.admin.modules.aiGenerate(courseId, { topic: aiModuleTopic.trim() });
+      const jobId = (res as any)?.data?.jobId ?? (res as any)?.jobId;
+      if (!jobId) { setAiModuleOpen(false); setAiModuleTopic(''); await load(); return; }
+      // Poll every 3 s, give up after 120 s
+      let elapsed = 0;
+      aiModuleIntervalRef.current = setInterval(async () => {
+        elapsed += 3;
+        try {
+          const poll = await api.admin.courses.aiJob(jobId);
+          const status = (poll as any)?.data?.status ?? (poll as any)?.status;
+          if (status === 'done') {
+            clearInterval(aiModuleIntervalRef.current!); aiModuleIntervalRef.current = null;
+            setAiModuleLoading(false); setAiModuleOpen(false); setAiModuleTopic(''); await load();
+          } else if (status === 'error') {
+            clearInterval(aiModuleIntervalRef.current!); aiModuleIntervalRef.current = null;
+            setAiModuleLoading(false);
+            setAiModuleError('Error al generar módulo. Intenta de nuevo.');
+          } else if (elapsed >= 120) {
+            clearInterval(aiModuleIntervalRef.current!); aiModuleIntervalRef.current = null;
+            setAiModuleLoading(false);
+            setAiModuleError('Tiempo de espera agotado. Recarga la página para ver si el módulo fue creado.');
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 3000);
     } catch (err: any) {
       setAiModuleError(err.message ?? 'Error al generar módulo');
-    } finally { setAiModuleLoading(false); }
+      setAiModuleLoading(false);
+    }
   };
 
   // ── Validate videos ──────────────────────────────────────────────────────────
@@ -1034,6 +1058,7 @@ export default function AdminCourseDetailPage() {
   }, [courseId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { return () => { if (aiModuleIntervalRef.current) clearInterval(aiModuleIntervalRef.current); }; }, []);
 
   const handleAddModule = async (e: React.FormEvent) => {
     e.preventDefault(); setSavingModule(true); setModuleError('');

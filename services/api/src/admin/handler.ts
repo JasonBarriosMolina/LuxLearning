@@ -618,83 +618,108 @@ Exactamente 10 lecciones y 5 preguntas de muestra. Títulos reales y específico
     if (courseModuleAiMatch && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const courseId = courseModuleAiMatch[1]!;
-      const { topic, description: topicDesc } = body as { topic?: string; description?: string };
-      if (!topic) return badRequest('topic es requerido');
+      const { topic, _jobId: workerJobId, _courseTitle: workerCourseTitle } = body as any;
 
-      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
-      if (!course) return notFound('Curso no encontrado');
+      // ── Async worker branch ───────────────────────────────────────────────────
+      if (workerJobId) {
+        try {
+          const bedrockJSON2 = async (prompt: string, maxTokens = 2000): Promise<any> => {
+            const res = await bedrock.send(new InvokeModelCommand({
+              modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+              contentType: 'application/json', accept: 'application/json',
+              body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
+            }));
+            const raw = (JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+            const match = raw.match(/[\[{][\s\S]*/);
+            try { return JSON.parse(match?.[0] ?? '{}'); } catch { try { return JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { return {}; } }
+          };
 
-      const modCount = await prisma.module.count({ where: { courseId } });
-      const modOrder = modCount + 1;
-
-      // Phase 1: module title + description
-      const modMeta = await invokeBedrockForJson(
-        `Eres experto en diseño instruccional. Genera título y descripción para un módulo sobre "${topic}" dentro del curso "${course.title}".
+          const modMeta = await bedrockJSON2(
+            `Eres experto en diseño instruccional. Genera título y descripción para un módulo sobre "${topic}" dentro del curso "${workerCourseTitle}".
 Responde ÚNICAMENTE con JSON: {"title":"Título real del módulo","description":"Descripción de 1-2 oraciones."}`, 400);
+          const modTitle = (modMeta.title as string) || topic;
+          const modDesc = (modMeta.description as string) || `Módulo sobre ${topic}`;
 
-      const modTitle = (modMeta.title as string) || topic;
-      const modDesc = (modMeta.description as string) || topicDesc || `Módulo sobre ${topic}`;
-
-      // Phase 2: lessons + questions in parallel
-      const [rawLessons, rawQuestions] = await Promise.all([
-        invokeBedrockForJson(
-          `Genera exactamente 10 lecciones para el módulo "${modTitle}" del curso "${course.title}".
+          const [rawLessons, rawQuestions] = await Promise.all([
+            bedrockJSON2(`Genera exactamente 10 lecciones para el módulo "${modTitle}" del curso "${workerCourseTitle}".
 Array JSON (10 elementos):
 [{"title":"Introducción — ${modTitle}","order":1,"type":"video","content":"<p>Párrafo introductorio.</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo."},
 {"title":"Subtema A","order":2,"type":"text","content":"<h3>Subtema</h3><p>Párrafo.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Cierre.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
-...9 más con el mismo formato...
 {"title":"Resumen — ${modTitle}","order":10,"type":"video","content":"<p>Resumen.</p>","duration":"5 min","points":["Resumen 1","Resumen 2","Próximos pasos"],"tip":"Completa el quiz."}]
 Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 6000),
-        invokeBedrockForJson(
-          `Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
+            bedrockJSON2(`Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
 Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":1}]
 10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.`, 2000),
-      ]);
+          ]);
 
-      const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
-      const questions = shuffleQuestionOptions(Array.isArray(rawQuestions) ? rawQuestions.slice(0, 10) : []);
+          const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
+          const questions = shuffleQuestionOptions(Array.isArray(rawQuestions) ? rawQuestions.slice(0, 10) : []);
 
-      const createdMod = await prisma.module.create({
-        data: {
-          courseId, title: modTitle, description: modDesc,
-          duration: `${lessons.length * 8} min`, passingScore: 70, order: modOrder,
-        },
-      });
+          const modCount = await prisma.module.count({ where: { courseId } });
+          const createdMod = await prisma.module.create({
+            data: {
+              courseId, title: modTitle, description: modDesc,
+              duration: `${lessons.length * 8} min`, passingScore: 70, order: modCount + 1,
+            },
+          });
 
-      if (lessons.length > 0) {
-        await prisma.lesson.createMany({
-          data: lessons.map((l: any, i: number) => ({
-            moduleId: createdMod.id,
-            title: l.title || `Lección ${i + 1}`,
-            type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
-            content: l.content || null,
-            youtubeId: '',
-            imageUrl: null,
-            duration: l.duration || (i === 0 || i === 9 ? '5 min' : '8 min'),
-            points: Array.isArray(l.points) ? l.points : [],
-            tip: l.tip || '',
-            order: l.order || i + 1,
-          })),
-        });
+          if (lessons.length > 0) {
+            await prisma.lesson.createMany({
+              data: lessons.map((l: any, i: number) => ({
+                moduleId: createdMod.id,
+                title: l.title || `Lección ${i + 1}`,
+                type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
+                content: l.content || null,
+                youtubeId: '',
+                imageUrl: null,
+                duration: l.duration || (i === 0 || i === 9 ? '5 min' : '8 min'),
+                points: Array.isArray(l.points) ? l.points : [],
+                tip: l.tip || '',
+                order: l.order || i + 1,
+              })),
+            });
+          }
+
+          if (questions.length > 0) {
+            await prisma.question.createMany({
+              data: questions.map((q: any, i: number) => ({
+                moduleId: createdMod.id,
+                text: q.text,
+                options: q.options,
+                correctIndex: Number(q.correctIndex),
+                order: i + 1,
+              })),
+            });
+          }
+
+          await saveAiJob(workerJobId, { status: 'done', result: { moduleId: createdMod.id, lessonsCreated: lessons.length, questionsCreated: questions.length } });
+        } catch (err: any) {
+          await saveAiJob(workerJobId, { status: 'error', error: err.message ?? 'Error' });
+        }
+        return ok({ ok: true });
       }
 
-      if (questions.length > 0) {
-        await prisma.question.createMany({
-          data: questions.map((q: any, i: number) => ({
-            moduleId: createdMod.id,
-            text: q.text,
-            options: q.options,
-            correctIndex: Number(q.correctIndex),
-            order: i + 1,
-          })),
-        });
-      }
+      // ── Dispatch branch: validate, save job, fire async ───────────────────────
+      if (!topic) return badRequest('topic es requerido');
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+      if (!course) return notFound('Curso no encontrado');
 
-      const result = await prisma.module.findUnique({
-        where: { id: createdMod.id },
-        include: { lessons: { orderBy: { order: 'asc' } }, questions: { orderBy: { order: 'asc' } } },
-      });
-      return created(result);
+      const jobId = `mod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAiJob(jobId, { status: 'processing' });
+
+      const asyncPayload = {
+        requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+        rawPath: `/admin/courses/${courseId}/modules/ai-generate`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ topic, _jobId: jobId, _courseTitle: course.title }),
+      };
+      await lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify(asyncPayload)),
+      }));
+
+      return ok({ jobId });
     }
 
     // ── POST /admin/modules/:moduleId/lessons/ai-generate ─────────────────────
