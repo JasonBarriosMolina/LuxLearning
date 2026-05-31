@@ -65,7 +65,7 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https: http:",
       "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://youtube.com",
-      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com",
+      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com",
       "media-src 'self' blob:",
       "worker-src 'self' blob:",
     ].join('; '),
