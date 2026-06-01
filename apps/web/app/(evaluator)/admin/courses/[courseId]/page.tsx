@@ -692,10 +692,14 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [aiLessonTopic, setAiLessonTopic] = useState('');
   const [aiLessonLoading, setAiLessonLoading] = useState(false);
   const [aiLessonError, setAiLessonError] = useState('');
+  const aiLessonIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cleanup polling interval on unmount
+  // Cleanup polling intervals on unmount
   useEffect(() => {
-    return () => { if (regenJobIntervalRef.current) clearInterval(regenJobIntervalRef.current); };
+    return () => {
+      if (regenJobIntervalRef.current) clearInterval(regenJobIntervalRef.current);
+      if (aiLessonIntervalRef.current) clearInterval(aiLessonIntervalRef.current);
+    };
   }, []);
 
   const handleAiLesson = async (e: React.FormEvent) => {
@@ -703,11 +707,34 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
     if (!aiLessonTopic.trim()) return;
     setAiLessonLoading(true); setAiLessonError('');
     try {
-      await api.admin.lessons.aiGenerate(mod.id, { topic: aiLessonTopic.trim() });
-      setAiLessonOpen(false); setAiLessonTopic(''); onRefresh();
+      const res = await api.admin.lessons.aiGenerate(mod.id, { topic: aiLessonTopic.trim() });
+      const jobId = (res as any)?.data?.jobId ?? (res as any)?.jobId;
+      if (!jobId) { setAiLessonOpen(false); setAiLessonTopic(''); onRefresh(); return; }
+      // Poll every 3 s, give up after 120 s
+      let elapsed = 0;
+      aiLessonIntervalRef.current = setInterval(async () => {
+        elapsed += 3;
+        try {
+          const poll = await api.admin.courses.aiJob(jobId);
+          const status = (poll as any)?.data?.status ?? (poll as any)?.status;
+          if (status === 'done') {
+            clearInterval(aiLessonIntervalRef.current!); aiLessonIntervalRef.current = null;
+            setAiLessonLoading(false); setAiLessonOpen(false); setAiLessonTopic(''); onRefresh();
+          } else if (status === 'error') {
+            clearInterval(aiLessonIntervalRef.current!); aiLessonIntervalRef.current = null;
+            setAiLessonLoading(false);
+            setAiLessonError('Error al generar la lección. Intenta de nuevo.');
+          } else if (elapsed >= 120) {
+            clearInterval(aiLessonIntervalRef.current!); aiLessonIntervalRef.current = null;
+            setAiLessonLoading(false);
+            setAiLessonError('Tiempo de espera agotado. Recarga la página para verificar si se creó la lección.');
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 3000);
     } catch (err: any) {
       setAiLessonError(err.message ?? 'Error al generar lección');
-    } finally { setAiLessonLoading(false); }
+      setAiLessonLoading(false);
+    }
   };
 
   const handleRegenerateMod = async () => {
@@ -718,7 +745,7 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
       const jobId = res?.data?.jobId;
       if (!jobId) return;
       setRegenJobId(jobId);
-      // Poll every 3 s, give up after 90 s
+      // Poll every 3 s, give up after 180 s
       let elapsed = 0;
       regenJobIntervalRef.current = setInterval(async () => {
         elapsed += 3;
@@ -734,8 +761,8 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
             clearInterval(regenJobIntervalRef.current!);
             regenJobIntervalRef.current = null;
             setRegenJobId(null);
-            setRegenModError('Error al regenerar el módulo. Intenta de nuevo.');
-          } else if (elapsed >= 90) {
+            setRegenModError((poll?.data?.error ?? poll?.error) ? `Error: ${poll?.data?.error ?? poll?.error}` : 'Error al regenerar el módulo. Intenta de nuevo.');
+          } else if (elapsed >= 180) {
             clearInterval(regenJobIntervalRef.current!);
             regenJobIntervalRef.current = null;
             setRegenJobId(null);

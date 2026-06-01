@@ -727,38 +727,64 @@ Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],
     if (moduleLessonAiMatch && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const moduleId = moduleLessonAiMatch[1]!;
-      const { topic } = body as { topic?: string };
-      if (!topic) return badRequest('topic es requerido');
+      const { topic, _jobId: lessonWorkerJobId } = body as any;
 
-      const mod = await prisma.module.findUnique({
-        where: { id: moduleId },
-        include: { course: { select: { title: true } } },
-      });
-      if (!mod) return notFound('Módulo no encontrado');
+      // ── Async worker branch ─────────────────────────────────────────────────
+      if (lessonWorkerJobId) {
+        try {
+          const mod = await prisma.module.findUnique({
+            where: { id: moduleId },
+            include: { course: { select: { title: true } } },
+          });
+          if (!mod) throw new Error('Módulo no encontrado');
 
-      const lessonCount = await prisma.lesson.count({ where: { moduleId } });
-      const lessonOrder = lessonCount + 1;
-
-      const lessonData = await invokeBedrockForJson(
-        `Genera una lección educativa sobre "${topic}" para el módulo "${mod.title}" del curso "${(mod as any).course?.title ?? ''}".
+          const lessonCount = await prisma.lesson.count({ where: { moduleId } });
+          const lessonData = await invokeBedrockForJson(
+            `Genera una lección educativa sobre "${topic}" para el módulo "${mod.title}" del curso "${(mod as any).course?.title ?? ''}".
 Responde ÚNICAMENTE con JSON: {"title":"Título específico de la lección","type":"text","content":"<h3>Sección</h3><p>Párrafo 1 educativo con 2ª persona.</p><ul><li>Punto clave 1</li><li>Punto clave 2</li><li>Punto clave 3</li></ul><blockquote>Cita relevante sobre el tema.</blockquote><p>Párrafo de cierre práctico.</p>","duration":"8 min","points":["Concepto 1","Concepto 2","Concepto 3"],"tip":"Consejo práctico aplicable."}
 HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
 
-      const lesson = await prisma.lesson.create({
-        data: {
-          moduleId, order: lessonOrder,
-          title: lessonData.title || topic,
-          type: lessonData.type || 'text',
-          content: lessonData.content || `<p>Contenido sobre ${topic}.</p>`,
-          youtubeId: '',
-          imageUrl: null,
-          duration: lessonData.duration || '8 min',
-          points: Array.isArray(lessonData.points) ? lessonData.points : [],
-          tip: lessonData.tip || '',
-        },
-      });
+          const lesson = await prisma.lesson.create({
+            data: {
+              moduleId, order: lessonCount + 1,
+              title: lessonData.title || topic,
+              type: lessonData.type || 'text',
+              content: lessonData.content || `<p>Contenido sobre ${topic}.</p>`,
+              youtubeId: '',
+              imageUrl: null,
+              duration: lessonData.duration || '8 min',
+              points: Array.isArray(lessonData.points) ? lessonData.points : [],
+              tip: lessonData.tip || '',
+            },
+          });
+          await saveAiJob(lessonWorkerJobId, { status: 'done', result: { lessonId: lesson.id } });
+        } catch (err: any) {
+          await saveAiJob(lessonWorkerJobId, { status: 'error', error: err.message ?? 'Error' });
+        }
+        return ok({ ok: true });
+      }
 
-      return created(lesson);
+      // ── Dispatch branch ─────────────────────────────────────────────────────
+      if (!topic) return badRequest('topic es requerido');
+      const modExists = await prisma.module.count({ where: { id: moduleId } });
+      if (!modExists) return notFound('Módulo no encontrado');
+
+      const lessonJobId = `lesson-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAiJob(lessonJobId, { status: 'processing' });
+
+      const asyncPayload = {
+        requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
+        rawPath: `/admin/modules/${moduleId}/lessons/ai-generate`,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ topic, _jobId: lessonJobId }),
+      };
+      await lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify(asyncPayload)),
+      }));
+
+      return ok({ jobId: lessonJobId });
     }
 
     // ── /admin/lessons/:lessonId ────────────────────────────────────────────
@@ -1767,7 +1793,9 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
       });
       if (!mod) return notFound('Módulo no encontrado');
 
-      // Async job pattern (same as ai-generate)
+      // Count existing lessons so worker regenerates the same number
+      const lessonCount = await prisma.lesson.count({ where: { moduleId } });
+
       const jobId = `regen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await saveAiJob(jobId, { status: 'processing' });
 
@@ -1775,7 +1803,14 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
         requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
         rawPath: '/admin/modules/_regen_worker',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ _jobId: jobId, _moduleId: moduleId, _moduleTitle: mod.title, _courseTitle: mod.course.title, _moduleOrder: mod.order }),
+        body: JSON.stringify({
+          _jobId: jobId,
+          _moduleId: moduleId,
+          _moduleTitle: mod.title,
+          _moduleDesc: mod.description ?? '',
+          _courseTitle: mod.course.title,
+          _lessonCount: lessonCount > 0 ? lessonCount : 10,
+        }),
       };
       await lambdaClient.send(new LambdaInvokeCommand({
         FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
@@ -1787,9 +1822,10 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
 
     // ── Async worker for module regeneration ─────────────────────────────────
     if (path === '/admin/modules/_regen_worker' && method === 'POST') {
-      const { _jobId, _moduleId, _moduleTitle, _courseTitle, _moduleOrder } = body as any;
+      const { _jobId, _moduleId, _moduleTitle, _moduleDesc, _courseTitle, _lessonCount } = body as any;
       if (!_jobId || !_moduleId) return ok({ ok: true });
       try {
+        const targetCount: number = Number(_lessonCount) || 10;
         const bedrockJSON2 = async (prompt: string, maxTokens = 2000): Promise<any> => {
           const res = await bedrock.send(new InvokeModelCommand({
             modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -1801,43 +1837,58 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
           try { return JSON.parse(match?.[0] ?? '{}'); } catch { try { return JSON.parse(jsonrepair(match?.[0] ?? '{}')); } catch { return {}; } }
         };
 
-        const [newLessons, newQuestions] = await Promise.all([
-          bedrockJSON2(`Eres experto en diseño instruccional. Genera las 10 lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".
-Responde ÚNICAMENTE con array JSON válido. Cada lección incluye: title, order, type, content, duration, points (array 3 frases), tip.
-Lección 1 y 10: type "video". Lecciones 2-9: type "text" con HTML rico (<h3>,<ul><li>,<blockquote>,<p>). Voz activa 2ª persona.`, 6000),
-          bedrockJSON2(`Genera exactamente 10 preguntas de opción múltiple sobre "${_moduleTitle}" del curso "${_courseTitle}".
-Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas.`, 2000),
-        ]);
+        // Step 1: Generate lessons first
+        const descContext = _moduleDesc ? ` Descripción del módulo: "${_moduleDesc}".` : '';
+        const newLessons = await bedrockJSON2(
+          `Eres experto en diseño instruccional. Regenera exactamente ${targetCount} lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".${descContext}
+Responde ÚNICAMENTE con array JSON válido de exactamente ${targetCount} elementos. Cada lección: title, order, type, content, duration, points (array 3 frases), tip.
+Lección 1 y ${targetCount}: type "video". Lecciones intermedias: type "text" con HTML rico (<h3>,<ul><li>,<blockquote>,<p>). Voz activa 2ª persona. Sin markdown.`, 6000);
 
-        // Replace all lessons and questions
+        // Validate BEFORE touching DB — never delete if Bedrock failed
+        const lessons = Array.isArray(newLessons) ? newLessons.slice(0, targetCount) : [];
+        if (lessons.length === 0) throw new Error('Bedrock no generó lecciones válidas — se conservan las lecciones originales');
+
+        // Step 2: Generate quiz using real lesson titles as context (sequential, not parallel)
+        const lessonTitles = lessons.map((l: any, i: number) => `${i + 1}. ${l.title ?? `Lección ${i + 1}`}`).join('\n');
+        const newQuestions = await bedrockJSON2(
+          `Genera exactamente 10 preguntas de opción múltiple para el módulo "${_moduleTitle}" del curso "${_courseTitle}".
+Las preguntas deben cubrir el contenido de estas lecciones:\n${lessonTitles}
+Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas, correctIndex entre 0-3.`, 2500);
+
+        const questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
+
+        // Step 3: Delete old data and create new — only now that we have valid content
         await prisma.$transaction([
           prisma.lesson.deleteMany({ where: { moduleId: _moduleId } }),
           prisma.question.deleteMany({ where: { moduleId: _moduleId } }),
         ]);
-        const lessons = Array.isArray(newLessons) ? newLessons.slice(0, 10) : [];
-        const questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
+
         await prisma.lesson.createMany({
           data: lessons.map((l: any, i: number) => ({
             moduleId: _moduleId,
             title: l.title ?? `Lección ${i + 1}`,
-            order: l.order ?? i + 1,
-            duration: l.duration ?? '8 min',
-            type: l.content ? 'text' : (l.type ?? 'text'),
+            order: i + 1,
+            duration: l.duration ?? (i === 0 || i === targetCount - 1 ? '5 min' : '8 min'),
+            type: i === 0 || i === targetCount - 1 ? 'video' : (l.type ?? 'text'),
             youtubeId: '',
             content: l.content ?? null,
             points: Array.isArray(l.points) ? l.points : [],
             tip: l.tip ?? '',
           })),
         });
-        await prisma.question.createMany({
-          data: questions.map((q: any, i: number) => ({
-            moduleId: _moduleId,
-            text: q.text ?? `Pregunta ${i + 1}`,
-            options: Array.isArray(q.options) ? q.options : ['A', 'B', 'C', 'D'],
-            correctIndex: Number(q.correctIndex ?? 0),
-            order: q.order ?? i + 1,
-          })),
-        });
+
+        if (questions.length > 0) {
+          await prisma.question.createMany({
+            data: questions.map((q: any, i: number) => ({
+              moduleId: _moduleId,
+              text: q.text ?? `Pregunta ${i + 1}`,
+              options: Array.isArray(q.options) ? q.options : ['A', 'B', 'C', 'D'],
+              correctIndex: Number(q.correctIndex ?? 0),
+              order: i + 1,
+            })),
+          });
+        }
+
         await saveAiJob(_jobId, { status: 'done', result: { moduleId: _moduleId, lessonsCreated: lessons.length, questionsCreated: questions.length } });
       } catch (err: any) {
         await saveAiJob(_jobId, { status: 'error', error: err.message ?? 'Error' });
