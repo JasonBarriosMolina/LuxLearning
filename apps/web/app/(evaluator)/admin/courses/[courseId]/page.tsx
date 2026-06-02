@@ -1110,24 +1110,29 @@ export default function AdminCourseDetailPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-start gap-4">
-        <Link href="/admin/courses" className="p-2 rounded-lg hover:bg-surface mt-1">
-          <ArrowLeft className="w-5 h-5 text-gray-500" />
-        </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <h1 className="font-heading font-bold text-2xl text-charcoal truncate">{course.title}</h1>
-            <Badge variant={course.isActive ? 'success' : 'default'}>{course.isActive ? 'Activo' : 'Inactivo'}</Badge>
-            {course.isPilot && <Badge variant="info">Piloto</Badge>}
+      <div className="space-y-3">
+        {/* Title row */}
+        <div className="flex items-start gap-3">
+          <Link href="/admin/courses" className="p-2 rounded-lg hover:bg-surface mt-0.5 shrink-0">
+            <ArrowLeft className="w-5 h-5 text-gray-500" />
+          </Link>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+              <h1 className="font-heading font-bold text-2xl text-charcoal">{course.title}</h1>
+              <Badge variant={course.isActive ? 'success' : 'default'}>{course.isActive ? 'Activo' : 'Inactivo'}</Badge>
+              {course.isPilot && <Badge variant="info">Piloto</Badge>}
+            </div>
+            <p className="text-sm text-gray-500 leading-relaxed">{course.description}</p>
+            <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
           </div>
-          <p className="text-sm text-gray-500">{course.description}</p>
-          <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        {/* Action buttons — scroll horizontally on mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pl-11">
           <Button
             variant="secondary"
             leftIcon={<GraduationCap className="w-4 h-4" />}
             onClick={() => router.push(`/admin/courses/${courseId}/preview`)}
+            className="shrink-0"
           >
             Ver como Estudiante
           </Button>
@@ -1135,6 +1140,7 @@ export default function AdminCourseDetailPage() {
             variant="secondary"
             leftIcon={<ShieldCheck className="w-4 h-4" />}
             onClick={handleValidateVideos}
+            className="shrink-0"
           >
             Validar videos
           </Button>
@@ -1142,12 +1148,14 @@ export default function AdminCourseDetailPage() {
             variant="secondary"
             leftIcon={<Sparkles className="w-4 h-4 text-purple-500" />}
             onClick={() => { setAiModuleTopic(''); setAiModuleError(''); setAiModuleOpen(true); }}
+            className="shrink-0"
           >
             Módulo con IA
           </Button>
           <Button
             leftIcon={<Plus className="w-4 h-4" />}
             onClick={() => { setModuleForm({ ...EMPTY_MODULE, order: (course.modules?.length ?? 0) + 1 }); setModuleModal(true); }}
+            className="shrink-0"
           >
             Nuevo módulo
           </Button>
