@@ -62,7 +62,7 @@ async function generateLessonImage(
   }
   try {
     const resp = await bedrock.send(new InvokeModelCommand({
-      modelId: 'us.amazon.nova-canvas-v1:0',
+      modelId: 'amazon.nova-canvas-v1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
