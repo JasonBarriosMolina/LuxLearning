@@ -18,10 +18,11 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification } from '../shared/db-dynamo';
-import { getAllEmailTemplates, saveEmailTemplate } from '../shared/email';
+import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
@@ -421,6 +422,30 @@ export const handler = async (event: Event) => {
         where: { id: courseId },
         data: { evaluatorId, evaluatorName: evaluatorName ?? null },
       });
+
+      // Notify evaluator of assignment (non-fatal)
+      try {
+        const frontendUrl = process.env.FRONTEND_URL ?? '';
+        await createNotification({
+          userId: evaluatorId,
+          notifId: `course-assigned-${Date.now()}`,
+          type: 'GENERAL',
+          message: `🎓 Se te asignó el curso "${updated.title}" como evaluador`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          actionUrl: `${frontendUrl}/evaluator/my-courses`,
+        });
+        // Get evaluator email from Cognito
+        const cognitoUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: process.env.COGNITO_USER_POOL_ID!, Username: evaluatorId })).catch(() => null);
+        const evEmail = cognitoUser?.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+        if (evEmail) {
+          sendTemplatedEmail(evEmail, 'COURSE_ASSIGNED', {
+            evaluatorName: evaluatorName ?? evaluatorId,
+            courseTitle: updated.title,
+          }).catch(() => {});
+        }
+      } catch { /* non-fatal */ }
+
       return ok(updated);
     }
 
@@ -1972,6 +1997,20 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       if (!subject || !htmlBody) return badRequest('subject and htmlBody required');
       await saveEmailTemplate(type, subject, htmlBody, userId);
       return ok({ saved: true });
+    }
+
+    // POST /admin/files/presign — generate S3 presigned upload URL (tasks + resources)
+    if (method === 'POST' && path === '/admin/files/presign') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const { fileName, fileType, folder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
+      if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
+      const safeFolder = ['tasks', 'resources', 'uploads'].includes(folder) ? folder : 'uploads';
+      const ext = fileName.split('.').pop() ?? 'bin';
+      const fileKey = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const command = new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: fileKey, ContentType: fileType });
+      const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 600 });
+      const publicUrl = `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${fileKey}`;
+      return ok({ uploadUrl, fileKey, publicUrl });
     }
 
     return notFound('Ruta no encontrada');

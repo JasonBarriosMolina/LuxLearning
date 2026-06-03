@@ -25,6 +25,7 @@
     "@aws-sdk/client-ses": "^3.600.0",
     "@aws-sdk/client-sqs": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.1060.0",
     "@lux/types": "*",
     "@neondatabase/serverless": "^0.9.4",
     "@paralleldrive/cuid2": "^2.2.2",

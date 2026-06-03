@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getPrismaClient } from '../shared/db-neon';
-import { saveQuizAttempt, getQuizAttempts, getLessonProgress } from '../shared/db-dynamo';
+import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
+import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
@@ -83,6 +84,21 @@ export const handler = async (event: Event) => {
         correctIndex: q.correctIndex,
         isCorrect: answers[i] === q.correctIndex,
       }));
+
+      // If passed → auto-complete tasks + send email (non-fatal)
+      if (passed) {
+        const email = event.requestContext.authorizer?.lambda?.email;
+        const frontendUrl = process.env.FRONTEND_URL ?? '';
+        autoCompleteTasks(userId, 'pass_quiz', moduleId).catch(() => {});
+        if (email) {
+          sendTemplatedEmail(email, 'QUIZ_PASSED', {
+            studentName: userId,
+            moduleTitle: module.title,
+            score: String(score),
+            actionUrl: `${frontendUrl}/courses/${courseId}/modules/${moduleId}/quiz`,
+          }).catch(() => {});
+        }
+      }
 
       return ok({
         score,

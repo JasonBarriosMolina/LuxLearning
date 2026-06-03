@@ -12,7 +12,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 }
 import { getPrismaClient } from '../shared/db-neon';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, getLastSeenAll, getSignature, saveSignature, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
@@ -309,6 +309,11 @@ export const handler = async (event: Event) => {
         include: { course: true },
       });
 
+      const frontendUrl = process.env.FRONTEND_URL ?? '';
+      const reflActionUrl = module?.course
+        ? `${frontendUrl}/courses/${module.courseId}/modules/${moduleId}/reflection`
+        : `${frontendUrl}/dashboard`;
+
       // Create in-app notification
       await createNotification({
         userId: studentId,
@@ -319,8 +324,13 @@ export const handler = async (event: Event) => {
           : `Tu reflexión de "${module?.title}" necesita revisión.`,
         read: false,
         createdAt: reviewedAt,
-        actionUrl: '/student/reflections',
+        actionUrl: reflActionUrl,
       });
+
+      // Auto-complete matching tasks on APPROVE (non-fatal)
+      if (action === 'APPROVE') {
+        autoCompleteTasks(studentId, 'submit_reflection', moduleId).catch(() => {});
+      }
 
       // ── Fire-and-forget push notification to the student ─────────────────────
       void (async () => {
@@ -991,6 +1001,76 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
       const targetUserId = studentCertsMatch[1]!;
       const certs = await getCertificatesByUser(targetUserId);
       return ok(certs);
+    }
+
+    // ── Resources (Mis Recursos) ─────────────────────────────────────────────
+    // GET /evaluator/resources — list evaluator's own resources
+    if (method === 'GET' && path === '/evaluator/resources') {
+      const resources = await getResourcesByEvaluator(userId);
+      return ok(resources);
+    }
+
+    // POST /evaluator/resources — create a new resource
+    if (method === 'POST' && path === '/evaluator/resources') {
+      const { title, description, fileUrl, fileName, fileType, fileSize, folder, courseIds } = body as any;
+      if (!title || !fileUrl || !fileName) return badRequest('title, fileUrl y fileName son requeridos');
+      const now = new Date().toISOString();
+      const resource = {
+        evaluatorId: userId,
+        resourceId: `res-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: String(title).slice(0, 200),
+        description: description ? String(description).slice(0, 500) : undefined,
+        fileUrl: String(fileUrl),
+        fileName: String(fileName),
+        fileType: String(fileType ?? 'application/octet-stream'),
+        fileSize: fileSize ? Number(fileSize) : undefined,
+        folder: folder ? String(folder).slice(0, 100) : undefined,
+        courseIds: Array.isArray(courseIds) ? courseIds : [],
+        archived: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveResource(resource);
+      return ok(resource);
+    }
+
+    // PUT /evaluator/resources/:resourceId — update resource (rename, folder, assign courses)
+    const resourceUpdateMatch = path.match(/^\/evaluator\/resources\/([^/]+)$/);
+    if (resourceUpdateMatch && method === 'PUT') {
+      const resourceId = resourceUpdateMatch[1]!;
+      const { title, description, folder, courseIds } = body as any;
+      await updateResource(userId, resourceId, {
+        ...(title !== undefined ? { title: String(title).slice(0, 200) } : {}),
+        ...(description !== undefined ? { description: String(description).slice(0, 500) } : {}),
+        ...(folder !== undefined ? { folder: folder ? String(folder).slice(0, 100) : undefined } : {}),
+        ...(courseIds !== undefined ? { courseIds: Array.isArray(courseIds) ? courseIds : [] } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+      return ok({ updated: true });
+    }
+
+    // DELETE /evaluator/resources/:resourceId — soft delete (60-day TTL)
+    if (resourceUpdateMatch && method === 'DELETE') {
+      const resourceId = resourceUpdateMatch[1]!;
+      const ttl = Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60; // 60 days
+      await updateResource(userId, resourceId, { archived: true, ttl, updatedAt: new Date().toISOString() });
+      return ok({ archived: true });
+    }
+
+    // POST /evaluator/resources/:resourceId/restore — restore from trash
+    const resourceRestoreMatch = path.match(/^\/evaluator\/resources\/([^/]+)\/restore$/);
+    if (resourceRestoreMatch && method === 'POST') {
+      const resourceId = resourceRestoreMatch[1]!;
+      await updateResource(userId, resourceId, { archived: false, ttl: undefined, updatedAt: new Date().toISOString() });
+      return ok({ restored: true });
+    }
+
+    // GET /evaluator/courses/:courseId/resources — resources assigned to a course (evaluator view)
+    const courseResourcesEvalMatch = path.match(/^\/evaluator\/courses\/([^/]+)\/resources$/);
+    if (courseResourcesEvalMatch && method === 'GET') {
+      const courseId = courseResourcesEvalMatch[1]!;
+      const resources = await getResourcesByCourse(courseId);
+      return ok(resources);
     }
 
     return badRequest('Unknown route');

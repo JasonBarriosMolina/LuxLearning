@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked } from 'lucide-react';
+import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface MyCourse {
@@ -117,6 +117,13 @@ export default function MyCoursesPage() {
                 >
                   <Users className="w-3.5 h-3.5" />
                   Estudiantes
+                </Link>
+                <Link
+                  href="/evaluator/my-resources"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  Recursos
                 </Link>
               </div>
             </div>

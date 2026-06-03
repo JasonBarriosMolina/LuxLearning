@@ -147,6 +147,36 @@ export const handler = async (event: Event) => {
       return ok({ submitted: true });
     }
 
+    // POST /tasks/:taskId/submit-file — student submits a task with a file uploaded to S3
+    const submitFileMatch = path.match(/^\/tasks\/([^/]+)\/submit-file$/);
+    if (method === 'POST' && submitFileMatch) {
+      const taskId = submitFileMatch[1]!;
+      const rawTasks = await getTasksForUser(userId);
+      const task = rawTasks.find((t: any) => t.taskId === taskId);
+      if (!task) return badRequest('Tarea no encontrada');
+      const { fileKey, fileName, fileType, submissionText } = JSON.parse(event.body ?? '{}') as { fileKey?: string; fileName?: string; fileType?: string; submissionText?: string };
+      if (!fileKey && !submissionText) return badRequest('fileKey o submissionText son requeridos');
+      const now = new Date().toISOString();
+      const publicUrl = fileKey ? `https://${process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images'}.s3.amazonaws.com/${fileKey}` : undefined;
+      await updateTask(userId, task.sk, {
+        status: 'SUBMITTED', submittedAt: now,
+        ...(publicUrl ? { fileUrl: publicUrl, fileName, fileType } : {}),
+        ...(submissionText ? { submissionText } : {}),
+      });
+      if (task.assignedBy) {
+        await createNotification({
+          userId: task.assignedBy,
+          notifId: `task-file-${taskId}-${Date.now()}`,
+          type: 'TASK_SUBMITTED',
+          message: `Un estudiante entregó la tarea "${task.title}"${fileName ? ` (${fileName})` : ''}`,
+          read: false,
+          createdAt: now,
+          actionUrl: '/evaluator/tasks',
+        });
+      }
+      return ok({ submitted: true, fileUrl: publicUrl });
+    }
+
     // POST /tasks/:taskId/undo — student retracts a submitted task (back to PENDING)
     const undoMatch = path.match(/^\/tasks\/([^/]+)\/undo$/);
     if (method === 'POST' && undoMatch) {

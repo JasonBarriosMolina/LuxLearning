@@ -44,6 +44,7 @@ export const api = {
   courses: {
     list: () => request<GetCoursesResponse>('/courses'),
     get: (courseId: string) => request<GetCourseResponse>(`/courses/${courseId}`),
+    resources: (courseId: string) => request<any>(`/courses/${courseId}/resources`),
   },
 
   lessons: {
@@ -111,12 +112,26 @@ export const api = {
       get: () => request<any>('/evaluator/signature'),
       save: (signature: string) => request<any>('/evaluator/signature', { method: 'PUT', body: JSON.stringify({ signature }) }),
     },
+    resources: {
+      list: () => request<any>('/evaluator/resources'),
+      create: (body: { title: string; description?: string; fileUrl: string; fileName: string; fileType: string; fileSize?: number; folder?: string; courseIds?: string[] }) =>
+        request<any>('/evaluator/resources', { method: 'POST', body: JSON.stringify(body) }),
+      update: (resourceId: string, body: { title?: string; description?: string; folder?: string; courseIds?: string[] }) =>
+        request<any>(`/evaluator/resources/${resourceId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (resourceId: string) =>
+        request<any>(`/evaluator/resources/${resourceId}`, { method: 'DELETE' }),
+      restore: (resourceId: string) =>
+        request<any>(`/evaluator/resources/${resourceId}/restore`, { method: 'POST' }),
+      byCourse: (courseId: string) => request<any>(`/evaluator/courses/${courseId}/resources`),
+    },
   },
 
   tasks: {
     list: () => request<any>('/tasks'),
     complete: (taskId: string) => request<any>(`/tasks/${taskId}/complete`, { method: 'POST' }),
     submit: (taskId: string) => request<any>(`/tasks/${taskId}/submit`, { method: 'POST' }),
+    submitFile: (taskId: string, body: { fileKey?: string; fileName?: string; fileType?: string; submissionText?: string }) =>
+      request<any>(`/tasks/${taskId}/submit-file`, { method: 'POST', body: JSON.stringify(body) }),
     undo: (taskId: string) => request<any>(`/tasks/${taskId}/undo`, { method: 'POST' }),
     importIcs: (events: { summary: string; dtstart: string; description?: string }[]) =>
       request<any>('/student/tasks/import', { method: 'POST', body: JSON.stringify({ events }) }),
@@ -271,6 +286,10 @@ export const api = {
       list: () => request<any>('/admin/email-templates'),
       update: (type: string, subject: string, htmlBody: string) =>
         request<any>(`/admin/email-templates/${type}`, { method: 'PUT', body: JSON.stringify({ subject, htmlBody }) }),
+    },
+    files: {
+      presign: (body: { fileName: string; fileType: string; folder?: 'tasks' | 'resources' | 'uploads' }) =>
+        request<any>('/admin/files/presign', { method: 'POST', body: JSON.stringify(body) }),
     },
   },
   profile: {

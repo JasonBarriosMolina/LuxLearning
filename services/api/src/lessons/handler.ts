@@ -9,10 +9,12 @@ import {
   getTranscript, saveTranscript,
   updateLastSeen,
   markOnboardingDone, isOnboardingDone,
-  getTasksForUser, updateTask,
+  getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
   TABLES, ddb,
 } from '../shared/db-dynamo';
+import { sendTemplatedEmail } from '../shared/email';
+import { getPrismaClient } from '../shared/db-neon';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
@@ -47,6 +49,36 @@ export const handler = async (event: Event) => {
       const { courseId, moduleId, lessonId, durationMs } = body;
       if (!courseId || !moduleId || !lessonId) return badRequest('courseId, moduleId and lessonId are required');
       await markLessonComplete({ userId, courseId, moduleId, lessonId, completedAt: new Date().toISOString(), durationMs });
+
+      // Check if ALL lessons in the module are now complete → trigger MODULE_COMPLETED
+      try {
+        const prisma = await getPrismaClient();
+        const [module, progress] = await Promise.all([
+          prisma.module.findUnique({ where: { id: moduleId }, include: { lessons: true, course: { select: { title: true } } } }),
+          getLessonProgress(userId, courseId),
+        ]);
+        if (module) {
+          const completedIds = new Set(progress.map((p) => p.lessonId));
+          const allDone = module.lessons.every((l) => completedIds.has(l.id));
+          if (allDone) {
+            const email = event.requestContext.authorizer?.lambda?.email;
+            const courseTitle = module.course?.title ?? courseId;
+            const frontendUrl = process.env.FRONTEND_URL ?? '';
+            // Auto-complete matching tasks (non-fatal)
+            await autoCompleteTasks(userId, 'complete_module', moduleId);
+            // Send email notification (non-fatal)
+            if (email) {
+              sendTemplatedEmail(email, 'MODULE_COMPLETED', {
+                studentName: userId,
+                moduleTitle: module.title,
+                courseTitle,
+                actionUrl: `${frontendUrl}/courses/${courseId}/modules/${moduleId}`,
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+
       return ok({ marked: true });
     }
 

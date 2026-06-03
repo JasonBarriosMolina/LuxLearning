@@ -14,10 +14,14 @@ export type EmailTemplateType =
   | 'REFLECTION_APPROVED'
   | 'REFLECTION_REJECTED'
   | 'REFLECTION_RECONSIDERED'
+  | 'REFLECTION_SUBMITTED'
   | 'TASK_ASSIGNED'
   | 'TASK_DUE_SOON'
   | 'MESSAGE_UNREAD'
   | 'COURSE_UPDATED'
+  | 'COURSE_ASSIGNED'
+  | 'QUIZ_PASSED'
+  | 'MODULE_COMPLETED'
   | 'WELCOME'
   | 'ENROLLMENT';
 
@@ -101,6 +105,34 @@ const DEFAULT_TEMPLATES: Record<EmailTemplateType, { subject: string; htmlBody: 
 <p>Hola <strong>{{studentName}}</strong>,</p>
 <p>Fuiste inscrito en el curso <strong>{{courseTitle}}</strong>.</p>
 <p>Da click al siguiente enlace para ver esta información: <a href="{{frontendUrl}}/dashboard">Ir al dashboard</a></p>`,
+  },
+  REFLECTION_SUBMITTED: {
+    subject: 'Nueva reflexión recibida para revisión',
+    htmlBody: `<h2 style="color:#6366f1;">📋 Nueva Reflexión para Revisar</h2>
+<p>Hola <strong>{{evaluatorName}}</strong>,</p>
+<p>El estudiante <strong>{{studentName}}</strong> envió una reflexión del módulo <strong>{{moduleTitle}}</strong> del curso <strong>{{courseTitle}}</strong>.</p>
+<p>Da click al siguiente enlace para ver esta información: <a href="{{actionUrl}}">Revisar reflexión</a></p>`,
+  },
+  COURSE_ASSIGNED: {
+    subject: 'Se te asignó un curso como evaluador',
+    htmlBody: `<h2 style="color:#6366f1;">🎓 Nuevo Curso Asignado</h2>
+<p>Hola <strong>{{evaluatorName}}</strong>,</p>
+<p>Se te asignó el curso <strong>{{courseTitle}}</strong> como evaluador. Ahora eres responsable de revisar las reflexiones y el avance de los estudiantes en este curso.</p>
+<p>Da click al siguiente enlace para ver esta información: <a href="{{frontendUrl}}/evaluator/my-courses">Ver mis cursos</a></p>`,
+  },
+  QUIZ_PASSED: {
+    subject: '¡Aprobaste el quiz!',
+    htmlBody: `<h2 style="color:#059669;">🎉 ¡Quiz Aprobado!</h2>
+<p>Hola <strong>{{studentName}}</strong>,</p>
+<p>Aprobaste el quiz del módulo <strong>{{moduleTitle}}</strong> con un puntaje de <strong>{{score}}%</strong>.</p>
+<p>Da click al siguiente enlace para continuar: <a href="{{actionUrl}}">Continuar módulo</a></p>`,
+  },
+  MODULE_COMPLETED: {
+    subject: '¡Completaste un módulo!',
+    htmlBody: `<h2 style="color:#059669;">✅ Módulo Completado</h2>
+<p>Hola <strong>{{studentName}}</strong>,</p>
+<p>Completaste todas las lecciones del módulo <strong>{{moduleTitle}}</strong> del curso <strong>{{courseTitle}}</strong>.</p>
+<p>Da click al siguiente enlace para continuar: <a href="{{actionUrl}}">Ver mi progreso</a></p>`,
   },
 };
 

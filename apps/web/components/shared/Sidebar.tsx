@@ -20,6 +20,7 @@ import {
   UserPlus,
   MessageSquare,
   Mail,
+  FolderOpen,
 } from 'lucide-react';
 import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -99,6 +100,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/evaluator/my-courses',
     label: 'Mis Cursos',
     icon: <BookOpen className="w-5 h-5" />,
+    roles: ['EVALUATOR', 'ADMIN'],
+  },
+  {
+    href: '/evaluator/my-resources',
+    label: 'Mis Recursos',
+    icon: <FolderOpen className="w-5 h-5" />,
     roles: ['EVALUATOR', 'ADMIN'],
   },
   {

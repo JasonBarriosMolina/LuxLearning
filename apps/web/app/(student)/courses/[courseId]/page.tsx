@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle, FolderOpen, Link2, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -18,6 +18,7 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [chatUnread, setChatUnread] = useState(0);
   const [contactingEvaluator, setContactingEvaluator] = useState(false);
+  const [resources, setResources] = useState<any[]>([]);
 
   useEffect(() => {
     api.courses.get(courseId).then((res) => {
@@ -40,6 +41,11 @@ export default function CoursePage() {
             .then((r: any) => { if (r?.data) setCert(r.data); })
             .catch(() => {});
         }
+      }).catch(() => {});
+
+      // Load course resources
+      api.courses.resources(courseId).then((res: any) => {
+        setResources((res as any)?.data ?? []);
       }).catch(() => {});
 
       // Load chat unread count for group chat
@@ -201,18 +207,50 @@ export default function CoursePage() {
           </div>
         )}
 
-        {/* Biblioteca — placeholder */}
-        <div
-          className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group"
-          title="Próximamente"
-        >
-          <Library className="w-4 h-4" />
-          Biblioteca
-          <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-            Próximamente
-          </span>
-        </div>
+        {/* Recursos del curso */}
+        {resources.length > 0 ? (
+          <button
+            onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
+            className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
+          >
+            <FolderOpen className="w-4 h-4" />
+            Recursos ({resources.length})
+          </button>
+        ) : (
+          <div className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group" title="Próximamente">
+            <Library className="w-4 h-4" />
+            Biblioteca
+            <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Próximamente</span>
+          </div>
+        )}
       </div>
+
+      {/* Resources section */}
+      {resources.length > 0 && (
+        <div id="course-resources" className="card p-5 space-y-3">
+          <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-indigo-500" /> Recursos del curso
+          </h3>
+          <div className="space-y-2">
+            {resources.map((r: any) => (
+              <a
+                key={r.resourceId}
+                href={r.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-indigo-200 hover:bg-indigo-50/50 transition-colors"
+              >
+                <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-charcoal truncate">{r.title}</p>
+                  {r.description && <p className="text-xs text-gray-500 truncate">{r.description}</p>}
+                </div>
+                <Link2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Course completion banner */}
       {isCourseComplete && (

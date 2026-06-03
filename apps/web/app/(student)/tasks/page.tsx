@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardList, Calendar, CheckCircle, AlertCircle, Clock, BookOpen, Loader2, ExternalLink, List, CalendarDays, Upload, Send, Undo2 } from 'lucide-react';
+import { ClipboardList, Calendar, CheckCircle, AlertCircle, Clock, BookOpen, Loader2, ExternalLink, List, CalendarDays, Upload, Send, Undo2, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
+import { FileUpload } from '@/components/ui/FileUpload';
 
 type TaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
 interface Task {
@@ -25,6 +26,10 @@ interface Task {
   completedAt?: string;
   submittedAt?: string;
   submissionUrl?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  submissionText?: string;
 }
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -35,6 +40,16 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 const URL_TASK_TYPES = ['upload_link', 'watch_video', 'read_resource'];
+const FILE_UPLOAD_TYPES = ['report', 'practical', 'project_progress', 'project_final', 'portfolio', 'presentation'];
+const TEXT_SUBMIT_TYPES = ['theoretical', 'peer_review'];
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  custom: 'Tarea', complete_module: 'Completar módulo', submit_reflection: 'Reflexión',
+  pass_quiz: 'Quiz', upload_link: 'Enlace', watch_video: 'Ver video', read_resource: 'Leer recurso',
+  report: 'Reporte', theoretical: 'Tarea teórica', practical: 'Tarea práctica',
+  project_progress: 'Avance de proyecto', project_final: 'Entrega final', portfolio: 'Portfolio',
+  presentation: 'Presentación', peer_review: 'Revisión entre pares',
+};
 
 function taskColor(task: Task) {
   if (task.status === 'COMPLETED') return 'text-emerald-500';
@@ -85,6 +100,8 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [submissionUrls, setSubmissionUrls] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<Record<string, { fileKey: string; fileName: string; fileType: string; fileSize: number } | null>>({});
+  const [textSubmissions, setTextSubmissions] = useState<Record<string, string>>({});
 
   const load = async () => {
     try {
@@ -120,6 +137,23 @@ export default function TasksPage() {
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'PENDING' as const, submittedAt: undefined } : t));
     } catch { alert('Error al deshacer la presentación'); }
     finally { setUndoing(null); }
+  };
+
+  const handleSubmitFile = async (taskId: string) => {
+    const file = pendingFiles[taskId];
+    const text = textSubmissions[taskId];
+    if (!file && !text?.trim()) return;
+    setSubmitting(taskId);
+    try {
+      await api.tasks.submitFile(taskId, {
+        ...(file ? { fileKey: file.fileKey, fileName: file.fileName, fileType: file.fileType } : {}),
+        ...(text?.trim() ? { submissionText: text.trim() } : {}),
+      });
+      setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'SUBMITTED' as const, submittedAt: new Date().toISOString(), ...(file ? { fileUrl: `uploaded`, fileName: file.fileName } : {}), ...(text ? { submissionText: text } : {}) } : t));
+      setPendingFiles((p) => ({ ...p, [taskId]: null }));
+      setTextSubmissions((p) => ({ ...p, [taskId]: '' }));
+    } catch { alert('Error al entregar la tarea'); }
+    finally { setSubmitting(null); }
   };
 
   const handleSubmitUrl = async (taskId: string) => {
@@ -290,6 +324,58 @@ export default function TasksPage() {
                           <ExternalLink className="w-3.5 h-3.5" />
                           Abrir recurso →
                         </a>
+                      )}
+
+                      {/* File upload for report/practical/project types */}
+                      {FILE_UPLOAD_TYPES.includes(task.type) && task.status === 'PENDING' && (
+                        <div className="mt-2 space-y-2">
+                          <FileUpload
+                            folder="tasks"
+                            accept=".pdf,.docx,.pptx,.xlsx,.zip,.rar,.jpg,.jpeg,.png,.mp4"
+                            maxSizeMB={100}
+                            label="Sube tu entrega aquí"
+                            onUploaded={(res) => setPendingFiles((p) => ({ ...p, [task.taskId]: res }))}
+                            onError={(msg) => alert(msg)}
+                          />
+                          {pendingFiles[task.taskId] && (
+                            <button
+                              onClick={() => handleSubmitFile(task.taskId)}
+                              disabled={submitting === task.taskId}
+                              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-cta-gradient text-white hover:opacity-90 transition-opacity disabled:opacity-40"
+                            >
+                              {submitting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Entregar archivo
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Text submission for theoretical / peer_review */}
+                      {TEXT_SUBMIT_TYPES.includes(task.type) && task.status === 'PENDING' && (
+                        <div className="mt-2 space-y-2">
+                          <textarea
+                            rows={3}
+                            placeholder="Escribe tu respuesta aquí..."
+                            value={textSubmissions[task.taskId] ?? ''}
+                            onChange={(e) => setTextSubmissions((p) => ({ ...p, [task.taskId]: e.target.value }))}
+                            className="input-field text-sm w-full resize-none"
+                          />
+                          <button
+                            onClick={() => handleSubmitFile(task.taskId)}
+                            disabled={submitting === task.taskId || !textSubmissions[task.taskId]?.trim()}
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-cta-gradient text-white hover:opacity-90 disabled:opacity-40"
+                          >
+                            {submitting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Entregar respuesta
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Show submitted file */}
+                      {task.fileName && task.status === 'SUBMITTED' && (
+                        <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                          <FileText className="w-3 h-3" /> {task.fileName}
+                        </p>
                       )}
 
                       {/* URL submission for upload_link type */}

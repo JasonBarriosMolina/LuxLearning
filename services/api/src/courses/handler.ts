@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments } from '../shared/db-dynamo';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse } from '../shared/db-dynamo';
 import { ok, notFound, serverError, cors } from '../shared/response';
 
 type AuthContext = { userId: string; email: string; role: string };
@@ -123,6 +123,14 @@ export const handler = async (event: Event) => {
       }
 
       return ok(course);
+    }
+
+    // GET /courses/:courseId/resources — public resources for students enrolled in this course
+    const courseResourcesMatch = path.match(/^\/courses\/([^/]+)\/resources$/);
+    if (courseResourcesMatch) {
+      const courseId = courseResourcesMatch[1]!;
+      const resources = await getResourcesByCourse(courseId);
+      return ok(resources);
     }
 
     return notFound();
