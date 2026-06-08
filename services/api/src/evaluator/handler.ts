@@ -35,6 +35,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CacheEntry { value: string; expiresAt: number }
 const emailCache = new Map<string, CacheEntry>();
 const roleCache = new Map<string, CacheEntry>();
+const nameCache = new Map<string, CacheEntry>();
 
 function cacheGet(map: Map<string, CacheEntry>, key: string): string | undefined {
   const entry = map.get(key);
@@ -47,28 +48,33 @@ function cacheSet(map: Map<string, CacheEntry>, key: string, value: string): voi
   map.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function getCognitoUser(userId: string): Promise<{ email: string; role: string } | null> {
+async function getCognitoUser(userId: string): Promise<{ email: string; role: string; name: string } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
   const cachedEmail = cacheGet(emailCache, userId);
-  if (cachedEmail !== undefined) return { email: cachedEmail, role: cacheGet(roleCache, userId) ?? '' };
+  if (cachedEmail !== undefined) return { email: cachedEmail, role: cacheGet(roleCache, userId) ?? '', name: cacheGet(nameCache, userId) ?? cachedEmail };
   try {
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
-    const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value ?? userId;
-    const role = res.UserAttributes?.find((a) => a.Name === 'custom:role')?.Value ?? '';
+    const attrs = res.UserAttributes ?? [];
+    const email = attrs.find((a) => a.Name === 'email')?.Value ?? userId;
+    const role = attrs.find((a) => a.Name === 'custom:role')?.Value ?? '';
+    const name = attrs.find((a) => a.Name === 'name')?.Value
+      ?? attrs.find((a) => a.Name === 'given_name')?.Value
+      ?? email;
     cacheSet(emailCache, userId, email);
     cacheSet(roleCache, userId, role);
-    return { email, role };
+    cacheSet(nameCache, userId, name);
+    return { email, role, name };
   } catch {
     return null;
   }
 }
 
 async function resolveStudentName(userId: string, storedEmail?: string): Promise<string> {
-  if (storedEmail) return storedEmail;
-  const cached = cacheGet(emailCache, userId);
-  if (cached !== undefined) return cached;
+  // Always prefer the real name from Cognito — fall back to email only if unavailable
+  const cachedName = cacheGet(nameCache, userId);
+  if (cachedName !== undefined) return cachedName;
   const user = await getCognitoUser(userId);
-  return user?.email ?? userId;
+  return user?.name ?? storedEmail ?? userId;
 }
 
 async function isStudentRole(userId: string): Promise<boolean> {
@@ -80,30 +86,14 @@ async function isStudentRole(userId: string): Promise<boolean> {
 
 // Returns { email, name } for a student — email for sending, name for display
 async function resolveStudentContact(userId: string, reflection: any): Promise<{ email: string; name: string }> {
-  // New reflections store studentEmail directly
   const storedEmail: string | undefined = reflection.studentEmail;
-  if (storedEmail && storedEmail.includes('@')) {
-    // Try to get display name from Cognito
-    try {
-      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
-      const name = res.UserAttributes?.find((a: any) => a.Name === 'name')?.Value
-        ?? res.UserAttributes?.find((a: any) => a.Name === 'email')?.Value
-        ?? storedEmail;
-      return { email: storedEmail, name };
-    } catch {
-      return { email: storedEmail, name: storedEmail.split('@')[0] };
-    }
+  // Always try Cognito first to get the real name (uses cache from getCognitoUser)
+  const cognitoUser = await getCognitoUser(userId);
+  if (cognitoUser) {
+    return { email: cognitoUser.email, name: cognitoUser.name };
   }
-  // UUID userId — look up email + name from Cognito
-  if (/^[0-9a-f-]{36}$/i.test(userId)) {
-    try {
-      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
-      const email = res.UserAttributes?.find((a: any) => a.Name === 'email')?.Value ?? '';
-      const name = res.UserAttributes?.find((a: any) => a.Name === 'name')?.Value ?? email.split('@')[0] ?? userId;
-      if (email) return { email, name };
-    } catch { /* fall through */ }
-  }
-  // userId might already be the email
+  // Fallback: no Cognito record (e.g. non-UUID userId)
+  if (storedEmail && storedEmail.includes('@')) return { email: storedEmail, name: storedEmail.split('@')[0] };
   if (userId.includes('@')) return { email: userId, name: userId.split('@')[0] };
   return { email: '', name: userId };
 }
@@ -433,7 +423,7 @@ export const handler = async (event: Event) => {
     // GET /evaluator/my-courses — courses owned by this evaluator
     if (method === 'GET' && path === '/evaluator/my-courses') {
       const courses = await prisma.course.findMany({
-        where: { evaluatorId: userId },
+        where: { evaluatorId: auth?.userId },
         include: { modules: { select: { id: true, title: true, order: true } } },
         orderBy: { createdAt: 'desc' },
       });
@@ -1071,6 +1061,43 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
       const courseId = courseResourcesEvalMatch[1]!;
       const resources = await getResourcesByCourse(courseId);
       return ok(resources);
+    }
+
+    // POST /evaluator/translate — translate evaluator feedback text using Bedrock
+    if (method === 'POST' && path === '/evaluator/translate') {
+      const { text, targetLang } = body as { text?: string; targetLang?: string };
+      if (!text?.trim()) return badRequest('text is required');
+      const validLangs: Record<string, string> = {
+        es: 'español',
+        en: 'English',
+        pt: 'português',
+        fr: 'français',
+      };
+      const targetLabel = validLangs[targetLang ?? ''];
+      if (!targetLabel) return badRequest('targetLang must be es, en, pt, or fr');
+
+      const translatePrompt = `Translate the following educational feedback text to ${targetLabel}.
+Preserve the tone, formality, and educational context.
+Return ONLY the translated text, no explanations or extra content.
+
+Text to translate:
+${text.trim()}`;
+
+      const translateResponse = await bedrock.send(new InvokeModelCommand({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 2048,
+          messages: [{ role: 'user', content: translatePrompt }],
+        }),
+      }));
+
+      const translateRaw = JSON.parse(new TextDecoder().decode(translateResponse.body));
+      const translatedText = translateRaw.content?.[0]?.text?.trim() ?? '';
+      if (!translatedText) return serverError('Translation returned empty result');
+      return ok({ translatedText });
     }
 
     return badRequest('Unknown route');

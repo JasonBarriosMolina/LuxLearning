@@ -8,14 +8,17 @@ import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { formatDate } from '@/lib/utils';
 import type { Reflection, ReflectionStatus } from '@lux/types';
+import { useLanguage } from '@/lib/i18n';
 
 type EnrichedReflection = Reflection & { moduleTitle?: string; courseTitle?: string; studentName?: string };
 
-const STATUS_FILTERS: Array<{ label: string; value: ReflectionStatus | 'ALL' }> = [
-  { label: 'Todas', value: 'ALL' },
-  { label: 'Pendientes', value: 'PENDING_EVAL' },
-  { label: 'Aprobadas', value: 'APPROVED' },
-  { label: 'Rechazadas', value: 'REJECTED' },
+type StatusFilter = { labelKey: 'filterAll' | 'filterPending' | 'filterApproved' | 'filterRejected'; value: ReflectionStatus | 'ALL' };
+
+const STATUS_FILTERS: StatusFilter[] = [
+  { labelKey: 'filterAll', value: 'ALL' },
+  { labelKey: 'filterPending', value: 'PENDING_EVAL' },
+  { labelKey: 'filterApproved', value: 'APPROVED' },
+  { labelKey: 'filterRejected', value: 'REJECTED' },
 ];
 
 const DEADLINE_HOURS = 48;
@@ -40,6 +43,7 @@ function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: s
 }
 
 export default function EvaluatorReflectionsPage() {
+  const { t, lang } = useLanguage();
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -82,7 +86,7 @@ export default function EvaluatorReflectionsPage() {
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Evaluaciones</h1>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.nav.evaluations}</h1>
           <p className="text-gray-500 mt-1 text-sm">
             {pendingCount} pendientes
             {urgentCount > 0 && (
@@ -98,7 +102,7 @@ export default function EvaluatorReflectionsPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Input
-            placeholder="Buscar por estudiante, módulo o curso..."
+            placeholder={lang === 'en' ? 'Search by student, module or course...' : 'Buscar por estudiante, módulo o curso...'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={<Search className="w-4 h-4" />}
@@ -115,7 +119,7 @@ export default function EvaluatorReflectionsPage() {
                   : 'bg-white border border-border text-gray-600 hover:border-cta-from'
               }`}
             >
-              {f.label}
+              {t.evaluator[f.labelKey]}
               {f.value === 'PENDING_EVAL' && pendingCount > 0 && (
                 <span className="ml-1.5 bg-white/30 text-xs px-1.5 py-0.5 rounded-full">
                   {statusFilter === 'PENDING_EVAL' ? '' : pendingCount}
@@ -132,7 +136,7 @@ export default function EvaluatorReflectionsPage() {
             }`}
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
-            {sortByUrgent ? 'Por urgencia' : 'Por fecha'}
+            {sortByUrgent ? (lang === 'en' ? 'By urgency' : 'Por urgencia') : (lang === 'en' ? 'By date' : 'Por fecha')}
           </button>
         </div>
       </div>

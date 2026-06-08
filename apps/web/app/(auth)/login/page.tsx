@@ -8,13 +8,21 @@ import { PrismaLogo } from '@/components/shared/PrismaLogo';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { login, completeNewPassword, getUserRole } from '@/lib/auth';
+import { useLanguage } from '@/lib/i18n';
+import type { Lang } from '@/lib/i18n';
 
 type Step = 'login' | 'new_password';
+
+const LANGS: { code: Lang; label: string }[] = [
+  { code: 'es', label: 'ES' },
+  { code: 'en', label: 'EN' },
+];
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirect');
+  const { lang, setLang, t } = useLanguage();
 
   const [step, setStep] = useState<Step>('login');
   const [email, setEmail] = useState('');
@@ -133,14 +141,29 @@ function LoginForm() {
   // ── Normal login ──────────────────────────────────────────────────────────
   return (
     <div className="bg-white rounded-2xl shadow-card-hover p-8">
-      <div className="mb-6">
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Bienvenido</h1>
-        <p className="text-gray-500 mt-1 text-sm">Ingresa a tu cuenta de Lux Learning</p>
+      <div className="mb-6 flex items-start justify-between gap-2">
+        <div>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.auth.signIn === 'Sign in' ? 'Welcome' : 'Bienvenido'}</h1>
+          <p className="text-gray-500 mt-1 text-sm">{lang === 'en' ? 'Sign in to your Lux Learning account' : 'Ingresa a tu cuenta de Lux Learning'}</p>
+        </div>
+        <div className="flex gap-1 border border-border rounded-lg overflow-hidden shrink-0">
+          {LANGS.map((l) => (
+            <button
+              key={l.code}
+              onClick={() => setLang(l.code)}
+              className={`px-2.5 py-1 text-xs font-bold transition-colors ${
+                lang === l.code ? 'bg-cta-from text-white' : 'text-gray-400 hover:text-charcoal'
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <form onSubmit={handleLogin} className="space-y-4">
         <Input
-          label="Correo electrónico"
+          label={t.auth.email}
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -152,7 +175,7 @@ function LoginForm() {
 
         <div className="relative">
           <Input
-            label="Contraseña"
+            label={t.auth.password}
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -172,7 +195,7 @@ function LoginForm() {
 
         <div className="flex justify-end">
           <Link href="/forgot-password" className="text-xs text-cta-from font-semibold hover:opacity-80 transition-opacity">
-            ¿Olvidaste tu contraseña?
+            {t.auth.forgotPassword}
           </Link>
         </div>
 
@@ -181,14 +204,14 @@ function LoginForm() {
         )}
 
         <Button type="submit" loading={loading} className="w-full">
-          Iniciar sesión
+          {t.auth.signIn}
         </Button>
       </form>
 
       <p className="text-center text-sm text-gray-500 mt-6">
-        ¿No tienes cuenta?{' '}
+        {t.auth.noAccount}{' '}
         <Link href="/register" className="gradient-text font-semibold hover:opacity-80 transition-opacity">
-          Regístrate
+          {t.auth.register}
         </Link>
       </p>
     </div>

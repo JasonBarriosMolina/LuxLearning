@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils';
 import type { Reflection } from '@lux/types';
+import { useLanguage } from '@/lib/i18n';
 
 type EnrichedReflection = Reflection & {
   moduleTitle?: string;
@@ -90,7 +91,8 @@ export default function EvaluatorDashboardPage() {
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
   const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
 
-  const displayName = name || email?.split('@')[0] || 'Evaluador';
+  const { t, lang } = useLanguage();
+  const displayName = name || email?.split('@')[0] || t.roles.evaluator;
 
   useEffect(() => {
     Promise.all([
@@ -158,9 +160,11 @@ export default function EvaluatorDashboardPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
-            Panel del Evaluador
+            {t.evaluator.dashboard}
           </h1>
-          <p className="text-gray-500 mt-1 text-sm">Hola, <strong>{displayName}</strong>. Aquí está tu carga de trabajo.</p>
+          <p className="text-gray-500 mt-1 text-sm">
+            {lang === 'en' ? 'Hello, ' : 'Hola, '}<strong>{displayName}</strong>. {lang === 'en' ? 'Here is your workload.' : 'Aquí está tu carga de trabajo.'}
+          </p>
         </div>
 
         {/* Toggle Curso / Estudiante */}

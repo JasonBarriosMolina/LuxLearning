@@ -8,6 +8,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { PushBell } from '@/components/ui/PushBell';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { useLanguage } from '@/lib/i18n';
+import type { Lang } from '@/lib/i18n';
 
 interface TopbarProps {
   title?: string;
@@ -30,13 +32,21 @@ function NotifIcon({ type }: { type: string }) {
   return <Clock className="w-4 h-4 text-gray-400" />;
 }
 
+const LANGS: { code: Lang; label: string }[] = [
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'English' },
+];
+
 export function Topbar({ title, onMenuClick }: TopbarProps) {
   const { role } = useAuth();
   const router = useRouter();
+  const { lang, setLang, t } = useLanguage();
   const isEvaluator = role === 'EVALUATOR' || role === 'ADMIN';
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+  const langRef = useRef<HTMLDivElement>(null);
 
   const unread = notifs.filter((n) => !n.read).length;
 
@@ -47,12 +57,11 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
       .catch(() => {});
   }, []);
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setOpen(false);
+      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -69,17 +78,13 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
     await Promise.allSettled(unreadIds.map((id) => api.notifications.markRead(id)));
   };
 
-  const handleOpen = () => {
-    setOpen((v) => !v);
-  };
-
   return (
     <header className="sticky top-0 z-30 bg-white dark:bg-[#1A1A2E] border-b border-border h-16 flex items-center px-4 lg:px-6 gap-4 shrink-0">
       {/* Mobile menu button */}
       <button
         onClick={onMenuClick}
         className="lg:hidden p-2 rounded-lg hover:bg-surface text-charcoal transition-colors"
-        aria-label="Abrir menú"
+        aria-label={t.topbar.openMenu}
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -100,15 +105,45 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
       {/* Theme toggle */}
       <ThemeToggle />
 
+      {/* Language toggle */}
+      <div className="relative" ref={langRef}>
+        <button
+          onClick={() => setLangOpen((v) => !v)}
+          title={t.topbar.changeLanguage}
+          aria-label={t.topbar.changeLanguage}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border hover:bg-surface text-xs font-bold text-gray-500 hover:text-charcoal tracking-wider transition-colors"
+        >
+          {lang.toUpperCase()}
+        </button>
+        {langOpen && (
+          <div className="absolute right-0 top-full mt-2 min-w-[120px] bg-white dark:bg-[#1A1A2E] border border-border rounded-xl shadow-xl overflow-hidden z-50 animate-fade-in">
+            {LANGS.map((l) => (
+              <button
+                key={l.code}
+                onClick={() => { setLang(l.code); setLangOpen(false); }}
+                className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                  lang === l.code
+                    ? 'bg-surface text-cta-from font-semibold'
+                    : 'text-gray-600 hover:bg-surface hover:text-charcoal'
+                }`}
+              >
+                <span className="text-xs font-bold w-6 shrink-0">{l.code.toUpperCase()}</span>
+                <span>{l.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Push bell — only evaluators/admins need real-time alerts in topbar */}
       {isEvaluator && <PushBell />}
 
       {/* Notification bell */}
       <div className="relative" ref={dropRef}>
         <button
-          onClick={handleOpen}
+          onClick={() => setOpen((v) => !v)}
           className="relative p-2 rounded-lg hover:bg-surface text-gray-500 hover:text-charcoal transition-colors"
-          aria-label="Notificaciones"
+          aria-label={t.topbar.notifications}
         >
           <Bell className="w-5 h-5" />
           {unread > 0 && (
@@ -122,13 +157,13 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
           <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1A1A2E] border border-border rounded-2xl shadow-xl overflow-hidden z-50 animate-fade-in">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <p className="font-heading font-bold text-sm text-charcoal">Notificaciones</p>
+              <p className="font-heading font-bold text-sm text-charcoal">{t.topbar.notifications}</p>
               {unread > 0 && (
                 <button
                   onClick={markAllRead}
                   className="flex items-center gap-1 text-xs text-cta-from font-semibold hover:opacity-70 transition-opacity"
                 >
-                  <CheckCheck className="w-3.5 h-3.5" /> Marcar todas como leídas
+                  <CheckCheck className="w-3.5 h-3.5" /> {t.topbar.markAllRead}
                 </button>
               )}
             </div>
@@ -138,7 +173,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
               {notifs.length === 0 ? (
                 <div className="px-4 py-8 text-center">
                   <Bell className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400">Sin notificaciones</p>
+                  <p className="text-sm text-gray-400">{t.topbar.noNotifications}</p>
                 </div>
               ) : (
                 notifs.map((n) => (
@@ -159,7 +194,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
                         {n.message}
                       </p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        {new Date(n.createdAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {new Date(n.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                     {!n.read && (

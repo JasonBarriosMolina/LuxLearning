@@ -99,6 +99,8 @@ export const api = {
       request<any>('/evaluator/reflections/reconsider', { method: 'POST', body: JSON.stringify({ userId, moduleId, reason }) }),
     aiCheck: (userId: string, moduleId: string) =>
       request<any>('/evaluator/ai-check', { method: 'POST', body: JSON.stringify({ userId, moduleId }) }),
+    translate: (text: string, targetLang: 'es' | 'en' | 'pt' | 'fr') =>
+      request<any>('/evaluator/translate', { method: 'POST', body: JSON.stringify({ text, targetLang }) }),
     tasks: {
       list: () => request<any>('/evaluator/tasks'),
       create: (body: { title: string; description?: string; type?: string; dueDate: string; courseId?: string; moduleId?: string; courseTitle?: string; moduleTitle?: string; assignTo: 'individual' | 'course'; userId?: string; targetCourseId?: string }) =>

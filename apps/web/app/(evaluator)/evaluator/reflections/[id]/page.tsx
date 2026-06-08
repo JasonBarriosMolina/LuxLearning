@@ -6,12 +6,13 @@ import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle, XCircle, User, BookOpen,
   Clock, AlertCircle, Brain, Copy, Check, Trash2, Plus,
-  Sparkles, Loader2, ClipboardCheck, X, Flag, Star, ScanSearch,
+  Sparkles, Loader2, ClipboardCheck, X, Flag, Star, ScanSearch, Languages,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n';
 
 const MIN_FEEDBACK_LEN = 20;
 const STORAGE_KEY = 'lux_frequent_comments';
@@ -250,6 +251,11 @@ export default function ReflectionDetailPage() {
   const [aiCheckLoading, setAiCheckLoading] = useState(false);
   const [aiCheckResult, setAiCheckResult] = useState<any>(null);
 
+  // Translation
+  const [translateLoading, setTranslateLoading] = useState(false);
+  const [translateError, setTranslateError] = useState('');
+  const { t } = useLanguage();
+
   // Quiz audit modal
   const [quizData, setQuizData] = useState<QuizAuditData | null>(null);
   const [quizLoading, setQuizLoading] = useState(false);
@@ -339,6 +345,21 @@ export default function ReflectionDetailPage() {
       setAiCheckResult({ error: true });
     } finally {
       setAiCheckLoading(false);
+    }
+  };
+
+  const translateFeedback = async (targetLang: 'es' | 'en' | 'pt' | 'fr') => {
+    if (!feedback.trim()) return;
+    setTranslateLoading(true);
+    setTranslateError('');
+    try {
+      const res = await api.evaluator.translate(feedback, targetLang);
+      const translated = (res as any).data?.translatedText ?? (res as any).translatedText ?? '';
+      if (translated) setFeedback(translated);
+    } catch {
+      setTranslateError(t.reflection.translateError);
+    } finally {
+      setTranslateLoading(false);
     }
   };
 
@@ -626,7 +647,7 @@ export default function ReflectionDetailPage() {
                   </div>
                 )}
 
-                <p className="text-xs text-gray-400">Será enviado por correo. Mínimo {MIN_FEEDBACK_LEN} caracteres.</p>
+                <p className="text-xs text-gray-400">{t.reflection.minCharsHint(MIN_FEEDBACK_LEN)}</p>
 
                 {/* Quality Score — only shows on Approve */}
                 <div className="space-y-2">
@@ -666,10 +687,29 @@ export default function ReflectionDetailPage() {
                   </div>
                 </div>
 
+                {/* Translate buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                    <Languages className="w-3.5 h-3.5" /> {t.reflection.translateTo}
+                  </span>
+                  {(['es', 'en', 'pt', 'fr'] as const).map((lang) => (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => translateFeedback(lang)}
+                      disabled={translateLoading || !feedback.trim()}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold border border-border hover:border-cta-from hover:bg-blue-50 hover:text-cta-from text-gray-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {translateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : lang.toUpperCase()}
+                    </button>
+                  ))}
+                  {translateError && <span className="text-xs text-red-500">{translateError}</span>}
+                </div>
+
                 <textarea
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="Escribe tu feedback..."
+                  placeholder={t.reflection.writeFeedback}
                   className="input-field min-h-[160px] resize-y text-sm"
                 />
 

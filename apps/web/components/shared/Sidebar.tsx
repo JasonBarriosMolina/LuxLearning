@@ -28,146 +28,49 @@ import { useInstallPrompt } from '@/lib/hooks/useInstallPrompt';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n';
 
 interface SidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }
 
+type NavKey =
+  | 'dashboard' | 'myCourses' | 'myProgress' | 'myTasks' | 'calendar'
+  | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
+  | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
+  | 'communications' | 'myResources' | 'adminCerts';
+
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: NavKey;
   icon: React.ReactNode;
   roles: ('STUDENT' | 'EVALUATOR' | 'ADMIN')[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  {
-    href: '/dashboard',
-    label: 'Dashboard',
-    icon: <LayoutDashboard className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/evaluator/dashboard',
-    label: 'Dashboard',
-    icon: <LayoutDashboard className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/courses',
-    label: 'Mis Cursos',
-    icon: <BookOpen className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/progress',
-    label: 'Mi Progreso',
-    icon: <TrendingUp className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/tasks',
-    label: 'Mis Tareas',
-    icon: <CalendarCheck className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/calendar',
-    label: 'Calendario',
-    icon: <CalendarDays className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/evaluator/reflections',
-    label: 'Evaluaciones',
-    icon: <ClipboardList className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/evaluator/students',
-    label: 'Estudiantes',
-    icon: <Users className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/evaluator/tasks',
-    label: 'Tareas',
-    icon: <CalendarCheck className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/evaluator/my-courses',
-    label: 'Mis Cursos',
-    icon: <BookOpen className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/evaluator/my-resources',
-    label: 'Mis Recursos',
-    icon: <FolderOpen className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/admin/courses',
-    label: 'Gestión de Contenido',
-    icon: <Settings2 className="w-5 h-5" />,
-    roles: ['ADMIN'],
-  },
-  {
-    href: '/admin/reports',
-    label: 'Reportes',
-    icon: <BarChart2 className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/admin/assign-courses',
-    label: 'Asignar Cursos',
-    icon: <UserPlus className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/admin/users',
-    label: 'Usuarios',
-    icon: <UserCog className="w-5 h-5" />,
-    roles: ['ADMIN'],
-  },
-  {
-    href: '/admin/email-templates',
-    label: 'Templates de Email',
-    icon: <Mail className="w-5 h-5" />,
-    roles: ['ADMIN'],
-  },
-  {
-    href: '/activity',
-    label: 'Mi Actividad',
-    icon: <TrendingUp className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/profile',
-    label: 'Mi Perfil',
-    icon: <UserCircle className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/communications',
-    label: 'Comunicaciones',
-    icon: <MessageSquare className="w-5 h-5" />,
-    roles: ['STUDENT'],
-  },
-  {
-    href: '/evaluator/communications',
-    label: 'Comunicaciones',
-    icon: <MessageSquare className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
-  {
-    href: '/evaluator/profile',
-    label: 'Mi Perfil',
-    icon: <UserCircle className="w-5 h-5" />,
-    roles: ['EVALUATOR', 'ADMIN'],
-  },
+  { href: '/dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/evaluator/dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/progress', labelKey: 'myProgress', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/tasks', labelKey: 'myTasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/my-courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/my-resources', labelKey: 'myResources', icon: <FolderOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/admin/courses', labelKey: 'contentMgmt', icon: <Settings2 className="w-5 h-5" />, roles: ['ADMIN'] },
+  { href: '/admin/reports', labelKey: 'reports', icon: <BarChart2 className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/admin/assign-courses', labelKey: 'assignCourses', icon: <UserPlus className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/admin/users', labelKey: 'users', icon: <UserCog className="w-5 h-5" />, roles: ['ADMIN'] },
+  { href: '/admin/email-templates', labelKey: 'emailTemplates', icon: <Mail className="w-5 h-5" />, roles: ['ADMIN'] },
+  { href: '/admin/certificates', labelKey: 'adminCerts', icon: <Download className="w-5 h-5" />, roles: ['ADMIN'] },
+  { href: '/activity', labelKey: 'myActivity', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
 ];
 
 function UnreadBadge() {
@@ -200,6 +103,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const { role, email, signOut } = useAuth();
   const { canInstall, install } = useInstallPrompt();
+  const { t } = useLanguage();
 
   const visibleItems = NAV_ITEMS.filter((item) =>
     role ? item.roles.includes(role as 'STUDENT' | 'EVALUATOR' | 'ADMIN') : false
@@ -230,7 +134,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           <div className="min-w-0">
             <p className="text-white text-sm font-medium truncate">{email ?? 'Usuario'}</p>
             <p className="text-white/50 text-xs">
-              {role === 'ADMIN' ? 'Super Admin' : role === 'EVALUATOR' ? 'Evaluador' : 'Estudiante'}
+              {role === 'ADMIN' ? t.roles.superAdmin : role === 'EVALUATOR' ? t.roles.evaluator : t.roles.student}
             </p>
           </div>
         </div>
@@ -254,7 +158,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               )}
             >
               {item.icon}
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{t.nav[item.labelKey]}</span>
               {isCommunications && <UnreadBadge />}
             </Link>
           );
@@ -269,7 +173,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200"
           >
             <Download className="w-5 h-5" />
-            Instalar app
+            {t.nav.installApp}
           </button>
         )}
         <button
@@ -277,7 +181,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200"
         >
           <LogOut className="w-5 h-5" />
-          Cerrar sesión
+          {t.nav.signOut}
         </button>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import type { Course, Certificate } from '@lux/types';
+import { useLanguage } from '@/lib/i18n';
 
 interface EnrichedModule {
   id: string;
@@ -24,6 +25,7 @@ type EnrichedCourse = Omit<Course, 'modules'> & { modules: EnrichedModule[] };
 
 export default function StudentDashboardPage() {
   const { email } = useAuth();
+  const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<EnrichedCourse[]>([]);
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -59,7 +61,7 @@ export default function StudentDashboardPage() {
 
   }, []);
 
-  const firstName = email?.split('@')[0] ?? 'Estudiante';
+  const firstName = email?.split('@')[0] ?? t.roles.student;
 
   // Calculate overall stats across all courses
   const stats = courses.reduce((acc, course) => {
@@ -100,6 +102,13 @@ export default function StudentDashboardPage() {
   })();
 
   const motivational = (progress: number) => {
+    if (lang === 'en') {
+      if (progress === 0) return 'Start your learning journey! 🚀';
+      if (progress <= 30) return 'Great start! Keep going 💪';
+      if (progress <= 70) return 'Halfway there! Don\'t stop 🔥';
+      if (progress < 100) return 'Almost done! One more push ⚡';
+      return 'Course completed! 🎉';
+    }
     if (progress === 0) return '¡Comienza tu viaje de aprendizaje! 🚀';
     if (progress <= 30) return '¡Buen comienzo! Sigue así 💪';
     if (progress <= 70) return '¡Vas a la mitad! No te detengas 🔥';
@@ -112,9 +121,9 @@ export default function StudentDashboardPage() {
       {/* Welcome */}
       <div>
         <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
-          Hola, {firstName} 👋
+          {lang === 'en' ? `Hello, ${firstName} 👋` : `Hola, ${firstName} 👋`}
         </h1>
-        <p className="text-gray-500 mt-1">Continúa tu aprendizaje. Claridad que transforma.</p>
+        <p className="text-gray-500 mt-1">{lang === 'en' ? 'Continue your learning. Clarity that transforms.' : 'Continúa tu aprendizaje. Claridad que transforma.'}</p>
       </div>
 
       {/* Dismissible welcome banner */}
@@ -237,7 +246,7 @@ export default function StudentDashboardPage() {
             );
           })()}
 
-          <h2 className="font-heading font-bold text-xl text-charcoal">Mis cursos</h2>
+          <h2 className="font-heading font-bold text-xl text-charcoal">{t.courses.myCourses}</h2>
           {courses.map((course) => {
             const allLessons = course.modules?.flatMap((m) => m.lessons ?? []) ?? [];
             const completedLessons = allLessons.filter((l) => l.completed).length;
