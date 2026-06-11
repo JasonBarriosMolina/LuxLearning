@@ -6,6 +6,7 @@ import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -33,6 +34,7 @@ function countWords(text: string): number {
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId ?? '';
   const studentEmail = event.requestContext.authorizer?.lambda?.email ?? '';

@@ -9,8 +9,10 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { cn, formatCourseDuration } from '@/lib/utils';
 import type { Certificate } from '@lux/types';
+import { useLanguage } from '@/lib/i18n';
 
 export default function CoursePage() {
+  const { t, lang } = useLanguage();
   const { courseId } = useParams<{ courseId: string }>();
   const router = useRouter();
   const [course, setCourse] = useState<any>(null);
@@ -100,7 +102,7 @@ export default function CoursePage() {
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
       {/* Breadcrumb */}
       <Link href="/courses" className="flex items-center gap-1 text-sm text-gray-500 hover:text-charcoal">
-        <ArrowLeft className="w-4 h-4" /> Mis Cursos
+        <ArrowLeft className="w-4 h-4" /> {t.courseDetail.breadcrumb}
       </Link>
 
       {/* Course header */}
@@ -129,19 +131,19 @@ export default function CoursePage() {
                 {course.createdByName && (
                   <span className="flex items-center gap-1 text-xs text-gray-400">
                     <User className="w-3.5 h-3.5" />
-                    Creado por <span className="font-medium text-gray-600">{course.createdByName}</span>
+                    {t.courseDetail.createdBy(course.createdByName)}
                   </span>
                 )}
                 {course.evaluatorName && course.evaluatorName !== course.createdByName && (
                   <span className="flex items-center gap-1 text-xs text-gray-400">
                     <UserCog className="w-3.5 h-3.5" />
-                    Evaluador: <span className="font-medium text-gray-600">{course.evaluatorName}</span>
+                    {t.courseDetail.evaluatorLabel(course.evaluatorName)}
                   </span>
                 )}
               </div>
             )}
           </div>
-          {course.isPilot && <Badge variant="info">Curso Piloto</Badge>}
+          {course.isPilot && <Badge variant="info">{t.courseDetail.pilotBadge}</Badge>}
         </div>
         {/* Dates */}
         {(course.startDate || course.closeDate) && (
@@ -149,18 +151,18 @@ export default function CoursePage() {
             {course.startDate && (
               <span className="flex items-center gap-1 text-xs text-gray-400">
                 <Clock className="w-3.5 h-3.5" />
-                Inicio: <span className="font-medium text-gray-600">{new Date(course.startDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <span className="font-medium text-gray-600">{t.courseDetail.startDate(new Date(course.startDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CO', { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
               </span>
             )}
             {course.closeDate && (
               <span className="flex items-center gap-1 text-xs text-gray-400">
                 <Clock className="w-3.5 h-3.5 text-amber-500" />
-                Cierre: <span className="font-medium text-amber-600">{new Date(course.closeDate).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <span className="font-medium text-amber-600">{t.courseDetail.closeDate(new Date(course.closeDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CO', { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
               </span>
             )}
           </div>
         )}
-        <ProgressBar value={overallProgress} label={`${completedLessons} de ${allLessons.length} lecciones completadas`} showPercent />
+        <ProgressBar value={overallProgress} label={t.courseDetail.lessonsProgress(completedLessons, allLessons.length)} showPercent />
       </div>
 
       {/* Action buttons */}
@@ -172,7 +174,7 @@ export default function CoursePage() {
             className="flex-1 min-w-[180px] flex items-center justify-center gap-2 bg-cta-gradient text-white font-semibold text-sm px-5 py-3 rounded-xl hover:opacity-90 transition-opacity shadow-sm"
           >
             <PlayCircle className="w-4 h-4" />
-            Continuar donde lo dejé
+            {t.courseDetail.continueBtn}
           </Link>
         )}
 
@@ -182,7 +184,7 @@ export default function CoursePage() {
           className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors relative"
         >
           <MessageSquare className="w-4 h-4 text-cta-from" />
-          Chat del Curso
+          {t.courseDetail.courseChat}
           {chatUnread > 0 && (
             <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
               {chatUnread > 9 ? '9+' : chatUnread}
@@ -198,12 +200,12 @@ export default function CoursePage() {
             className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors disabled:opacity-60"
           >
             <UserCog className="w-4 h-4 text-purple-500" />
-            {contactingEvaluator ? 'Abriendo chat...' : 'Contactar Evaluador'}
+            {contactingEvaluator ? t.courseDetail.openingChat : t.courseDetail.contactEvaluator}
           </button>
         ) : (
           <div className="flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface">
             <UserCog className="w-4 h-4" />
-            Lux Learning – Admin
+            {t.courseDetail.adminLabel}
           </div>
         )}
 
@@ -214,13 +216,13 @@ export default function CoursePage() {
             className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
           >
             <FolderOpen className="w-4 h-4" />
-            Recursos ({resources.length})
+            {t.courseDetail.resources(resources.length)}
           </button>
         ) : (
-          <div className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group" title="Próximamente">
+          <div className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group" title={t.courseDetail.comingSoon}>
             <Library className="w-4 h-4" />
-            Biblioteca
-            <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Próximamente</span>
+            {t.courseDetail.library}
+            <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">{t.courseDetail.comingSoon}</span>
           </div>
         )}
       </div>
@@ -229,7 +231,7 @@ export default function CoursePage() {
       {resources.length > 0 && (
         <div id="course-resources" className="card p-5 space-y-3">
           <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-indigo-500" /> Recursos del curso
+            <FolderOpen className="w-4 h-4 text-indigo-500" /> {t.courseDetail.resourcesSection}
           </h3>
           <div className="space-y-2">
             {resources.map((r: any) => (
@@ -263,11 +265,11 @@ export default function CoursePage() {
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <h2 className="font-heading font-bold text-xl">¡Curso completado!</h2>
+                <h2 className="font-heading font-bold text-xl">{t.courseDetail.courseComplete}</h2>
                 <Star className="w-5 h-5 text-yellow-300 fill-yellow-300" />
               </div>
               <p className="text-white/80 text-sm mb-3">
-                Has completado todos los módulos y tus reflexiones fueron aprobadas. ¡Felicitaciones!
+                {t.courseDetail.courseCompleteMsg}
               </p>
               {cert && (
                 <a
@@ -277,7 +279,7 @@ export default function CoursePage() {
                   className="inline-flex items-center gap-2 bg-white text-purple-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-yellow-50 transition-colors"
                 >
                   <Download className="w-4 h-4" />
-                  Descargar certificado
+                  {t.courseDetail.downloadCert}
                 </a>
               )}
             </div>
@@ -287,7 +289,7 @@ export default function CoursePage() {
 
       {/* Modules */}
       <div className="space-y-3">
-        <h2 className="font-heading font-bold text-xl text-charcoal">Módulos del curso</h2>
+        <h2 className="font-heading font-bold text-xl text-charcoal">{t.courseDetail.modulesTitle}</h2>
         {course.modules?.map((mod: any) => {
           const modLessons = mod.lessons ?? [];
           const modCompleted = modLessons.filter((l: any) => l.completed).length;
@@ -323,7 +325,7 @@ export default function CoursePage() {
                   <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" /> {formatCourseDuration(mod.duration)}
                   </span>
-                  <span>{modLessons.length} lecciones</span>
+                  <span>{t.courseDetail.lessons(modLessons.length)}</span>
                 </div>
                 <ProgressBar value={modProgress} size="sm" />
               </div>

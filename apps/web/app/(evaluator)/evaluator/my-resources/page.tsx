@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { useLanguage } from '@/lib/i18n';
 
 interface Resource {
   evaluatorId: string;
@@ -44,6 +45,7 @@ function fileIcon(fileType: string) {
 }
 
 export default function MyResourcesPage() {
+  const { t } = useLanguage();
   const [resources, setResources] = useState<Resource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,8 +90,8 @@ export default function MyResourcesPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadForm.fileUrl) { setUploadError('Sube un archivo primero'); return; }
-    if (!uploadForm.title.trim()) { setUploadError('El título es requerido'); return; }
+    if (!uploadForm.fileUrl) { setUploadError(t.admin.myResourcesFileRequired); return; }
+    if (!uploadForm.title.trim()) { setUploadError(t.admin.myResourcesTitleRequired); return; }
     setUploading(true); setUploadError('');
     try {
       await api.evaluator.resources.create({
@@ -132,7 +134,7 @@ export default function MyResourcesPage() {
   };
 
   const handleDelete = async (r: Resource) => {
-    if (!confirm(`¿Archivar "${r.title}"? Se moverá a la papelera por 60 días.`)) return;
+    if (!confirm(t.admin.myResourcesArchiveConfirm(r.title))) return;
     setDeleting(r.resourceId);
     try { await api.evaluator.resources.delete(r.resourceId); await load(); }
     catch { alert('Error al archivar'); }
@@ -158,18 +160,18 @@ export default function MyResourcesPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Mis Recursos</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Sube y asigna materiales a tus cursos</p>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.myResourcesTitle}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t.admin.myResourcesSubtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowArchived(!showArchived)}
             className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${showArchived ? 'bg-red-50 border-red-200 text-red-700' : 'border-gray-200 text-gray-500 hover:bg-surface'}`}
           >
-            {showArchived ? '📁 Papelera' : '🗂️ Archivados'}
+            {showArchived ? t.admin.myResourcesTrashBtn : t.admin.myResourcesArchivedBtn}
           </button>
           <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setUploadOpen(true)}>
-            Subir recurso
+            {t.admin.myResourcesUploadBtn}
           </Button>
         </div>
       </div>
@@ -183,7 +185,7 @@ export default function MyResourcesPage() {
               onClick={() => setFolderFilter(f)}
               className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${folderFilter === f ? 'bg-indigo-100 text-indigo-700' : 'bg-surface text-gray-500 hover:bg-indigo-50'}`}
             >
-              {f === 'all' ? 'Todos' : `📂 ${f}`}
+              {f === 'all' ? t.admin.myResourcesFolderAll : `📂 ${f}`}
             </button>
           ))}
         </div>
@@ -193,8 +195,8 @@ export default function MyResourcesPage() {
       {filtered.length === 0 ? (
         <div className="card text-center py-16">
           <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">{showArchived ? 'Papelera vacía' : 'Sin recursos todavía'}</p>
-          <p className="text-gray-500 text-sm mt-1">{showArchived ? 'No hay recursos archivados' : 'Sube materiales con el botón de arriba'}</p>
+          <p className="font-heading font-bold text-charcoal">{showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}</p>
+          <p className="text-gray-500 text-sm mt-1">{showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint}</p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
@@ -235,7 +237,7 @@ export default function MyResourcesPage() {
               )}
 
               <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
-                <Link2 className="w-3 h-3" /> Ver archivo
+                <Link2 className="w-3 h-3" /> {t.admin.myResourcesViewFile}
               </a>
             </div>
           ))}
@@ -243,38 +245,38 @@ export default function MyResourcesPage() {
       )}
 
       {/* Upload Modal */}
-      <Modal open={uploadOpen} onClose={() => setUploadOpen(false)} title="Subir recurso" size="md">
+      <Modal open={uploadOpen} onClose={() => setUploadOpen(false)} title={t.admin.myResourcesUploadModalTitle} size="md">
         <form onSubmit={handleUpload} className="space-y-4">
           <FileUpload
             folder="resources"
             accept=".pdf,.docx,.pptx,.xlsx,.zip,.mp4,.jpg,.jpeg,.png"
             maxSizeMB={200}
-            label="Arrastra o selecciona el archivo"
+            label={t.admin.myResourcesFileLabel}
             onUploaded={(res) => setUploadForm((p) => ({ ...p, fileUrl: res.fileUrl, fileName: res.fileName, fileType: res.fileType, fileSize: res.fileSize }))}
             onError={setUploadError}
           />
           <input
-            type="text" placeholder="Título del recurso *" required
+            type="text" placeholder={t.admin.myResourcesTitlePlaceholder} required
             value={uploadForm.title}
             onChange={(e) => setUploadForm((p) => ({ ...p, title: e.target.value }))}
             className="input-field w-full"
           />
           <textarea
-            placeholder="Descripción (opcional)"
+            placeholder={t.admin.myResourcesDescPlaceholder}
             rows={2}
             value={uploadForm.description}
             onChange={(e) => setUploadForm((p) => ({ ...p, description: e.target.value }))}
             className="input-field w-full resize-none"
           />
           <input
-            type="text" placeholder="Carpeta (opcional, ej: Semana 1)"
+            type="text" placeholder={t.admin.myResourcesFolderPlaceholder}
             value={uploadForm.folder}
             onChange={(e) => setUploadForm((p) => ({ ...p, folder: e.target.value }))}
             className="input-field w-full"
           />
           {courses.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-charcoal mb-2">Asignar a cursos</p>
+              <p className="text-sm font-medium text-charcoal mb-2">{t.admin.myResourcesAssignLabel}</p>
               <div className="flex flex-wrap gap-2">
                 {courses.map((c) => (
                   <button
@@ -290,39 +292,39 @@ export default function MyResourcesPage() {
           )}
           {uploadError && <p className="text-sm text-red-500">{uploadError}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" type="button" onClick={() => setUploadOpen(false)}>Cancelar</Button>
+            <Button variant="secondary" type="button" onClick={() => setUploadOpen(false)}>{t.admin.myResourcesCancelBtn}</Button>
             <Button type="submit" disabled={uploading || !uploadForm.fileUrl}>
-              {uploading ? <><Loader2 className="w-4 h-4 animate-spin mr-1" />Guardando...</> : 'Guardar recurso'}
+              {uploading ? <><Loader2 className="w-4 h-4 animate-spin mr-1" />{t.admin.myResourcesSavingBtn}</> : t.admin.myResourcesSaveBtn}
             </Button>
           </div>
         </form>
       </Modal>
 
       {/* Edit Modal */}
-      <Modal open={!!editResource} onClose={() => setEditResource(null)} title={`Editar: ${editResource?.title}`} size="md">
+      <Modal open={!!editResource} onClose={() => setEditResource(null)} title={t.admin.myResourcesEditTitle(editResource?.title ?? '')} size="md">
         {editResource && (
           <div className="space-y-4">
             <input
-              type="text" placeholder="Título *"
+              type="text" placeholder={t.admin.myResourcesTitleFieldPlaceholder}
               value={editForm.title}
               onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
               className="input-field w-full"
             />
             <textarea
-              placeholder="Descripción" rows={2}
+              placeholder={t.admin.myResourcesDescPlaceholder} rows={2}
               value={editForm.description}
               onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
               className="input-field w-full resize-none"
             />
             <input
-              type="text" placeholder="Carpeta"
+              type="text" placeholder={t.admin.myResourcesFolderFieldPlaceholder}
               value={editForm.folder}
               onChange={(e) => setEditForm((p) => ({ ...p, folder: e.target.value }))}
               className="input-field w-full"
             />
             {courses.length > 0 && (
               <div>
-                <p className="text-sm font-medium text-charcoal mb-2">Cursos asignados</p>
+                <p className="text-sm font-medium text-charcoal mb-2">{t.admin.myResourcesAssignedLabel}</p>
                 <div className="flex flex-wrap gap-2">
                   {courses.map((c) => (
                     <button
@@ -337,9 +339,9 @@ export default function MyResourcesPage() {
               </div>
             )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => setEditResource(null)}>Cancelar</Button>
+              <Button variant="secondary" onClick={() => setEditResource(null)}>{t.admin.myResourcesCancelBtn}</Button>
               <Button onClick={handleSaveEdit} disabled={saving || !editForm.title.trim()}>
-                {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-1" />Guardando...</> : 'Guardar cambios'}
+                {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-1" />{t.admin.myResourcesSavingBtn}</> : t.admin.myResourcesSaveChangesBtn}
               </Button>
             </div>
           </div>

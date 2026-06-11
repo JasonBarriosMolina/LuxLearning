@@ -7,6 +7,7 @@ import {
   getReportAnalysis, getRecommendations, saveRecommendations,
 } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -42,6 +43,7 @@ async function resolveEmail(userId: string): Promise<string> {
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const auth = event.requestContext.authorizer?.lambda;
   if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN') return forbidden('Se requiere rol de evaluador o administrador');

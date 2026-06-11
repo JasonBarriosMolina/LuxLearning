@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n';
 
 interface MyCourse {
   id: string;
@@ -20,6 +21,7 @@ interface MyCourse {
 }
 
 export default function MyCoursesPage() {
+  const { t } = useLanguage();
   const [courses, setCourses] = useState<MyCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -40,15 +42,15 @@ export default function MyCoursesPage() {
     <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
       <div className="flex items-center gap-3">
         <BookMarked className="w-6 h-6 text-cta-from" />
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Mis Cursos</h1>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{t.nav.myCourses}</h1>
       </div>
-      <p className="text-sm text-gray-500">Cursos asignados a ti como evaluador.</p>
+      <p className="text-sm text-gray-500">{t.evaluator.myCoursesSubtitle}</p>
 
       {courses.length === 0 ? (
         <div className="card text-center py-16">
           <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-          <p className="text-gray-500">No tienes cursos asignados aún.</p>
-          <p className="text-sm text-gray-400 mt-1">El administrador puede asignarte cursos desde la gestión de contenido.</p>
+          <p className="text-gray-500">{t.evaluator.noCoursesAssigned}</p>
+          <p className="text-sm text-gray-400 mt-1">{t.evaluator.noCoursesAdminHint}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -68,7 +70,7 @@ export default function MyCoursesPage() {
                   <p className="text-sm text-gray-500 line-clamp-2 mt-0.5">{course.description}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${course.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {course.isActive ? 'Activo' : 'Inactivo'}
+                      {course.isActive ? t.evaluator.active2 : t.evaluator.inactive2}
                     </span>
                   </div>
                 </div>
@@ -78,17 +80,17 @@ export default function MyCoursesPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-surface rounded-xl p-3 text-center">
                   <p className="text-xl font-bold text-charcoal">{course.enrollmentCount}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Estudiantes</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t.evaluator.statStudents}</p>
                 </div>
                 <div className="bg-surface rounded-xl p-3 text-center">
                   <p className="text-xl font-bold text-charcoal">{course.modules.length}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Módulos</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t.evaluator.statModules}</p>
                 </div>
                 <div className={`rounded-xl p-3 text-center ${course.pendingReflections > 0 ? 'bg-amber-50' : 'bg-surface'}`}>
                   <p className={`text-xl font-bold ${course.pendingReflections > 0 ? 'text-amber-600' : 'text-charcoal'}`}>
                     {course.pendingReflections}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">Pendientes</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{t.evaluator.statPending2}</p>
                 </div>
               </div>
 
@@ -99,7 +101,7 @@ export default function MyCoursesPage() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cta-from text-white text-xs font-semibold hover:opacity-90 transition-opacity"
                 >
                   <ClipboardList className="w-3.5 h-3.5" />
-                  Ver reflexiones
+                  {t.evaluator.viewReflections}
                   {course.pendingReflections > 0 && (
                     <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]">{course.pendingReflections}</span>
                   )}
@@ -109,21 +111,21 @@ export default function MyCoursesPage() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  Chat del grupo
+                  {t.evaluator.groupChat}
                 </Link>
                 <Link
                   href="/evaluator/students"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
                 >
                   <Users className="w-3.5 h-3.5" />
-                  Estudiantes
+                  {t.nav.students}
                 </Link>
                 <Link
                   href="/evaluator/my-resources"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
-                  Recursos
+                  {t.evaluator.resources}
                 </Link>
               </div>
             </div>

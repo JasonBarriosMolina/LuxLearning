@@ -3,18 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Mail, Save, Eye, EyeOff, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
-
-const TEMPLATE_LABELS: Record<string, string> = {
-  REFLECTION_APPROVED: 'Reflexión aprobada',
-  REFLECTION_REJECTED: 'Reflexión rechazada',
-  REFLECTION_RECONSIDERED: 'Reflexión reconsiderada',
-  TASK_ASSIGNED: 'Tarea asignada',
-  TASK_DUE_SOON: 'Tarea por vencer',
-  MESSAGE_UNREAD: 'Mensaje sin leer',
-  COURSE_UPDATED: 'Curso actualizado',
-  WELCOME: 'Bienvenida',
-  ENROLLMENT: 'Inscripción en curso',
-};
+import { useLanguage } from '@/lib/i18n';
 
 const TEMPLATE_VARS: Record<string, string[]> = {
   REFLECTION_APPROVED: ['studentName', 'moduleTitle', 'feedback', 'frontendUrl'],
@@ -37,6 +26,20 @@ interface Template {
 }
 
 export default function EmailTemplatesPage() {
+  const { t, lang } = useLanguage();
+
+  const TEMPLATE_LABELS: Record<string, string> = {
+    REFLECTION_APPROVED: t.admin.templateReflectionApproved,
+    REFLECTION_REJECTED: t.admin.templateReflectionRejected,
+    REFLECTION_RECONSIDERED: t.admin.templateReflectionReconsidered,
+    TASK_ASSIGNED: t.admin.templateTaskAssigned,
+    TASK_DUE_SOON: t.admin.templateTaskDueSoon,
+    MESSAGE_UNREAD: t.admin.templateMessageUnread,
+    COURSE_UPDATED: t.admin.templateCourseUpdated,
+    WELCOME: t.admin.templateWelcome,
+    ENROLLMENT: t.admin.templateEnrollment,
+  };
+
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selected, setSelected] = useState<string>('REFLECTION_APPROVED');
   const [subject, setSubject] = useState('');
@@ -98,29 +101,29 @@ export default function EmailTemplatesPage() {
     <div className="max-w-6xl mx-auto py-8 px-4 space-y-6">
       <div className="flex items-center gap-3">
         <Mail className="w-6 h-6 text-cta-from" />
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Templates de Email</h1>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.emailTemplatesTitle}</h1>
       </div>
       <p className="text-sm text-gray-500">
-        Personaliza los correos que se envían a estudiantes y evaluadores. Usa <code className="bg-surface px-1 rounded">{'{{variable}}'}</code> para insertar datos dinámicos.
+        {t.admin.emailTemplatesSubtitle('{{variable}}')}
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Template selector */}
         <div className="lg:col-span-1 space-y-1">
-          {templates.map((t) => (
+          {templates.map((tpl) => (
             <button
-              key={t.type}
-              onClick={() => handleSelect(t.type)}
+              key={tpl.type}
+              onClick={() => handleSelect(tpl.type)}
               className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                selected === t.type
+                selected === tpl.type
                   ? 'bg-cta-from text-white'
                   : 'hover:bg-surface text-gray-600'
               }`}
             >
-              {TEMPLATE_LABELS[t.type] ?? t.type}
-              {t.updatedAt && (
-                <p className={`text-xs mt-0.5 ${selected === t.type ? 'text-white/70' : 'text-gray-400'}`}>
-                  Editado
+              {TEMPLATE_LABELS[tpl.type] ?? tpl.type}
+              {tpl.updatedAt && (
+                <p className={`text-xs mt-0.5 ${selected === tpl.type ? 'text-white/70' : 'text-gray-400'}`}>
+                  {t.admin.templateEdited}
                 </p>
               )}
             </button>
@@ -140,7 +143,7 @@ export default function EmailTemplatesPage() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-gray-600 hover:bg-surface transition-colors"
                 >
                   {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  {showPreview ? 'Editar' : 'Preview'}
+                  {showPreview ? t.admin.templateEdit : t.admin.templatePreview}
                 </button>
                 <button
                   onClick={handleSave}
@@ -148,7 +151,7 @@ export default function EmailTemplatesPage() {
                   className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-cta-from text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
                 >
                   {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saved ? <CheckCircle className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                  {saved ? 'Guardado' : 'Guardar'}
+                  {saved ? t.admin.templateSaved : t.admin.templateSave}
                 </button>
               </div>
             </div>
@@ -171,7 +174,7 @@ export default function EmailTemplatesPage() {
 
             {/* Subject */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Asunto (se añade "Lux Learning - Notificación: " automáticamente)</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">{t.admin.templateSubjectLabel}</label>
               <input
                 type="text"
                 value={subject}
@@ -183,7 +186,7 @@ export default function EmailTemplatesPage() {
             {/* Body */}
             {showPreview ? (
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Preview</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">{t.admin.templatePreviewLabel}</label>
                 <div
                   className="border border-border rounded-xl p-4 text-sm bg-white min-h-48 prose max-w-none"
                   dangerouslySetInnerHTML={{ __html: htmlBody }}
@@ -191,7 +194,7 @@ export default function EmailTemplatesPage() {
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Cuerpo HTML</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">{t.admin.templateBodyLabel}</label>
                 <textarea
                   value={htmlBody}
                   onChange={(e) => setHtmlBody(e.target.value)}
@@ -203,8 +206,8 @@ export default function EmailTemplatesPage() {
 
             {current?.updatedAt && (
               <p className="text-xs text-gray-400">
-                Última edición: {new Date(current.updatedAt).toLocaleString('es-MX')}
-                {current.updatedBy && ` · por ${current.updatedBy}`}
+                {t.admin.lastEdited(new Date(current.updatedAt).toLocaleString(lang === 'en' ? 'en-US' : 'es-MX'))}
+                {current.updatedBy && t.admin.lastEditedBy(current.updatedBy)}
               </p>
             )}
           </div>

@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Input } from '@/components/ui/Input';
+import { useLanguage, type Translations } from '@/lib/i18n';
 
 type ModuleStat = {
   moduleId: string; title: string; order: number;
@@ -23,34 +24,36 @@ type CourseStat = {
 
 type Student = { userId: string; studentName?: string; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' };
 
-function PresenceBadge({ status }: { status?: string }) {
+type SP = Translations['studentsPage'];
+
+function PresenceBadge({ status, ts }: { status?: string; ts: SP }) {
   if (status === 'online') return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />En línea
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{ts.presenceOnline}
     </span>
   );
   if (status === 'active') return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Activo
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{ts.presenceActive}
     </span>
   );
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />Inactivo
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />{ts.presenceInactive}
     </span>
   );
 }
 
-function formatLastSeen(lastSeen?: string | null): string {
-  if (!lastSeen) return 'Nunca';
+function formatLastSeen(lastSeen: string | null | undefined, ts: SP): string {
+  if (!lastSeen) return ts.lastSeenNever;
   const diff = Date.now() - new Date(lastSeen).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 2) return 'Hace un momento';
-  if (mins < 60) return `Hace ${mins} min`;
+  if (mins < 2) return ts.lastSeenMoment;
+  if (mins < 60) return ts.lastSeenMins(mins);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `Hace ${hours}h`;
+  if (hours < 24) return ts.lastSeenHours(hours);
   const days = Math.floor(hours / 24);
-  return `Hace ${days}d`;
+  return ts.lastSeenDays(days);
 }
 
 function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
@@ -61,7 +64,7 @@ function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
   return <BookOpen className="w-4 h-4 text-cta-from" />;
 }
 
-function StudentCard({ student, courses }: { student: Student; courses: { id: string; title: string }[] }) {
+function StudentCard({ student, courses, ts }: { student: Student; courses: { id: string; title: string }[]; ts: SP }) {
   const [expanded, setExpanded] = useState(false);
   const [activeCourse, setActiveCourse] = useState(0);
 
@@ -86,9 +89,9 @@ function StudentCard({ student, courses }: { student: Student; courses: { id: st
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
-            <PresenceBadge status={student.presenceStatus} />
+            <PresenceBadge status={student.presenceStatus} ts={ts} />
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen, ts)}</p>
           <div className="mt-1.5">
             <ProgressBar value={overallPct} size="sm" />
           </div>
@@ -97,21 +100,21 @@ function StudentCard({ student, courses }: { student: Student; courses: { id: st
         <div className="flex items-center gap-4 shrink-0">
           <div className="text-center hidden sm:block">
             <p className="font-bold text-lg text-charcoal">{overallPct}%</p>
-            <p className="text-xs text-gray-400">Progreso</p>
+            <p className="text-xs text-gray-400">{ts.progressLabel}</p>
           </div>
           <div className="text-center hidden sm:block">
             <p className="font-bold text-lg text-emerald-600">{totalApproved}</p>
-            <p className="text-xs text-gray-400">Aprobados</p>
+            <p className="text-xs text-gray-400">{ts.approvedLabel}</p>
           </div>
           {totalPending > 0 && (
             <div className="text-center">
               <p className="font-bold text-lg text-amber-500">{totalPending}</p>
-              <p className="text-xs text-gray-400">Pendientes</p>
+              <p className="text-xs text-gray-400">{ts.pendingLabel}</p>
             </div>
           )}
           <div className="text-center hidden md:block">
             <p className="font-bold text-lg text-charcoal">{totalModules}</p>
-            <p className="text-xs text-gray-400">Módulos</p>
+            <p className="text-xs text-gray-400">{ts.modulesLabel}</p>
           </div>
           {expanded
             ? <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -149,21 +152,21 @@ function StudentCard({ student, courses }: { student: Student; courses: { id: st
                   {/* Course progress summary */}
                   <div className="flex items-center gap-4 p-3 bg-white rounded-xl border border-border">
                     <div className="flex-1">
-                      <p className="text-xs font-semibold text-gray-500 mb-1">PROGRESO DEL CURSO</p>
+                      <p className="text-xs font-semibold text-gray-500 mb-1">{ts.courseProgress}</p>
                       <ProgressBar
                         value={course.progressPct}
-                        label={`${course.completedLessons} de ${course.totalLessons} lecciones`}
+                        label={ts.lessonsLabel(course.completedLessons, course.totalLessons)}
                         showPercent
                       />
                     </div>
                     <div className="flex gap-4 text-center shrink-0">
                       <div>
                         <p className="font-bold text-emerald-600">{course.modulesApproved}</p>
-                        <p className="text-xs text-gray-400">Módulos<br/>completados</p>
+                        <p className="text-xs text-gray-400 whitespace-pre-line">{ts.completedModules}</p>
                       </div>
                       <div>
                         <p className="font-bold text-charcoal">{course.modules.length}</p>
-                        <p className="text-xs text-gray-400">Total<br/>módulos</p>
+                        <p className="text-xs text-gray-400 whitespace-pre-line">{ts.totalModules}</p>
                       </div>
                     </div>
                   </div>
@@ -229,6 +232,8 @@ function StudentCard({ student, courses }: { student: Student; courses: { id: st
 // ─── Course-level overview card ───────────────────────────────────────────────
 
 function CourseOverview({ students, course }: { students: Student[]; course: { id: string; title: string } }) {
+  const { t } = useLanguage();
+  const ts = t.studentsPage;
   const courseStats = students
     .map((s) => s.courses.find((c) => c.courseId === course.id))
     .filter(Boolean) as CourseStat[];
@@ -244,14 +249,14 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-heading font-bold text-base text-charcoal">{course.title}</h3>
-        <span className="text-xs text-gray-400">{courseStats.length} estudiantes</span>
+        <span className="text-xs text-gray-400">{ts.studentsCount(courseStats.length)}</span>
       </div>
       <div className="grid grid-cols-4 gap-3 mb-4">
         {[
-          { label: 'Progreso promedio', value: `${avgProgress}%`, color: 'text-cta-from' },
-          { label: 'Completaron curso', value: completed, color: 'text-emerald-600' },
-          { label: 'Módulos aprobados', value: totalApproved, color: 'text-purple-600' },
-          { label: 'Total módulos', value: totalModules, color: 'text-charcoal' },
+          { label: ts.statAvgProgress, value: `${avgProgress}%`, color: 'text-cta-from' },
+          { label: ts.statCompleted, value: completed, color: 'text-emerald-600' },
+          { label: ts.statModulesApproved, value: totalApproved, color: 'text-purple-600' },
+          { label: ts.statTotalModules, value: totalModules, color: 'text-charcoal' },
         ].map((stat) => (
           <div key={stat.label} className="text-center p-2 bg-surface rounded-xl">
             <p className={`font-bold text-xl ${stat.color}`}>{stat.value}</p>
@@ -259,7 +264,7 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
           </div>
         ))}
       </div>
-      <ProgressBar value={avgProgress} label="Progreso promedio del curso" showPercent />
+      <ProgressBar value={avgProgress} label={ts.avgProgressLabel} showPercent />
     </div>
   );
 }
@@ -267,6 +272,8 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
 // ─── Admin view: all registered students (no activity required) ───────────────
 
 function AdminStudentList({ courses }: { courses: { id: string; title: string; evaluatorName?: string }[] }) {
+  const { t } = useLanguage();
+  const ts = t.studentsPage;
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -321,10 +328,10 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{users.length} estudiante{users.length !== 1 ? 's' : ''} registrado{users.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-gray-500">{ts.registeredCount(users.length)}</p>
       </div>
       <Input
-        placeholder="Buscar por nombre o email..."
+        placeholder={ts.searchByName}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         leftIcon={<Search className="w-4 h-4" />}
@@ -332,17 +339,17 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
       {filtered.length === 0 ? (
         <div className="card text-center py-12">
           <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No se encontraron estudiantes.</p>
+          <p className="text-gray-500 text-sm">{ts.noStudentsFound}</p>
         </div>
       ) : (
         <div className="card overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Nombre</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 hidden sm:table-cell">Fecha de registro</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Estado</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Cursos inscritos</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colName}</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 hidden sm:table-cell">{ts.colDate}</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colStatus}</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colCourses}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -360,7 +367,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                           {(u.name || u.email)[0]?.toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-charcoal truncate max-w-[180px]">{u.name || '(sin nombre)'}</p>
+                          <p className="font-semibold text-charcoal truncate max-w-[180px]">{u.name || ts.noName}</p>
                           <p className="text-xs text-gray-400 truncate max-w-[180px]">{u.email}</p>
                         </div>
                       </div>
@@ -372,7 +379,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                     {/* Estado */}
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
-                        {u.enabled ? 'Activo' : 'Inactivo'}
+                        {u.enabled ? ts.statusActive : ts.statusInactive}
                       </span>
                     </td>
                     {/* Cursos */}
@@ -383,16 +390,16 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                           className="flex items-center gap-1.5 text-xs text-cta-from font-medium hover:underline"
                         >
                           {enrollments[u.username] === undefined ? (
-                            <span className="text-gray-400">Ver cursos</span>
+                            <span className="text-gray-400">{ts.viewCourses2}</span>
                           ) : (
-                            <span>{enrolledCourses.length > 0 ? `${enrolledCourses.length} curso${enrolledCourses.length !== 1 ? 's' : ''}` : 'Sin cursos'}</span>
+                            <span>{enrolledCourses.length > 0 ? ts.coursesCount(enrolledCourses.length) : ts.noCourses}</span>
                           )}
                           {coursesOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                         </button>
                         {coursesOpen && (
                           <div className="mt-2 space-y-1 max-w-xs">
                             {enrolledCourses.length === 0 ? (
-                              <p className="text-xs text-gray-400 italic">Sin cursos asignados</p>
+                              <p className="text-xs text-gray-400 italic">{ts.noCoursesAssigned}</p>
                             ) : (
                               enrolledCourses.map((c) => (
                                 <div key={c.id} className="flex items-center gap-1.5 text-xs text-charcoal">
@@ -412,7 +419,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                         onClick={(e) => openProfile(e, u)}
                         className="text-xs text-cta-from font-semibold hover:underline px-2 py-1 rounded-lg hover:bg-purple-50 transition-colors whitespace-nowrap"
                       >
-                        Ver perfil
+                        {ts.viewProfile}
                       </button>
                     </td>
                   </tr>
@@ -432,7 +439,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                 {(profileModal.name || profileModal.email)[0]?.toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-heading font-bold text-lg text-charcoal truncate">{profileModal.name || '(sin nombre)'}</p>
+                <p className="font-heading font-bold text-lg text-charcoal truncate">{profileModal.name || ts.noName}</p>
                 <p className="text-sm text-gray-400 truncate">{profileModal.email}</p>
               </div>
               <button onClick={() => setProfileModal(null)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -441,21 +448,21 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between py-2 border-b border-border">
-                <span className="text-gray-500">Estado</span>
+                <span className="text-gray-500">{ts.modalStatus}</span>
                 <span className={`font-medium ${profileModal.enabled ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {profileModal.enabled ? 'Activo' : 'Inactivo'}
+                  {profileModal.enabled ? ts.statusActive : ts.statusInactive}
                 </span>
               </div>
               <div className="flex justify-between py-2 border-b border-border">
-                <span className="text-gray-500">Fecha de registro</span>
+                <span className="text-gray-500">{ts.modalRegDate}</span>
                 <span className="font-medium text-charcoal">
                   {profileModal.createdAt ? new Date(profileModal.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
                 </span>
               </div>
               <div className="pt-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cursos inscritos</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{ts.modalCourses}</p>
                 {(profileModal.enrolledIds ?? []).length === 0 ? (
-                  <p className="text-gray-400 italic text-xs">Sin cursos asignados</p>
+                  <p className="text-gray-400 italic text-xs">{ts.noCoursesAssigned}</p>
                 ) : (
                   <div className="space-y-1.5">
                     {courses.filter((c) => (profileModal.enrolledIds ?? []).includes(c.id)).map((c) => (
@@ -482,6 +489,8 @@ type PresenceFilter = 'all' | 'online' | 'active' | 'inactive';
 
 export default function StudentsPage() {
   const { role } = useAuth();
+  const { t } = useLanguage();
+  const ts = t.studentsPage;
   const [data, setData] = useState<{ students: Student[]; courses: { id: string; title: string }[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -536,8 +545,8 @@ export default function StudentsPage() {
         <div className="flex items-center gap-3">
           <UserCheck className="w-6 h-6 text-cta-from" />
           <div>
-            <h1 className="font-heading font-bold text-2xl text-charcoal">Estudiantes</h1>
-            <p className="text-gray-500 mt-1 text-sm">Todos los estudiantes registrados en la plataforma</p>
+            <h1 className="font-heading font-bold text-2xl text-charcoal">{ts.title}</h1>
+            <p className="text-gray-500 mt-1 text-sm">{ts.adminSubtitle}</p>
           </div>
         </div>
         <AdminStudentList courses={adminCourses} />
@@ -548,8 +557,8 @@ export default function StudentsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       <div>
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Estudiantes</h1>
-        <p className="text-gray-500 mt-1 text-sm">Progreso detallado por estudiante y curso</p>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{ts.title}</h1>
+        <p className="text-gray-500 mt-1 text-sm">{ts.subtitle}</p>
       </div>
 
       {/* View toggle */}
@@ -563,7 +572,7 @@ export default function StudentsPage() {
                 view === v ? 'bg-white shadow-sm text-charcoal' : 'text-gray-500 hover:text-charcoal'
               }`}
             >
-              {v === 'students' ? 'Por estudiante' : 'Por curso'}
+              {v === 'students' ? ts.byStudent : ts.byCourse}
             </button>
           ))}
         </div>
@@ -571,11 +580,11 @@ export default function StudentsPage() {
         {/* Presence filter chips */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {([
-            { key: 'all', label: 'Todos', count: allStudents.length, color: 'bg-gray-100 text-gray-600' },
-            { key: 'online', label: '🟢 En línea', count: presenceCounts.online, color: 'bg-emerald-100 text-emerald-700' },
-            { key: 'active', label: '🟡 Activos', count: presenceCounts.active, color: 'bg-amber-100 text-amber-700' },
-            { key: 'inactive', label: '🔴 Inactivos', count: presenceCounts.inactive, color: 'bg-red-100 text-red-600' },
-          ] as const).map((f) => (
+            { key: 'all', label: ts.all, count: allStudents.length, color: 'bg-gray-100 text-gray-600' },
+            { key: 'online', label: ts.online, count: presenceCounts.online, color: 'bg-emerald-100 text-emerald-700' },
+            { key: 'active', label: ts.active, count: presenceCounts.active, color: 'bg-amber-100 text-amber-700' },
+            { key: 'inactive', label: ts.inactive, count: presenceCounts.inactive, color: 'bg-red-100 text-red-600' },
+          ] as { key: PresenceFilter; label: string; count: number; color: string }[]).map((f) => (
             <button
               key={f.key}
               onClick={() => setPresenceFilter(f.key as PresenceFilter)}
@@ -598,23 +607,23 @@ export default function StudentsPage() {
       ) : !data || allStudents.length === 0 ? (
         <div className="card text-center py-16">
           <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">Sin actividad todavía</p>
-          <p className="text-gray-500 text-sm mt-1">Los estudiantes aparecerán aquí cuando comiencen los cursos.</p>
+          <p className="font-heading font-bold text-charcoal">{ts.noActivity}</p>
+          <p className="text-gray-500 text-sm mt-1">{ts.noActivityHint}</p>
         </div>
       ) : view === 'students' ? (
         <div className="space-y-3">
           {/* Search bar */}
           <Input
-            placeholder="Buscar estudiante..."
+            placeholder={ts.searchStudent}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={<Search className="w-4 h-4" />}
           />
           {filtered.length === 0 ? (
-            <p className="text-center text-gray-400 py-8">No se encontró ningún estudiante.</p>
+            <p className="text-center text-gray-400 py-8">{ts.noStudentFound}</p>
           ) : (
             filtered.map((student) => (
-              <StudentCard key={student.userId} student={student} courses={data.courses} />
+              <StudentCard key={student.userId} student={student} courses={data.courses} ts={ts} />
             ))
           )}
         </div>
@@ -627,7 +636,7 @@ export default function StudentsPage() {
               onChange={(e) => { setSelectedCourseId(e.target.value); setExpandedCourseStudents(new Set()); }}
               className="input-field"
             >
-              <option value="">— Todos los cursos —</option>
+              <option value="">{ts.allCourses}</option>
               {(data.courses ?? []).map((c) => (
                 <option key={c.id} value={c.id}>{c.title}</option>
               ))}
@@ -636,7 +645,7 @@ export default function StudentsPage() {
 
           {/* Students in selected course */}
           {filteredCourseStudents.length === 0 ? (
-            <p className="text-center text-gray-400 py-8">No hay estudiantes en este filtro.</p>
+            <p className="text-center text-gray-400 py-8">{ts.noStudentsInFilter}</p>
           ) : (
             <div className="space-y-2">
               {filteredCourseStudents.map((student) => {
@@ -657,9 +666,9 @@ export default function StudentsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-charcoal text-sm">{student.studentName ?? student.userId}</p>
-                          <PresenceBadge status={student.presenceStatus} />
+                          <PresenceBadge status={student.presenceStatus} ts={ts} />
                         </div>
-                        <p className="text-xs text-gray-400">{formatLastSeen(student.lastSeen)}</p>
+                        <p className="text-xs text-gray-400">{formatLastSeen(student.lastSeen, ts)}</p>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         {student.courses.find((c) => c.courseId === selectedCourseId || !selectedCourseId) && (() => {
@@ -668,7 +677,7 @@ export default function StudentsPage() {
                           return (
                             <div className="text-center hidden sm:block">
                               <p className="font-bold text-sm text-charcoal">{course.progressPct}%</p>
-                              <p className="text-xs text-gray-400">Progreso</p>
+                              <p className="text-xs text-gray-400">{ts.progressLabel2}</p>
                             </div>
                           );
                         })()}
@@ -677,7 +686,7 @@ export default function StudentsPage() {
                     </button>
                     {isExpanded && (
                       <div className="border-t border-border">
-                        <StudentCard student={student} courses={data.courses} />
+                        <StudentCard student={student} courses={data.courses} ts={ts} />
                       </div>
                     )}
                   </div>

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BookOpen, ArrowRight, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n';
 
 export default function CoursesPage() {
+  const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,8 +21,8 @@ export default function CoursesPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       <div>
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Mis Cursos</h1>
-        <p className="text-gray-500 mt-1 text-sm">Todos los cursos disponibles para ti</p>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentCourses.title}</h1>
+        <p className="text-gray-500 mt-1 text-sm">{t.studentCourses.subtitle}</p>
       </div>
 
       {loading ? (
@@ -32,8 +34,8 @@ export default function CoursesPage() {
       ) : courses.length === 0 ? (
         <div className="card text-center py-16">
           <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">No hay cursos disponibles</p>
-          <p className="text-gray-500 text-sm mt-1">Aún no tienes cursos asignados.</p>
+          <p className="font-heading font-bold text-charcoal">{t.studentCourses.noCourses}</p>
+          <p className="text-gray-500 text-sm mt-1">{t.studentCourses.noCoursesHint}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -58,7 +60,7 @@ export default function CoursesPage() {
                   <p className="text-sm text-gray-500 line-clamp-2 mb-3">{course.description}</p>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <BookOpen className="w-3.5 h-3.5" /> {totalModules} módulos
+                      <BookOpen className="w-3.5 h-3.5" /> {t.studentCourses.moduleCount(totalModules)}
                     </span>
                     {totalDuration > 0 && (
                       <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -67,18 +69,18 @@ export default function CoursesPage() {
                     )}
                     {course.startDate && new Date(course.startDate) > new Date() && (
                       <span className="text-xs text-blue-600 font-medium">
-                        Inicia: {new Date(course.startDate).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {t.studentCourses.startDate(new Date(course.startDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es', { day: '2-digit', month: 'short', year: 'numeric' }))}
                       </span>
                     )}
                     {course.closeDate && (
                       <span className="text-xs text-amber-600 font-medium">
-                        Cierra: {new Date(course.closeDate).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {t.studentCourses.closeDate(new Date(course.closeDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es', { day: '2-digit', month: 'short', year: 'numeric' }))}
                       </span>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-cta-from">
-                  Ir al curso <ArrowRight className="w-4 h-4" />
+                  {t.studentCourses.goCourse} <ArrowRight className="w-4 h-4" />
                 </div>
               </Link>
             );

@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { savePushSubscription, deletePushSubscription } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -9,6 +10,7 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? '';
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const auth = event.requestContext.authorizer?.lambda;
   const userId = auth?.userId ?? '';

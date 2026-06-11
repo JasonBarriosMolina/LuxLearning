@@ -11,6 +11,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 
 import { shuffle, buildShuffleMaps, buildQuestionOrder } from './shuffleUtils';
+import { useLanguage } from '@/lib/i18n';
 
 // Re-export for backwards compatibility if needed
 export { shuffle, buildShuffleMaps, buildQuestionOrder };
@@ -20,6 +21,7 @@ type QuizState = 'answering' | 'submitting' | 'result';
 export default function QuizPage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
   const router = useRouter();
+  const { t } = useLanguage();
 
   const [course, setCourse] = useState<any>(null);
   const [answers, setAnswers] = useState<(number | null)[]>([]);
@@ -81,7 +83,7 @@ export default function QuizPage() {
       setResult((res as any).data ?? res);
       setState('result');
     } catch (err: any) {
-      alert('Error al enviar el quiz. Por favor intenta de nuevo.');
+      alert(t.quizPage.submitError);
       setState('answering');
     }
   };
@@ -105,16 +107,16 @@ export default function QuizPage() {
   }
 
   if (!module) {
-    return <div className="card text-center py-16"><p>Módulo no encontrado</p></div>;
+    return <div className="card text-center py-16"><p>{t.moduleView.moduleNotFound}</p></div>;
   }
 
   if (questions.length === 0) {
     return (
       <div className="max-w-2xl mx-auto card text-center py-16 space-y-3">
-        <p className="font-heading font-bold text-xl text-charcoal">Sin preguntas configuradas</p>
-        <p className="text-gray-500 text-sm">Este módulo aún no tiene preguntas de quiz. Contacta a tu evaluador.</p>
+        <p className="font-heading font-bold text-xl text-charcoal">{t.quizPage.noQuestions}</p>
+        <p className="text-gray-500 text-sm">{t.quizPage.studyHint}</p>
         <Link href={`/courses/${courseId}/modules/${moduleId}`} className="btn-secondary inline-flex text-sm">
-          Volver al módulo
+          {t.quizPage.backToModule}
         </Link>
       </div>
     );
@@ -146,11 +148,11 @@ export default function QuizPage() {
               {isNaN(result.score) ? '—' : result.score}%
             </p>
             <h2 className="font-heading font-bold text-2xl text-charcoal">
-              {passed ? '¡Aprobado!' : 'No aprobado'}
+              {passed ? t.quizPage.passed : t.quizPage.notPassed}
             </h2>
             <p className="text-gray-500 mt-2">
-              {result.correctCount} de {result.totalQuestions} correctas • Nota mínima: {result.passingScore}%
-              {attemptNumber > 1 && ` • Intento ${attemptNumber}`}
+              {t.quizPage.correctCount(result.correctCount, result.totalQuestions)} • {t.quizPage.minScore(result.passingScore)}
+              {attemptNumber > 1 && ` • ${t.quizPage.attemptN(attemptNumber)}`}
             </p>
           </div>
 
@@ -160,9 +162,9 @@ export default function QuizPage() {
 
           {passed ? (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">Excelente trabajo. Ahora escribe tu reflexión para completar el módulo.</p>
+              <p className="text-sm text-gray-600">{t.quizPage.excellentWork}</p>
               <Link href={`/courses/${courseId}/modules/${moduleId}/reflection`} className="btn-primary inline-flex">
-                Escribir reflexión
+                {t.quizPage.writeReflection}
               </Link>
             </div>
           ) : (
@@ -171,7 +173,7 @@ export default function QuizPage() {
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 text-left space-y-1">
                   <p className="font-semibold flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    Repasa estos temas antes del próximo intento:
+                    {t.quizPage.reviewTopics}
                   </p>
                   <ul className="list-disc pl-5 space-y-0.5">
                     {result.results
@@ -181,30 +183,30 @@ export default function QuizPage() {
                       ))}
                   </ul>
                   <p className="text-amber-600 text-xs mt-1">
-                    Te quedan {3 - attemptNumber} intento{3 - attemptNumber !== 1 ? 's' : ''} antes de ver las respuestas.
+                    {t.quizPage.attemptsLeft(3 - attemptNumber)}
                   </p>
                 </div>
               )}
               <p className="text-sm text-gray-600">
                 {showCorrectAnswers
-                  ? 'Revisa las respuestas correctas abajo y vuelve a intentarlo.'
-                  : '¡Tú puedes! Estudia el material y vuelve a intentarlo.'}
+                  ? t.quizPage.studyHint
+                  : t.quizPage.studyHint}
               </p>
               <Button onClick={handleRetry} leftIcon={<RotateCcw className="w-4 h-4" />}>
-                Intentar de nuevo
+                {t.quizPage.retryBtn}
               </Button>
             </div>
           )}
 
           <Link href={`/courses/${courseId}/modules/${moduleId}`} className="text-sm text-gray-500 hover:text-charcoal block">
-            Volver al módulo
+            {t.quizPage.backToModule}
           </Link>
         </div>
 
         {/* Answer review — only shown when passed or attempt >= 3 */}
         {showCorrectAnswers && result.results && result.results.length > 0 && (
           <div className="space-y-3">
-            <h3 className="font-heading font-bold text-lg text-charcoal">Revisión de respuestas</h3>
+            <h3 className="font-heading font-bold text-lg text-charcoal">{t.quizPage.reviewTitle}</h3>
             {result.results.map((r: any, i: number) => (
               <div
                 key={i}
@@ -264,15 +266,15 @@ export default function QuizPage() {
           <ArrowLeft className="w-5 h-5 text-gray-500" />
         </Link>
         <div className="flex-1">
-          <h1 className="font-heading font-bold text-xl text-charcoal">Quiz — {module.title}</h1>
-          <p className="text-sm text-gray-500">Nota mínima: {module.passingScore}%</p>
+          <h1 className="font-heading font-bold text-xl text-charcoal">{t.quizPage.title(module.title)}</h1>
+          <p className="text-sm text-gray-500">{t.quizPage.minScore(module.passingScore)}</p>
         </div>
       </div>
 
       {/* Progress */}
       <ProgressBar
         value={Math.round((answeredCount / questions.length) * 100)}
-        label={`${answeredCount} de ${questions.length} respondidas`}
+        label={t.quizPage.answeredOf(answeredCount, questions.length)}
         showPercent
       />
 
@@ -302,7 +304,7 @@ export default function QuizPage() {
       {/* Current question */}
       {currentQuestion && (
         <div className="card space-y-4 animate-fade-in">
-          <p className="text-xs font-semibold text-gray-400">PREGUNTA {currentQ + 1} DE {questions.length}</p>
+          <p className="text-xs font-semibold text-gray-400">{t.quizPage.questionOf(currentQ + 1, questions.length)}</p>
           <p className="font-heading font-semibold text-lg text-charcoal leading-snug">
             {currentQuestion.text}
           </p>
@@ -342,7 +344,7 @@ export default function QuizPage() {
           onClick={() => setCurrentQ(Math.max(0, currentQ - 1))}
           disabled={currentQ === 0}
         >
-          <ArrowLeft className="w-4 h-4" /> Anterior
+          <ArrowLeft className="w-4 h-4" /> {t.quizPage.prev}
         </Button>
 
         {currentQ < questions.length - 1 ? (
@@ -350,7 +352,7 @@ export default function QuizPage() {
             variant="secondary"
             onClick={() => setCurrentQ(currentQ + 1)}
           >
-            Siguiente
+            {t.quizPage.next}
           </Button>
         ) : (
           <Button
@@ -359,14 +361,14 @@ export default function QuizPage() {
             disabled={!allAnswered}
             leftIcon={<CheckCircle className="w-4 h-4" />}
           >
-            Enviar quiz
+            {t.quizPage.submit}
           </Button>
         )}
       </div>
 
       {!allAnswered && (
         <p className="text-center text-xs text-amber-600">
-          Responde todas las preguntas antes de enviar
+          {t.quizPage.answerAll}
         </p>
       )}
     </div>

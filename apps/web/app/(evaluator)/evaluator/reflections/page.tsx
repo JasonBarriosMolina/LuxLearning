@@ -23,7 +23,7 @@ const STATUS_FILTERS: StatusFilter[] = [
 
 const DEADLINE_HOURS = 48;
 
-function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: string; urgent: boolean; overdue: boolean } {
+function getTimeRemaining(submittedAt: string, deadlineIso: string | undefined, tEval: { overdueAgo: (h: number) => string; timeLeft: (h: number, m: number) => string; hoursLeft2: (h: number) => string }): { label: string; urgent: boolean; overdue: boolean } {
   const deadline = deadlineIso
     ? new Date(deadlineIso).getTime()
     : new Date(submittedAt).getTime() + DEADLINE_HOURS * 60 * 60 * 1000;
@@ -32,14 +32,14 @@ function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: s
 
   if (diffMs <= 0) {
     const overdueH = Math.abs(Math.floor(diffMs / (1000 * 60 * 60)));
-    return { label: `Vencido hace ${overdueH}h`, urgent: true, overdue: true };
+    return { label: tEval.overdueAgo(overdueH), urgent: true, overdue: true };
   }
 
   const h = Math.floor(diffMs / (1000 * 60 * 60));
   const m = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
-  if (h < 12) return { label: `${h}h ${m}m`, urgent: true, overdue: false };
-  return { label: `${h}h restantes`, urgent: false, overdue: false };
+  if (h < 12) return { label: tEval.timeLeft(h, m), urgent: true, overdue: false };
+  return { label: tEval.hoursLeft2(h), urgent: false, overdue: false };
 }
 
 export default function EvaluatorReflectionsPage() {
@@ -78,8 +78,8 @@ export default function EvaluatorReflectionsPage() {
   const pendingCount = reflections.filter((r) => r.status === 'PENDING_EVAL').length;
   const urgentCount = reflections.filter((r) => {
     if (r.status !== 'PENDING_EVAL') return false;
-    const t = getTimeRemaining(r.submittedAt, (r as any).deadline);
-    return t.urgent;
+    const info = getTimeRemaining(r.submittedAt, (r as any).deadline, t.evaluator);
+    return info.urgent;
   }).length;
 
   return (
@@ -88,10 +88,10 @@ export default function EvaluatorReflectionsPage() {
         <div>
           <h1 className="font-heading font-bold text-2xl text-charcoal">{t.nav.evaluations}</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            {pendingCount} pendientes
+            {t.evaluator.pendingCount(pendingCount)}
             {urgentCount > 0 && (
               <span className="ml-2 inline-flex items-center gap-1 text-red-600 font-medium">
-                <AlertTriangle className="w-3.5 h-3.5" /> {urgentCount} urgentes
+                <AlertTriangle className="w-3.5 h-3.5" /> {t.evaluator.urgentCount(urgentCount)}
               </span>
             )}
           </p>
@@ -102,7 +102,7 @@ export default function EvaluatorReflectionsPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Input
-            placeholder={lang === 'en' ? 'Search by student, module or course...' : 'Buscar por estudiante, módulo o curso...'}
+            placeholder={t.evaluator.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={<Search className="w-4 h-4" />}
@@ -136,7 +136,7 @@ export default function EvaluatorReflectionsPage() {
             }`}
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
-            {sortByUrgent ? (lang === 'en' ? 'By urgency' : 'Por urgencia') : (lang === 'en' ? 'By date' : 'Por fecha')}
+            {sortByUrgent ? t.evaluator.sortByUrgency : t.evaluator.sortByDate}
           </button>
         </div>
       </div>
@@ -149,24 +149,24 @@ export default function EvaluatorReflectionsPage() {
       ) : filtered.length === 0 ? (
         <div className="card text-center py-16">
           <ClipboardList className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">Sin reflexiones</p>
-          <p className="text-gray-500 text-sm mt-1">Prueba ajustando los filtros.</p>
+          <p className="font-heading font-bold text-charcoal">{t.evaluator.noReflectionsFound}</p>
+          <p className="text-gray-500 text-sm mt-1">{t.evaluator.adjustFilters}</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           {/* Table header */}
           <div className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] gap-4 px-5 py-3 bg-surface border-b border-border text-xs font-semibold text-gray-400 uppercase tracking-wide">
-            <span>Estudiante</span>
-            <span>Módulo / Curso</span>
-            <span>Enviado</span>
-            <span>Tiempo restante</span>
-            <span>Estado</span>
+            <span>{t.evaluator.colStudent}</span>
+            <span>{t.evaluator.colModuleCourse}</span>
+            <span>{t.evaluator.colSent}</span>
+            <span>{t.evaluator.colTimeRemaining}</span>
+            <span>{t.evaluator.colStatus}</span>
           </div>
 
           {/* Rows */}
           <div className="divide-y divide-border">
             {filtered.map((r) => {
-              const timeInfo = r.status === 'PENDING_EVAL' ? getTimeRemaining(r.submittedAt, (r as any).deadline) : null;
+              const timeInfo = r.status === 'PENDING_EVAL' ? getTimeRemaining(r.submittedAt, (r as any).deadline, t.evaluator) : null;
               const studentDisplay = r.studentName ?? r.userId;
 
               return (
@@ -184,7 +184,7 @@ export default function EvaluatorReflectionsPage() {
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-medium text-charcoal truncate">{studentDisplay}</span>
                         {(r as any).priority && (
-                          <span title="Alta prioridad">
+                          <span title={t.evaluator.highPriority}>
                             <Flag className="w-3.5 h-3.5 text-red-500 fill-red-500 shrink-0" />
                           </span>
                         )}
@@ -194,7 +194,7 @@ export default function EvaluatorReflectionsPage() {
 
                   {/* Module / Course */}
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-charcoal truncate">{r.moduleTitle ?? 'Módulo'}</p>
+                    <p className="text-sm font-medium text-charcoal truncate">{r.moduleTitle ?? t.evaluator.moduleLabel}</p>
                     {r.courseTitle && (
                       <p className="text-xs text-gray-400 truncate">{r.courseTitle}</p>
                     )}

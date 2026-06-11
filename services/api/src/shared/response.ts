@@ -4,6 +4,8 @@ const ALLOWED_ORIGINS = [
   'https://lux-learning-tau.vercel.app',
   'https://lux-learning-mentor.vercel.app',
   'https://lux-learning.vercel.app',
+  'https://lux-learning-staging.vercel.app',
+  'https://lux-learning-test.vercel.app',
   'http://localhost:3000',
 ];
 

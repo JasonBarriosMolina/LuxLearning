@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { changePassword } from '@/lib/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { useLanguage } from '@/lib/i18n';
 
 // Dynamic import — react-signature-canvas uses document APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -22,6 +23,7 @@ interface ProfileData {
 }
 
 export default function ProfilePage() {
+  const { t } = useLanguage();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,7 +73,7 @@ export default function ProfilePage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err: any) {
-      setError(err.message ?? 'Error al guardar');
+      setError(err.message ?? t.evaluator.errorSave);
     } finally {
       setSaving(false);
     }
@@ -95,8 +97,8 @@ export default function ProfilePage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwError('');
-    if (pw.next.length < 8) { setPwError('La nueva contraseña debe tener al menos 8 caracteres'); return; }
-    if (pw.next !== pw.confirm) { setPwError('Las contraseñas no coinciden'); return; }
+    if (pw.next.length < 8) { setPwError(t.evaluator.passwordTooShort); return; }
+    if (pw.next !== pw.confirm) { setPwError(t.evaluator.passwordMismatch); return; }
     setPwSaving(true);
     try {
       await changePassword(pw.current, pw.next);
@@ -105,7 +107,7 @@ export default function ProfilePage() {
       setPwSaved(true);
       setTimeout(() => setPwSaved(false), 3000);
     } catch (err: any) {
-      setPwError(err.message ?? 'Error al cambiar la contraseña');
+      setPwError(err.message ?? t.evaluator.errorPassword);
     } finally {
       setPwSaving(false);
     }
@@ -129,8 +131,8 @@ export default function ProfilePage() {
       <div className="flex items-center gap-3">
         <UserCog className="w-6 h-6 text-cta-from" />
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Mi Perfil</h1>
-          <p className="text-sm text-gray-500">Información de tu cuenta</p>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.evaluator.profileTitle}</h1>
+          <p className="text-sm text-gray-500">{t.evaluator.profileSubtitle}</p>
         </div>
       </div>
 
@@ -143,7 +145,7 @@ export default function ProfilePage() {
           }
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-heading font-bold text-lg text-charcoal truncate">{profile.name || '(sin nombre)'}</p>
+          <p className="font-heading font-bold text-lg text-charcoal truncate">{profile.name || t.evaluator.noName}</p>
           <div className="flex items-center gap-1.5 text-sm text-gray-400 mt-0.5">
             <Mail className="w-3.5 h-3.5" />
             <span className="truncate">{profile.email}</span>
@@ -151,7 +153,7 @@ export default function ProfilePage() {
         </div>
         {!editing && (
           <Button variant="secondary" size="sm" leftIcon={<Edit2 className="w-4 h-4" />} onClick={() => setEditing(true)}>
-            Editar
+            {t.evaluator.editBtn}
           </Button>
         )}
       </div>
@@ -160,19 +162,19 @@ export default function ProfilePage() {
       {editing ? (
         <form onSubmit={handleSave} className="card space-y-4">
           <Input
-            label="Nombre completo"
+            label={t.evaluator.fullName}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Tu nombre"
           />
           <Input
-            label="Teléfono"
+            label={t.evaluator.phoneLabel}
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             placeholder="+57 300 000 0000"
           />
           <div className="space-y-1">
-            <label className="text-sm font-medium text-charcoal">Bio</label>
+            <label className="text-sm font-medium text-charcoal">{t.evaluator.bioLabel}</label>
             <textarea
               value={form.bio}
               onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))}
@@ -185,7 +187,7 @@ export default function ProfilePage() {
           {/* Photo URL */}
           <div className="space-y-2">
             <Input
-              label="Foto de perfil (URL)"
+              label={t.evaluator.profilePicUrlLabel}
               value={form.picture}
               onChange={(e) => setForm((f) => ({ ...f, picture: e.target.value }))}
               placeholder="https://ejemplo.com/mi-foto.jpg"
@@ -199,7 +201,7 @@ export default function ProfilePage() {
                   className="w-12 h-12 rounded-full object-cover border border-border"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
-                <p className="text-xs text-gray-400">Vista previa</p>
+                <p className="text-xs text-gray-400">{t.evaluator.preview}</p>
               </div>
             )}
           </div>
@@ -211,10 +213,10 @@ export default function ProfilePage() {
               setEditing(false);
               setForm({ name: profile.name, phone: profile.phone, bio: profile.bio, picture: profile.picture ?? '' });
             }}>
-              Cancelar
+              {t.evaluator.cancelBtn}
             </Button>
             <Button type="submit" loading={saving} leftIcon={<Save className="w-4 h-4" />}>
-              Guardar cambios
+              {t.evaluator.saveChanges}
             </Button>
           </div>
         </form>
@@ -224,15 +226,15 @@ export default function ProfilePage() {
             <div className="flex items-start gap-3">
               <Phone className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Teléfono</p>
-                <p className="text-sm text-charcoal mt-0.5">{profile.phone || <span className="italic text-gray-400">No especificado</span>}</p>
+                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{t.evaluator.phoneLabel}</p>
+                <p className="text-sm text-charcoal mt-0.5">{profile.phone || <span className="italic text-gray-400">{t.evaluator.noPhone}</span>}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <FileText className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Bio</p>
-                <p className="text-sm text-charcoal mt-0.5 leading-relaxed">{profile.bio || <span className="italic text-gray-400">Sin bio</span>}</p>
+                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{t.evaluator.bioLabel}</p>
+                <p className="text-sm text-charcoal mt-0.5 leading-relaxed">{profile.bio || <span className="italic text-gray-400">{t.evaluator.noBio}</span>}</p>
               </div>
             </div>
           </div>
@@ -244,11 +246,11 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-gray-400" />
-            <p className="text-sm font-medium text-charcoal">Contraseña</p>
+            <p className="text-sm font-medium text-charcoal">{t.evaluator.passwordLabel}</p>
           </div>
           {!pwOpen && (
             <Button variant="secondary" size="sm" onClick={() => setPwOpen(true)}>
-              Cambiar contraseña
+              {t.evaluator.changePasswordTitle}
             </Button>
           )}
         </div>
@@ -257,7 +259,7 @@ export default function ProfilePage() {
           <form onSubmit={handleChangePassword} className="mt-4 space-y-4">
             <div className="relative">
               <Input
-                label="Contraseña actual"
+                label={t.evaluator.currentPassword}
                 type={showPw ? 'text' : 'password'}
                 value={pw.current}
                 onChange={(e) => setPw((p) => ({ ...p, current: e.target.value }))}
@@ -265,14 +267,14 @@ export default function ProfilePage() {
               />
             </div>
             <Input
-              label="Nueva contraseña"
+              label={t.evaluator.newPassword}
               type={showPw ? 'text' : 'password'}
               value={pw.next}
               onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
               placeholder="Mínimo 8 caracteres"
             />
             <Input
-              label="Confirmar nueva contraseña"
+              label={t.evaluator.confirmPassword}
               type={showPw ? 'text' : 'password'}
               value={pw.confirm}
               onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
@@ -284,17 +286,17 @@ export default function ProfilePage() {
               className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
             >
               {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              {showPw ? 'Ocultar contraseñas' : 'Mostrar contraseñas'}
+              {showPw ? t.evaluator.hidePasswords : t.evaluator.showPasswords}
             </button>
             {pwError && (
               <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{pwError}</div>
             )}
             <div className="flex justify-end gap-3">
               <Button type="button" variant="secondary" onClick={() => { setPwOpen(false); setPw({ current: '', next: '', confirm: '' }); setPwError(''); }}>
-                Cancelar
+                {t.evaluator.cancelBtn}
               </Button>
               <Button type="submit" loading={pwSaving} leftIcon={<Lock className="w-4 h-4" />}>
-                Actualizar contraseña
+                {t.evaluator.updatePassword}
               </Button>
             </div>
           </form>
@@ -306,11 +308,11 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PenLine className="w-4 h-4 text-gray-400" />
-            <p className="text-sm font-medium text-charcoal">Firma Digital</p>
+            <p className="text-sm font-medium text-charcoal">{t.evaluator.signatureTitle}</p>
           </div>
           {!sigMode && (
             <Button variant="secondary" size="sm" onClick={() => setSigMode(true)}>
-              {savedSignature ? 'Actualizar firma' : 'Crear firma'}
+              {savedSignature ? t.evaluator.updateSignature : t.evaluator.createSignature}
             </Button>
           )}
         </div>
@@ -318,7 +320,7 @@ export default function ProfilePage() {
         {/* Show saved signature preview */}
         {!sigMode && savedSignature && (
           <div className="mt-4">
-            <p className="text-xs text-gray-400 mb-2">Firma guardada:</p>
+            <p className="text-xs text-gray-400 mb-2">{t.evaluator.savedSignatureLabel}</p>
             <div className="border border-border rounded-lg p-2 bg-white inline-block">
               <img src={savedSignature} alt="Firma digital" className="max-h-20 object-contain" />
             </div>
@@ -328,7 +330,7 @@ export default function ProfilePage() {
         {/* Signature canvas */}
         {sigMode && (
           <div className="mt-4 space-y-3">
-            <p className="text-xs text-gray-500">Dibuja tu firma en el recuadro:</p>
+            <p className="text-xs text-gray-500">{t.evaluator.drawHint}</p>
             <div className="border-2 border-dashed border-border rounded-lg overflow-hidden bg-white">
               <SignatureCanvas
                 ref={sigCanvasRef}
@@ -344,7 +346,7 @@ export default function ProfilePage() {
                 leftIcon={<Trash2 className="w-4 h-4" />}
                 onClick={() => sigCanvasRef.current?.clear()}
               >
-                Limpiar
+                {t.evaluator.clearSignatureBtn}
               </Button>
               <Button
                 type="button"
@@ -352,7 +354,7 @@ export default function ProfilePage() {
                 size="sm"
                 onClick={() => setSigMode(false)}
               >
-                Cancelar
+                {t.evaluator.cancelBtn}
               </Button>
               <Button
                 type="button"
@@ -361,7 +363,7 @@ export default function ProfilePage() {
                 leftIcon={<Save className="w-4 h-4" />}
                 onClick={handleSaveSignature}
               >
-                Guardar firma
+                {t.evaluator.saveSignatureBtn}
               </Button>
             </div>
           </div>
@@ -371,17 +373,17 @@ export default function ProfilePage() {
       {/* Success toasts */}
       {saved && (
         <div className="fixed bottom-6 right-6 bg-emerald-500 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 animate-fade-in z-50">
-          ✓ Perfil actualizado
+          ✓ {t.evaluator.profileUpdated}
         </div>
       )}
       {pwSaved && (
         <div className="fixed bottom-6 right-6 bg-emerald-500 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 animate-fade-in z-50">
-          ✓ Contraseña actualizada
+          ✓ {t.evaluator.passwordChanged}
         </div>
       )}
       {sigSaved && (
         <div className="fixed bottom-6 right-6 bg-emerald-500 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 animate-fade-in z-50">
-          ✓ Firma guardada
+          ✓ {t.evaluator.signatureSaved}
         </div>
       )}
     </div>

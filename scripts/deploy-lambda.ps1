@@ -34,7 +34,7 @@ $LAMBDAS = [ordered]@{
   "lux-reports"     = @("$API_SRC\reports\handler.ts",      $true)
   "lux-messages"    = @("$API_SRC\messages\handler.ts",     $false)
   "lux-sqsconsumer" = @("$API_SRC\reflection\sqs-consumer.ts", $false)
-  "lux-lessons"     = @("$API_SRC\lessons\handler.ts",      $false)
+  "lux-lessons"     = @("$API_SRC\lessons\handler.ts",      $true)
   "lux-tasks"       = @("$API_SRC\tasks\handler.ts",        $false)
   "lux-notifs"      = @("$API_SRC\notifications\handler.ts",$false)
   "lux-push"        = @("$API_SRC\push\handler.ts",         $false)
@@ -103,15 +103,16 @@ function Deploy-Lambda([string]$name) {
   #    DATABASE_URL persists automatically — update-function-code never touches env vars
   if ($usesPrisma) {
     $tmpEnv = "$DIST\env-tmp.json"
-    aws lambda get-function-configuration --function-name $name --query "Environment.Variables" --output json | Out-File -Encoding utf8 $tmpEnv
-    python -c @"
-import json
-with open(r'$tmpEnv', encoding='utf-8') as f:
-  d = json.loads(f.read().strip().lstrip('\xef\xbb\xbf'))
-d['PRISMA_QUERY_ENGINE_LIBRARY'] = '$ENGINE_PATH'
-with open(r'$tmpEnv', 'w', encoding='utf-8') as f:
-  json.dump({'Variables': d}, f)
-"@
+    $noBom = New-Object System.Text.UTF8Encoding($false)
+    $rawVars = (aws lambda get-function-configuration --function-name $name --query "Environment.Variables" --output json) -join ""
+    $dObj = $rawVars | ConvertFrom-Json
+    $h = @{}
+    $dObj.PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value }
+    $h['PRISMA_QUERY_ENGINE_LIBRARY'] = $ENGINE_PATH
+    if (-not $h.ContainsKey('DB_SECRET_ARN_STAGING')) { $h['DB_SECRET_ARN_STAGING'] = 'arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/neon-db-staging-yTtxUR' }
+    if (-not $h.ContainsKey('DB_SECRET_ARN_TEST'))    { $h['DB_SECRET_ARN_TEST']    = 'arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/neon-db-test-FFtXaR' }
+    $envBody = @{ Variables = $h } | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText($tmpEnv, $envBody, $noBom)
     aws lambda update-function-configuration --function-name $name --environment "file://$tmpEnv" --query "FunctionName" --output text | Out-Null
     Write-Host "   Env vars synced" -ForegroundColor Gray
   }

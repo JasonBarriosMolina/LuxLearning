@@ -3,6 +3,7 @@ import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/cli
 import { getCertificate, getCertificatesByUser, getCertificateByUserAndCourse, saveCertificate, getReflection, getCertTemplate, saveCertTemplate, type CertTemplate } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 import { ok, notFound, badRequest, forbidden, serverError, cors } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const DEFAULT_TEMPLATE: CertTemplate = {
@@ -33,6 +34,7 @@ async function resolveStudentName(userId: string, fallbackEmail: string): Promis
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const path = event.rawPath;
   const method = event.requestContext.http.method;

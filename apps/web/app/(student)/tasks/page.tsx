@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { useLanguage } from '@/lib/i18n';
 
 type TaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SUBMITTED';
 interface Task {
@@ -32,24 +33,11 @@ interface Task {
   submissionText?: string;
 }
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  PENDING: 'Pendiente',
-  COMPLETED: 'Completada',
-  OVERDUE: 'Vencida',
-  SUBMITTED: 'Presentada',
-};
+// STATUS_LABELS replaced with t.studentTasks lookups
 
 const URL_TASK_TYPES = ['upload_link', 'watch_video', 'read_resource'];
 const FILE_UPLOAD_TYPES = ['report', 'practical', 'project_progress', 'project_final', 'portfolio', 'presentation'];
 const TEXT_SUBMIT_TYPES = ['theoretical', 'peer_review'];
-
-const TASK_TYPE_LABELS: Record<string, string> = {
-  custom: 'Tarea', complete_module: 'Completar módulo', submit_reflection: 'Reflexión',
-  pass_quiz: 'Quiz', upload_link: 'Enlace', watch_video: 'Ver video', read_resource: 'Leer recurso',
-  report: 'Reporte', theoretical: 'Tarea teórica', practical: 'Tarea práctica',
-  project_progress: 'Avance de proyecto', project_final: 'Entrega final', portfolio: 'Portfolio',
-  presentation: 'Presentación', peer_review: 'Revisión entre pares',
-};
 
 function taskColor(task: Task) {
   if (task.status === 'COMPLETED') return 'text-emerald-500';
@@ -90,6 +78,7 @@ function cleanDescription(description?: string): string {
 }
 
 export default function TasksPage() {
+  const { t, lang } = useLanguage();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
@@ -117,7 +106,7 @@ export default function TasksPage() {
     try {
       await api.tasks.complete(taskId);
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'COMPLETED' as const, completedAt: new Date().toISOString() } : t));
-    } catch { alert('Error al marcar como completada'); }
+    } catch { alert(t.studentTasks.errorComplete); }
     finally { setCompleting(null); }
   };
 
@@ -126,7 +115,7 @@ export default function TasksPage() {
     try {
       await api.tasks.submit(taskId);
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'SUBMITTED' as const, submittedAt: new Date().toISOString() } : t));
-    } catch { alert('Error al presentar la tarea'); }
+    } catch { alert(t.studentTasks.errorPresent); }
     finally { setPresenting(null); }
   };
 
@@ -135,7 +124,7 @@ export default function TasksPage() {
     try {
       await api.tasks.undo(taskId);
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'PENDING' as const, submittedAt: undefined } : t));
-    } catch { alert('Error al deshacer la presentación'); }
+    } catch { alert(t.studentTasks.errorUndo); }
     finally { setUndoing(null); }
   };
 
@@ -152,7 +141,7 @@ export default function TasksPage() {
       setTasks((prev) => prev.map((t) => t.taskId === taskId ? { ...t, status: 'SUBMITTED' as const, submittedAt: new Date().toISOString(), ...(file ? { fileUrl: `uploaded`, fileName: file.fileName } : {}), ...(text ? { submissionText: text } : {}) } : t));
       setPendingFiles((p) => ({ ...p, [taskId]: null }));
       setTextSubmissions((p) => ({ ...p, [taskId]: '' }));
-    } catch { alert('Error al entregar la tarea'); }
+    } catch { alert(t.studentTasks.errorSubmitFile); }
     finally { setSubmitting(null); }
   };
 
@@ -166,7 +155,7 @@ export default function TasksPage() {
         ? { ...t, status: 'COMPLETED' as const, completedAt: new Date().toISOString(), submissionUrl: url }
         : t));
       setSubmissionUrls((prev) => { const n = { ...prev }; delete n[taskId]; return n; });
-    } catch { alert('Error al enviar el enlace'); }
+    } catch { alert(t.studentTasks.errorSubmitLink); }
     finally { setSubmitting(null); }
   };
 
@@ -200,7 +189,7 @@ export default function TasksPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList className="w-6 h-6 text-cta-from" />
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Mis Tareas</h1>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentTasks.title}</h1>
         </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}
@@ -208,14 +197,14 @@ export default function TasksPage() {
             <button
               onClick={() => setViewMode('list')}
               className={`p-2 ${viewMode === 'list' ? 'bg-cta-gradient text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              title="Vista lista"
+              title={t.studentTasks.listView}
             >
               <List className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('calendar')}
               className={`p-2 ${viewMode === 'calendar' ? 'bg-cta-gradient text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              title="Vista calendario"
+              title={t.studentTasks.calendarView}
             >
               <CalendarDays className="w-4 h-4" />
             </button>
@@ -227,7 +216,7 @@ export default function TasksPage() {
             loading={exportLoading}
             leftIcon={<Calendar className="w-4 h-4" />}
           >
-            Exportar .ics
+            {t.studentTasks.exportIcs}
           </Button>
         </div>
       </div>
@@ -244,17 +233,17 @@ export default function TasksPage() {
           {/* Calendar tip */}
           <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-900/40 rounded-xl text-xs text-blue-700 dark:text-blue-300">
             <Calendar className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>Descarga el archivo <strong>.ics</strong> para importar tus tareas en Google Calendar, Apple Calendar u Outlook. Se actualiza con cada descarga.</span>
+            <span>{t.studentTasks.icsHint}</span>
           </div>
 
           {/* Filter tabs */}
           <div className="flex gap-1 p-1 bg-surface rounded-xl w-fit">
             {([
-              { key: 'all', label: 'Todas' },
-              { key: 'PENDING', label: 'Pendientes' },
-              { key: 'SUBMITTED', label: 'Presentadas' },
-              { key: 'OVERDUE', label: 'Vencidas' },
-              { key: 'COMPLETED', label: 'Completadas' },
+              { key: 'all', label: t.studentTasks.filterAll },
+              { key: 'PENDING', label: t.studentTasks.filterPending },
+              { key: 'SUBMITTED', label: t.studentTasks.filterSubmitted },
+              { key: 'OVERDUE', label: t.studentTasks.filterOverdue },
+              { key: 'COMPLETED', label: t.studentTasks.filterCompleted },
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
@@ -277,9 +266,9 @@ export default function TasksPage() {
           {filtered.length === 0 ? (
             <div className="card text-center py-12">
               <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="font-heading font-semibold text-charcoal">No hay tareas</p>
+              <p className="font-heading font-semibold text-charcoal">{t.studentTasks.noTasks}</p>
               <p className="text-sm text-gray-400 mt-1">
-                {filter === 'all' ? 'Tu evaluador aún no ha asignado tareas.' : `No hay tareas ${STATUS_LABELS[filter as TaskStatus]?.toLowerCase() ?? filter.toLowerCase()}.`}
+                {filter === 'all' ? t.studentTasks.noTasksHint : t.studentTasks.noTasks}
               </p>
             </div>
           ) : (
@@ -306,10 +295,10 @@ export default function TasksPage() {
                         )}
                         <span className={`text-xs font-medium ${taskColor(task)}`}>
                           {task.status === 'COMPLETED'
-                            ? `Completada ${task.completedAt ? new Date(task.completedAt).toLocaleDateString('es') : ''}`
+                            ? t.studentTasks.completedOn(task.completedAt ? new Date(task.completedAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es') : '')
                             : task.status === 'SUBMITTED'
-                            ? `Presentada ${task.submittedAt ? new Date(task.submittedAt).toLocaleDateString('es') : ''}`
-                            : `Vence: ${task.dueDate}`}
+                            ? t.studentTasks.submittedOn(task.submittedAt ? new Date(task.submittedAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es') : '')
+                            : t.studentTasks.dueOn(task.dueDate)}
                         </span>
                       </div>
 
@@ -322,7 +311,7 @@ export default function TasksPage() {
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-cta-from hover:underline"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
-                          Abrir recurso →
+                          {t.studentTasks.openResource}
                         </a>
                       )}
 
@@ -333,7 +322,7 @@ export default function TasksPage() {
                             folder="tasks"
                             accept=".pdf,.docx,.pptx,.xlsx,.zip,.rar,.jpg,.jpeg,.png,.mp4"
                             maxSizeMB={100}
-                            label="Sube tu entrega aquí"
+                            label={t.studentTasks.uploadHint}
                             onUploaded={(res) => setPendingFiles((p) => ({ ...p, [task.taskId]: res }))}
                             onError={(msg) => alert(msg)}
                           />
@@ -344,7 +333,7 @@ export default function TasksPage() {
                               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-cta-gradient text-white hover:opacity-90 transition-opacity disabled:opacity-40"
                             >
                               {submitting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                              Entregar archivo
+                              {t.studentTasks.uploadBtn}
                             </button>
                           )}
                         </div>
@@ -355,7 +344,7 @@ export default function TasksPage() {
                         <div className="mt-2 space-y-2">
                           <textarea
                             rows={3}
-                            placeholder="Escribe tu respuesta aquí..."
+                            placeholder={t.studentTasks.textPlaceholder}
                             value={textSubmissions[task.taskId] ?? ''}
                             onChange={(e) => setTextSubmissions((p) => ({ ...p, [task.taskId]: e.target.value }))}
                             className="input-field text-sm w-full resize-none"
@@ -366,7 +355,7 @@ export default function TasksPage() {
                             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-cta-gradient text-white hover:opacity-90 disabled:opacity-40"
                           >
                             {submitting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Entregar respuesta
+                            {t.studentTasks.textSubmitBtn}
                           </button>
                         </div>
                       )}
@@ -383,7 +372,7 @@ export default function TasksPage() {
                         <div className="flex items-center gap-2 mt-1">
                           <input
                             type="url"
-                            placeholder="Pega aquí el enlace de tu entrega..."
+                            placeholder={t.studentTasks.linkPlaceholder}
                             value={submissionUrls[task.taskId] ?? ''}
                             onChange={(e) => setSubmissionUrls((prev) => ({ ...prev, [task.taskId]: e.target.value }))}
                             className="input-field text-xs py-1.5 flex-1 min-w-0"
@@ -394,7 +383,7 @@ export default function TasksPage() {
                             className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-cta-gradient text-white hover:opacity-90 transition-opacity disabled:opacity-40"
                           >
                             {submitting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                            Enviar
+                            {t.studentTasks.linkSubmitBtn}
                           </button>
                         </div>
                       )}
@@ -402,7 +391,7 @@ export default function TasksPage() {
                       {/* Submitted URL */}
                       {task.submissionUrl && (
                         <p className="text-xs text-gray-400">
-                          Enviado: <a href={task.submissionUrl} target="_blank" rel="noopener noreferrer" className="underline">{task.submissionUrl}</a>
+                          {t.studentTasks.submittedLabel} <a href={task.submissionUrl} target="_blank" rel="noopener noreferrer" className="underline">{task.submissionUrl}</a>
                         </p>
                       )}
                     </div>
@@ -418,7 +407,7 @@ export default function TasksPage() {
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 transition-colors disabled:opacity-50"
                           >
                             {presenting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Presentar
+                            {t.studentTasks.submitBtn}
                           </button>
                           <button
                             onClick={() => handleComplete(task.taskId)}
@@ -426,7 +415,7 @@ export default function TasksPage() {
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors disabled:opacity-50"
                           >
                             {completing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                            Completar
+                            {t.studentTasks.completeBtn}
                           </button>
                         </>
                       )}
@@ -439,7 +428,7 @@ export default function TasksPage() {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 transition-colors disabled:opacity-50"
                         >
                           {undoing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
-                          Deshacer
+                          {t.studentTasks.undoBtn}
                         </button>
                       )}
 
@@ -451,7 +440,7 @@ export default function TasksPage() {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors disabled:opacity-50"
                         >
                           {completing === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                          Completar
+                          {t.studentTasks.completeBtn}
                         </button>
                       )}
                     </div>

@@ -2,12 +2,14 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { getPrismaClient } from '../shared/db-neon';
 import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse } from '../shared/db-dynamo';
 import { ok, notFound, serverError, cors } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
   const path = event.rawPath;
@@ -129,8 +131,13 @@ export const handler = async (event: Event) => {
     const courseResourcesMatch = path.match(/^\/courses\/([^/]+)\/resources$/);
     if (courseResourcesMatch) {
       const courseId = courseResourcesMatch[1]!;
-      const resources = await getResourcesByCourse(courseId);
-      return ok(resources);
+      try {
+        const resources = await getResourcesByCourse(courseId);
+        return ok(resources);
+      } catch (err) {
+        console.error('[Resources] Failed to fetch resources for course', courseId, err);
+        return ok([]); // degrade gracefully — never block module view
+      }
     }
 
     return notFound();

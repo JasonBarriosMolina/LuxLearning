@@ -3,6 +3,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getTasksForUser, updateTask, createNotification, createTask } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 /** Minimal JWT payload decode (no signature verification — used only for .ics, low-risk) */
@@ -89,6 +90,7 @@ function normalizeTask(item: any) {
 
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;

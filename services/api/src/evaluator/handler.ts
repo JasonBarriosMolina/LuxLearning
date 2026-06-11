@@ -16,6 +16,7 @@ import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflect
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -220,6 +221,7 @@ function reconsideredEmailHtml(studentName: string, moduleTitle: string, reason:
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const auth = event.requestContext.authorizer?.lambda;
   if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN') return forbidden('Evaluator role required');

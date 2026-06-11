@@ -497,13 +497,13 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
                   <div className="flex rounded-lg border border-border overflow-hidden">
-                    {(['text', 'image', 'infographic'] as const).map((t) => (
+                    {(['text', 'image'] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => { setRegenType(t); setRegenStyle(''); }}
                         className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                       >
-                        {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
+                        {t === 'text' ? '📝 Texto' : '🖼 Imagen'}
                       </button>
                     ))}
                   </div>
@@ -532,15 +532,12 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                   </div>
                 )}
 
-                {/* Style (image/infographic) */}
-                {(regenType === 'image' || regenType === 'infographic') && (
+                {/* Style (image only) */}
+                {regenType === 'image' && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {(regenType === 'image'
-                        ? [['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['diagram', '📐 Diagrama'], ['comic', '💥 Cómic']]
-                        : [['minimal', '⬜ Minimal'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']]
-                      ).map(([val, label]) => (
+                      {[['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['minimal', '⬜ Minimal'], ['comic', '💥 Cómic'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']].map(([val, label]) => (
                         <button
                           key={val}
                           onClick={() => setRegenStyle(regenStyle === val ? '' : val)}
@@ -620,7 +617,22 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                   </div>
                 ) : (regenType === 'image' || regenType === 'infographic') && regenPreviewData?.imageUrl ? (
                   <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                      <a
+                        href={regenPreviewData.imageUrl}
+                        download={`leccion-${regenType}-${Date.now()}.${regenPreviewData.imageUrl.endsWith('.svg') ? 'svg' : 'jpg'}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+                        title="Descargar imagen"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        Descargar
+                      </a>
+                    </div>
                     <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
                   </div>
                 ) : null}

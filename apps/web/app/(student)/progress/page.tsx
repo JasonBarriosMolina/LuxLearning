@@ -6,6 +6,7 @@ import { TrendingUp, CheckCircle, Lock, ArrowRight, Star, MessageSquare, Flame, 
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
+import { useLanguage } from '@/lib/i18n';
 
 /** Calculate streak: consecutive days with at least one completed lesson */
 function calcStreak(courses: any[]): number {
@@ -35,6 +36,7 @@ function calcStreak(courses: any[]): number {
 }
 
 export default function ProgressPage() {
+  const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set());
@@ -75,35 +77,35 @@ export default function ProgressPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
       <div>
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Mi Progreso</h1>
-        <p className="text-gray-500 mt-1 text-sm">Seguimiento detallado de tu aprendizaje</p>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentProgress.title}</h1>
+        <p className="text-gray-500 mt-1 text-sm">{t.studentProgress.subtitle}</p>
       </div>
 
       {/* Overall stats */}
       <div className="card">
-        <h2 className="font-heading font-bold text-lg text-charcoal mb-4">Resumen global</h2>
+        <h2 className="font-heading font-bold text-lg text-charcoal mb-4">{t.studentProgress.globalSummary}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="text-center">
             <p className="font-heading font-bold text-3xl gradient-text">{totals.completed}</p>
-            <p className="text-xs text-gray-500 mt-1">Lecciones<br />completadas</p>
+            <p className="text-xs text-gray-500 mt-1">{t.studentProgress.lessonsCompleted}</p>
           </div>
           <div className="text-center">
             <p className="font-heading font-bold text-3xl gradient-text">{totals.quizPassed}</p>
-            <p className="text-xs text-gray-500 mt-1">Módulos con<br />quiz aprobado</p>
+            <p className="text-xs text-gray-500 mt-1">{t.studentProgress.quizPassed}</p>
           </div>
           <div className="text-center">
             <p className="font-heading font-bold text-3xl gradient-text">{totals.approved}</p>
-            <p className="text-xs text-gray-500 mt-1">Reflexiones<br />aprobadas</p>
+            <p className="text-xs text-gray-500 mt-1">{t.studentProgress.reflectionsApproved}</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1">
               <Flame className={`w-7 h-7 ${streak > 0 ? 'text-orange-500' : 'text-gray-300'}`} />
               <p className={`font-heading font-bold text-3xl ${streak > 0 ? 'text-orange-500' : 'text-gray-400'}`}>{streak}</p>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Racha de<br />días activos</p>
+            <p className="text-xs text-gray-500 mt-1">{t.studentProgress.streakDays}</p>
           </div>
         </div>
-        <ProgressBar value={overallProgress} label="Progreso general de cursos" showPercent size="lg" />
+        <ProgressBar value={overallProgress} label={t.studentProgress.courseProgress} showPercent size="lg" />
       </div>
 
       {/* Per-course breakdown */}
@@ -124,11 +126,11 @@ export default function ProgressPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-heading font-bold text-lg text-charcoal">{course.title}</h2>
                 <Link href={`/courses/${course.id}`} className="text-sm text-cta-from flex items-center gap-1 font-semibold hover:opacity-80">
-                  Ver curso <ArrowRight className="w-4 h-4" />
+                  {t.studentProgress.viewCourse} <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
 
-              <ProgressBar value={courseProgress} label={`${completedCount} de ${allLessons.length} lecciones`} showPercent />
+              <ProgressBar value={courseProgress} label={t.studentProgress.lessonsOf(completedCount, allLessons.length)} showPercent />
 
               <div className="space-y-2">
                 {course.modules?.map((mod: any) => {
@@ -189,7 +191,7 @@ export default function ProgressPage() {
                             <button
                               onClick={() => toggleFeedback(mod.id)}
                               className="p-1 rounded-lg hover:bg-surface text-cta-from"
-                              title="Ver feedback del evaluador"
+                              title={t.studentProgress.evalFeedback}
                             >
                               {isExpanded
                                 ? <ChevronUp className="w-4 h-4" />
@@ -204,7 +206,7 @@ export default function ProgressPage() {
                       {hasFeedback && isExpanded && (
                         <div className="px-4 pb-4">
                           <div className="border-l-4 border-cta-to pl-4 bg-surface rounded-r-xl p-3">
-                            <p className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">Feedback del evaluador</p>
+                            <p className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wide">{t.studentProgress.evalFeedback}</p>
                             <p className="text-sm text-gray-700 leading-relaxed">{mod.evaluatorFeedback}</p>
                             {mod.reviewedAt && (
                               <p className="text-xs text-gray-400 mt-2">

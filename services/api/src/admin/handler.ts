@@ -25,63 +25,138 @@ import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, 
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { jsonrepair } from 'jsonrepair';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+// Stability Image Core is only available in us-west-2
+const bedrockImageClient = new BedrockRuntimeClient({ region: 'us-west-2' });
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
-// ── Nova Canvas image generation helper ─────────────────────────────────────
+// ── Stability Image Core (us-west-2) image generation ───────────────────────
 const STYLE_SUFFIXES: Record<string, string> = {
-  realistic:    ', photorealistic style, high detail, professional photography look',
-  illustration: ', flat illustration style, colorful, modern vector art',
-  diagram:      ', clean technical diagram style, clear labels, professional schematic',
-  comic:        ', comic book style, bold outlines, vibrant colors, graphic novel look',
-  minimal:      ', minimal design, clean white space, simple geometric shapes',
-  colorful:     ', vibrant multicolor palette, energetic infographic style',
-  corporate:    ', professional corporate style, blue and gray tones, business presentation',
+  realistic:    ', photorealistic, high detail, professional photography',
+  illustration: ', flat illustration, colorful, modern vector art style',
+  diagram:      ', clean technical illustration, professional schematic, flat design',
+  comic:        ', comic book style, bold outlines, vibrant colors, graphic novel',
+  minimal:      ', minimal design, clean white background, simple shapes',
+  colorful:     ', vibrant multicolor palette, energetic, dynamic composition',
+  corporate:    ', professional corporate style, blue and gray tones, business',
 };
+
+// Haiku → visual prompt for Stability AI (pure scene description, no text in image)
+async function buildVisualPrompt(lessonTitle: string, moduleTitle: string, content: string): Promise<string> {
+  const snippet = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+  try {
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31', max_tokens: 150,
+        messages: [{ role: 'user', content:
+          `Visual art director task: convert this lesson content into a diffusion model image prompt (max 80 words).\nRules: describe only visual elements (objects, people, settings, colors). NO text, labels, diagrams anywhere in the image. Flat illustration style, colorful, white background.\nLesson: "${lessonTitle}"\nContent: ${snippet}\nReturn ONLY the prompt, nothing else.`
+        }],
+      }),
+    }));
+    const text = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    if (text.length > 20) return text;
+  } catch { /* fall through */ }
+  return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
+}
+
+// Haiku → SVG infographic with real readable text (for regenType 'infographic')
+async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const prompt = `Create a clean educational SVG infographic (1200x1200px) for this lesson.
+
+Lesson: "${lessonTitle}"
+Module: "${moduleTitle}"
+Content: ${snippet}
+
+Generate a complete, valid SVG with:
+- White background (#FFFFFF)
+- Title at top in dark color, large font (32-40px), in Spanish, wrapped with tspan if needed
+- 3-4 content sections, each with: a colored rounded rectangle header, a simple SVG icon built from basic shapes (circle/rect/path — no external images or base64), 2-3 lines of explanatory text in Spanish
+- Color palette: complementary colors (blues #3B82F6, greens #10B981, oranges #F59E0B, purples #8B5CF6)
+- font-family="Arial, Helvetica, sans-serif" on all text elements
+- All text content in Spanish, directly related to the lesson
+- NO external images, NO base64, NO JavaScript, NO CSS classes — pure SVG attributes only
+- viewBox="0 0 1200 1200" width="1200" height="1200"
+
+Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No markdown, no explanation.`;
+
+  try {
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }] }),
+    }));
+    let svgRaw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
+    if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
+    const svg = match[0];
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_IMAGES_BUCKET, Key: key,
+      Body: Buffer.from(svg, 'utf-8'),
+      ContentType: 'image/svg+xml',
+      CacheControl: 'public, max-age=31536000',
+    }));
+    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('[InfographicGen] Error:', err);
+    return null;
+  }
+}
 
 async function generateLessonImage(
   lessonTitle: string,
   moduleTitle: string,
   order: number,
-  override?: { promptText?: string; style?: string }
+  override?: { promptText?: string; style?: string; lessonContent?: string }
 ): Promise<string | null> {
-  const basePrompts: Record<number, string> = {
-    2:  `Clean minimal educational mind map diagram about "${lessonTitle.slice(0, 60)}" in the context of "${moduleTitle.slice(0, 60)}", light blue background, professional illustration, no text labels, vector style`,
-    6:  `Professional educational illustration depicting "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, vivid colors, no text, clean composition`,
-    10: `Clean professional educational infographic layout about "${lessonTitle.slice(0, 60)}" summarizing "${moduleTitle.slice(0, 60)}", structured sections, modern design, geometric shapes`,
-  };
-  let prompt = override?.promptText ?? basePrompts[order]
-    ?? `Educational illustration for lesson "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, professional, no text, clean composition`;
+  // Build prompt: custom override → Haiku visual scene from content → simple fallback
+  let prompt: string;
+  if (override?.promptText) {
+    prompt = override.promptText;
+  } else if (override?.lessonContent) {
+    prompt = await buildVisualPrompt(lessonTitle, moduleTitle, override.lessonContent);
+  } else {
+    prompt = `Flat illustration of "${lessonTitle.slice(0, 60)}" from "${moduleTitle.slice(0, 60)}", colorful educational scene, clean white background, modern design, no text`;
+  }
   if (override?.style && STYLE_SUFFIXES[override.style]) {
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }
   try {
-    const resp = await bedrock.send(new InvokeModelCommand({
-      modelId: 'amazon.nova-canvas-v1:0',
+    // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
+    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+      modelId: 'stability.stable-image-core-v1:1',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
-        taskType: 'TEXT_IMAGE',
-        textToImageParams: { text: prompt, negativeText: 'blurry, low quality, text, watermark, letters, words, nsfw' },
-        imageGenerationConfig: { numberOfImages: 1, quality: 'standard', width: 1024, height: 1024 },
+        prompt,
+        negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, signs, blurry, low quality, distorted, infographic, chart, diagram',
+        mode: 'text-to-image',
+        aspect_ratio: '1:1',
+        output_format: 'jpeg',
       }),
     }));
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
-    if (!base64) return null;
+    if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
     const imgBuffer = Buffer.from(base64, 'base64');
-    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+    if (imgBuffer.length === 0) return null;
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,
       Body: imgBuffer,
-      ContentType: 'image/png',
+      ContentType: 'image/jpeg',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
   } catch (err) {
@@ -270,6 +345,7 @@ async function getCallerName(event: Event): Promise<string | null> {
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
   const method = event.requestContext.http.method;
@@ -1640,7 +1716,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
             mod.lessons
               .filter((l) => [2, 6, 10].includes(l.order))
               .map(async (lesson) => {
-                const url = await generateLessonImage(lesson.title, mod.title, lesson.order);
+                const url = await generateLessonImage(lesson.title, mod.title, lesson.order, { lessonContent: lesson.content ?? '' });
                 if (url) await prisma.lesson.update({ where: { id: lesson.id }, data: { imageUrl: url } });
               })
           )
@@ -1758,17 +1834,16 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
 
       if (regenType === 'image') {
         // Regenerate the lesson image only (generate+upload to S3, then optionally save to DB)
-        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle });
-        if (!imageUrl) return badRequest('No se pudo generar la imagen (posición de lección no soportada o error en Nova Canvas)');
+        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle, lessonContent: lesson.content ?? '' });
+        if (!imageUrl) return badRequest('No se pudo generar la imagen. Intenta de nuevo en unos segundos.');
         if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
         return ok(updated);
       }
 
       if (regenType === 'infographic') {
-        // Generate infographic-style image with structured prompt
-        const promptText = `Educational infographic for lesson "${lesson.title.slice(0, 60)}" from module "${modTitle.slice(0, 60)}", structured layout with sections and icons, professional design, no text labels, clean composition`;
-        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { promptText, style: regenStyle });
+        // Generate SVG infographic via Haiku — real readable text, lesson-specific content
+        const imageUrl = await generateLessonInfographic(lesson.title, modTitle, lesson.content ?? '');
         if (!imageUrl) return badRequest('No se pudo generar la infografía');
         if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });

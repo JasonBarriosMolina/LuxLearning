@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useLanguage } from '@/lib/i18n';
 
 interface CourseForm {
   title: string;
@@ -32,6 +33,7 @@ function slugify(text: string) {
 }
 
 export default function AdminCoursesPage() {
+  const { t } = useLanguage();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -165,14 +167,14 @@ export default function AdminCoursesPage() {
     if (!aiInput.trim()) return;
     setAiLoading(true);
     setAiError('');
-    setAiLoadingMsg('Diseñando estructura del curso...');
+    setAiLoadingMsg(t.admin.aiDesigningMsg);
     try {
       // Step 1: dispatch — returns jobId immediately (~200ms)
       const res0 = await api.admin.courses.aiGenerate({ method: aiMethod, input: aiInput.trim() });
       const jobId = res0?.data?.jobId ?? res0?.jobId;
 
       // Step 2: poll for result
-      setAiLoadingMsg('Generando módulos, lecciones y preguntas...');
+      setAiLoadingMsg(t.admin.aiGeneratingMsg);
       let attempts = 0;
       const res = await new Promise<any>((resolve, reject) => {
         const poll = setInterval(async () => {
@@ -336,12 +338,12 @@ export default function AdminCoursesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Gestión de Contenido</h1>
-          <p className="text-gray-500 mt-1 text-sm">Crea y administra cursos, módulos, lecciones y evaluaciones</p>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.contentMgmt}</h1>
+          <p className="text-gray-500 mt-1 text-sm">{t.admin.contentMgmtSubtitle}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button onClick={() => setChoiceModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
-            Nuevo Curso
+            {t.admin.newCourse}
           </Button>
         </div>
       </div>
@@ -349,9 +351,9 @@ export default function AdminCoursesPage() {
       {/* Status tabs */}
       <div className="flex gap-1 bg-surface rounded-xl p-1 w-fit">
         {([
-          { key: 'active', label: 'Activos' },
-          { key: 'draft', label: 'Borradores' },
-          { key: 'archived', label: 'Archivados' },
+          { key: 'active', label: t.admin.tabActive },
+          { key: 'draft', label: t.admin.tabDraft },
+          { key: 'archived', label: t.admin.tabArchived },
         ] as const).map((tab) => (
           <button
             key={tab.key}
@@ -370,7 +372,7 @@ export default function AdminCoursesPage() {
       {/* Load error */}
       {loadError && (
         <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          Error al cargar cursos: {loadError}
+          {t.admin.loadError}: {loadError}
         </div>
       )}
 
@@ -383,10 +385,10 @@ export default function AdminCoursesPage() {
         <div className="card text-center py-16">
           <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="font-heading font-bold text-charcoal">
-            {activeTab === 'draft' ? 'Sin borradores' : activeTab === 'archived' ? 'Sin cursos archivados' : 'No hay cursos activos'}
+            {activeTab === 'draft' ? t.admin.noDrafts : activeTab === 'archived' ? t.admin.noArchivedCourses : t.admin.noActiveCoursesMsg}
           </p>
           <p className="text-gray-500 text-sm mt-1">
-            {activeTab === 'active' ? 'Crea el primer curso con el botón de arriba.' : ''}
+            {activeTab === 'active' ? t.admin.createFirstCourse : ''}
           </p>
         </div>
       ) : (
@@ -405,20 +407,20 @@ export default function AdminCoursesPage() {
                 <p className="font-semibold text-charcoal truncate mb-0.5">{course.title}</p>
                 <div className="flex items-center gap-2 flex-wrap">
                   {course.isArchived ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 font-medium">Archivado</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 font-medium">{t.admin.statusArchived}</span>
                   ) : course.isDraft ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">Borrador</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">{t.admin.statusDraft}</span>
                   ) : (
                     <Badge variant={course.isActive ? 'success' : 'default'}>
-                      {course.isActive ? 'Activo' : 'Inactivo'}
+                      {course.isActive ? t.admin.courseActive : t.admin.courseInactive}
                     </Badge>
                   )}
-                  {course.isPilot && <Badge variant="info">Piloto</Badge>}
+                  {course.isPilot && <Badge variant="info">{t.admin.coursePilot}</Badge>}
                   {course.isLegacy && (
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ Solo video</span>
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">{t.admin.statusLegacy}</span>
                   )}
                   <p className="text-xs text-gray-500">
-                    {course.modules?.length ?? 0} módulos
+                    {t.admin.modulesCount(course.modules?.length ?? 0)}
                   </p>
                   {course.evaluatorName && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-teal-50 text-teal-700 font-medium">
@@ -441,7 +443,7 @@ export default function AdminCoursesPage() {
                     onClick={() => handleRestore(course.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 border border-border hover:bg-surface transition-colors"
                   >
-                    Restaurar
+                    {t.admin.restoreBtn}
                   </button>
                 ) : (
                   <>
@@ -450,19 +452,19 @@ export default function AdminCoursesPage() {
                         onClick={() => handlePublish(course.id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
                       >
-                        Publicar
+                        {t.admin.publishBtn}
                       </button>
                     )}
                     <Link
                       href={`/admin/courses/${course.id}`}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-cta-from hover:bg-blue-50 transition-colors"
                     >
-                      Editar contenido <ArrowRight className="w-3.5 h-3.5" />
+                      {t.admin.editContent} <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
                     <button
                       onClick={() => openEdit(course)}
                       className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"
-                      title="Editar información"
+                      title={t.admin.editInfo}
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
@@ -476,14 +478,14 @@ export default function AdminCoursesPage() {
                       }}
                       disabled={regeneratingCourse === course.id}
                       className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-                      title="Regenerar estructura con IA"
+                      title={t.admin.regenAI}
                     >
                       {regeneratingCourse === course.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                     </button>
                     <button
                       onClick={() => openEvalModal(course.id, course.title)}
                       className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                      title={course.evaluatorName ? `Evaluador: ${course.evaluatorName}` : 'Asignar evaluador'}
+                      title={course.evaluatorName ? `${t.admin.assignEvaluatorPrefix}: ${course.evaluatorName}` : t.admin.assignEvaluator}
                     >
                       <UserCircle className={`w-4 h-4 ${course.evaluatorName ? 'text-teal-500' : ''}`} />
                     </button>
@@ -491,7 +493,7 @@ export default function AdminCoursesPage() {
                       <button
                         onClick={() => setArchiveConfirm(course.id)}
                         className="p-2 rounded-lg text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-colors"
-                        title="Archivar curso"
+                        title={t.admin.archiveBtn}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -499,7 +501,7 @@ export default function AdminCoursesPage() {
                     <button
                       onClick={() => setConfirmDelete(course.id)}
                       className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      title="Eliminar"
+                      title={t.admin.deleteBtn}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -515,7 +517,7 @@ export default function AdminCoursesPage() {
       <Modal
         open={choiceModalOpen}
         onClose={() => setChoiceModalOpen(false)}
-        title="Nuevo Curso"
+        title={t.admin.choiceModalTitle}
         size="md"
       >
         <div className="grid grid-cols-2 gap-3 pb-2">
@@ -526,8 +528,8 @@ export default function AdminCoursesPage() {
             className="text-left p-4 rounded-xl border-2 border-border hover:border-cta-from hover:bg-blue-50 transition-colors"
           >
             <div className="text-2xl mb-2">📝</div>
-            <p className="font-semibold text-charcoal text-sm">Crear manualmente</p>
-            <p className="text-xs text-gray-500 mt-0.5">Rellena el formulario paso a paso</p>
+            <p className="font-semibold text-charcoal text-sm">{t.admin.choiceManualTitle}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t.admin.choiceManualDesc}</p>
           </button>
 
           {/* AI — topic */}
@@ -537,8 +539,8 @@ export default function AdminCoursesPage() {
             className="text-left p-4 rounded-xl border-2 border-border hover:border-purple-400 hover:bg-purple-50 transition-colors"
           >
             <div className="text-2xl mb-2">💡</div>
-            <p className="font-semibold text-charcoal text-sm">Tema libre (IA)</p>
-            <p className="text-xs text-gray-500 mt-0.5">Describe el tema y la IA genera todo</p>
+            <p className="font-semibold text-charcoal text-sm">{t.admin.choiceTopicTitle}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t.admin.choiceTopicDesc}</p>
           </button>
 
           {/* AI — URL */}
@@ -548,15 +550,15 @@ export default function AdminCoursesPage() {
             className="text-left p-4 rounded-xl border-2 border-border hover:border-purple-400 hover:bg-purple-50 transition-colors"
           >
             <div className="text-2xl mb-2">🌐</div>
-            <p className="font-semibold text-charcoal text-sm">Desde URL (IA)</p>
-            <p className="text-xs text-gray-500 mt-0.5">Pega una URL y la IA extrae el contenido</p>
+            <p className="font-semibold text-charcoal text-sm">{t.admin.choiceUrlTitle}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t.admin.choiceUrlDesc}</p>
           </button>
 
           {/* PDF — disabled */}
           <div className="text-left p-4 rounded-xl border-2 border-dashed border-gray-200 opacity-50 cursor-not-allowed">
             <div className="text-2xl mb-2">📄</div>
-            <p className="font-semibold text-charcoal text-sm">Desde PDF</p>
-            <p className="text-xs text-gray-400 mt-0.5">Próximamente</p>
+            <p className="font-semibold text-charcoal text-sm">{t.admin.choicePdfTitle}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t.admin.choicePdfDesc}</p>
           </div>
         </div>
       </Modal>
@@ -565,36 +567,36 @@ export default function AdminCoursesPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editingCourse ? 'Editar curso' : 'Nuevo curso'}
+        title={editingCourse ? t.admin.editCourseTitle : t.admin.createCourseTitle}
         size="lg"
       >
         <form onSubmit={handleSave} className="space-y-4">
           <Input
-            label="Título del curso"
+            label={t.admin.courseTitleLabel}
             value={form.title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder="ej. StaffPad para Compositores"
+            placeholder={t.admin.courseTitlePlaceholder}
             required
           />
           <Input
-            label="Slug (URL)"
+            label={t.admin.slugLabel}
             value={form.slug}
             onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-            placeholder="staffpad-para-compositores"
+            placeholder={t.admin.slugPlaceholder}
             required
           />
           <div className="space-y-1">
-            <label className="text-sm font-medium text-charcoal">Descripción</label>
+            <label className="text-sm font-medium text-charcoal">{t.admin.descriptionLabel}</label>
             <textarea
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Descripción del curso..."
+              placeholder={t.admin.descriptionPlaceholder}
               className="input-field min-h-[80px] resize-y"
               required
             />
           </div>
           <Input
-            label="URL de imagen (opcional)"
+            label={t.admin.imageUrlLabel}
             value={form.imageUrl}
             onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
             placeholder="https://..."
@@ -602,7 +604,7 @@ export default function AdminCoursesPage() {
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Fecha de inicio</label>
+              <label className="text-sm font-medium text-charcoal">{t.admin.startDateLabel}</label>
               <input
                 type="date"
                 value={form.startDate}
@@ -611,7 +613,7 @@ export default function AdminCoursesPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Fecha de cierre</label>
+              <label className="text-sm font-medium text-charcoal">{t.admin.closeDateLabel}</label>
               <input
                 type="date"
                 value={form.closeDate}
@@ -624,7 +626,7 @@ export default function AdminCoursesPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium text-charcoal flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-indigo-500" />
-              Etiquetas / Categorías
+              {t.admin.tagsLabel}
             </label>
             <div className="flex gap-2">
               <input
@@ -641,7 +643,7 @@ export default function AdminCoursesPage() {
                     setTagInput('');
                   }
                 }}
-                placeholder="Escribe una etiqueta y presiona Enter..."
+                placeholder={t.admin.tagsPlaceholder}
                 className="input-field text-sm py-2 flex-1"
               />
             </div>
@@ -671,7 +673,7 @@ export default function AdminCoursesPage() {
                 onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
                 className="w-4 h-4 accent-cta-from"
               />
-              <span className="text-sm font-medium text-charcoal">Curso activo</span>
+              <span className="text-sm font-medium text-charcoal">{t.admin.courseActiveLabel}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -680,7 +682,7 @@ export default function AdminCoursesPage() {
                 onChange={(e) => setForm((f) => ({ ...f, isPilot: e.target.checked }))}
                 className="w-4 h-4 accent-cta-from"
               />
-              <span className="text-sm font-medium text-charcoal">Curso piloto</span>
+              <span className="text-sm font-medium text-charcoal">{t.admin.coursePilotLabel}</span>
             </label>
           </div>
 
@@ -692,10 +694,10 @@ export default function AdminCoursesPage() {
 
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancelar
+              {t.admin.deleteUserCancelBtn}
             </Button>
             <Button type="submit" loading={saving}>
-              {editingCourse ? 'Guardar cambios' : 'Crear curso'}
+              {editingCourse ? t.admin.saveChangesBtn : t.admin.createCourseBtn}
             </Button>
           </div>
         </form>
@@ -712,7 +714,7 @@ export default function AdminCoursesPage() {
             setAiModalOpen(false);
           }
         }}
-        title="Crear curso con IA"
+        title={t.admin.aiWizardTitle}
         size="2xl"
         closeOnOverlay={false}
       >
@@ -728,18 +730,18 @@ export default function AdminCoursesPage() {
               </div>
             ))}
             <span className="ml-2 text-xs text-gray-400">
-              {aiStep === 1 ? 'Método' : aiStep === 2 ? 'Información' : aiStep === 3 ? 'Revisar' : 'Asignar'}
+              {aiStep === 1 ? t.admin.aiStepMethod : aiStep === 2 ? t.admin.aiStepInfo : aiStep === 3 ? t.admin.aiStepReview : t.admin.aiStepAssign}
             </span>
           </div>
 
           {/* Step 1 — Method */}
           {aiStep === 1 && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-500">¿Cómo quieres generar el curso?</p>
+              <p className="text-sm text-gray-500">{t.admin.aiMethodQuestion}</p>
               <div className="grid grid-cols-2 gap-3">
                 {([
-                  { id: 'topic', icon: '💡', title: 'Tema libre', desc: 'Describe el tema y la IA construye la estructura' },
-                  { id: 'url', icon: '🌐', title: 'Desde URL', desc: 'Pega una URL y la IA extrae el contenido' },
+                  { id: 'topic', icon: '💡', title: t.admin.aiTopicTitle, desc: t.admin.aiTopicDesc },
+                  { id: 'url', icon: '🌐', title: t.admin.aiUrlTitle, desc: t.admin.aiUrlDesc },
                 ] as const).map((opt) => (
                   <button
                     key={opt.id}
@@ -759,13 +761,13 @@ export default function AdminCoursesPage() {
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">📄</span>
                   <div>
-                    <p className="font-semibold text-charcoal text-sm">Desde PDF</p>
-                    <p className="text-xs text-gray-500">Próximamente</p>
+                    <p className="font-semibold text-charcoal text-sm">{t.admin.choicePdfTitle}</p>
+                    <p className="text-xs text-gray-500">{t.admin.choicePdfDesc}</p>
                   </div>
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button onClick={() => setAiStep(2)}>Siguiente</Button>
+                <Button onClick={() => setAiStep(2)}>{t.admin.aiNextBtn}</Button>
               </div>
             </div>
           )}
@@ -775,42 +777,42 @@ export default function AdminCoursesPage() {
             <div className="space-y-4">
               {aiMethod === 'topic' ? (
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-charcoal">Tema del curso</label>
+                  <label className="text-sm font-medium text-charcoal">{t.admin.aiTopicLabel}</label>
                   <textarea
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="ej. Liderazgo empresarial para jóvenes profesionales, con enfoque en comunicación y toma de decisiones"
+                    placeholder={t.admin.aiTopicPlaceholder}
                     className="input-field min-h-[100px] resize-y"
                     autoFocus
                   />
-                  <p className="text-xs text-gray-400">Sé específico: incluye el público objetivo y el enfoque del curso.</p>
+                  <p className="text-xs text-gray-400">{t.admin.aiTopicHint}</p>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-charcoal">URL del contenido</label>
+                  <label className="text-sm font-medium text-charcoal">{t.admin.aiUrlLabel}</label>
                   <input
                     type="url"
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="https://ejemplo.com/articulo-o-pagina"
+                    placeholder={t.admin.aiUrlPlaceholder}
                     className="input-field"
                     autoFocus
                   />
-                  <p className="text-xs text-gray-400">La IA extraerá el texto de la página y construirá la estructura del curso.</p>
+                  <p className="text-xs text-gray-400">{t.admin.aiUrlHint}</p>
                 </div>
               )}
               {aiError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{aiError}</div>
               )}
               <div className="flex justify-between">
-                <Button variant="secondary" onClick={() => setAiStep(1)}>Atrás</Button>
+                <Button variant="secondary" onClick={() => setAiStep(1)}>{t.admin.aiBackBtn}</Button>
                 <Button
                   onClick={handleAiGenerate}
                   loading={aiLoading}
                   leftIcon={!aiLoading ? <Sparkles className="w-4 h-4" /> : undefined}
                   disabled={!aiInput.trim()}
                 >
-                  {aiLoading ? (aiLoadingMsg || 'Generando...') : 'Generar con IA'}
+                  {aiLoading ? (aiLoadingMsg || t.admin.aiGenerating) : t.admin.aiGenerateBtn}
                 </Button>
               </div>
             </div>
@@ -824,13 +826,13 @@ export default function AdminCoursesPage() {
                 <p className="text-sm text-gray-500 mt-1">{aiResult.description}</p>
                 <div className="flex items-center gap-3 mt-2">
                   <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                    {(aiResult.modules ?? []).length} módulos
+                    {t.admin.modulesCount((aiResult.modules ?? []).length)}
                   </span>
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                    {(aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0)} lecciones
+                    {t.admin.lessonsCount((aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0))}
                   </span>
                   <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
-                    {(aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0)} preguntas de quiz
+                    {t.admin.quizQuestionsCount((aiResult.modules ?? []).reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0))}
                   </span>
                 </div>
               </div>
@@ -873,7 +875,7 @@ export default function AdminCoursesPage() {
                         {editingModTitle?.idx !== i && (
                           <button
                             type="button"
-                            title="Editar título"
+                            title={t.admin.editInfo}
                             onClick={() => setEditingModTitle({ idx: i, value: m.title })}
                             className="p-1 rounded text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
                           >
@@ -882,7 +884,7 @@ export default function AdminCoursesPage() {
                         )}
                         <button
                           type="button"
-                          title="Regenerar módulo con IA"
+                          title={t.admin.regenAI}
                           disabled={regenModIdx !== null}
                           onClick={async () => {
                             setRegenModIdx(i);
@@ -928,15 +930,15 @@ export default function AdminCoursesPage() {
                 ))}
               </div>
               <p className="text-xs text-gray-400">
-                El curso se publicará como <strong>inactivo</strong>. Puedes activarlo después de revisar el contenido.
+                {t.admin.aiPublishNote}
               </p>
               {aiError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{aiError}</div>
               )}
               <div className="flex justify-between">
-                <Button variant="secondary" onClick={() => { setAiStep(2); setAiResult(null); }}>Regenerar</Button>
+                <Button variant="secondary" onClick={() => { setAiStep(2); setAiResult(null); }}>{t.admin.aiRegenBtn}</Button>
                 <Button onClick={handleAiPublish} loading={aiPublishing} leftIcon={<CheckCircle className="w-4 h-4" />}>
-                  Publicar curso
+                  {t.admin.aiPublishBtn}
                 </Button>
               </div>
             </div>
@@ -949,8 +951,8 @@ export default function AdminCoursesPage() {
                 <div className="flex items-center gap-3">
                   <CheckCircle className="w-8 h-8 text-emerald-500 shrink-0" />
                   <div>
-                    <p className="font-heading font-bold text-charcoal">¡Curso publicado exitosamente!</p>
-                    <p className="text-sm text-gray-500 mt-0.5">Ahora puedes asignarlo a tus estudiantes.</p>
+                    <p className="font-heading font-bold text-charcoal">{t.admin.aiPublishedTitle}</p>
+                    <p className="text-sm text-gray-500 mt-0.5">{t.admin.aiPublishedSubtitle}</p>
                   </div>
                 </div>
               </div>
@@ -958,7 +960,7 @@ export default function AdminCoursesPage() {
               {/* Suggested tags */}
               {aiSuggestedTags.length > 0 && (
                 <div className="p-3 bg-surface rounded-xl border border-border">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tags sugeridos por IA</p>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t.admin.aiTagsSuggestedLabel}</p>
                   <div className="flex flex-wrap gap-2">
                     {aiSuggestedTags.map((tag) => {
                       const active = aiAcceptedTags.includes(tag);
@@ -980,25 +982,25 @@ export default function AdminCoursesPage() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">Haz clic para activar/desactivar. Se guardarán al asignar.</p>
+                  <p className="text-xs text-gray-400 mt-2">{t.admin.aiTagsHint}</p>
                 </div>
               )}
 
               {aiStudentList.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
-                  <p className="text-sm">No hay estudiantes registrados todavía.</p>
+                  <p className="text-sm">{t.admin.aiNoStudents}</p>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-charcoal">Selecciona estudiantes a inscribir</p>
+                    <p className="text-sm font-semibold text-charcoal">{t.admin.aiSelectStudentsLabel}</p>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setAiSelectedStudents(aiStudentList.map((s) => s.username))}
                         className="text-xs text-cta-from font-medium hover:opacity-70"
                       >
-                        Todos
+                        {t.admin.aiSelectAll}
                       </button>
                       <span className="text-xs text-gray-300">|</span>
                       <button
@@ -1006,7 +1008,7 @@ export default function AdminCoursesPage() {
                         onClick={() => setAiSelectedStudents([])}
                         className="text-xs text-gray-400 font-medium hover:opacity-70"
                       >
-                        Ninguno
+                        {t.admin.aiSelectNone}
                       </button>
                     </div>
                   </div>
@@ -1034,13 +1036,13 @@ export default function AdminCoursesPage() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-gray-400">{aiSelectedStudents.length} de {aiStudentList.length} estudiantes seleccionados</p>
+                  <p className="text-xs text-gray-400">{t.admin.aiSelectedCount(aiSelectedStudents.length, aiStudentList.length)}</p>
                 </>
               )}
 
               <div className="flex justify-between">
                 <Button variant="secondary" onClick={() => setAiModalOpen(false)}>
-                  Omitir
+                  {t.admin.aiSkipBtn}
                 </Button>
                 <Button
                   onClick={handleAiAssign}
@@ -1048,7 +1050,7 @@ export default function AdminCoursesPage() {
                   disabled={aiSelectedStudents.length === 0}
                   leftIcon={<CheckCircle className="w-4 h-4" />}
                 >
-                  Asignar y cerrar
+                  {t.admin.aiAssignBtn}
                 </Button>
               </div>
             </div>
@@ -1060,13 +1062,13 @@ export default function AdminCoursesPage() {
       <Modal
         open={!!regenPreview}
         onClose={() => setRegenPreview(null)}
-        title="Nueva estructura del curso"
+        title={t.admin.regenModalTitle}
         size="md"
       >
         {regenPreview && (
           <>
             <p className="text-sm text-gray-600 mb-3">
-              La IA propone la siguiente estructura para <strong>{regenPreview.title}</strong>. Si confirmas, se regenerará cada módulo (proceso asíncrono).
+              {t.admin.regenModalDesc(regenPreview.title)}
             </p>
             <ol className="space-y-1 mb-5 max-h-48 overflow-y-auto text-sm">
               {regenPreview.modules.map((m: any) => (
@@ -1077,7 +1079,7 @@ export default function AdminCoursesPage() {
               ))}
             </ol>
             <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setRegenPreview(null)}>Cancelar</Button>
+              <Button variant="secondary" onClick={() => setRegenPreview(null)}>{t.admin.deleteUserCancelBtn}</Button>
               <Button
                 onClick={async () => {
                   const { courseId, modules } = regenPreview;
@@ -1088,7 +1090,7 @@ export default function AdminCoursesPage() {
                   load();
                 }}
               >
-                Confirmar y regenerar
+                {t.admin.regenConfirmBtn}
               </Button>
             </div>
           </>
@@ -1099,7 +1101,7 @@ export default function AdminCoursesPage() {
       <Modal
         open={!!evalModal}
         onClose={() => setEvalModal(null)}
-        title={`Asignar Evaluador — ${evalModal?.courseName ?? ''}`}
+        title={t.admin.assignEvalModalTitle(evalModal?.courseName ?? '')}
         size="sm"
       >
         <div className="space-y-4">
@@ -1108,16 +1110,16 @@ export default function AdminCoursesPage() {
               <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
             </div>
           ) : evaluators.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">No hay evaluadores registrados en el sistema.</p>
+            <p className="text-sm text-gray-500 text-center py-4">{t.admin.assignEvalNoEvals}</p>
           ) : (
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Evaluador</label>
+              <label className="text-sm font-medium text-charcoal">{t.admin.assignEvalLabel}</label>
               <select
                 value={selectedEval}
                 onChange={(e) => setSelectedEval(e.target.value)}
                 className="input-field w-full"
               >
-                <option value="">— Seleccionar evaluador —</option>
+                <option value="">{t.admin.assignEvalPlaceholder}</option>
                 {evaluators.map((ev) => (
                   <option key={ev.username} value={ev.username}>{ev.name} ({ev.email})</option>
                 ))}
@@ -1126,13 +1128,13 @@ export default function AdminCoursesPage() {
           )}
           {evalError && <p className="text-xs text-red-500">{evalError}</p>}
           <div className="flex justify-end gap-3 pt-1">
-            <Button variant="secondary" onClick={() => setEvalModal(null)}>Cancelar</Button>
+            <Button variant="secondary" onClick={() => setEvalModal(null)}>{t.admin.deleteUserCancelBtn}</Button>
             <Button
               loading={evalSaving}
               disabled={!selectedEval}
               onClick={handleAssignEvaluator}
             >
-              Asignar
+              {t.admin.assignEvalBtn}
             </Button>
           </div>
         </div>
@@ -1142,32 +1144,32 @@ export default function AdminCoursesPage() {
       <Modal
         open={!!confirmDelete}
         onClose={() => setConfirmDelete(null)}
-        title="Eliminar curso"
+        title={t.admin.deleteCourseModalTitle}
         size="sm"
       >
         <p className="text-gray-600 text-sm mb-6">
-          ¿Seguro que quieres eliminar este curso? Se borrarán todos sus módulos, lecciones y preguntas. Esta acción no se puede deshacer.
+          {t.admin.deleteCourseModalMsg}
         </p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
-            Cancelar
+            {t.admin.deleteUserCancelBtn}
           </Button>
           <Button
             variant="danger"
             loading={deleting}
             onClick={() => confirmDelete && handleDelete(confirmDelete)}
           >
-            Eliminar
+            {t.admin.deleteUserConfirmBtn}
           </Button>
         </div>
       </Modal>
       {/* Archive confirmation */}
       <ConfirmDialog
         open={!!archiveConfirm}
-        title="¿Archivar curso?"
-        message="El curso dejará de estar activo y no aparecerá para los estudiantes. Podrás restaurarlo en cualquier momento."
-        confirmLabel="Sí, archivar"
-        cancelLabel="Cancelar"
+        title={t.admin.archiveConfirmTitle}
+        message={t.admin.archiveConfirmMsg}
+        confirmLabel={t.admin.archiveConfirmBtn}
+        cancelLabel={t.admin.deleteUserCancelBtn}
         variant="danger"
         onConfirm={() => archiveConfirm && handleArchive(archiveConfirm)}
         onCancel={() => setArchiveConfirm(null)}
@@ -1176,10 +1178,10 @@ export default function AdminCoursesPage() {
       {/* AI wizard — close confirmation */}
       <ConfirmDialog
         open={confirmCloseOpen}
-        title="¿Salir del asistente?"
-        message="Si sales ahora perderás el progreso del curso en construcción. ¿Seguro que quieres salir?"
-        confirmLabel="Sí, salir"
-        cancelLabel="Seguir editando"
+        title={t.admin.aiCloseConfirmTitle}
+        message={t.admin.aiCloseConfirmMsg}
+        confirmLabel={t.admin.aiCloseConfirmBtn}
+        cancelLabel={t.admin.aiCloseKeepBtn}
         variant="danger"
         onConfirm={() => { setConfirmCloseOpen(false); setAiModalOpen(false); }}
         onCancel={() => setConfirmCloseOpen(false)}

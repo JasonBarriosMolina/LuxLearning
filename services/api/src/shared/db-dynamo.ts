@@ -3,6 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
+import { getTableName } from './env-context';
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const ddb = DynamoDBDocumentClient.from(client, {
@@ -10,7 +11,10 @@ export const ddb = DynamoDBDocumentClient.from(client, {
 });
 
 // ─── Table names (from env) ───────────────────────────────────────────────────
-export const TABLES = {
+// BASE holds the prod table names read from env vars at cold start.
+// TABLES is a Proxy that applies the per-request env suffix (e.g. '-Staging')
+// transparently, so all existing TABLES.X references stay unchanged.
+const BASE_TABLES = {
   PROGRESS: process.env.DYNAMO_TABLE_PROGRESS ?? 'LessonProgress',
   QUIZ: process.env.DYNAMO_TABLE_QUIZ ?? 'QuizAttempts',
   REFLECTIONS: process.env.DYNAMO_TABLE_REFLECTIONS ?? 'Reflections',
@@ -24,7 +28,14 @@ export const TABLES = {
   ACTIVITY: process.env.DYNAMO_TABLE_ACTIVITY ?? 'LuxActivity',
   CERT_TEMPLATES: process.env.DYNAMO_TABLE_CERT_TEMPLATES ?? 'LuxCertTemplates',
   RESOURCES: process.env.DYNAMO_TABLE_RESOURCES ?? 'LuxResources',
-} as const;
+};
+
+export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
+  get(target, key: string) {
+    const base = target[key as keyof typeof target];
+    return base ? getTableName(base) : base;
+  },
+}) as typeof BASE_TABLES;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
 

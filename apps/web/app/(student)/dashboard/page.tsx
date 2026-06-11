@@ -102,18 +102,14 @@ export default function StudentDashboardPage() {
   })();
 
   const motivational = (progress: number) => {
-    if (lang === 'en') {
-      if (progress === 0) return 'Start your learning journey! 🚀';
-      if (progress <= 30) return 'Great start! Keep going 💪';
-      if (progress <= 70) return 'Halfway there! Don\'t stop 🔥';
-      if (progress < 100) return 'Almost done! One more push ⚡';
-      return 'Course completed! 🎉';
-    }
-    if (progress === 0) return '¡Comienza tu viaje de aprendizaje! 🚀';
-    if (progress <= 30) return '¡Buen comienzo! Sigue así 💪';
-    if (progress <= 70) return '¡Vas a la mitad! No te detengas 🔥';
-    if (progress < 100) return '¡Casi lo logras! Un esfuerzo más ⚡';
-    return '¡Curso completado! 🎉';
+    const m = lang === 'en'
+      ? ['Start your learning journey! 🚀', 'Great start! Keep going 💪', "Halfway there! Don't stop 🔥", 'Almost done! One more push ⚡', 'Course completed! 🎉']
+      : ['¡Comienza tu viaje de aprendizaje! 🚀', '¡Buen comienzo! Sigue así 💪', '¡Vas a la mitad! No te detengas 🔥', '¡Casi lo logras! Un esfuerzo más ⚡', '¡Curso completado! 🎉'];
+    if (progress === 0) return m[0];
+    if (progress <= 30) return m[1];
+    if (progress <= 70) return m[2];
+    if (progress < 100) return m[3];
+    return m[4];
   };
 
   return (
@@ -121,27 +117,27 @@ export default function StudentDashboardPage() {
       {/* Welcome */}
       <div>
         <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
-          {lang === 'en' ? `Hello, ${firstName} 👋` : `Hola, ${firstName} 👋`}
+          {t.studentDashboard.greeting(firstName)} 👋
         </h1>
-        <p className="text-gray-500 mt-1">{lang === 'en' ? 'Continue your learning. Clarity that transforms.' : 'Continúa tu aprendizaje. Claridad que transforma.'}</p>
+        <p className="text-gray-500 mt-1">{t.studentDashboard.continuelearning}</p>
       </div>
 
       {/* Dismissible welcome banner */}
       {showWelcome && (
         <div className="relative flex items-start gap-4 p-4 rounded-2xl bg-gradient-to-r from-[#00B4D8]/10 to-[#7B2FBE]/10 border border-[#00B4D8]/20">
           <div className="flex-1 min-w-0">
-            <p className="font-heading font-bold text-sm text-charcoal">¡Bienvenido a Lux Learning!</p>
+            <p className="font-heading font-bold text-sm text-charcoal">{t.studentDashboard.welcomeMsg}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Completa las lecciones, pasa los quizzes y envía tus reflexiones para desbloquear nuevos módulos.
+              {t.studentDashboard.welcomeHint}
             </p>
           </div>
           <button
             onClick={dismissWelcome}
-            title="Ocultar por 8 días"
+            title={t.studentDashboard.hideStreak(8)}
             className="shrink-0 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
           >
             <X className="w-3.5 h-3.5" />
-            Ocultar 8 días
+            {t.studentDashboard.hideStreak(8)}
           </button>
         </div>
       )}
@@ -150,35 +146,35 @@ export default function StudentDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           {
-            label: 'Progreso total',
+            label: t.studentDashboard.totalProgress,
             value: `${overallProgress}%`,
             icon: <TrendingUp className="w-5 h-5 text-cta-from" />,
             bg: 'bg-blue-50',
             href: '/courses',
           },
           {
-            label: 'Lecciones completadas',
+            label: t.studentDashboard.lessonsCompleted,
             value: `${stats.completedLessons}/${stats.totalLessons}`,
             icon: <CheckCircle className="w-5 h-5 text-emerald-500" />,
             bg: 'bg-emerald-50',
             href: '/courses',
           },
           {
-            label: 'Módulos aprobados',
+            label: t.studentDashboard.modulesApproved,
             value: stats.passedModules,
             icon: <BookOpen className="w-5 h-5 text-purple-500" />,
             bg: 'bg-purple-50',
             href: '/courses',
           },
           {
-            label: 'Reflexiones aprobadas',
+            label: t.studentDashboard.reflectionsApproved,
             value: stats.approvedReflections,
             icon: <Clock className="w-5 h-5 text-amber-500" />,
             bg: 'bg-amber-50',
             href: '/courses',
           },
           {
-            label: streak > 1 ? `🔥 Racha activa` : 'Racha de días',
+            label: streak > 1 ? `🔥 ${t.studentDashboard.activeStreak}` : t.studentDashboard.streakDays,
             value: `${streak}d`,
             icon: <Flame className={`w-5 h-5 ${streak > 0 ? 'text-orange-500' : 'text-gray-400'}`} />,
             bg: streak > 0 ? 'bg-orange-50' : 'bg-gray-50',
@@ -211,35 +207,35 @@ export default function StudentDashboardPage() {
           {/* Tasks widget */}
           {tasks.length > 0 && (() => {
             const today = new Date().toISOString().split('T')[0];
-            const pending = tasks.filter((t) => t.status !== 'COMPLETED').slice(0, 5);
-            const getColor = (t: any) => t.status === 'OVERDUE' || t.dueDate < today ? 'text-red-500' : (new Date(t.dueDate + 'T00:00:00').getTime() - Date.now()) / 86400000 <= 3 ? 'text-amber-500' : 'text-emerald-500';
+            const pending = tasks.filter((tk) => tk.status !== 'COMPLETED').slice(0, 5);
+            const getColor = (tk: any) => tk.status === 'OVERDUE' || tk.dueDate < today ? 'text-red-500' : (new Date(tk.dueDate + 'T00:00:00').getTime() - Date.now()) / 86400000 <= 3 ? 'text-amber-500' : 'text-emerald-500';
             return (
               <div className="card">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-heading font-semibold text-base text-charcoal flex items-center gap-2">
-                    <ClipboardList className="w-4 h-4 text-cta-from" /> Mis tareas
+                    <ClipboardList className="w-4 h-4 text-cta-from" /> {t.studentDashboard.myTasks}
                   </h2>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={async () => { const url = await api.tasks.calendarUrl(); window.open(url, '_blank'); }}
                       className="flex items-center gap-1 text-xs text-gray-400 hover:text-cta-from transition-colors"
-                      title="Descargar calendario .ics"
+                      title={t.studentTasks.exportIcs}
                     >
-                      <Calendar className="w-3.5 h-3.5" /> Exportar
+                      <Calendar className="w-3.5 h-3.5" /> {t.studentDashboard.export}
                     </button>
-                    <Link href="/tasks" className="text-xs text-cta-from font-medium hover:underline">Ver todas</Link>
+                    <Link href="/tasks" className="text-xs text-cta-from font-medium hover:underline">{t.studentDashboard.viewAll}</Link>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {pending.map((t) => (
-                    <div key={t.taskId} className="flex items-center gap-3 py-1.5">
-                      <AlertCircle className={`w-3.5 h-3.5 shrink-0 ${getColor(t)}`} />
-                      <span className="flex-1 text-sm text-charcoal truncate">{t.title}</span>
-                      <span className="text-xs text-gray-400 shrink-0">{t.dueDate}</span>
+                  {pending.map((tk) => (
+                    <div key={tk.taskId} className="flex items-center gap-3 py-1.5">
+                      <AlertCircle className={`w-3.5 h-3.5 shrink-0 ${getColor(tk)}`} />
+                      <span className="flex-1 text-sm text-charcoal truncate">{tk.title}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{tk.dueDate}</span>
                     </div>
                   ))}
-                  {tasks.filter((t) => t.status !== 'COMPLETED').length === 0 && (
-                    <p className="text-sm text-gray-400 text-center py-2">✅ Sin tareas pendientes</p>
+                  {tasks.filter((tk) => tk.status !== 'COMPLETED').length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-2">✅ {t.studentDashboard.noTasks}</p>
                   )}
                 </div>
               </div>
@@ -299,7 +295,7 @@ export default function StudentDashboardPage() {
                         href={`/courses/${course.id}`}
                         className="flex items-center gap-1.5 text-sm font-semibold text-cta-from hover:opacity-80 transition-opacity"
                       >
-                        Ver curso <ArrowRight className="w-4 h-4" />
+                        {t.studentDashboard.viewCourse} <ArrowRight className="w-4 h-4" />
                       </Link>
                     </div>
 
@@ -331,7 +327,7 @@ export default function StudentDashboardPage() {
                         >
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs font-semibold text-gray-400">
-                              Módulo {mod.order}
+                              {t.studentDashboard.moduleN(mod.order)}
                             </span>
                             {!mod.unlocked ? (
                               <Lock className="w-3.5 h-3.5 text-gray-400" />
@@ -361,7 +357,7 @@ export default function StudentDashboardPage() {
                         <Award className="w-5 h-5 text-white" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Certificado de finalización</p>
+                        <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">{t.studentDashboard.certTitle}</p>
                         <p className="font-bold text-charcoal text-sm truncate">{courseCert.courseTitle ?? course.title}</p>
                         {courseCert.studentName && (
                           <p className="text-xs text-gray-500 mt-0.5">{courseCert.studentName}</p>
@@ -377,7 +373,7 @@ export default function StudentDashboardPage() {
                         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white shrink-0 transition-opacity hover:opacity-90"
                         style={{ background: 'linear-gradient(135deg, #00B4D8, #7B2FBE)' }}
                       >
-                        Ver certificado <ArrowRight className="w-3.5 h-3.5" />
+                        {t.studentDashboard.viewCert} <ArrowRight className="w-3.5 h-3.5" />
                       </a>
                     </div>
                   </div>
@@ -389,7 +385,7 @@ export default function StudentDashboardPage() {
                     href={`/courses/${course.id}/modules/${currentModule.id}`}
                     className="btn-primary text-sm w-full justify-center"
                   >
-                    Continuar — {currentModule.title}
+                    {t.studentDashboard.continueBtn(currentModule.title)}
                     <ArrowRight className="w-4 h-4" />
                   </Link>
                 )}
@@ -402,8 +398,8 @@ export default function StudentDashboardPage() {
           {courses.length === 0 && (
             <div className="card text-center py-12">
               <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="font-heading font-bold text-charcoal">No hay cursos disponibles</p>
-              <p className="text-gray-500 text-sm mt-1">Los cursos aparecerán aquí cuando estén activos.</p>
+              <p className="font-heading font-bold text-charcoal">{t.studentDashboard.noCourses}</p>
+              <p className="text-gray-500 text-sm mt-1">{t.studentDashboard.noCoursesHint}</p>
             </div>
           )}
         </div>

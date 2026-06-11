@@ -33,28 +33,28 @@ type StudentPresence = {
 
 const DEADLINE_HOURS = 48;
 
-function getTimeRemaining(submittedAt: string, deadlineIso?: string): { label: string; urgent: boolean; overdue: boolean } {
+function getTimeRemaining(submittedAt: string, deadlineIso: string | undefined, te: typeof import('@/lib/i18n/translations').es.evaluator): { label: string; urgent: boolean; overdue: boolean } {
   const deadline = deadlineIso
     ? new Date(deadlineIso).getTime()
     : new Date(submittedAt).getTime() + DEADLINE_HOURS * 3600 * 1000;
   const diff = deadline - Date.now();
-  if (diff <= 0) return { label: 'Vencido', urgent: true, overdue: true };
+  if (diff <= 0) return { label: te.overdue, urgent: true, overdue: true };
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
-  if (h < 6) return { label: `${h}h ${m}m`, urgent: true, overdue: false };
-  if (h < 24) return { label: `${h}h restantes`, urgent: false, overdue: false };
+  if (h < 6) return { label: te.hoursLeft(h, m), urgent: true, overdue: false };
+  if (h < 24) return { label: te.hoursRemaining(h), urgent: false, overdue: false };
   const d = Math.floor(h / 24);
-  return { label: `${d}d restantes`, urgent: false, overdue: false };
+  return { label: te.daysRemaining(d), urgent: false, overdue: false };
 }
 
 // ── Bar Chart ──────────────────────────────────────────────────────────────────
 
-function StatusBarChart({ approved, rejected, pending }: { approved: number; rejected: number; pending: number }) {
+function StatusBarChart({ approved, rejected, pending, labels }: { approved: number; rejected: number; pending: number; labels: { approved: string; rejected: string; pending: string } }) {
   const total = approved + rejected + pending || 1;
   const bars = [
-    { label: 'Aprobadas', value: approved, color: '#10b981', pct: Math.round((approved / total) * 100) },
-    { label: 'Rechazadas', value: rejected, color: '#ef4444', pct: Math.round((rejected / total) * 100) },
-    { label: 'Pendientes', value: pending, color: '#f59e0b', pct: Math.round((pending / total) * 100) },
+    { label: labels.approved, value: approved, color: '#10b981', pct: Math.round((approved / total) * 100) },
+    { label: labels.rejected, value: rejected, color: '#ef4444', pct: Math.round((rejected / total) * 100) },
+    { label: labels.pending,  value: pending,  color: '#f59e0b', pct: Math.round((pending / total) * 100) },
   ];
   const maxVal = Math.max(approved, rejected, pending, 1);
 
@@ -163,16 +163,16 @@ export default function EvaluatorDashboardPage() {
             {t.evaluator.dashboard}
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            {lang === 'en' ? 'Hello, ' : 'Hola, '}<strong>{displayName}</strong>. {lang === 'en' ? 'Here is your workload.' : 'Aquí está tu carga de trabajo.'}
+            {t.evaluator.greetingPrefix}<strong>{displayName}</strong>. {t.evaluator.greetingSuffix}
           </p>
         </div>
 
         {/* Toggle Curso / Estudiante */}
         <div className="flex bg-surface rounded-xl p-1 gap-1 shrink-0">
-          {[
-            { key: 'course', label: '📋 Por Curso', icon: <BookOpen className="w-4 h-4" /> },
-            { key: 'student', label: '👤 Por Estudiante', icon: <Users className="w-4 h-4" /> },
-          ].map((v) => (
+          {([
+            { key: 'course', label: t.evaluator.byCourse, icon: <BookOpen className="w-4 h-4" /> },
+            { key: 'student', label: t.evaluator.byStudent, icon: <Users className="w-4 h-4" /> },
+          ] as const).map((v) => (
             <button
               key={v.key}
               onClick={() => setView(v.key as any)}
@@ -180,7 +180,7 @@ export default function EvaluatorDashboardPage() {
                 view === v.key ? 'bg-white shadow-sm text-charcoal' : 'text-gray-500 hover:text-charcoal'
               }`}
             >
-              {v.icon} {v.key === 'course' ? 'Por Curso' : 'Por Estudiante'}
+              {v.icon} {v.label}
             </button>
           ))}
         </div>
@@ -190,28 +190,28 @@ export default function EvaluatorDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
-            label: 'Pendientes',
+            label: t.evaluator.statPending,
             value: pending.length,
             icon: <Clock className="w-5 h-5 text-amber-500" />,
             bg: 'bg-amber-50',
             ring: pending.length > 0 ? 'ring-2 ring-amber-300' : '',
           },
           {
-            label: 'Aprobadas',
+            label: t.evaluator.statApproved,
             value: approved.length,
             icon: <CheckCircle className="w-5 h-5 text-emerald-500" />,
             bg: 'bg-emerald-50',
             ring: '',
           },
           {
-            label: 'Rechazadas',
+            label: t.evaluator.statRejected,
             value: rejected.length,
             icon: <XCircle className="w-5 h-5 text-red-500" />,
             bg: 'bg-red-50',
             ring: '',
           },
           {
-            label: 'En línea ahora',
+            label: t.evaluator.statOnline,
             value: onlineStudents.length,
             icon: <Users className="w-5 h-5 text-emerald-500" />,
             bg: 'bg-emerald-50',
@@ -227,7 +227,7 @@ export default function EvaluatorDashboardPage() {
               <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
             </>
           );
-          return s.label === 'Pendientes' ? (
+          return s.label === t.evaluator.statPending ? (
             <Link key={s.label} href="/evaluator/reflections" className={`card ${s.ring} block hover:shadow-card-hover transition-shadow`}>
               {inner}
             </Link>
@@ -245,12 +245,12 @@ export default function EvaluatorDashboardPage() {
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="w-5 h-5 text-red-500" />
             <h2 className="font-heading font-bold text-base text-red-700">
-              Acción Inmediata — {urgent.length} reflexión{urgent.length > 1 ? 'es' : ''} con tiempo crítico
+              {t.evaluator.urgentTitle(urgent.length)}
             </h2>
           </div>
           <div className="space-y-2">
             {urgent.map((r) => {
-              const tr = getTimeRemaining(r.submittedAt, (r as any).deadline);
+              const tr = getTimeRemaining(r.submittedAt, (r as any).deadline, t.evaluator);
               return (
                 <Link
                   key={`${r.userId}-${r.moduleId}`}
@@ -285,7 +285,7 @@ export default function EvaluatorDashboardPage() {
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
             <p className="text-sm font-bold text-amber-700">
-              {approachingInactive.length} estudiante{approachingInactive.length > 1 ? 's' : ''} próximo{approachingInactive.length > 1 ? 's' : ''} a inactivarse (entre 48-72h sin conectarse)
+              {t.evaluator.approachingInactiveMsg(approachingInactive.length)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -305,19 +305,19 @@ export default function EvaluatorDashboardPage() {
             <div className="flex items-center gap-2">
               <WifiOff className="w-5 h-5 text-red-500" />
               <h2 className="font-heading font-bold text-base text-red-700">
-                {inactiveStudents.length} estudiante{inactiveStudents.length > 1 ? 's' : ''} inactivo{inactiveStudents.length > 1 ? 's' : ''} (+72h sin conectarse)
+                {t.evaluator.inactivePanel(inactiveStudents.length)}
               </h2>
             </div>
             <Link href="/evaluator/students" className="text-xs text-red-600 font-semibold hover:opacity-70">
-              Ver todos →
+              {t.evaluator.viewAll2}
             </Link>
           </div>
           <div className="space-y-2">
             {inactiveStudents.slice(0, 5).map((s) => {
               const hoursAgo = formatHoursAgo(s.lastSeen);
               const timeLabel = hoursAgo != null
-                ? hoursAgo >= 48 ? `${Math.round(hoursAgo / 24)}d sin conectarse` : `${hoursAgo}h sin conectarse`
-                : 'Sin actividad';
+                ? hoursAgo >= 48 ? t.evaluator.daysAgo(Math.round(hoursAgo / 24)) : t.evaluator.hoursAgo(hoursAgo)
+                : t.evaluator.noActivity;
               const alreadySent = reminderSent.has(s.userId);
               const isSending = sendingReminder === s.userId;
               return (
@@ -337,10 +337,10 @@ export default function EvaluatorDashboardPage() {
                         ? 'bg-emerald-100 text-emerald-600 cursor-default'
                         : 'bg-red-100 text-red-600 hover:bg-red-200'
                     }`}
-                    title="Enviar recordatorio por email"
+                    title={t.evaluator.sendReminderTitle2}
                   >
                     {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : alreadySent ? <CheckCircle className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
-                    {alreadySent ? 'Enviado' : 'Recordatorio'}
+                    {alreadySent ? t.evaluator.reminderSent : t.evaluator.sendReminderBtn}
                   </button>
                 </div>
               );
@@ -359,10 +359,10 @@ export default function EvaluatorDashboardPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-heading font-bold text-lg text-charcoal flex items-center gap-2">
                   <ClipboardList className="w-5 h-5 text-cta-from" />
-                  Carga de trabajo
+                  {t.evaluator.workload}
                 </h2>
                 <Link href="/evaluator/reflections" className="text-sm text-cta-from font-semibold flex items-center gap-1 hover:opacity-70">
-                  Ver todas <ArrowRight className="w-4 h-4" />
+                  {t.evaluator.viewAll} <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
 
@@ -373,21 +373,21 @@ export default function EvaluatorDashboardPage() {
               ) : pending.length === 0 ? (
                 <div className="card text-center py-12">
                   <CheckCircle className="w-12 h-12 text-emerald-300 mx-auto mb-3" />
-                  <p className="font-heading font-bold text-charcoal">¡Todo al día!</p>
-                  <p className="text-gray-500 text-sm mt-1">No hay reflexiones pendientes.</p>
+                  <p className="font-heading font-bold text-charcoal">{t.evaluator.allClear}</p>
+                  <p className="text-gray-500 text-sm mt-1">{t.evaluator.noReflections}</p>
                 </div>
               ) : (
                 <div className="card p-0 overflow-hidden">
                   {/* Table header */}
                   <div className="grid grid-cols-[1fr_1fr_100px_90px_40px] gap-3 px-4 py-3 bg-surface border-b border-border text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                    <span>Estudiante</span>
-                    <span>Módulo / Curso</span>
-                    <span>Enviado</span>
-                    <span>Tiempo</span>
+                    <span>{t.evaluator.colStudent}</span>
+                    <span>{t.evaluator.colModuleCourse}</span>
+                    <span>{t.evaluator.colSent}</span>
+                    <span>{t.evaluator.colTime}</span>
                     <span />
                   </div>
                   {pending.map((r) => {
-                    const tr = getTimeRemaining(r.submittedAt, (r as any).deadline);
+                    const tr = getTimeRemaining(r.submittedAt, (r as any).deadline, t.evaluator);
                     const key = `${r.userId}-${r.moduleId}`;
                     const detailHref = `/evaluator/reflections/${encodeURIComponent(r.userId)}?moduleId=${r.moduleId}`;
                     return (
@@ -439,7 +439,7 @@ export default function EvaluatorDashboardPage() {
                                 onClick={() => setOpenMenu(null)}
                               >
                                 <ClipboardList className="w-4 h-4 text-cta-from" />
-                                Ver reflexión
+                                {t.evaluator.viewReflectionAction}
                               </Link>
                               <Link
                                 href={`/evaluator/students`}
@@ -447,7 +447,7 @@ export default function EvaluatorDashboardPage() {
                                 onClick={() => setOpenMenu(null)}
                               >
                                 <Users className="w-4 h-4 text-purple-500" />
-                                Ver estudiante
+                                {t.evaluator.viewStudentAction}
                               </Link>
                             </div>
                           )}
@@ -463,7 +463,7 @@ export default function EvaluatorDashboardPage() {
             <>
               <h2 className="font-heading font-bold text-lg text-charcoal flex items-center gap-2">
                 <Users className="w-5 h-5 text-purple-500" />
-                Progreso de estudiantes
+                {t.evaluator.studentProgress}
               </h2>
               {loading ? (
                 <div className="space-y-2">
@@ -492,7 +492,7 @@ export default function EvaluatorDashboardPage() {
                             </p>
                             {pendingMods > 0 && (
                               <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
-                                {pendingMods} pendiente{pendingMods > 1 ? 's' : ''}
+                                {t.evaluator.pendingBadge(pendingMods)}
                               </span>
                             )}
                           </div>
@@ -506,7 +506,7 @@ export default function EvaluatorDashboardPage() {
                             <span className="text-xs text-gray-400 font-medium w-8 text-right">{avgPct}%</span>
                           </div>
                           <p className="text-xs text-gray-400">
-                            {approvedMods}/{totalMods} módulos aprobados
+                            {t.evaluator.modulesApproved(approvedMods, totalMods)}
                           </p>
                         </div>
                         <Link
@@ -520,7 +520,7 @@ export default function EvaluatorDashboardPage() {
                   })}
                   {students.length > 8 && (
                     <Link href="/evaluator/students" className="btn-secondary text-sm w-full justify-center">
-                      Ver todos los estudiantes ({students.length})
+                      {t.evaluator.viewAllStudents(students.length)}
                     </Link>
                   )}
                 </div>
@@ -535,7 +535,7 @@ export default function EvaluatorDashboardPage() {
           <div className="card">
             <h2 className="font-heading font-bold text-base text-charcoal mb-4 flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-emerald-500" />
-              Estado de evaluaciones
+              {t.evaluator.evalStatus}
             </h2>
             {loading ? (
               <div className="space-y-3">
@@ -546,12 +546,13 @@ export default function EvaluatorDashboardPage() {
                 approved={approved.length}
                 rejected={rejected.length}
                 pending={pending.length}
+                labels={{ approved: t.evaluator.statApproved, rejected: t.evaluator.statRejected, pending: t.evaluator.statPending }}
               />
             )}
             {!loading && reflections.length > 0 && (
               <div className="mt-4 pt-4 border-t border-border">
                 <p className="text-xs text-gray-400 text-center">
-                  Tasa de aprobación:{' '}
+                  {t.evaluator.approvalRate}{' '}
                   <strong className="text-emerald-600">
                     {Math.round((approved.length / (approved.length + rejected.length || 1)) * 100)}%
                   </strong>
@@ -562,16 +563,16 @@ export default function EvaluatorDashboardPage() {
 
           {/* Quick link to evaluations */}
           <div className="card">
-            <p className="text-xs text-gray-400 mb-3 font-semibold uppercase tracking-wide">Accesos rápidos</p>
+            <p className="text-xs text-gray-400 mb-3 font-semibold uppercase tracking-wide">{t.evaluator.quickLinks}</p>
             <div className="space-y-2">
               <Link href="/evaluator/reflections" className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors group">
                 <ClipboardList className="w-4 h-4 text-cta-from shrink-0" />
-                <span className="text-sm font-medium text-charcoal group-hover:text-cta-from transition-colors">Lista de evaluaciones</span>
+                <span className="text-sm font-medium text-charcoal group-hover:text-cta-from transition-colors">{t.evaluator.evalList}</span>
                 <ArrowRight className="w-3.5 h-3.5 text-gray-300 ml-auto group-hover:text-cta-from transition-colors" />
               </Link>
               <Link href="/evaluator/students" className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface transition-colors group">
                 <Users className="w-4 h-4 text-purple-500 shrink-0" />
-                <span className="text-sm font-medium text-charcoal group-hover:text-purple-600 transition-colors">Mis estudiantes</span>
+                <span className="text-sm font-medium text-charcoal group-hover:text-purple-600 transition-colors">{t.evaluator.myStudents}</span>
                 <ArrowRight className="w-3.5 h-3.5 text-gray-300 ml-auto group-hover:text-purple-400 transition-colors" />
               </Link>
             </div>

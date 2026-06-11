@@ -3,6 +3,7 @@ import { getPrismaClient } from '../shared/db-neon';
 import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -10,6 +11,7 @@ type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestCont
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;

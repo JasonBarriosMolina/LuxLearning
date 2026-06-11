@@ -18,6 +18,7 @@ import { getPrismaClient } from '../shared/db-neon';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -27,6 +28,7 @@ type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestCont
 export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
+  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;
@@ -175,7 +177,7 @@ export const handler = async (event: Event) => {
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({
-          modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({
