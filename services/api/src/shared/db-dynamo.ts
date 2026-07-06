@@ -784,6 +784,35 @@ export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: stri
   })).filter((item) => item.userId && !item.userId.startsWith('_'));
 }
 
+// ─── Inactivity Reminder Tracking ────────────────────────────────────────────
+// Stored in PROGRESS table: userId = userId, sk = 'INACTIVITY_REMINDER'
+// count: how many inactivity emails have been sent (0 = none yet)
+// lastSent: ISO timestamp of the last sent email
+
+export async function getInactivityReminder(userId: string): Promise<{ count: number; lastSent: string | null }> {
+  const res = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: 'INACTIVITY_REMINDER' },
+  }));
+  if (!res.Item) return { count: 0, lastSent: null };
+  return { count: Number(res.Item['count'] ?? 0), lastSent: res.Item['lastSent'] ?? null };
+}
+
+export async function setInactivityReminder(userId: string, count: number, lastSent: string | null): Promise<void> {
+  if (count === 0) {
+    // Reset: delete the tracking record
+    await ddb.send(new DeleteCommand({
+      TableName: TABLES.PROGRESS,
+      Key: { userId, sk: 'INACTIVITY_REMINDER' },
+    })).catch(() => {});
+    return;
+  }
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: 'INACTIVITY_REMINDER', count, lastSent },
+  }));
+}
+
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 // Stored in PROGRESS table: userId = userId, sk = 'ONBOARDING#done'
 

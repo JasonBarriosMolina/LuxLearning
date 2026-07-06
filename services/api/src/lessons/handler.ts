@@ -11,6 +11,7 @@ import {
   markOnboardingDone, isOnboardingDone,
   getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
+  setInactivityReminder,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
@@ -163,10 +164,13 @@ export const handler = async (event: Event) => {
 
     // POST /lessons/chat
     if (method === 'POST' && path.includes('/chat')) {
-      const { lessonId, lessonTitle, lessonContent, moduleTitle, history, message } = JSON.parse(event.body ?? '{}');
+      const { lessonId, lessonTitle, lessonContent, moduleTitle, history, message, lang } = JSON.parse(event.body ?? '{}');
       if (!message) return badRequest('message is required');
 
-      const systemPrompt = `Eres el Mentor de Lux Learning, un asistente pedagógico experto en ${moduleTitle ?? 'el tema de la lección'}. El estudiante está viendo la lección "${lessonTitle ?? ''}".${lessonContent ? `\n\nContenido de la lección:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCCIONES:\n- Responde SIEMPRE en español\n- Usa markdown limpio: ## para secciones, - para listas, **negrita** para conceptos clave\n- Máximo 2-3 párrafos cortos por respuesta\n- Sé conciso, pedagógico y motivador\n- NO uses asteriscos triples ni subrayados`;
+      const isEn = lang === 'en';
+      const systemPrompt = isEn
+        ? `You are the Lux Learning Mentor, an expert pedagogical assistant in ${moduleTitle ?? 'the lesson topic'}. The student is viewing the lesson "${lessonTitle ?? ''}".${lessonContent ? `\n\nLesson content:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCTIONS:\n- Always respond in English\n- Use clean markdown: ## for sections, - for lists, **bold** for key concepts\n- Maximum 2-3 short paragraphs per response\n- Be concise, pedagogical and encouraging\n- Do NOT use triple asterisks or underlines`
+        : `Eres el Mentor de Lux Learning, un asistente pedagógico experto en ${moduleTitle ?? 'el tema de la lección'}. El estudiante está viendo la lección "${lessonTitle ?? ''}".${lessonContent ? `\n\nContenido de la lección:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCCIONES:\n- Responde SIEMPRE en español\n- Usa markdown limpio: ## para secciones, - para listas, **negrita** para conceptos clave\n- Máximo 2-3 párrafos cortos por respuesta\n- Sé conciso, pedagógico y motivador\n- NO uses asteriscos triples ni subrayados`;
 
       const messages = [
         ...((Array.isArray(history) ? history : []) as { role: string; content: string }[]).map((h) => ({
@@ -196,7 +200,11 @@ export const handler = async (event: Event) => {
 
     // ── POST /student/heartbeat ───────────────────────────────────────────────
     if (method === 'POST' && path === '/student/heartbeat') {
-      if (userId) await updateLastSeen(userId);
+      if (userId) {
+        await updateLastSeen(userId);
+        // Reset inactivity reminder sequence when student returns
+        setInactivityReminder(userId, 0, null).catch(() => {});
+      }
       return ok({ ok: true });
     }
 

@@ -320,6 +320,7 @@ export default function LessonPage() {
         moduleTitle: module?.title,
         history: chatHistory,
         message: msg,
+        lang,
       });
       const reply = (res as any).data?.reply ?? '';
       setChatHistory([...newHistory, { role: 'assistant', content: reply }]);

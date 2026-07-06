@@ -381,15 +381,45 @@ export default function StudentDashboardPage() {
                 )}
 
                 {/* Continue CTA */}
-                {currentModule && (
-                  <Link
-                    href={`/courses/${course.id}/modules/${currentModule.id}`}
-                    className="btn-primary text-sm w-full justify-center"
-                  >
-                    {t.studentDashboard.continueBtn(currentModule.title)}
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                )}
+                {currentModule && (() => {
+                  const rs = currentModule.reflectionStatus;
+                  const isPending = rs === 'PENDING_EVAL' || rs === 'PENDING_AI';
+                  const isRejected = rs === 'REJECTED';
+                  if (isPending) {
+                    return (
+                      <div className="flex flex-col gap-1.5">
+                        <Link
+                          href={`/courses/${course.id}/modules/${currentModule.id}`}
+                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 text-sm font-semibold hover:bg-amber-100 transition-colors"
+                        >
+                          <Clock className="w-4 h-4" />
+                          {t.studentDashboard.reflectionPending}
+                        </Link>
+                        <p className="text-xs text-gray-400 text-center">{t.studentDashboard.reflectionPendingHint}</p>
+                      </div>
+                    );
+                  }
+                  if (isRejected) {
+                    return (
+                      <Link
+                        href={`/courses/${course.id}/modules/${currentModule.id}`}
+                        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-300 bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 transition-colors w-full"
+                      >
+                        <AlertCircle className="w-4 h-4" />
+                        {t.studentDashboard.reflectionRejected}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <Link
+                      href={`/courses/${course.id}/modules/${currentModule.id}`}
+                      className="btn-primary text-sm w-full justify-center"
+                    >
+                      {t.studentDashboard.continueBtn(currentModule.title)}
+                      <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  );
+                })()}
                   </div>
                 )}
               </div>
