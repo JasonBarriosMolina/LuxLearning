@@ -301,7 +301,7 @@ function MyResourcesInner() {
       ) : (
         // ── General view: one section per course ──────────────────────────
         <>
-          {courses.length === 0 ? (
+          {courses.length === 0 && resources.filter(r => r.archived === showArchived).length === 0 ? (
             <div className="card text-center py-16">
               <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="font-heading font-bold text-charcoal">{t.admin.myResourcesEmpty}</p>
