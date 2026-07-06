@@ -59,7 +59,7 @@ export const api = {
       request<any>('/lessons/favorites/toggle', { method: 'POST', body: JSON.stringify(body) }),
     transcript: (lessonId: string, youtubeId: string) =>
       request<any>(`/lessons/transcript?lessonId=${lessonId}&youtubeId=${youtubeId}`),
-    chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string }) =>
+    chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string; lang?: string }) =>
       request<any>('/lessons/chat', { method: 'POST', body: JSON.stringify(body) }),
     complete: (body: MarkLessonCompleteRequest) =>
       request('/lessons/complete', { method: 'POST', body: JSON.stringify(body) }),

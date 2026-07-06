@@ -157,9 +157,12 @@ export const handler = async () => {
     const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, new Date(ls.lastSeen).getTime()]));
 
     // Build last activity timestamp per user (fallback)
+    // Guard: PROGRESS table contains non-lesson items (HEARTBEAT, INACTIVITY_REMINDER, etc.) — skip those
     const lastActivity = new Map<string, number>();
     allProgress.forEach((p) => {
+      if (!p.completedAt) return;
       const t = new Date(p.completedAt).getTime();
+      if (isNaN(t)) return;
       if (!lastActivity.has(p.userId) || t > lastActivity.get(p.userId)!) lastActivity.set(p.userId, t);
     });
     allReflections.forEach((r) => {
