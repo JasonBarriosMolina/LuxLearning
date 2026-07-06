@@ -23,7 +23,6 @@ const MAX_REMINDER_COUNT = 5;          // stop after 5 emails
 
 function reminderEmailHtml(name: string, daysInactive: number, emailNum: number): string {
   const isFinal = emailNum >= 5;
-  const isWeekly = emailNum >= 3 && !isFinal;
   const header = isFinal
     ? `Te extrañamos en Lux Learning`
     : `¡Te echamos de menos!`;
@@ -239,9 +238,13 @@ export const handler = async () => {
           },
         }));
 
-        await setInactivityReminder(userId, nextCount, new Date().toISOString());
         sent++;
         console.log(`[Reminders] Sent #${nextCount} to ${email} (${hoursInactive}h inactive)`);
+        try {
+          await setInactivityReminder(userId, nextCount, new Date().toISOString());
+        } catch (ddbErr) {
+          console.warn(`[Reminders] Counter update failed for ${userId} — email was sent, counter not advanced:`, ddbErr);
+        }
       } catch (err) {
         console.warn(`[Reminders] Failed for userId ${userId}:`, err);
         skipped++;

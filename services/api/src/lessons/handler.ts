@@ -203,7 +203,9 @@ export const handler = async (event: Event) => {
       if (userId) {
         await updateLastSeen(userId);
         // Reset inactivity reminder sequence when student returns
-        setInactivityReminder(userId, 0, null).catch(() => {});
+        setInactivityReminder(userId, 0, null).catch((err) => {
+          console.warn('[Heartbeat] Failed to reset inactivity reminder for', userId, err);
+        });
       }
       return ok({ ok: true });
     }
