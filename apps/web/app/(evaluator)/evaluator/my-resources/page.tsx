@@ -72,10 +72,12 @@ function MyResourcesInner() {
   // Delete/restore state
   const [deleting, setDeleting] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
 
   const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
 
   const load = async () => {
+    setLoadError('');
     try {
       const [resRes, coursesRes] = await Promise.all([
         api.evaluator.resources.list(),
@@ -83,6 +85,8 @@ function MyResourcesInner() {
       ]);
       setResources((resRes as any).data ?? []);
       setCourses(((coursesRes as any).data ?? []).map((c: any) => ({ id: c.id, title: c.title, isArchived: c.isArchived ?? false })));
+    } catch (err: any) {
+      setLoadError(err?.message ?? 'Error al cargar recursos');
     } finally { setLoading(false); }
   };
 
@@ -178,6 +182,13 @@ function MyResourcesInner() {
   };
 
   if (loading || authLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+
+  if (loadError) return (
+    <div className="max-w-4xl mx-auto flex flex-col items-center justify-center h-64 gap-3 text-center">
+      <p className="text-red-500 font-medium">{loadError}</p>
+      <button onClick={() => { setLoading(true); load(); }} className="text-sm text-cta-from hover:underline">Reintentar</button>
+    </div>
+  );
 
   const renderCard = (r: Resource) => (
     <div key={r.resourceId} className="card p-4 space-y-3">
@@ -275,6 +286,11 @@ function MyResourcesInner() {
               <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="font-heading font-bold text-charcoal">{showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}</p>
               <p className="text-gray-500 text-sm mt-1">{showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint}</p>
+              {!showArchived && (
+                <button onClick={() => openUpload(courseIdFilter ?? undefined)} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cta-from hover:underline">
+                  <Plus className="w-4 h-4" /> Subir el primer recurso
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
