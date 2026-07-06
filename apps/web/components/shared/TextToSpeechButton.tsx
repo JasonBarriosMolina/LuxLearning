@@ -143,6 +143,12 @@ function WebSpeechPlayer({ text, rate, onRateChange, voiceProfile }: {
 
   useEffect(() => { return () => { window.speechSynthesis?.cancel(); }; }, []);
 
+  // Cancel ongoing utterance when voice or rate changes — next play picks up new settings
+  useEffect(() => {
+    window.speechSynthesis?.cancel();
+    setState('idle');
+  }, [voiceProfile, rate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handlePlay = useCallback(() => {
     if (!window.speechSynthesis) return;
     if (state === 'paused') { window.speechSynthesis.resume(); setState('speaking'); return; }
