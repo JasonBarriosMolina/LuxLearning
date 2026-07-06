@@ -21,8 +21,9 @@ export default function CoursePreviewPage() {
       setCourse(c);
       // Auto-expand first module and select its first lesson
       if (c?.modules?.length > 0) {
+        // Expand all modules so all lessons are immediately visible and selectable
+        setExpandedMods(new Set(c.modules.map((m: any) => m.id)));
         const first = c.modules[0];
-        setExpandedMods(new Set([first.id]));
         if (first.lessons?.length > 0) setSelectedLesson(first.lessons[0]);
       }
     }).finally(() => setLoading(false));

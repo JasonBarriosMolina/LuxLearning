@@ -104,7 +104,8 @@ export interface Notification {
   userId: string;
   notifId: string;
   type: 'REFLECTION_APPROVED' | 'REFLECTION_REJECTED' | 'MODULE_UNLOCKED' | 'GENERAL'
-    | 'TASK_SUBMITTED' | 'REFLECTION_RECONSIDERED' | 'COURSE_UPDATED' | 'MESSAGE_UNREAD';
+    | 'TASK_SUBMITTED' | 'REFLECTION_RECONSIDERED' | 'COURSE_UPDATED' | 'MESSAGE_UNREAD'
+    | 'INACTIVITY_REMINDER';
   message: string;
   read: boolean;
   createdAt: string;

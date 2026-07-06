@@ -39,6 +39,15 @@ function resolveVoice(profileId: VoiceProfileId): SpeechSynthesisVoice | null {
       : MALE_HINTS.some((h) => name.includes(h));
   });
   if (byGender) return byGender;
+  // Gender-aware fallback: scan all available voices before giving up on gender
+  const byGenderAll = voices.find((v) => {
+    const name = v.name.toLowerCase();
+    return profile.gender === 'female'
+      ? FEMALE_HINTS.some((h) => name.includes(h))
+      : MALE_HINTS.some((h) => name.includes(h));
+  });
+  if (byGenderAll) return byGenderAll;
+  // Last resort: prefer correct language tag, then any Spanish voice
   return spanish.find((v) => v.lang === profile.lang) ?? spanish[0] ?? null;
 }
 

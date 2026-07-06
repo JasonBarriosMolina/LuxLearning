@@ -5,9 +5,10 @@
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder } from '../shared/db-dynamo';
+import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 import { sendTemplatedEmail } from '../shared/email';
+import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -15,11 +16,11 @@ const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 
-// Inactivity email sequence thresholds
-const INACTIVITY_HOURS = 72;           // trigger first email
-const SECOND_EMAIL_HOURS = 72;         // hours after first before sending second
-const WEEKLY_EMAIL_HOURS = 168;        // 7 days between weekly emails
-const MAX_REMINDER_COUNT = 5;          // stop after 5 emails
+// Inactivity reminder sequence: 3 days → first, 5 days total → second, then every 5 days
+const INACTIVITY_HOURS = 72;           // trigger first reminder at 3 days inactivity
+const SECOND_EMAIL_HOURS = 48;         // 2 more days → 5 days total inactivity for 2nd reminder
+const WEEKLY_EMAIL_HOURS = 120;        // 5 days between subsequent reminders
+const MAX_REMINDER_COUNT = 5;          // stop after 5 reminders
 
 function reminderEmailHtml(name: string, daysInactive: number, emailNum: number): string {
   const isFinal = emailNum >= 5;
@@ -240,6 +241,22 @@ export const handler = async () => {
 
         sent++;
         console.log(`[Reminders] Sent #${nextCount} to ${email} (${hoursInactive}h inactive)`);
+
+        // Also send in-app notification so the student sees it on the platform
+        createNotification({
+          userId,
+          notifId: createId(),
+          type: 'INACTIVITY_REMINDER',
+          message: isFinal
+            ? 'Te extrañamos en Lux Learning — ¡continuemos tu formación!'
+            : `Llevas ${Math.floor(hoursInactive / 24)} días sin actividad — ¡te echamos de menos!`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          actionUrl: '/dashboard',
+        }).catch((err) => {
+          console.warn(`[Reminders] In-app notification failed for ${userId}:`, err);
+        });
+
         try {
           await setInactivityReminder(userId, nextCount, new Date().toISOString());
         } catch (ddbErr) {
