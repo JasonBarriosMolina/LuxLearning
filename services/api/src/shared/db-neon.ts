@@ -25,7 +25,8 @@ async function initPrisma(env: AppEnv): Promise<PrismaClient> {
       const secretArn = getDbSecretArn();
       console.warn(`[db-neon] DATABASE_URL not cached for env="${env}" — fetching from Secrets Manager (${secretArn})`);
       const res = await sm.send(new GetSecretValueCommand({ SecretId: secretArn }));
-      url = res.SecretString!;
+      const raw = res.SecretString!;
+      url = raw.startsWith('{') ? JSON.parse(raw).DATABASE_URL : raw;
       // Keep backward-compat: cache prod URL in process.env too
       if (env === 'prod') process.env.DATABASE_URL = url;
     }

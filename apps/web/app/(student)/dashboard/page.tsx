@@ -48,6 +48,7 @@ export default function StudentDashboardPage() {
   };
 
   useEffect(() => {
+    setLoading(true);
     api.courses.list().then((res) => {
       setCourses((res as any).data ?? []);
       setLoading(false);
@@ -59,7 +60,7 @@ export default function StudentDashboardPage() {
       setTasks(res?.data ?? []);
     }).catch(() => {});
 
-  }, []);
+  }, [lang]);
 
   const firstName = email?.split('@')[0] ?? t.roles.student;
 

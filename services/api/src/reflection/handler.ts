@@ -6,7 +6,7 @@ import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
-import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -32,9 +32,10 @@ function countWords(text: string): number {
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId ?? '';
   const studentEmail = event.requestContext.authorizer?.lambda?.email ?? '';
@@ -171,7 +172,7 @@ Responde ÚNICAMENTE con JSON válido:
       // Send to SQS for AI processing
       await sqs.send(new SendMessageCommand({
         QueueUrl: process.env.SQS_REFLECTION_QUEUE_URL!,
-        MessageBody: JSON.stringify({ userId, moduleId }),
+        MessageBody: JSON.stringify({ userId, moduleId, env: getCurrentEnv() }),
         // Standard queue — MessageGroupId is not used (only valid for FIFO queues)
       }));
 

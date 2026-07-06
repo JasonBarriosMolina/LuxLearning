@@ -41,7 +41,7 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
   const { role } = useAuth();
   const router = useRouter();
   const { lang, setLang, t } = useLanguage();
-  const isEvaluator = role === 'EVALUATOR' || role === 'ADMIN';
+  const isEvaluator = role === 'EVALUATOR' || role === 'ADMIN' || role === 'SUPER_ADMIN';
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);

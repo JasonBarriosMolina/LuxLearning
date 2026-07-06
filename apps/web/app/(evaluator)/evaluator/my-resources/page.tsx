@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { FolderOpen, Plus, Pencil, Trash2, RotateCcw, BookOpen, Loader2, FileText, Link2, X, Check } from 'lucide-react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { FolderOpen, Plus, Pencil, Trash2, RotateCcw, BookOpen, Loader2, Link2, ChevronLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { useLanguage } from '@/lib/i18n';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 interface Resource {
   evaluatorId: string;
@@ -24,7 +27,7 @@ interface Resource {
   updatedAt: string;
 }
 
-interface Course { id: string; title: string; }
+interface Course { id: string; title: string; isArchived?: boolean; }
 
 function formatSize(bytes?: number) {
   if (!bytes) return '';
@@ -44,8 +47,11 @@ function fileIcon(fileType: string) {
   return '📁';
 }
 
-export default function MyResourcesPage() {
+function MyResourcesInner() {
   const { t } = useLanguage();
+  const { role, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const courseIdFilter = searchParams.get('courseId');
   const [resources, setResources] = useState<Resource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,26 +73,45 @@ export default function MyResourcesPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
 
+  const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+
   const load = async () => {
     try {
       const [resRes, coursesRes] = await Promise.all([
         api.evaluator.resources.list(),
-        api.evaluator.myCourses(),
+        isAdmin ? api.admin.courses.list() : api.evaluator.myCourses(),
       ]);
       setResources((resRes as any).data ?? []);
-      setCourses(((coursesRes as any).data ?? []).map((c: any) => ({ id: c.id, title: c.title })));
+      setCourses(((coursesRes as any).data ?? []).map((c: any) => ({ id: c.id, title: c.title, isArchived: c.isArchived ?? false })));
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!authLoading) load(); }, [authLoading, role]);
 
-  const folders = ['all', ...Array.from(new Set(resources.filter(r => r.folder).map(r => r.folder!)))];
+  const folders = ['all', ...Array.from(new Set(
+    resources
+      .filter(r => r.folder && (!courseIdFilter || r.courseIds.includes(courseIdFilter)))
+      .map(r => r.folder!)
+  ))];
+
+  const activeCourse = courseIdFilter ? courses.find((c) => c.id === courseIdFilter) : null;
 
   const filtered = resources.filter(r => {
     if (r.archived !== showArchived) return false;
     if (folderFilter !== 'all' && r.folder !== folderFilter) return false;
+    if (courseIdFilter && !r.courseIds.includes(courseIdFilter)) return false;
     return true;
   });
+
+  const openUpload = (preselectedCourseId?: string) => {
+    const ids = preselectedCourseId
+      ? [preselectedCourseId]
+      : courseIdFilter ? [courseIdFilter] : [];
+    setUploadForm({ title: '', description: '', folder: '', courseIds: ids, fileUrl: '', fileName: '', fileType: '', fileSize: 0 });
+    setUploadError('');
+    setUploadOpen(true);
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +130,6 @@ export default function MyResourcesPage() {
         courseIds: uploadForm.courseIds,
       });
       setUploadOpen(false);
-      setUploadForm({ title: '', description: '', folder: '', courseIds: [], fileUrl: '', fileName: '', fileType: '', fileSize: 0 });
       await load();
     } catch (err: any) {
       setUploadError(err.message ?? 'Error al crear recurso');
@@ -153,15 +177,69 @@ export default function MyResourcesPage() {
     setForm((p: any) => ({ ...p, courseIds: ids.includes(courseId) ? ids.filter((id) => id !== courseId) : [...ids, courseId] }));
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+  if (loading || authLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
+
+  const renderCard = (r: Resource) => (
+    <div key={r.resourceId} className="card p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">{fileIcon(r.fileType)}</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-charcoal text-sm truncate">{r.title}</p>
+          {r.description && <p className="text-xs text-gray-500 line-clamp-2">{r.description}</p>}
+          <p className="text-xs text-gray-400 mt-0.5">{r.fileName} {formatSize(r.fileSize) && `· ${formatSize(r.fileSize)}`}</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {!r.archived ? (
+            <>
+              <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg hover:bg-surface text-gray-400 hover:text-charcoal transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+              <button onClick={() => handleDelete(r)} disabled={deleting === r.resourceId} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
+                {deleting === r.resourceId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              </button>
+            </>
+          ) : (
+            <button onClick={() => handleRestore(r)} disabled={restoring === r.resourceId} className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors disabled:opacity-50">
+              {restoring === r.resourceId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+      </div>
+      {r.folder && <div className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full w-fit">📂 {r.folder}</div>}
+      {!courseIdFilter && r.courseIds.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {r.courseIds.map((cid) => {
+            const c = courses.find((x) => x.id === cid);
+            return c ? <span key={cid} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">✓ {c.title}</span> : null;
+          })}
+        </div>
+      )}
+      <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
+        <Link2 className="w-3 h-3" /> {t.admin.myResourcesViewFile}
+      </a>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      {/* Back link when filtered by course */}
+      {courseIdFilter && (
+        <Link
+          href={isAdmin ? '/admin/courses' : '/evaluator/my-courses'}
+          className="inline-flex items-center gap-1.5 text-sm text-cta-from font-medium hover:underline"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          {isAdmin ? t.admin.contentMgmt : t.nav.myCourses}
+        </Link>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.myResourcesTitle}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{t.admin.myResourcesSubtitle}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {courseIdFilter
+              ? (activeCourse ? activeCourse.title : '...')
+              : t.admin.myResourcesSubtitle}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -170,78 +248,109 @@ export default function MyResourcesPage() {
           >
             {showArchived ? t.admin.myResourcesTrashBtn : t.admin.myResourcesArchivedBtn}
           </button>
-          <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setUploadOpen(true)}>
+          <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => openUpload()}>
             {t.admin.myResourcesUploadBtn}
           </Button>
         </div>
       </div>
 
-      {/* Folder filter */}
-      {folders.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {folders.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFolderFilter(f)}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${folderFilter === f ? 'bg-indigo-100 text-indigo-700' : 'bg-surface text-gray-500 hover:bg-indigo-50'}`}
-            >
-              {f === 'all' ? t.admin.myResourcesFolderAll : `📂 ${f}`}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Resources grid */}
-      {filtered.length === 0 ? (
-        <div className="card text-center py-16">
-          <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">{showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}</p>
-          <p className="text-gray-500 text-sm mt-1">{showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint}</p>
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {filtered.map((r) => (
-            <div key={r.resourceId} className="card p-4 space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">{fileIcon(r.fileType)}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-charcoal text-sm truncate">{r.title}</p>
-                  {r.description && <p className="text-xs text-gray-500 line-clamp-2">{r.description}</p>}
-                  <p className="text-xs text-gray-400 mt-0.5">{r.fileName} {formatSize(r.fileSize) && `· ${formatSize(r.fileSize)}`}</p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!r.archived ? (
-                    <>
-                      <button onClick={() => openEdit(r)} className="p-1.5 rounded-lg hover:bg-surface text-gray-400 hover:text-charcoal transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleDelete(r)} disabled={deleting === r.resourceId} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50">
-                        {deleting === r.resourceId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => handleRestore(r)} disabled={restoring === r.resourceId} className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors disabled:opacity-50">
-                      {restoring === r.resourceId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {r.folder && <div className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full w-fit">📂 {r.folder}</div>}
-
-              {r.courseIds.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {r.courseIds.map((cid) => {
-                    const c = courses.find((x) => x.id === cid);
-                    return c ? <span key={cid} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">✓ {c.title}</span> : null;
-                  })}
-                </div>
-              )}
-
-              <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
-                <Link2 className="w-3 h-3" /> {t.admin.myResourcesViewFile}
-              </a>
+      {courseIdFilter ? (
+        // ── Filtered view: resources for a single course ─────────────────
+        <>
+          {folders.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {folders.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFolderFilter(f)}
+                  className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${folderFilter === f ? 'bg-indigo-100 text-indigo-700' : 'bg-surface text-gray-500 hover:bg-indigo-50'}`}
+                >
+                  {f === 'all' ? t.admin.myResourcesFolderAll : `📂 ${f}`}
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+          {filtered.length === 0 ? (
+            <div className="card text-center py-16">
+              <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="font-heading font-bold text-charcoal">{showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}</p>
+              <p className="text-gray-500 text-sm mt-1">{showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint}</p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {filtered.map(renderCard)}
+            </div>
+          )}
+        </>
+      ) : (
+        // ── General view: one section per course ──────────────────────────
+        <>
+          {courses.length === 0 ? (
+            <div className="card text-center py-16">
+              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="font-heading font-bold text-charcoal">{t.admin.myResourcesEmpty}</p>
+              <p className="text-gray-500 text-sm mt-1">{t.admin.myResourcesEmptyHint}</p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {courses.map((course) => {
+                const courseResources = resources.filter(
+                  (r) => r.archived === showArchived && r.courseIds.includes(course.id)
+                );
+                return (
+                  <div key={course.id} className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-border pb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <h2 className="font-semibold text-charcoal truncate">{course.title}</h2>
+                        {course.isArchived && (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">{t.admin.statusArchived}</span>
+                        )}
+                        <span className="text-xs text-gray-400 shrink-0">({courseResources.length})</span>
+                      </div>
+                      <button
+                        onClick={() => openUpload(course.id)}
+                        className="flex items-center gap-1 text-xs text-cta-from font-medium hover:underline shrink-0 ml-3"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Añadir
+                      </button>
+                    </div>
+                    {courseResources.length === 0 ? (
+                      <div className="flex items-center gap-2 py-3 px-4 bg-surface rounded-xl text-sm text-gray-400">
+                        <FolderOpen className="w-4 h-4 shrink-0" />
+                        {showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}
+                      </div>
+                    ) : (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {courseResources.map(renderCard)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Unassigned resources */}
+              {(() => {
+                const unassigned = resources.filter(
+                  (r) => r.archived === showArchived && r.courseIds.length === 0
+                );
+                if (unassigned.length === 0) return null;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 border-b border-border pb-2">
+                      <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
+                      <h2 className="font-semibold text-gray-500">Sin asignar a curso</h2>
+                      <span className="text-xs text-gray-400">({unassigned.length})</span>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {unassigned.map(renderCard)}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </>
       )}
 
       {/* Upload Modal */}
@@ -348,5 +457,13 @@ export default function MyResourcesPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+export default function MyResourcesPage() {
+  return (
+    <Suspense>
+      <MyResourcesInner />
+    </Suspense>
   );
 }

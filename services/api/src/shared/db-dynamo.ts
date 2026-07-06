@@ -28,6 +28,7 @@ const BASE_TABLES = {
   ACTIVITY: process.env.DYNAMO_TABLE_ACTIVITY ?? 'LuxActivity',
   CERT_TEMPLATES: process.env.DYNAMO_TABLE_CERT_TEMPLATES ?? 'LuxCertTemplates',
   RESOURCES: process.env.DYNAMO_TABLE_RESOURCES ?? 'LuxResources',
+  TRANSLATIONS: process.env.DYNAMO_TABLE_TRANSLATIONS ?? 'LuxTranslations',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
@@ -907,4 +908,27 @@ export async function getActivity(userId: string, days = 30): Promise<any[]> {
     ScanIndexForward: false,
   }));
   return result.Items ?? [];
+}
+
+// ─── User Language Preference ─────────────────────────────────────────────────
+// Stored in PushSubscriptions table: userId = userId, sk = 'PREF_LANG'
+
+export async function setUserLang(userId: string, lang: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PUSH_SUBS,
+    Item: { userId, sk: 'PREF_LANG', lang },
+  }));
+}
+
+export async function getUserLang(userId: string): Promise<string> {
+  try {
+    const result = await ddb.send(new GetCommand({
+      TableName: TABLES.PUSH_SUBS,
+      Key: { userId, sk: 'PREF_LANG' },
+    }));
+    const lang = result.Item?.lang as string | undefined;
+    return lang === 'en' || lang === 'es' ? lang : 'es';
+  } catch {
+    return 'es';
+  }
 }

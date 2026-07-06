@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
 
@@ -11,8 +11,9 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
   webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_EV, VAPID_PRIVATE_EV);
 }
 import { getPrismaClient } from '../shared/db-neon';
+import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb } from '../shared/db-dynamo';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
@@ -27,7 +28,7 @@ type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestCont
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 
 // Cache userId -> email/role — bounded LRU with 5-minute TTL to prevent unbounded growth
 // on long-running warm Lambda instances.
@@ -35,7 +36,6 @@ const MAX_CACHE = 500;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CacheEntry { value: string; expiresAt: number }
 const emailCache = new Map<string, CacheEntry>();
-const roleCache = new Map<string, CacheEntry>();
 const nameCache = new Map<string, CacheEntry>();
 
 function cacheGet(map: Map<string, CacheEntry>, key: string): string | undefined {
@@ -49,22 +49,20 @@ function cacheSet(map: Map<string, CacheEntry>, key: string, value: string): voi
   map.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function getCognitoUser(userId: string): Promise<{ email: string; role: string; name: string } | null> {
+async function getCognitoUser(userId: string): Promise<{ email: string; name: string } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
   const cachedEmail = cacheGet(emailCache, userId);
-  if (cachedEmail !== undefined) return { email: cachedEmail, role: cacheGet(roleCache, userId) ?? '', name: cacheGet(nameCache, userId) ?? cachedEmail };
+  if (cachedEmail !== undefined) return { email: cachedEmail, name: cacheGet(nameCache, userId) ?? cachedEmail };
   try {
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
     const attrs = res.UserAttributes ?? [];
     const email = attrs.find((a) => a.Name === 'email')?.Value ?? userId;
-    const role = attrs.find((a) => a.Name === 'custom:role')?.Value ?? '';
     const name = attrs.find((a) => a.Name === 'name')?.Value
       ?? attrs.find((a) => a.Name === 'given_name')?.Value
       ?? email;
     cacheSet(emailCache, userId, email);
-    cacheSet(roleCache, userId, role);
     cacheSet(nameCache, userId, name);
-    return { email, role, name };
+    return { email, name };
   } catch {
     return null;
   }
@@ -76,13 +74,6 @@ async function resolveStudentName(userId: string, storedEmail?: string): Promise
   if (cachedName !== undefined) return cachedName;
   const user = await getCognitoUser(userId);
   return user?.name ?? storedEmail ?? userId;
-}
-
-async function isStudentRole(userId: string): Promise<boolean> {
-  const cached = cacheGet(roleCache, userId);
-  if (cached !== undefined) return cached === 'STUDENT';
-  const user = await getCognitoUser(userId);
-  return user?.role === 'STUDENT';
 }
 
 // Returns { email, name } for a student — email for sending, name for display
@@ -129,7 +120,7 @@ function approvedEmailHtml(studentName: string, moduleTitle: string, feedback: s
         <p style="margin: 0; color: #555; font-style: italic;">"${feedback}"</p>
         <p style="margin: 8px 0 0; color: #888; font-size: 13px;">— Tu evaluador</p>
       </div>
-      <a href="${process.env.FRONTEND_URL ?? 'https://luxlearning.com'}/dashboard"
+      <a href="${process.env.FRONTEND_URL ?? 'https://luxlearning.academy'}/dashboard"
          style="display: inline-block; background: linear-gradient(135deg, #00B4D8, #7B2FBE); color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-family: Montserrat, sans-serif; font-weight: 600; margin-top: 8px;">
         Continuar aprendiendo
       </a>
@@ -158,7 +149,7 @@ function rejectedEmailHtml(studentName: string, moduleTitle: string, feedback: s
         <p style="margin: 0; color: #555; font-style: italic;">"${feedback}"</p>
         <p style="margin: 8px 0 0; color: #888; font-size: 13px;">— Tu evaluador</p>
       </div>
-      <a href="${process.env.FRONTEND_URL ?? 'https://luxlearning.com'}/dashboard"
+      <a href="${process.env.FRONTEND_URL ?? 'https://luxlearning.academy'}/dashboard"
          style="display: inline-block; background: linear-gradient(135deg, #00B4D8, #7B2FBE); color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-family: Montserrat, sans-serif; font-weight: 600; margin-top: 8px;">
         Reescribir reflexión
       </a>
@@ -169,7 +160,7 @@ function rejectedEmailHtml(studentName: string, moduleTitle: string, feedback: s
 }
 
 function approvedWithCertEmailHtml(studentName: string, moduleTitle: string, feedback: string, courseTitle: string, certId: string): string {
-  const certUrl = `${process.env.FRONTEND_URL ?? 'https://luxlearning.com'}/certificado/${certId}`;
+  const certUrl = `${process.env.FRONTEND_URL ?? 'https://luxlearning.academy'}/certificado/${certId}`;
   return `
 <!DOCTYPE html>
 <html>
@@ -205,7 +196,7 @@ function approvedWithCertEmailHtml(studentName: string, moduleTitle: string, fee
 }
 
 function reconsideredEmailHtml(studentName: string, moduleTitle: string, reason: string, certId: string | null): string {
-  const frontendUrl = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
+  const frontendUrl = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
   const certLink = certId ? `<p style="margin-top:16px;"><a href="${frontendUrl}/certificado/${certId}" style="background:#059669;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;">Ver Certificado</a></p>` : '';
   return `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
   <h2 style="color:#059669;">✅ Tu reflexión fue reconsiderada y aprobada</h2>
@@ -219,21 +210,25 @@ function reconsideredEmailHtml(studentName: string, moduleTitle: string, reason:
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const auth = event.requestContext.authorizer?.lambda;
-  if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN') return forbidden('Evaluator role required');
+  if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN' && auth?.role !== 'SUPER_ADMIN') return forbidden('Evaluator role required');
 
+  const userId = auth?.userId ?? '';
+  const isAdminRole = auth?.role === 'ADMIN' || auth?.role === 'SUPER_ADMIN';
   const method = event.requestContext.http.method;
   const path = event.rawPath;
   const prisma = await getPrismaClient();
 
   try {
-    // GET /evaluator/reflections — list ALL reflections (frontend filters by status)
+    // GET /evaluator/reflections — list reflections assigned to this evaluator
     if (method === 'GET' && path === '/evaluator/reflections') {
-      const reflections = await getAllReflections();
+      const all = await getAllReflections();
+      const reflections = isAdminRole ? all : all.filter((r) => (r as any).evaluatorId === userId);
 
       // Enrich with module and course titles — batch to avoid N+1
       const uniqueModuleIds = [...new Set(reflections.map((r) => r.moduleId))];
@@ -295,25 +290,33 @@ export const handler = async (event: Event) => {
         ...(action === 'APPROVE' && qualityScore != null ? { qualityScore: Math.min(10, Math.max(1, Math.round(qualityScore))) } : {}),
       });
 
-      // Get module info for emails
-      const module = await prisma.module.findUnique({
-        where: { id: moduleId },
-        include: { course: true },
-      });
+      // Get module info and student lang in parallel
+      const [module, studentLang] = await Promise.all([
+        prisma.module.findUnique({ where: { id: moduleId }, include: { course: true } }),
+        getUserLang(studentId),
+      ]);
 
       const frontendUrl = process.env.FRONTEND_URL ?? '';
       const reflActionUrl = module?.course
         ? `${frontendUrl}/courses/${module.courseId}/modules/${moduleId}/reflection`
         : `${frontendUrl}/dashboard`;
 
+      const notifStrings = studentLang === 'en'
+        ? {
+            approve: `Your reflection for "${module?.title}" was approved. Next module unlocked!`,
+            reject: `Your reflection for "${module?.title}" needs revision.`,
+          }
+        : {
+            approve: `Tu reflexión de "${module?.title}" fue aprobada. ¡Módulo siguiente desbloqueado!`,
+            reject: `Tu reflexión de "${module?.title}" necesita revisión.`,
+          };
+
       // Create in-app notification
       await createNotification({
         userId: studentId,
         notifId: createId(),
         type: action === 'APPROVE' ? 'REFLECTION_APPROVED' : 'REFLECTION_REJECTED',
-        message: action === 'APPROVE'
-          ? `Tu reflexión de "${module?.title}" fue aprobada. ¡Módulo siguiente desbloqueado!`
-          : `Tu reflexión de "${module?.title}" necesita revisión.`,
+        message: action === 'APPROVE' ? notifStrings.approve : notifStrings.reject,
         read: false,
         createdAt: reviewedAt,
         actionUrl: reflActionUrl,
@@ -330,13 +333,20 @@ export const handler = async (event: Event) => {
           if (!VAPID_PUBLIC_EV || !VAPID_PRIVATE_EV) return;
           const studentSubs = await getPushSubscriptionsByUserId(studentId);
           if (!studentSubs.length) return;
-          const pushPayload = JSON.stringify({
-            title: action === 'APPROVE' ? '✅ Reflexión aprobada' : '✍️ Reflexión necesita revisión',
-            body: action === 'APPROVE'
-              ? `Tu reflexión de "${module?.title}" fue aprobada. ¡Siguiente módulo desbloqueado!`
-              : `Tu reflexión de "${module?.title}" necesita ser reescrita.`,
-            url: '/dashboard',
-          });
+          const pushStrings = studentLang === 'en'
+            ? {
+                title: action === 'APPROVE' ? '✅ Reflection approved' : '✍️ Reflection needs revision',
+                body: action === 'APPROVE'
+                  ? `Your reflection for "${module?.title}" was approved. Next module unlocked!`
+                  : `Your reflection for "${module?.title}" needs to be rewritten.`,
+              }
+            : {
+                title: action === 'APPROVE' ? '✅ Reflexión aprobada' : '✍️ Reflexión necesita revisión',
+                body: action === 'APPROVE'
+                  ? `Tu reflexión de "${module?.title}" fue aprobada. ¡Siguiente módulo desbloqueado!`
+                  : `Tu reflexión de "${module?.title}" necesita ser reescrita.`,
+              };
+          const pushPayload = JSON.stringify({ ...pushStrings, url: '/dashboard' });
           await Promise.allSettled(
             studentSubs.map((sub) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, pushPayload))
           );
@@ -375,7 +385,9 @@ export const handler = async (event: Event) => {
                 userId: studentId,
                 notifId: createId(),
                 type: 'GENERAL',
-                message: `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
+                message: studentLang === 'en'
+                  ? `🎓 Congratulations! You completed "${module.course.title}". Your certificate is available.`
+                  : `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
                 read: false,
                 createdAt: reviewedAt,
                 actionUrl: `/certificado/${certId}`,
@@ -396,21 +408,20 @@ export const handler = async (event: Event) => {
         const { email: studentEmail, name: studentName } = await resolveStudentContact(studentId, reflection);
         if (studentEmail) {
           if (action === 'APPROVE') {
-            const templateType = certId ? 'REFLECTION_APPROVED' : 'REFLECTION_APPROVED';
-            await sendTemplatedEmail(studentEmail, templateType, {
+            await sendTemplatedEmail(studentEmail, 'REFLECTION_APPROVED', {
               studentName,
               moduleTitle,
               feedback,
               courseTitle: module?.course?.title ?? '',
               certId: certId ?? '',
               certUrl: certId ? `${process.env.FRONTEND_URL ?? ''}/certificado/${certId}` : '',
-            });
+            }, studentLang);
           } else {
             await sendTemplatedEmail(studentEmail, 'REFLECTION_REJECTED', {
               studentName,
               moduleTitle,
               feedback,
-            });
+            }, studentLang);
           }
         } else {
           console.warn(`[Evaluator] No email found for student ${studentId} — skipping email`);
@@ -424,8 +435,11 @@ export const handler = async (event: Event) => {
 
     // GET /evaluator/my-courses — courses owned by this evaluator
     if (method === 'GET' && path === '/evaluator/my-courses') {
+      const rawLang = event.queryStringParameters?.lang ?? 'es';
+      const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
+
       const courses = await prisma.course.findMany({
-        where: { evaluatorId: auth?.userId },
+        where: { evaluatorId: userId },
         include: { modules: { select: { id: true, title: true, order: true } } },
         orderBy: { createdAt: 'desc' },
       });
@@ -433,7 +447,7 @@ export const handler = async (event: Event) => {
       const allEnrollments = await getAllEnrollments();
       const allReflections = await getAllReflections();
 
-      const enriched = courses.map((course) => {
+      let enriched: any[] = courses.map((course) => {
         const enrollmentCount = allEnrollments.filter((e) => e.courseId === course.id).length;
         const pendingReflections = allReflections.filter(
           (r) => r.status === 'PENDING_EVAL' && course.modules.some((m) => m.id === r.moduleId)
@@ -446,10 +460,21 @@ export const handler = async (event: Event) => {
         };
       });
 
+      if (lang !== 'es' && enriched.length > 0) {
+        const translations = await batchTranslate(
+          enriched.map((c) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
+          lang
+        );
+        enriched = enriched.map((c) => {
+          const t = translations.get(`course#${c.id}`);
+          return t ? { ...c, title: (t.title as string) ?? c.title, description: (t.description as string) ?? c.description } : c;
+        });
+      }
+
       return ok(enriched);
     }
 
-    // GET /evaluator/students — full progress per student
+    // GET /evaluator/students — full progress per student (filtered to this evaluator's courses)
     if (method === 'GET' && path === '/evaluator/students') {
       const [allProgress, allReflections, allAttempts, allEnrollments, courses, allLastSeen] = await Promise.all([
         getAllLessonProgress(),
@@ -457,7 +482,7 @@ export const handler = async (event: Event) => {
         getAllQuizAttempts(),
         getAllEnrollments(),
         prisma.course.findMany({
-          where: { isActive: true },
+          where: { ...(isAdminRole ? {} : { evaluatorId: userId }) },
           orderBy: { createdAt: 'asc' },
           include: {
             modules: {
@@ -498,8 +523,12 @@ export const handler = async (event: Event) => {
         return byStudent.get(uid)!;
       };
 
+      // Only consider enrollments in this evaluator's courses
+      const myCourseIds = new Set(courses.map((c) => c.id));
+      const myEnrollments = allEnrollments.filter((e) => myCourseIds.has(e.courseId));
+
       // Seed all enrolled students so they appear even with 0 activity
-      allEnrollments.forEach((e) => getOrCreate(e.userId));
+      myEnrollments.forEach((e) => getOrCreate(e.userId));
 
       allProgress.forEach((p) => {
         const s = getOrCreate(p.userId);
@@ -515,15 +544,17 @@ export const handler = async (event: Event) => {
         getOrCreate(r.userId).reflections[r.moduleId] = r.status;
       });
 
-      // Build enrollment map: userId -> Set<courseId>
+      // Build enrollment map: userId -> Set<courseId> (only this evaluator's courses)
       const enrollmentMap = new Map<string, Set<string>>();
-      allEnrollments.forEach((e) => {
+      myEnrollments.forEach((e) => {
         if (!enrollmentMap.has(e.userId)) enrollmentMap.set(e.userId, new Set());
         enrollmentMap.get(e.userId)!.add(e.courseId);
       });
 
       const students = await Promise.all(Array.from(byStudent.values()).map(async (s) => {
-        const studentName = await resolveStudentName(s.userId);
+        const cognitoUser = await getCognitoUser(s.userId);
+        const studentName = cognitoUser?.name ?? s.userId;
+        const studentEmail = cognitoUser?.email ?? null;
         const enrolledCourseIds = enrollmentMap.get(s.userId) ?? new Set<string>();
         const visibleCourses = enrolledCourseIds.size > 0
           ? courses.filter((c) => enrolledCourseIds.has(c.id))
@@ -557,12 +588,27 @@ export const handler = async (event: Event) => {
 
         const lastSeen = lastSeenMap.get(s.userId) ?? null;
         const presenceStatus = getPresenceStatus(s.userId);
-        return { userId: s.userId, studentName, courses: courseStats, lastSeen, presenceStatus };
+        return { userId: s.userId, studentName, studentEmail, courses: courseStats, lastSeen, presenceStatus };
       }));
 
-      // Filter out non-STUDENT users (evaluators, admins who may have enrollments/heartbeats)
-      const studentRoleChecks = await Promise.all(students.map((s) => isStudentRole(s.userId)));
-      const studentsOnly = students.filter((_, i) => studentRoleChecks[i]);
+      // Filter out non-STUDENT users (evaluators, admins who may have enrollments/heartbeats) —
+      // role lives in Cognito Groups, not a custom attribute, so list group members directly.
+      const listAllInGroup = async (GroupName: string) => {
+        const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+        let token: string | undefined;
+        do {
+          const res = await cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName, Limit: 60, NextToken: token }));
+          all.push(...(res.Users ?? []));
+          token = res.NextToken;
+        } while (token);
+        return all;
+      };
+      const [evaluatorUsers, adminUsers] = await Promise.all([
+        listAllInGroup('EVALUATOR'),
+        listAllInGroup('ADMIN'),
+      ]);
+      const nonStudentUsernames = new Set([...evaluatorUsers, ...adminUsers].map((u) => u.Username));
+      const studentsOnly = students.filter((s) => !nonStudentUsernames.has(s.userId));
 
       // Sort: online first, then active, then inactive, then by progress
       const statusOrder = { online: 0, active: 1, inactive: 2 };
@@ -606,7 +652,7 @@ export const handler = async (event: Event) => {
       <p style="color:#555;line-height:1.6;">Hemos notado que llevas <strong>${timeLabel}</strong> sin conectarte a la plataforma.</p>
       ${courseTitle ? `<p style="color:#555;line-height:1.6;">Recuerda que tienes el curso <strong>"${courseTitle}"</strong> activo con fechas límite próximas.</p>` : ''}
       <p style="color:#555;line-height:1.6;">Tu progreso importa. ¡Todavía estás a tiempo de completar tus módulos y reflexiones!</p>
-      <a href="${process.env.FRONTEND_URL ?? 'https://lux-learning-mentor.vercel.app'}/dashboard"
+      <a href="${process.env.FRONTEND_URL ?? 'https://luxlearning.academy'}/dashboard"
          style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:16px;">
         Continuar aprendiendo
       </a>
@@ -615,14 +661,20 @@ export const handler = async (event: Event) => {
 </body>
 </html>`;
 
-      await ses.send(new SendEmailCommand({
-        Source: FROM_EMAIL,
-        Destination: { ToAddresses: [studentEmail] },
-        Message: {
-          Subject: { Data: '¡Te echamos de menos en Lux Learning!', Charset: 'UTF-8' },
-          Body: { Html: { Data: reminderHtml, Charset: 'UTF-8' } },
-        },
-      }));
+      try {
+        await ses.send(new SendEmailCommand({
+          Source: FROM_EMAIL,
+          Destination: { ToAddresses: [studentEmail] },
+          Message: {
+            Subject: { Data: '¡Te echamos de menos en Lux Learning!', Charset: 'UTF-8' },
+            Body: { Html: { Data: reminderHtml, Charset: 'UTF-8' } },
+          },
+        }));
+      } catch (sesErr: any) {
+        // SES sandbox: unverified destination — log but don't fail (chat message still sent by frontend)
+        console.warn('[Reminder] SES send failed (non-fatal):', sesErr?.message ?? sesErr);
+        return ok({ sent: false, reason: sesErr?.message ?? 'SES error' });
+      }
 
       return ok({ sent: true });
     }
@@ -646,12 +698,16 @@ export const handler = async (event: Event) => {
         reconsiderationReason: reason,
       });
 
+      const reconsiderStudentLang = await getUserLang(studentId);
+
       // Notify student
       await createNotification({
         userId: studentId,
         notifId: createId(),
         type: 'REFLECTION_RECONSIDERED',
-        message: `Tu reflexión fue reconsiderada y aprobada por un evaluador.`,
+        message: reconsiderStudentLang === 'en'
+          ? 'Your reflection was reconsidered and approved by an evaluator.'
+          : 'Tu reflexión fue reconsiderada y aprobada por un evaluador.',
         read: false,
         createdAt: reviewedAt,
         actionUrl: '/student/reflections',
@@ -671,7 +727,13 @@ export const handler = async (event: Event) => {
               certId = createId();
               const { name: studentName } = await resolveStudentContact(studentId, reflection);
               await saveCertificate({ certId, userId: studentId, courseId: module.courseId, studentName, courseTitle: module.course.title, issuedAt: reviewedAt });
-              await createNotification({ userId: studentId, notifId: createId(), type: 'GENERAL', message: `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`, read: false, createdAt: reviewedAt, actionUrl: `/certificado/${certId}` });
+              await createNotification({
+                userId: studentId, notifId: createId(), type: 'GENERAL',
+                message: reconsiderStudentLang === 'en'
+                  ? `🎓 Congratulations! You completed "${module.course.title}". Your certificate is available.`
+                  : `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
+                read: false, createdAt: reviewedAt, actionUrl: `/certificado/${certId}`,
+              });
             } else {
               certId = existing.certId;
             }
@@ -680,7 +742,13 @@ export const handler = async (event: Event) => {
           try {
             const { email: studentEmail, name: studentName } = await resolveStudentContact(studentId, reflection);
             if (studentEmail) {
-              await sendEmail(studentEmail, 'Lux Learning - Tu reflexión fue reconsiderada y aprobada', reconsideredEmailHtml(studentName, module.title, reason, certId));
+              await sendTemplatedEmail(studentEmail, 'REFLECTION_RECONSIDERED', {
+                studentName,
+                moduleTitle: module.title,
+                reason,
+                certId: certId ?? '',
+                certUrl: certId ? `${process.env.FRONTEND_URL ?? ''}/certificado/${certId}` : '',
+              }, reconsiderStudentLang);
             }
           } catch { /* non-fatal */ }
         }
@@ -1004,6 +1072,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // POST /evaluator/resources — create a new resource
     if (method === 'POST' && path === '/evaluator/resources') {
+      const body = JSON.parse(event.body ?? '{}');
       const { title, description, fileUrl, fileName, fileType, fileSize, folder, courseIds } = body as any;
       if (!title || !fileUrl || !fileName) return badRequest('title, fileUrl y fileName son requeridos');
       const now = new Date().toISOString();
@@ -1030,6 +1099,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
     const resourceUpdateMatch = path.match(/^\/evaluator\/resources\/([^/]+)$/);
     if (resourceUpdateMatch && method === 'PUT') {
       const resourceId = resourceUpdateMatch[1]!;
+      const body = JSON.parse(event.body ?? '{}');
       const { title, description, folder, courseIds } = body as any;
       await updateResource(userId, resourceId, {
         ...(title !== undefined ? { title: String(title).slice(0, 200) } : {}),

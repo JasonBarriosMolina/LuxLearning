@@ -12,11 +12,12 @@ export default function CoursesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     api.courses.list().then((res) => {
       setCourses((res as any).data ?? []);
       setLoading(false);
     });
-  }, []);
+  }, [lang]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">

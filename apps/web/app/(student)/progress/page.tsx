@@ -42,11 +42,12 @@ export default function ProgressPage() {
   const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    setLoading(true);
     api.courses.list().then((res) => {
       setCourses((res as any).data ?? []);
       setLoading(false);
     });
-  }, []);
+  }, [lang]);
 
   const toggleFeedback = (moduleId: string) => {
     setExpandedFeedback((prev) => {

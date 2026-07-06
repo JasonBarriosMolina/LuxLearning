@@ -122,7 +122,7 @@ export interface Certificate {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'STUDENT' | 'EVALUATOR' | 'ADMIN';
+export type UserRole = 'STUDENT' | 'EVALUATOR' | 'ADMIN' | 'SUPER_ADMIN';
 
 export interface AuthUser {
   userId: string;

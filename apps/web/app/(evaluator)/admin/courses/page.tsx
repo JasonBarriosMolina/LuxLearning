@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle } from 'lucide-react';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle, FolderOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -33,7 +33,7 @@ function slugify(text: string) {
 }
 
 export default function AdminCoursesPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -97,7 +97,8 @@ export default function AdminCoursesPage() {
     }
   };
 
-  useEffect(() => { load(activeTab); }, [activeTab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(activeTab); }, [activeTab, lang]);
 
   const openCreate = () => {
     setEditingCourse(null);
@@ -438,13 +439,22 @@ export default function AdminCoursesPage() {
               {/* Actions */}
               <div className="flex items-center gap-2 shrink-0">
                 {course.isArchived ? (
-                  // Archived: only restore
-                  <button
-                    onClick={() => handleRestore(course.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 border border-border hover:bg-surface transition-colors"
-                  >
-                    {t.admin.restoreBtn}
-                  </button>
+                  // Archived: restore + resources
+                  <>
+                    <Link
+                      href={`/evaluator/my-resources?courseId=${course.id}`}
+                      className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
+                      title="Recursos del curso"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                    </Link>
+                    <button
+                      onClick={() => handleRestore(course.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-600 border border-border hover:bg-surface transition-colors"
+                    >
+                      {t.admin.restoreBtn}
+                    </button>
+                  </>
                 ) : (
                   <>
                     {course.isDraft && (
@@ -460,6 +470,13 @@ export default function AdminCoursesPage() {
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-cta-from hover:bg-blue-50 transition-colors"
                     >
                       {t.admin.editContent} <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                    <Link
+                      href={`/evaluator/my-resources?courseId=${course.id}`}
+                      className="p-2 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
+                      title="Recursos del curso"
+                    >
+                      <FolderOpen className="w-4 h-4" />
                     </Link>
                     <button
                       onClick={() => openEdit(course)}

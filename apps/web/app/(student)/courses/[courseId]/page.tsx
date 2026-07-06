@@ -23,6 +23,7 @@ export default function CoursePage() {
   const [resources, setResources] = useState<any[]>([]);
 
   useEffect(() => {
+    setLoading(true);
     api.courses.get(courseId).then((res) => {
       const c = (res as any).data;
       setCourse(c);
@@ -57,7 +58,7 @@ export default function CoursePage() {
         setChatUnread(groupChat?.unread ?? 0);
       }).catch(() => {});
     });
-  }, [courseId]);
+  }, [courseId, lang]);
 
   if (loading) {
     return (

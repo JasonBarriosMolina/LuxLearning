@@ -50,6 +50,7 @@ export default function EmailTemplatesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     api.admin.emailTemplates.list()
       .then((res: any) => {
         const list: Template[] = Array.isArray(res) ? res : (res.data ?? []);
@@ -63,7 +64,8 @@ export default function EmailTemplatesPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   const handleSelect = (type: string) => {
     const t = templates.find((tpl) => tpl.type === type);

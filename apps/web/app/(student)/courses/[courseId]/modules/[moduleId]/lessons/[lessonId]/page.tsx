@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
+import { useLanguage } from '@/lib/i18n';
 
 // ── Highlight colors ──────────────────────────────────────────────────────────
 const COLORS: Record<string, { bg: string; label: string }> = {
@@ -101,16 +102,17 @@ interface ToolbarProps {
   position: { x: number; y: number } | null;
   onHighlight: (color: string) => void;
   onClose: () => void;
+  label?: string;
 }
 
-function HighlightToolbar({ position, onHighlight, onClose }: ToolbarProps) {
+function HighlightToolbar({ position, onHighlight, onClose, label }: ToolbarProps) {
   if (!position) return null;
   return (
     <div
       className="fixed z-50 flex items-center gap-1.5 bg-white dark:bg-[#1A1A2E] border border-border rounded-xl shadow-xl px-2 py-1.5 animate-fade-in"
       style={{ top: position.y - 48, left: Math.max(8, position.x - 60) }}
     >
-      <span className="text-[10px] text-gray-400 font-medium mr-1">Resaltar</span>
+      <span className="text-[10px] text-gray-400 font-medium mr-1">{label ?? 'Resaltar'}</span>
       {Object.entries(COLORS).map(([key, { label, bg }]) => (
         <button
           key={key}
@@ -136,6 +138,7 @@ export default function LessonPage() {
     courseId: string; moduleId: string; lessonId: string;
   }>();
   const router = useRouter();
+  const { t, lang } = useLanguage();
 
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -188,7 +191,7 @@ export default function LessonPage() {
       setLoading(false);
     }).catch(() => setLoading(false));
     startTimeRef.current = Date.now();
-  }, [courseId, lessonId]);
+  }, [courseId, lessonId, lang]);
 
   const module = course?.modules?.find((m: any) => m.id === moduleId);
   const lesson = module?.lessons?.find((l: any) => l.id === lessonId);
@@ -322,7 +325,7 @@ export default function LessonPage() {
       setChatHistory([...newHistory, { role: 'assistant', content: reply }]);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch {
-      setChatHistory([...newHistory, { role: 'assistant', content: 'Lo siento, ocurrió un error. Intenta de nuevo.' }]);
+      setChatHistory([...newHistory, { role: 'assistant', content: t.lessonPage.mentorError }]);
     } finally { setChatLoading(false); }
   };
 
@@ -363,6 +366,7 @@ export default function LessonPage() {
         position={toolbar}
         onHighlight={addHighlight}
         onClose={() => setToolbar(null)}
+        label={t.lessonPage.highlight}
       />
 
       {/* Breadcrumb */}
@@ -378,10 +382,10 @@ export default function LessonPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-gray-400">LECCIÓN {lesson.order}</span>
+            <span className="text-xs font-semibold text-gray-400">{t.lessonPage.lessonN(lesson.order)}</span>
             {completed && (
               <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                <CheckCircle className="w-3.5 h-3.5" /> Completada
+                <CheckCircle className="w-3.5 h-3.5" /> {t.lessonPage.completed}
               </span>
             )}
           </div>
@@ -392,7 +396,7 @@ export default function LessonPage() {
         <button
           onClick={toggleFav}
           disabled={favLoading}
-          title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          title={isFavorite ? t.lessonPage.unfavorite : t.lessonPage.favorite}
           className={`mt-1 p-2 rounded-xl transition-all ${
             isFavorite
               ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
@@ -419,7 +423,7 @@ export default function LessonPage() {
               }`}
             >
               {tab === 'video' ? <Video className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
-              {tab === 'video' ? 'Video' : 'Texto'}
+              {tab === 'video' ? t.lessonPage.tabVideo : t.lessonPage.tabText}
             </button>
           ))}
         </div>
@@ -440,7 +444,7 @@ export default function LessonPage() {
           {videoError && (
             <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>El video no está disponible — mostrando contenido de texto.</span>
+              <span>{t.lessonPage.videoUnavailable}</span>
             </div>
           )}
           {lesson.content ? (
@@ -452,7 +456,7 @@ export default function LessonPage() {
               />
             </>
           ) : (
-            <p className="text-gray-400 text-sm text-center py-8">El contenido de esta lección no está disponible aún.</p>
+            <p className="text-gray-400 text-sm text-center py-8">{t.lessonPage.contentUnavailable}</p>
           )}
         </div>
       )}
@@ -466,7 +470,7 @@ export default function LessonPage() {
           >
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-gray-400" />
-              <span className="text-sm font-semibold text-charcoal">Transcripción del video</span>
+              <span className="text-sm font-semibold text-charcoal">{t.lessonPage.transcript}</span>
               {transcriptLoading && <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />}
             </div>
             {showTranscript ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
@@ -474,10 +478,10 @@ export default function LessonPage() {
           {showTranscript && (
             <div className="px-4 pb-4 border-t border-border">
               {transcriptLoading ? (
-                <div className="py-6 text-center text-sm text-gray-400">Obteniendo transcripción...</div>
+                <div className="py-6 text-center text-sm text-gray-400">{t.lessonPage.loadingTranscript}</div>
               ) : transcriptError || !transcript ? (
                 <div className="py-4 text-sm text-gray-400 text-center">
-                  No hay transcripción disponible para este video.
+                  {t.lessonPage.noTranscript}
                 </div>
               ) : (
                 <div className="mt-3 max-h-60 overflow-y-auto scrollbar-thin text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
@@ -500,9 +504,9 @@ export default function LessonPage() {
       {lesson.points?.length > 0 && (
         <div className="card" ref={contentRef}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-heading font-bold text-base text-charcoal">Puntos clave</h2>
+            <h2 className="font-heading font-bold text-base text-charcoal">{t.lessonPage.keyPoints}</h2>
             {highlights.length > 0 && (
-              <span className="text-xs text-gray-400">{highlights.length} resaltado{highlights.length > 1 ? 's' : ''}</span>
+              <span className="text-xs text-gray-400">{t.lessonPage.highlightCount(highlights.length)}</span>
             )}
           </div>
           <ul className="space-y-2 select-text">
@@ -515,7 +519,7 @@ export default function LessonPage() {
           </ul>
           {highlights.length > 0 && (
             <div className="mt-4 pt-3 border-t border-border">
-              <p className="text-xs text-gray-400 mb-2 font-medium">Mis resaltados</p>
+              <p className="text-xs text-gray-400 mb-2 font-medium">{t.lessonPage.myHighlights}</p>
               <div className="flex flex-wrap gap-2">
                 {highlights.map((h) => (
                   <div
@@ -527,7 +531,7 @@ export default function LessonPage() {
                     <button
                       onClick={() => removeHighlight(h.id)}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-red-500"
-                      title="Eliminar resaltado"
+                      title={t.lessonPage.removeHighlight}
                     >
                       ×
                     </button>
@@ -544,7 +548,7 @@ export default function LessonPage() {
         <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <Lightbulb className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800">
-            <span className="font-semibold">Consejo: </span>{lesson.tip}
+            <span className="font-semibold">{t.lessonPage.tip}</span>{lesson.tip}
           </p>
         </div>
       )}
@@ -567,7 +571,7 @@ export default function LessonPage() {
             {chatHistory.length === 0 && (
               <div className="text-center text-sm text-gray-400 mt-8 px-4">
                 <MessageCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p>¡Hola! Soy tu Mentor. Pregúntame cualquier cosa sobre esta lección.</p>
+                <p>{t.lessonPage.mentorWelcome}</p>
               </div>
             )}
             {chatHistory.map((msg, i) => (
@@ -596,7 +600,7 @@ export default function LessonPage() {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Escribe tu pregunta..."
+              placeholder={t.lessonPage.chatPlaceholder}
               className="flex-1 text-sm px-3 py-2 rounded-xl border border-border bg-surface dark:bg-[#0F0F1A] text-charcoal placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cta-from"
             />
             <button
@@ -628,7 +632,7 @@ export default function LessonPage() {
               className="btn-secondary text-sm flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" />
-              Anterior
+              {t.lessonPage.prev}
             </Link>
           )}
         </div>
@@ -639,11 +643,11 @@ export default function LessonPage() {
               onClick={handleMarkComplete}
               loading={markingDone}
               disabled={!gatePassed}
-              title={!gatePassed ? 'Revisa todo el contenido de la lección antes de continuar' : undefined}
+              title={!gatePassed ? t.lessonPage.gateHint : undefined}
               className="flex items-center gap-2"
             >
               <CheckCircle className="w-4 h-4" />
-              Marcar completada
+              {t.lessonPage.markComplete}
             </Button>
           )}
 
@@ -653,15 +657,15 @@ export default function LessonPage() {
                 href={`/courses/${courseId}/modules/${moduleId}/lessons/${nextLesson.id}`}
                 className="btn-primary text-sm flex items-center gap-2"
               >
-                Siguiente <ArrowRight className="w-4 h-4" />
+                {t.lessonPage.next} <ArrowRight className="w-4 h-4" />
               </Link>
             ) : (
               <button
                 disabled
-                title="Marca esta lección como completada para continuar"
+                title={t.lessonPage.nextDisabledHint}
                 className="btn-secondary text-sm flex items-center gap-2 opacity-50 cursor-not-allowed"
               >
-                Siguiente <ArrowRight className="w-4 h-4" />
+                {t.lessonPage.next} <ArrowRight className="w-4 h-4" />
               </button>
             )
           )}
@@ -671,7 +675,7 @@ export default function LessonPage() {
               href={`/courses/${courseId}/modules/${moduleId}`}
               className="btn-primary text-sm flex items-center gap-2"
             >
-              Volver al módulo <ArrowRight className="w-4 h-4" />
+              {t.lessonPage.backToModule} <ArrowRight className="w-4 h-4" />
             </Link>
           )}
         </div>

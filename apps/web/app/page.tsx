@@ -13,7 +13,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace(role === 'EVALUATOR' || role === 'ADMIN' ? '/evaluator/dashboard' : '/dashboard');
+      router.replace(role === 'EVALUATOR' || role === 'ADMIN' || role === 'SUPER_ADMIN' ? '/evaluator/dashboard' : '/dashboard');
     }
   }, [isLoading, isAuthenticated, role, router]);
 

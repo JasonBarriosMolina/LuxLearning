@@ -19,7 +19,7 @@ import {
 } from '../shared/db-messages.js';
 import { getAllEnrollments } from '../shared/db-dynamo.js';
 import { sendTemplatedEmail } from '../shared/email.js';
-import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response.js';
+import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response.js';
 import { setEnvironmentFromOrigin } from '../shared/env-context.js';
 
 const scheduler = new SchedulerClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -70,8 +70,10 @@ async function listGroupUsers(GroupName: string): Promise<{ username: string; na
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
   const email  = event.requestContext.authorizer?.lambda?.email ?? '';

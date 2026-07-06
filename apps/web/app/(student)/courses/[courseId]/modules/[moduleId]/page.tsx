@@ -17,12 +17,13 @@ import { useLanguage } from '@/lib/i18n';
 
 export default function ModulePage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    setLoading(true);
     Promise.all([
       api.courses.get(courseId),
       api.lessons.favorites(),
@@ -32,7 +33,7 @@ export default function ModulePage() {
       setFavIds(new Set(favs.filter((f: any) => f?.type === 'lesson').map((f: any) => f?.id)));
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [courseId]);
+  }, [courseId, lang]);
 
   const toggleLessonFav = async (e: React.MouseEvent, lesson: any) => {
     e.preventDefault();

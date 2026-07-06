@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -22,7 +23,7 @@ type CourseStat = {
   modules: ModuleStat[];
 };
 
-type Student = { userId: string; studentName?: string; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' };
+type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' };
 
 type SP = Translations['studentsPage'];
 
@@ -64,7 +65,12 @@ function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
   return <BookOpen className="w-4 h-4 text-cta-from" />;
 }
 
-function StudentCard({ student, courses, ts }: { student: Student; courses: { id: string; title: string }[]; ts: SP }) {
+function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds }: {
+  student: Student; courses: { id: string; title: string }[]; ts: SP;
+  onSendReminder?: (student: Student) => void;
+  sendingReminderId?: string | null;
+  reminderSentIds?: Set<string>;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [activeCourse, setActiveCourse] = useState(0);
 
@@ -79,9 +85,12 @@ function StudentCard({ student, courses, ts }: { student: Student; courses: { id
   return (
     <div className="card overflow-hidden p-0">
       {/* Student header */}
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(!expanded); }}
+        className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left cursor-pointer"
       >
         <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
           {(student.studentName ?? student.userId)[0]?.toUpperCase()}
@@ -98,6 +107,20 @@ function StudentCard({ student, courses, ts }: { student: Student; courses: { id
         </div>
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0">
+          {student.presenceStatus === 'inactive' && onSendReminder && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSendReminder(student); }}
+              disabled={sendingReminderId === student.userId || reminderSentIds?.has(student.userId)}
+              title={ts.sendReminderTitle2}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shrink-0 ${
+                reminderSentIds?.has(student.userId)
+                  ? 'bg-emerald-100 text-emerald-600 cursor-default'
+                  : 'bg-red-100 text-red-600 hover:bg-red-200'
+              }`}
+            >
+              {reminderSentIds?.has(student.userId) ? ts.reminderSent : ts.sendReminderBtn}
+            </button>
+          )}
           <div className="text-center hidden sm:block">
             <p className="font-bold text-lg text-charcoal">{overallPct}%</p>
             <p className="text-xs text-gray-400">{ts.progressLabel}</p>
@@ -120,7 +143,7 @@ function StudentCard({ student, courses, ts }: { student: Student; courses: { id
             ? <ChevronDown className="w-4 h-4 text-gray-400" />
             : <ChevronRight className="w-4 h-4 text-gray-400" />}
         </div>
-      </button>
+      </div>
 
       {/* Expanded detail */}
       {expanded && (
@@ -271,7 +294,7 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
 
 // ─── Admin view: all registered students (no activity required) ───────────────
 
-function AdminStudentList({ courses }: { courses: { id: string; title: string; evaluatorName?: string }[] }) {
+function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: string; title: string; evaluatorName?: string }[]; initialPresenceFilter?: PresenceFilter }) {
   const { t } = useLanguage();
   const ts = t.studentsPage;
   const [users, setUsers] = useState<any[]>([]);
@@ -280,6 +303,10 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
   const [expandedCourses, setExpandedCourses] = useState<string | null>(null);
   const [enrollments, setEnrollments] = useState<Record<string, string[]>>({});
   const [profileModal, setProfileModal] = useState<any | null>(null);
+  const [presenceMap, setPresenceMap] = useState<Record<string, { presenceStatus?: string; lastSeen?: string | null; studentEmail?: string | null }>>({});
+  const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>(initialPresenceFilter ?? 'all');
+  const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.admin.users.list().then((res) => {
@@ -287,7 +314,42 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
       setUsers(all.filter((u) => u.role === 'STUDENT'));
       setLoading(false);
     }).catch(() => setLoading(false));
+    api.evaluator.students().then((res: any) => {
+      const students: Student[] = res?.data?.students ?? [];
+      const map: Record<string, { presenceStatus?: string; lastSeen?: string | null; studentEmail?: string | null }> = {};
+      students.forEach((s) => { map[s.userId] = { presenceStatus: s.presenceStatus, lastSeen: s.lastSeen, studentEmail: s.studentEmail }; });
+      setPresenceMap(map);
+    }).catch(() => {});
   }, []);
+
+  const handleSendReminder = async (u: any) => {
+    setSendingReminder(u.username);
+    try {
+      const presence = presenceMap[u.username];
+      const hoursInactive = presence?.lastSeen
+        ? Math.round((Date.now() - new Date(presence.lastSeen).getTime()) / 3600000)
+        : 72;
+      const tasks: Promise<any>[] = [];
+      const email = presence?.studentEmail ?? u.email;
+      if (email) {
+        tasks.push(api.evaluator.sendReminder({ userId: u.username, studentEmail: email, studentName: u.name, hoursInactive }));
+      }
+      tasks.push(
+        api.messages.chats.create({ type: 'DIRECT', targetUserId: u.username }).then((res: any) => {
+          const chatId = res?.data?.chatId;
+          if (!chatId) return;
+          const name = u.name ? `, ${u.name}` : '';
+          return api.messages.send(chatId, t.evaluator.reminderMessageText(name, ''));
+        })
+      );
+      const results = await Promise.allSettled(tasks);
+      if (results.some((r) => r.status === 'fulfilled')) {
+        setReminderSent((prev) => new Set([...prev, u.username]));
+      }
+    } catch { /* non-fatal */ } finally {
+      setSendingReminder(null);
+    }
+  };
 
   const loadEnrollments = async (username: string): Promise<string[]> => {
     if (enrollments[username] !== undefined) return enrollments[username];
@@ -316,8 +378,16 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
-    return !q || (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    const matchSearch = !q || (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    const matchPresence = presenceFilter === 'all' || presenceMap[u.username]?.presenceStatus === presenceFilter;
+    return matchSearch && matchPresence;
   });
+
+  const presenceCounts = {
+    online: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'online').length,
+    active: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'active').length,
+    inactive: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'inactive').length,
+  };
 
   if (loading) return (
     <div className="space-y-2">
@@ -329,6 +399,26 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{ts.registeredCount(users.length)}</p>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {([
+          { key: 'all', label: ts.all, count: users.length, color: 'bg-gray-100 text-gray-600' },
+          { key: 'online', label: ts.online, count: presenceCounts.online, color: 'bg-emerald-100 text-emerald-700' },
+          { key: 'active', label: ts.active, count: presenceCounts.active, color: 'bg-amber-100 text-amber-700' },
+          { key: 'inactive', label: ts.inactive, count: presenceCounts.inactive, color: 'bg-red-100 text-red-600' },
+        ] as { key: PresenceFilter; label: string; count: number; color: string }[]).map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setPresenceFilter(f.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              presenceFilter === f.key
+                ? f.color + ' ring-2 ring-offset-1 ring-current'
+                : 'bg-surface text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            {f.label} ({f.count})
+          </button>
+        ))}
       </div>
       <Input
         placeholder={ts.searchByName}
@@ -349,6 +439,7 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colName}</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 hidden sm:table-cell">{ts.colDate}</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colStatus}</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colPresence}</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">{ts.colCourses}</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -381,6 +472,13 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
                         {u.enabled ? ts.statusActive : ts.statusInactive}
                       </span>
+                    </td>
+                    {/* Presencia */}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <PresenceBadge status={presenceMap[u.username]?.presenceStatus} ts={ts} />
+                        <span className="text-xs text-gray-400">{formatLastSeen(presenceMap[u.username]?.lastSeen, ts)}</span>
+                      </div>
                     </td>
                     {/* Cursos */}
                     <td className="px-4 py-3">
@@ -415,12 +513,28 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
                     </td>
                     {/* Acciones */}
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={(e) => openProfile(e, u)}
-                        className="text-xs text-cta-from font-semibold hover:underline px-2 py-1 rounded-lg hover:bg-purple-50 transition-colors whitespace-nowrap"
-                      >
-                        {ts.viewProfile}
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {presenceMap[u.username]?.presenceStatus === 'inactive' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSendReminder(u); }}
+                            disabled={sendingReminder === u.username || reminderSent.has(u.username)}
+                            title={ts.sendReminderTitle2}
+                            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap ${
+                              reminderSent.has(u.username)
+                                ? 'bg-emerald-100 text-emerald-600 cursor-default'
+                                : 'bg-red-100 text-red-600 hover:bg-red-200'
+                            }`}
+                          >
+                            {reminderSent.has(u.username) ? ts.reminderSent : ts.sendReminderBtn}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => openProfile(e, u)}
+                          className="text-xs text-cta-from font-semibold hover:underline px-2 py-1 rounded-lg hover:bg-purple-50 transition-colors whitespace-nowrap"
+                        >
+                          {ts.viewProfile}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -487,21 +601,64 @@ function AdminStudentList({ courses }: { courses: { id: string; title: string; e
 
 type PresenceFilter = 'all' | 'online' | 'active' | 'inactive';
 
-export default function StudentsPage() {
-  const { role } = useAuth();
+function StudentsPageInner() {
+  const { role, isLoading: authLoading } = useAuth();
   const { t } = useLanguage();
   const ts = t.studentsPage;
+  const searchParams = useSearchParams();
+  const initialPresenceFilter = (() => {
+    const fromQuery = searchParams.get('presence');
+    const valid: PresenceFilter[] = ['all', 'online', 'active', 'inactive'];
+    return (valid.includes(fromQuery as PresenceFilter) ? fromQuery : 'all') as PresenceFilter;
+  })();
   const [data, setData] = useState<{ students: Student[]; courses: { id: string; title: string }[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'students' | 'courses'>('students');
-  const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>('all');
+  const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>(initialPresenceFilter);
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [expandedCourseStudents, setExpandedCourseStudents] = useState<Set<string>>(new Set());
   const [adminCourses, setAdminCourses] = useState<{ id: string; title: string; evaluatorName?: string }[]>([]);
+  const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
+
+  const handleSendReminder = async (student: Student) => {
+    setSendingReminder(student.userId);
+    try {
+      const hoursInactive = student.lastSeen
+        ? Math.round((Date.now() - new Date(student.lastSeen).getTime()) / 3600000)
+        : 72;
+      const courseTitle = student.courses?.[0]?.title;
+      const tasks: Promise<any>[] = [];
+      if (student.studentEmail) {
+        tasks.push(api.evaluator.sendReminder({
+          userId: student.userId,
+          studentEmail: student.studentEmail,
+          studentName: student.studentName,
+          hoursInactive,
+          courseTitle,
+        }));
+      }
+      tasks.push(
+        api.messages.chats.create({ type: 'DIRECT', targetUserId: student.userId }).then((res: any) => {
+          const chatId = res?.data?.chatId;
+          if (!chatId) return;
+          const name = student.studentName ? `, ${student.studentName}` : '';
+          return api.messages.send(chatId, t.evaluator.reminderMessageText(name, courseTitle ?? ''));
+        })
+      );
+      const results = await Promise.allSettled(tasks);
+      if (results.some((r) => r.status === 'fulfilled')) {
+        setReminderSent((prev) => new Set([...prev, student.userId]));
+      }
+    } catch { /* non-fatal */ } finally {
+      setSendingReminder(null);
+    }
+  };
 
   useEffect(() => {
-    if (role === 'ADMIN') {
+    if (authLoading) return;
+    if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
       api.admin.courses.list().then((res) => {
         setAdminCourses(((res as any).data ?? []).map((c: any) => ({ id: c.id, title: c.title, evaluatorName: c.evaluatorName ?? undefined })));
         setLoading(false);
@@ -512,7 +669,7 @@ export default function StudentsPage() {
         setLoading(false);
       }).catch(() => setLoading(false));
     }
-  }, [role]);
+  }, [authLoading, role]);
 
   const allStudents = data?.students ?? [];
 
@@ -539,7 +696,7 @@ export default function StudentsPage() {
   });
 
   // Admin view: full list with enrollments, no activity indicators
-  if (role === 'ADMIN') {
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
     return (
       <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
         <div className="flex items-center gap-3">
@@ -549,7 +706,7 @@ export default function StudentsPage() {
             <p className="text-gray-500 mt-1 text-sm">{ts.adminSubtitle}</p>
           </div>
         </div>
-        <AdminStudentList courses={adminCourses} />
+        <AdminStudentList courses={adminCourses} initialPresenceFilter={initialPresenceFilter} />
       </div>
     );
   }
@@ -623,7 +780,10 @@ export default function StudentsPage() {
             <p className="text-center text-gray-400 py-8">{ts.noStudentFound}</p>
           ) : (
             filtered.map((student) => (
-              <StudentCard key={student.userId} student={student} courses={data.courses} ts={ts} />
+              <StudentCard
+                key={student.userId} student={student} courses={data.courses} ts={ts}
+                onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+              />
             ))
           )}
         </div>
@@ -686,7 +846,10 @@ export default function StudentsPage() {
                     </button>
                     {isExpanded && (
                       <div className="border-t border-border">
-                        <StudentCard student={student} courses={data.courses} ts={ts} />
+                        <StudentCard
+                          student={student} courses={data.courses} ts={ts}
+                          onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                        />
                       </div>
                     )}
                   </div>
@@ -697,5 +860,13 @@ export default function StudentsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function StudentsPage() {
+  return (
+    <Suspense>
+      <StudentsPageInner />
+    </Suspense>
   );
 }

@@ -22,6 +22,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification } from '../shared/db-dynamo';
+import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
@@ -245,8 +246,8 @@ async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Promise<a
   catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
 }
 
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 
 function invitationEmailHtml(name: string, email: string, temporaryPassword: string, courseNames: string[]): string {
   const coursesBlock = courseNames.length > 0
@@ -343,9 +344,10 @@ async function getCallerName(event: Event): Promise<string | null> {
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
   const method = event.requestContext.http.method;
@@ -383,6 +385,8 @@ export const handler = async (event: Event) => {
     // ── GET /admin/courses ──────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'GET') {
       const statusFilter = event.queryStringParameters?.status;
+      const rawLang = event.queryStringParameters?.lang ?? 'es';
+      const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
       let whereClause: Record<string, any> = {};
       if (statusFilter === 'draft') {
         whereClause = { isDraft: true, isArchived: false };
@@ -408,11 +412,21 @@ export const handler = async (event: Event) => {
           },
         },
       });
-      const coursesWithLegacy = courses.map((c) => {
+      let coursesWithLegacy: any[] = courses.map((c) => {
         const isLegacy = c.modules.length > 0 &&
           c.modules.every((m) => (m.lessons as any[]).every((l: any) => l.type === 'video' && !l.content));
         return { ...c, isLegacy };
       });
+      if (lang !== 'es' && coursesWithLegacy.length > 0) {
+        const translations = await batchTranslate(
+          coursesWithLegacy.map((c) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
+          lang
+        );
+        coursesWithLegacy = coursesWithLegacy.map((c) => {
+          const t = translations.get(`course#${c.id}`);
+          return t ? { ...c, title: (t.title as string) ?? c.title, description: (t.description as string) ?? c.description } : c;
+        });
+      }
       return ok(coursesWithLegacy);
     }
 
@@ -601,6 +615,7 @@ export const handler = async (event: Event) => {
             closeDate: closeDate ? new Date(closeDate) : null,
           },
         });
+        await invalidateTranslation('course', courseId);
         return ok(course);
       }
 
@@ -646,6 +661,7 @@ export const handler = async (event: Event) => {
           where: { id: moduleId },
           data: { title, description, duration, passingScore: Number(passingScore), order: Number(order) },
         });
+        await invalidateTranslation('module', moduleId);
         return ok(mod);
       }
 
@@ -909,6 +925,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
             order: Number(order),
           },
         });
+        await invalidateTranslation('lesson', lessonId);
         return ok(lesson);
       }
 
@@ -966,6 +983,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
           where: { id: questionId },
           data: { text, options, correctIndex: Number(correctIndex), order: Number(order) },
         });
+        await invalidateTranslation('question', questionId);
         return ok(question);
       }
 
@@ -1216,14 +1234,10 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
           const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
           const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value;
           if (emailAttr && course) {
-            await ses.send(new SendEmailCommand({
-              Source: FROM_EMAIL,
-              Destination: { ToAddresses: [emailAttr] },
-              Message: {
-                Subject: { Data: `¡Nuevo curso disponible: ${course.title}!`, Charset: 'UTF-8' },
-                Body: { Html: { Data: enrollmentEmailHtml(nameAttr || emailAttr.split('@')[0], course.title), Charset: 'UTF-8' } },
-              },
-            }));
+            await sendTemplatedEmail(emailAttr, 'ENROLLMENT', {
+              studentName: nameAttr || emailAttr.split('@')[0],
+              courseTitle: course.title,
+            });
           }
           // Notify evaluator when a student is enrolled in their course
           if (course?.evaluatorId) {
@@ -1812,6 +1826,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
             tip: previewData.tip ?? lesson.tip,
           };
           const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
+          await invalidateTranslation('lesson', lessonId);
           return ok(updated);
         }
         if ((regenType === 'image' || regenType === 'infographic') && previewData.imageUrl) {
@@ -1879,6 +1894,7 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
         tip: regenPayload.tip,
       } : regenPayload;
       const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
+      await invalidateTranslation('lesson', lessonId);
       return ok(updated);
     }
 
@@ -2059,7 +2075,19 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
 
     // GET /admin/email-templates — list all email templates
     if (method === 'GET' && path === '/admin/email-templates') {
-      const templates = await getAllEmailTemplates();
+      const rawLangEt = event.queryStringParameters?.lang ?? 'es';
+      const langEt = ['en', 'es'].includes(rawLangEt) ? rawLangEt : 'es';
+      let templates = await getAllEmailTemplates();
+      if (langEt !== 'es' && templates.length > 0) {
+        const translations = await batchTranslate(
+          templates.map((tpl) => ({ type: 'emailTemplate' as const, id: tpl.type, fields: { subject: tpl.subject, htmlBody: tpl.htmlBody } })),
+          langEt
+        );
+        templates = templates.map((tpl) => {
+          const tr = translations.get(`emailTemplate#${tpl.type}`);
+          return tr ? { ...tpl, subject: (tr.subject as string) ?? tpl.subject, htmlBody: (tr.htmlBody as string) ?? tpl.htmlBody } : tpl;
+        });
+      }
       return ok(templates);
     }
 

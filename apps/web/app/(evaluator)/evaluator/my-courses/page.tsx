@@ -21,7 +21,7 @@ interface MyCourse {
 }
 
 export default function MyCoursesPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<MyCourse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +30,7 @@ export default function MyCoursesPage() {
       .then((res: any) => setCourses(Array.isArray(res) ? res : (res.data ?? [])))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [lang]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -107,7 +107,7 @@ export default function MyCoursesPage() {
                   )}
                 </Link>
                 <Link
-                  href={`/messages?chat=${course.groupChatId}`}
+                  href={`/evaluator/communications?chatId=${course.groupChatId}`}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
@@ -121,7 +121,7 @@ export default function MyCoursesPage() {
                   {t.nav.students}
                 </Link>
                 <Link
-                  href="/evaluator/my-resources"
+                  href={`/evaluator/my-resources?courseId=${course.id}`}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />

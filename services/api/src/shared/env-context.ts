@@ -3,8 +3,8 @@ export type AppEnv = 'prod' | 'staging' | 'test';
 let _currentEnv: AppEnv = 'prod';
 
 export function setEnvironmentFromOrigin(origin: string | undefined): void {
-  if (origin?.includes('lux-learning-staging')) _currentEnv = 'staging';
-  else if (origin?.includes('lux-learning-test')) _currentEnv = 'test';
+  if (origin?.includes('lux-learning-staging') || origin?.includes('staging.luxlearning.academy')) _currentEnv = 'staging';
+  else if (origin?.includes('lux-learning-test') || origin?.includes('test.luxlearning.academy')) _currentEnv = 'test';
   else _currentEnv = 'prod';
 }
 

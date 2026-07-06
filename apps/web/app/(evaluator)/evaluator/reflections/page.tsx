@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ClipboardList, Search, Clock, AlertTriangle, ArrowUpDown, Flag } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -42,12 +43,17 @@ function getTimeRemaining(submittedAt: string, deadlineIso: string | undefined, 
   return { label: tEval.hoursLeft2(h), urgent: false, overdue: false };
 }
 
-export default function EvaluatorReflectionsPage() {
+function EvaluatorReflectionsInner() {
   const { t, lang } = useLanguage();
+  const searchParams = useSearchParams();
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ReflectionStatus | 'ALL'>('PENDING_EVAL');
+  const [statusFilter, setStatusFilter] = useState<ReflectionStatus | 'ALL'>(() => {
+    const fromQuery = searchParams.get('status');
+    const valid: (ReflectionStatus | 'ALL')[] = ['ALL', 'PENDING_EVAL', 'APPROVED', 'REJECTED'];
+    return (valid.includes(fromQuery as any) ? fromQuery : 'PENDING_EVAL') as ReflectionStatus | 'ALL';
+  });
   const [sortByUrgent, setSortByUrgent] = useState(true);
 
   useEffect(() => {
@@ -234,5 +240,13 @@ export default function EvaluatorReflectionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function EvaluatorReflectionsPage() {
+  return (
+    <Suspense>
+      <EvaluatorReflectionsInner />
+    </Suspense>
   );
 }

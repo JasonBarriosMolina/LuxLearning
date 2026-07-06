@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { es, en, type Lang, type Translations } from './translations';
+import { api } from '@/lib/api';
 
 const STORAGE_KEY = 'lux-lang';
 
@@ -30,6 +31,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const setLang = (l: Lang) => {
     setLangState(l);
     try { localStorage.setItem(STORAGE_KEY, l); } catch {}
+    api.user.setLang(l).catch(() => {});
   };
 
   const t = lang === 'en' ? en : es;

@@ -2,7 +2,7 @@
 // TODO FASE 4: 10 tipos de tarea + entrega de archivos S3 + cloudlink
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getTasksForUser, updateTask, createNotification, createTask } from '../shared/db-dynamo';
-import { ok, badRequest, serverError, cors } from '../shared/response';
+import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -89,8 +89,10 @@ function normalizeTask(item: any) {
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;

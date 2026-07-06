@@ -1,18 +1,43 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { getPrismaClient } from '../shared/db-neon';
 import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse } from '../shared/db-dynamo';
-import { ok, notFound, serverError, cors } from '../shared/response';
+import { ok, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { batchTranslate, type TranslatableFields } from '../shared/translate';
+
+/** Applies cached/fresh translations over a list of {id, ...fields} entities, mutating nothing — returns new objects. */
+function applyTranslations<T extends { id: string }>(
+  items: T[],
+  type: 'course' | 'module' | 'lesson' | 'question',
+  translations: Map<string, TranslatableFields>
+): T[] {
+  return items.map((item) => {
+    const t = translations.get(`${type}#${item.id}`);
+    if (!t) return item;
+    // For questions, validate options array length before applying — prevents correctIndex desync
+    if (type === 'question' && Array.isArray(t.options) && Array.isArray((item as any).options)) {
+      if ((t.options as unknown[]).length !== ((item as any).options as unknown[]).length) {
+        console.error(`[translate] Question ${item.id}: options length mismatch, skipping translation`);
+        return item;
+      }
+    }
+    return { ...item, ...t };
+  });
+}
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setEnvironmentFromOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
   const path = event.rawPath;
+  const rawLang = event.queryStringParameters?.lang ?? 'es';
+  const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
   const prisma = await getPrismaClient();
 
   try {
@@ -43,6 +68,11 @@ export const handler = async (event: Event) => {
         },
       });
 
+      const translations = lang !== 'es' ? await batchTranslate([
+        ...courses.map((c) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
+        ...courses.flatMap((c) => c.modules.map((m) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } }))),
+      ], lang) : undefined;
+
       // Enrich with student progress if user is authenticated
       if (userId) {
         const enriched = await Promise.all(
@@ -56,8 +86,10 @@ export const handler = async (event: Event) => {
                 const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
                 const reflection = await getReflection(userId, mod.id);
                 const quizPassed = await hasPassedQuiz(userId, mod.id);
+                const t = translations?.get(`module#${mod.id}`);
                 return {
                   ...mod,
+                  ...(t ?? {}),
                   unlocked,
                   quizPassed,
                   reflectionStatus: reflection?.status ?? null,
@@ -69,13 +101,21 @@ export const handler = async (event: Event) => {
               })
             );
 
-            return { ...course, modules: enrichedModules };
+            const ct = translations?.get(`course#${course.id}`);
+            return { ...course, ...(ct ?? {}), modules: enrichedModules };
           })
         );
         return ok(enriched);
       }
 
-      return ok(courses);
+      const translatedCourses = translations
+        ? courses.map((c) => ({
+            ...c,
+            ...(translations!.get(`course#${c.id}`) ?? {}),
+            modules: applyTranslations(c.modules, 'module', translations!),
+          }))
+        : courses;
+      return ok(translatedCourses);
     }
 
     // GET /courses/:courseId
@@ -97,6 +137,13 @@ export const handler = async (event: Event) => {
 
       if (!course) return notFound('Course not found');
 
+      const translations = lang !== 'es' ? await batchTranslate([
+        { type: 'course', id: course.id, fields: { title: course.title, description: course.description } },
+        ...course.modules.map((m) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } })),
+        ...course.modules.flatMap((m) => m.lessons.map((l) => ({ type: 'lesson' as const, id: l.id, fields: { title: l.title, content: l.content, points: l.points, tip: l.tip } }))),
+        ...course.modules.flatMap((m) => m.questions.map((q) => ({ type: 'question' as const, id: q.id, fields: { text: q.text, options: q.options } }))),
+      ], lang) : undefined;
+
       if (userId) {
         // Enrich with unlock status
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
@@ -107,21 +154,36 @@ export const handler = async (event: Event) => {
             const completedLessonIds = new Set(progress.map((p) => p.lessonId));
             const quizPassed = await hasPassedQuiz(userId, mod.id);
             const reflection = await getReflection(userId, mod.id);
+            const mt = translations?.get(`module#${mod.id}`);
 
             return {
               ...mod,
+              ...(mt ?? {}),
               unlocked,
               quizPassed,
               reflectionStatus: reflection?.status ?? null,
               qualityScore: (reflection as any)?.qualityScore ?? null,
-              lessons: mod.lessons.map((l) => ({
+              lessons: applyTranslations(mod.lessons, 'lesson', translations ?? new Map()).map((l) => ({
                 ...l,
                 completed: completedLessonIds.has(l.id),
               })),
+              questions: applyTranslations(mod.questions, 'question', translations ?? new Map()),
             };
           })
         );
-        return ok({ ...course, modules: enriched });
+        const ct = translations?.get(`course#${course.id}`);
+        return ok({ ...course, ...(ct ?? {}), modules: enriched });
+      }
+
+      if (translations) {
+        const ct = translations.get(`course#${course.id}`);
+        const modules = course.modules.map((mod) => ({
+          ...mod,
+          ...(translations!.get(`module#${mod.id}`) ?? {}),
+          lessons: applyTranslations(mod.lessons, 'lesson', translations!),
+          questions: applyTranslations(mod.questions, 'question', translations!),
+        }));
+        return ok({ ...course, ...(ct ?? {}), modules });
       }
 
       return ok(course);

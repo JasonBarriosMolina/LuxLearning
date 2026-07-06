@@ -143,13 +143,37 @@ function PollyPlayer({ audioUrl, className = '' }: { audioUrl: string; className
   );
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
-export function TextToSpeechButton({ text, audioUrl, className = '' }: Props) {
-  // If Polly audio is available, use it directly
-  if (audioUrl) return <PollyPlayer audioUrl={audioUrl} className={className} />;
+type TTSSource = 'polly' | 'web';
 
-  // ── Fallback: Web Speech API ─────────────────────────────────────────────
-  return <WebSpeechPlayer text={text} className={className} />;
+// ── Main component ───────────────────────────────────────────────────────────
+// The student always gets to pick their own listening voice — the Polly voice
+// chosen by the course creator/evaluator is just one of the options, never forced.
+export function TextToSpeechButton({ text, audioUrl, className = '' }: Props) {
+  const [source, setSource] = useState<TTSSource>(() => {
+    if (typeof window === 'undefined') return 'web';
+    const saved = localStorage.getItem('tts-source');
+    return saved === 'web' || saved === 'polly' ? saved : 'web';
+  });
+
+  // No pre-generated audio for this lesson — only the browser voice profiles apply
+  if (!audioUrl) return <WebSpeechPlayer text={text} className={className} />;
+
+  const handleSourceChange = (next: TTSSource) => {
+    setSource(next);
+    localStorage.setItem('tts-source', next);
+  };
+
+  return (
+    <div className={`flex items-center gap-2 flex-wrap ${className}`}>
+      {source === 'polly' ? <PollyPlayer audioUrl={audioUrl} /> : <WebSpeechPlayer text={text} />}
+      <select value={source} onChange={(e) => handleSourceChange(e.target.value as TTSSource)}
+        className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
+        title="Fuente de audio">
+        <option value="web">Mi voz preferida</option>
+        <option value="polly">Voz del curso</option>
+      </select>
+    </div>
+  );
 }
 
 function WebSpeechPlayer({ text, className = '' }: { text: string; className?: string }) {
@@ -163,7 +187,7 @@ function WebSpeechPlayer({ text, className = '' }: { text: string; className?: s
       const saved = localStorage.getItem('tts-voice-profile');
       return (VOICE_PROFILES.find((p) => p.id === saved)?.id ?? 'masculino') as VoiceProfileId;
     }
-    return 'carlos';
+    return 'masculino';
   });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
