@@ -325,7 +325,7 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
   const handleSendReminder = async (u: any) => {
     setSendingReminder(u.username);
     try {
-      const presence = presenceMap[u.username];
+      const presence = presenceMap[u.sub ?? u.username];
       const hoursInactive = presence?.lastSeen
         ? Math.round((Date.now() - new Date(presence.lastSeen).getTime()) / 3600000)
         : 72;
@@ -379,14 +379,14 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const matchSearch = !q || (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    const matchPresence = presenceFilter === 'all' || presenceMap[u.username]?.presenceStatus === presenceFilter;
+    const matchPresence = presenceFilter === 'all' || presenceMap[u.sub ?? u.username]?.presenceStatus === presenceFilter;
     return matchSearch && matchPresence;
   });
 
   const presenceCounts = {
-    online: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'online').length,
-    active: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'active').length,
-    inactive: users.filter((u) => presenceMap[u.username]?.presenceStatus === 'inactive').length,
+    online: users.filter((u) => presenceMap[u.sub ?? u.username]?.presenceStatus === 'online').length,
+    active: users.filter((u) => presenceMap[u.sub ?? u.username]?.presenceStatus === 'active').length,
+    inactive: users.filter((u) => presenceMap[u.sub ?? u.username]?.presenceStatus === 'inactive').length,
   };
 
   if (loading) return (
@@ -476,8 +476,8 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
                     {/* Presencia */}
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <PresenceBadge status={presenceMap[u.username]?.presenceStatus} ts={ts} />
-                        <span className="text-xs text-gray-400">{formatLastSeen(presenceMap[u.username]?.lastSeen, ts)}</span>
+                        <PresenceBadge status={presenceMap[u.sub ?? u.username]?.presenceStatus} ts={ts} />
+                        <span className="text-xs text-gray-400">{formatLastSeen(presenceMap[u.sub ?? u.username]?.lastSeen, ts)}</span>
                       </div>
                     </td>
                     {/* Cursos */}
@@ -514,7 +514,7 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
                     {/* Acciones */}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {presenceMap[u.username]?.presenceStatus === 'inactive' && (
+                        {presenceMap[u.sub ?? u.username]?.presenceStatus === 'inactive' && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleSendReminder(u); }}
                             disabled={sendingReminder === u.username || reminderSent.has(u.username)}

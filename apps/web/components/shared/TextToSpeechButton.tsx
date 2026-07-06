@@ -150,9 +150,9 @@ type TTSSource = 'polly' | 'web';
 // chosen by the course creator/evaluator is just one of the options, never forced.
 export function TextToSpeechButton({ text, audioUrl, className = '' }: Props) {
   const [source, setSource] = useState<TTSSource>(() => {
-    if (typeof window === 'undefined') return 'web';
+    if (typeof window === 'undefined') return 'polly';
     const saved = localStorage.getItem('tts-source');
-    return saved === 'web' || saved === 'polly' ? saved : 'web';
+    return saved === 'web' || saved === 'polly' ? saved : 'polly';
   });
 
   // No pre-generated audio for this lesson — only the browser voice profiles apply
