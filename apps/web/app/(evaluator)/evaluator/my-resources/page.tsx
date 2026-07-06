@@ -306,6 +306,9 @@ function MyResourcesInner() {
               <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="font-heading font-bold text-charcoal">{t.admin.myResourcesEmpty}</p>
               <p className="text-gray-500 text-sm mt-1">{t.admin.myResourcesEmptyHint}</p>
+              <button onClick={() => openUpload()} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cta-from hover:underline">
+                <Plus className="w-4 h-4" /> Subir el primer recurso
+              </button>
             </div>
           ) : (
             <div className="space-y-8">
