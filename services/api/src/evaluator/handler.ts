@@ -494,8 +494,24 @@ export const handler = async (event: Event) => {
         getLastSeenAll(),
       ]);
 
-      // Build lastSeen map
-      const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, ls.lastSeen]));
+      // Build lastSeen map — merge lesson completedAt + reflection submittedAt (fully paginated)
+      // then override with heartbeat if more recent (heartbeat = actual browser activity)
+      const lastSeenMap = new Map<string, string>();
+      for (const p of allProgress) {
+        if (!p.userId || !p.completedAt) continue;
+        const prev = lastSeenMap.get(p.userId);
+        if (!prev || p.completedAt > prev) lastSeenMap.set(p.userId, p.completedAt);
+      }
+      for (const r of allReflections) {
+        if (!r.userId || !r.submittedAt) continue;
+        const prev = lastSeenMap.get(r.userId);
+        if (!prev || r.submittedAt > prev) lastSeenMap.set(r.userId, r.submittedAt);
+      }
+      for (const ls of allLastSeen) {
+        if (!ls.userId || !ls.lastSeen) continue;
+        const prev = lastSeenMap.get(ls.userId);
+        if (!prev || ls.lastSeen > prev) lastSeenMap.set(ls.userId, ls.lastSeen);
+      }
       const now = Date.now();
       const getPresenceStatus = (userId: string): 'online' | 'active' | 'inactive' => {
         const ls = lastSeenMap.get(userId);

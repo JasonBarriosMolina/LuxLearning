@@ -319,7 +319,7 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
       const map: Record<string, { presenceStatus?: string; lastSeen?: string | null; studentEmail?: string | null }> = {};
       students.forEach((s) => { map[s.userId] = { presenceStatus: s.presenceStatus, lastSeen: s.lastSeen, studentEmail: s.studentEmail }; });
       setPresenceMap(map);
-    }).catch(() => {});
+    }).catch((err) => { console.warn('[Students] presenceMap load failed:', err); });
   }, []);
 
   const handleSendReminder = async (u: any) => {

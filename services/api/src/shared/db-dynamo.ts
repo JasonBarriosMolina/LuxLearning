@@ -772,24 +772,26 @@ export async function updateLastSeen(userId: string): Promise<void> {
 }
 
 export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: string }[]> {
-  // Scan all non-system progress items: HEARTBEAT (lastSeen) + lesson completions (completedAt)
-  const result = await ddb.send(new ScanCommand({
-    TableName: TABLES.PROGRESS,
-    FilterExpression: 'attribute_exists(userId) AND NOT begins_with(sk, :onb) AND sk <> :ir AND userId <> :job',
-    ExpressionAttributeValues: { ':onb': 'ONBOARDING#', ':ir': 'INACTIVITY_REMINDER', ':job': '_AIJOB' },
-    ProjectionExpression: 'userId, sk, lastSeen, completedAt',
-  }));
-
-  // Group by userId, keep the most recent date across heartbeats and lesson completions
   const byUser = new Map<string, string>();
-  for (const item of result.Items ?? []) {
-    const uid = String(item['userId'] ?? '');
-    if (!uid || uid.startsWith('_')) continue;
-    const ts = String(item['lastSeen'] ?? item['completedAt'] ?? '');
-    if (!ts) continue;
-    const prev = byUser.get(uid);
-    if (!prev || ts > prev) byUser.set(uid, ts);
-  }
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.PROGRESS,
+      FilterExpression: 'attribute_exists(userId) AND NOT begins_with(sk, :onb) AND sk <> :ir AND userId <> :job',
+      ExpressionAttributeValues: { ':onb': 'ONBOARDING#', ':ir': 'INACTIVITY_REMINDER', ':job': '_AIJOB' },
+      ProjectionExpression: 'userId, sk, lastSeen, completedAt',
+      ExclusiveStartKey: lastKey,
+    }));
+    for (const item of result.Items ?? []) {
+      const uid = String(item['userId'] ?? '');
+      if (!uid || uid.startsWith('_')) continue;
+      const ts = String(item['lastSeen'] ?? item['completedAt'] ?? '');
+      if (!ts) continue;
+      const prev = byUser.get(uid);
+      if (!prev || ts > prev) byUser.set(uid, ts);
+    }
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
   return Array.from(byUser.entries()).map(([userId, lastSeen]) => ({ userId, lastSeen }));
 }
 
