@@ -946,6 +946,84 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
       }
     }
 
+    // ── POST /admin/modules/:moduleId/questions/ai-generate ─────────────────
+    const aiQuestionsMatch = path.match(/^\/admin\/modules\/([^/]+)\/questions\/ai-generate$/);
+    if (aiQuestionsMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const moduleId = aiQuestionsMatch[1]!;
+      const { content, count = 5 } = body as { content?: string; count?: number };
+
+      if (!content || content.trim().length < 20) {
+        return badRequest('content (mínimo 20 caracteres) es requerido');
+      }
+      const safeCount = Math.min(Math.max(Number(count) || 5, 3), 10);
+
+      const mod = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: { questions: { select: { order: true } } },
+      });
+      if (!mod) return notFound('Módulo no encontrado');
+
+      const nextOrder = mod.questions.length > 0
+        ? Math.max(...mod.questions.map((q: any) => q.order)) + 1
+        : 1;
+
+      const aiPrompt = `Eres un diseñador instruccional experto. Basándote en el siguiente contenido educativo del módulo "${mod.title}", genera exactamente ${safeCount} preguntas de opción múltiple de alta calidad para evaluar la comprensión del estudiante.
+
+CONTENIDO:
+"""
+${content.slice(0, 4000)}
+"""
+
+REGLAS:
+- Cada pregunta debe tener exactamente 4 opciones
+- Una sola respuesta correcta por pregunta (correctIndex entre 0 y 3)
+- Las preguntas deben cubrir diferentes conceptos del contenido
+- Redacta en español, con lenguaje claro y preciso
+- Evalúa comprensión y aplicación, no memorización pura
+
+Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
+[{"text":"¿Pregunta?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0}]`;
+
+      const rawQuestions = await invokeBedrockForJson(aiPrompt, 3000);
+
+      if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+        return serverError('Bedrock no generó preguntas válidas');
+      }
+
+      const validated = rawQuestions.filter((q: any) =>
+        typeof q.text === 'string' && q.text.trim().length > 0 &&
+        Array.isArray(q.options) && q.options.length === 4 &&
+        typeof q.correctIndex === 'number' &&
+        q.correctIndex >= 0 && q.correctIndex < 4
+      ).slice(0, safeCount);
+
+      if (validated.length === 0) {
+        return serverError('Las preguntas generadas no pasaron validación');
+      }
+
+      const shuffled = shuffleQuestionOptions(validated);
+
+      const created = await prisma.question.createMany({
+        data: shuffled.map((q: any, i: number) => ({
+          moduleId,
+          text: String(q.text).trim(),
+          options: q.options.map((o: any) => String(o).trim()),
+          correctIndex: Number(q.correctIndex),
+          order: nextOrder + i,
+        })),
+      });
+
+      // Invalidar traducciones: refetch los IDs recién creados
+      const newQuestions = await prisma.question.findMany({
+        where: { moduleId, order: { gte: nextOrder } },
+        select: { id: true },
+      });
+      await Promise.all(newQuestions.map((q: any) => invalidateTranslation('question', q.id)));
+
+      return ok({ created: created.count });
+    }
+
     // ── POST /admin/modules/:moduleId/questions ─────────────────────────────
     const moduleQuestionsMatch = path.match(/^\/admin\/modules\/([^/]+)\/questions$/);
     if (moduleQuestionsMatch && method === 'POST') {

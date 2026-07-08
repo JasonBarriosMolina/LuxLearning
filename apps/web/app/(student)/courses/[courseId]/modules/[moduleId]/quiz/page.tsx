@@ -29,6 +29,8 @@ export default function QuizPage() {
   const [state, setState] = useState<QuizState>('answering');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [gapAnalysis, setGapAnalysis] = useState<{ gaps: { concept: string; suggestedFocus: string }[]; overallPattern: string | null } | null>(null);
+  const [gapLoading, setGapLoading] = useState(false);
 
   // shuffledMaps[qIdx][visualPos] = originalIdx
   const shuffledMapsRef = useRef<number[][]>([]);
@@ -80,8 +82,20 @@ export default function QuizPage() {
         courseId,
         answers: answers as number[],
       });
-      setResult((res as any).data ?? res);
+      const data = (res as any).data ?? res;
+      setResult(data);
       setState('result');
+      // Fire gap analysis if student didn't pass
+      if (!data.passed && Array.isArray(data.results) && data.results.some((r: any) => !r.isCorrect)) {
+        setGapLoading(true);
+        api.quiz.gapAnalysis(moduleId, { results: data.results })
+          .then((gapRes: any) => {
+            const d = gapRes?.data;
+            if (d?.gaps?.length > 0) setGapAnalysis(d);
+          })
+          .catch(() => { /* soft fail — no bloquear UI */ })
+          .finally(() => setGapLoading(false));
+      }
     } catch (err: any) {
       alert(t.quizPage.submitError);
       setState('answering');
@@ -92,6 +106,8 @@ export default function QuizPage() {
     setAnswers(new Array(questions.length).fill(null));
     setCurrentQ(0);
     setResult(null);
+    setGapAnalysis(null);
+    setGapLoading(false);
     setState('answering');
     // Re-shuffle on every new attempt
     buildAndSetShuffle(questions);
@@ -170,19 +186,44 @@ export default function QuizPage() {
           ) : (
             <div className="space-y-3">
               {!showCorrectAnswers && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 text-left space-y-1">
-                  <p className="font-semibold flex items-center gap-2">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-left space-y-3">
+                  <p className="font-semibold text-amber-800 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    {t.quizPage.reviewTopics}
+                    {gapLoading ? 'Analizando tus respuestas...' : t.quizPage.reviewTopics}
                   </p>
-                  <ul className="list-disc pl-5 space-y-0.5">
-                    {result.results
-                      ?.filter((r: any) => !r.isCorrect)
-                      .map((r: any, i: number) => (
-                        <li key={i} className="text-amber-700">{r.questionText}</li>
-                      ))}
-                  </ul>
-                  <p className="text-amber-600 text-xs mt-1">
+
+                  {/* Gap analysis panel */}
+                  {gapLoading && (
+                    <div className="flex items-center gap-2 text-xs text-amber-600">
+                      <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      Identificando brechas de conocimiento...
+                    </div>
+                  )}
+                  {!gapLoading && gapAnalysis && gapAnalysis.gaps.length > 0 ? (
+                    <div className="space-y-2">
+                      {gapAnalysis.overallPattern && (
+                        <p className="text-xs text-amber-700 italic">{gapAnalysis.overallPattern}</p>
+                      )}
+                      <ul className="space-y-2">
+                        {gapAnalysis.gaps.map((gap, i) => (
+                          <li key={i} className="bg-white rounded-lg p-2.5 border border-amber-100">
+                            <p className="font-medium text-sm text-charcoal">{gap.concept}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{gap.suggestedFocus}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : !gapLoading && (
+                    <ul className="list-disc pl-5 space-y-0.5">
+                      {result.results
+                        ?.filter((r: any) => !r.isCorrect)
+                        .map((r: any, i: number) => (
+                          <li key={i} className="text-amber-700">{r.questionText}</li>
+                        ))}
+                    </ul>
+                  )}
+
+                  <p className="text-amber-600 text-xs">
                     {t.quizPage.attemptsLeft(3 - attemptNumber)}
                   </p>
                 </div>

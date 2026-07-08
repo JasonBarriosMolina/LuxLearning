@@ -706,6 +706,12 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [aiLessonError, setAiLessonError] = useState('');
   const aiLessonIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [aiQuestionsOpen, setAiQuestionsOpen] = useState(false);
+  const [aiQuestionsContent, setAiQuestionsContent] = useState('');
+  const [aiQuestionsCount, setAiQuestionsCount] = useState(5);
+  const [aiQuestionsLoading, setAiQuestionsLoading] = useState(false);
+  const [aiQuestionsError, setAiQuestionsError] = useState('');
+
   // Cleanup polling intervals on unmount
   useEffect(() => {
     return () => {
@@ -746,6 +752,28 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
     } catch (err: any) {
       setAiLessonError(err.message ?? 'Error al generar lección');
       setAiLessonLoading(false);
+    }
+  };
+
+  const handleAiQuestions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuestionsContent.trim()) return;
+    setAiQuestionsLoading(true);
+    setAiQuestionsError('');
+    try {
+      const res = await api.admin.questions.aiGenerate(mod.id, {
+        content: aiQuestionsContent.trim(),
+        count: aiQuestionsCount,
+      });
+      const created = (res as any)?.data?.created ?? 0;
+      setAiQuestionsOpen(false);
+      setAiQuestionsContent('');
+      setAiQuestionsCount(5);
+      if (created > 0) onRefresh();
+    } catch (err: any) {
+      setAiQuestionsError(err.message ?? 'Error al generar preguntas. Intenta de nuevo.');
+    } finally {
+      setAiQuestionsLoading(false);
     }
   };
 
@@ -897,10 +925,16 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
                 <ClipboardCheck className="w-4 h-4 text-amber-500" />
                 Preguntas del quiz ({mod.questions?.length ?? 0}) — Selección única
               </h4>
-              <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
-                Agregar pregunta
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
+                  onClick={() => { setAiQuestionsContent(''); setAiQuestionsError(''); setAiQuestionsOpen(true); }}>
+                  IA
+                </Button>
+                <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
+                  Agregar pregunta
+                </Button>
+              </div>
             </div>
             {(mod.questions?.length ?? 0) === 0 && (
               <p className="text-xs text-gray-400 text-center py-4 bg-white rounded-xl border border-dashed border-border">
@@ -956,6 +990,48 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
             <Button type="button" variant="secondary" size="sm" onClick={() => setAiLessonOpen(false)}>Cancelar</Button>
             <Button type="submit" size="sm" loading={aiLessonLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
               Generar lección
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* AI quiz questions generation modal */}
+      <Modal open={aiQuestionsOpen} onClose={() => setAiQuestionsOpen(false)} title="Generar preguntas con IA" size="md">
+        <form onSubmit={handleAiQuestions} className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Pega el contenido del módulo o describe los temas clave. La IA generará preguntas de opción múltiple listas para usar.
+          </p>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Contenido del módulo</label>
+            <textarea
+              autoFocus
+              value={aiQuestionsContent}
+              onChange={(e) => setAiQuestionsContent(e.target.value)}
+              placeholder="Pega aquí el contenido de las lecciones o describe los conceptos clave del módulo..."
+              className="input-field resize-none min-h-[140px] text-sm w-full"
+              required
+              minLength={20}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Cantidad de preguntas</label>
+            <select
+              value={aiQuestionsCount}
+              onChange={(e) => setAiQuestionsCount(Number(e.target.value))}
+              className="input-field text-sm"
+            >
+              {[3, 5, 7, 10].map((n) => (
+                <option key={n} value={n}>{n} preguntas</option>
+              ))}
+            </select>
+          </div>
+          {aiQuestionsError && <p className="text-xs text-red-500">{aiQuestionsError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAiQuestionsOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" loading={aiQuestionsLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+              Generar preguntas
             </Button>
           </div>
         </form>

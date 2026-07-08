@@ -784,7 +784,7 @@ export const handler = async (event: Event) => {
       return ok({ priority });
     }
 
-    // POST /evaluator/ai-feedback — generate 5 feedback suggestions via Bedrock
+    // POST /evaluator/ai-feedback — generate full feedback paragraph via Bedrock
     if (method === 'POST' && path === '/evaluator/ai-feedback') {
       const body = JSON.parse(event.body ?? '{}');
       const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
@@ -797,21 +797,17 @@ REFLEXIÓN:
 ${text.slice(0, 3000)}
 """
 
-Genera exactamente 5 comentarios de feedback constructivo y específico para esta reflexión. Cada comentario debe:
-- Ser concreto y referirse al contenido real de la reflexión
-- Ser entre 1-2 oraciones
-- Alternar entre aspectos positivos y áreas de mejora
-- Estar en español
+Genera un feedback evaluativo completo con exactamente 3 párrafos (mínimo 150 palabras en total) que:
+- Sea constructivo, específico y se refiera directamente al contenido de la reflexión
+- Párrafo 1: reconoce las fortalezas y aspectos positivos observados
+- Párrafo 2: señala áreas de mejora con ejemplos concretos del texto
+- Párrafo 3: conclusión motivadora con próximos pasos sugeridos
+- Sea profesional, cálido y listo para enviar directamente al estudiante
+- Esté en español
 
 Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 {
-  "suggestions": [
-    "Comentario 1",
-    "Comentario 2",
-    "Comentario 3",
-    "Comentario 4",
-    "Comentario 5"
-  ]
+  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3..."
 }`;
 
       try {
@@ -821,7 +817,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 1024,
+            max_tokens: 2048,
             messages: [{ role: 'user', content: prompt }],
           }),
         }));
@@ -832,7 +828,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
         const jsonMatch = clean.match(/\{[\s\S]*\}/);
         if (!jsonMatch) return serverError('AI response format error');
         const parsed = JSON.parse(jsonMatch[0]);
-        return ok({ suggestions: parsed.suggestions ?? [] });
+        return ok({ feedback: parsed.feedback ?? '' });
       } catch (aiErr) {
         console.error('[Evaluator] Bedrock AI feedback error:', aiErr);
         return serverError('AI feedback generation failed');

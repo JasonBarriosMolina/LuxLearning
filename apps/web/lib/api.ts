@@ -72,6 +72,8 @@ export const api = {
       request(`/quiz/${moduleId}/submit`, { method: 'POST', body: JSON.stringify(body) }),
     attempts: (moduleId: string) =>
       request(`/quiz/${moduleId}/attempts`),
+    gapAnalysis: (moduleId: string, body: { results: any[] }) =>
+      request<any>(`/quiz/${moduleId}/gap-analysis`, { method: 'POST', body: JSON.stringify(body) }),
   },
 
   reflection: {
@@ -256,6 +258,8 @@ export const api = {
       create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/questions`, { method: 'POST', body: JSON.stringify(body) }),
       update: (questionId: string, body: any) => request<any>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (questionId: string) => request<any>(`/admin/questions/${questionId}`, { method: 'DELETE' }),
+      aiGenerate: (moduleId: string, body: { content: string; count?: number }) =>
+        request<any>(`/admin/modules/${moduleId}/questions/ai-generate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     // Reports (legacy)
     reports: () => request<any>('/admin/reports'),
