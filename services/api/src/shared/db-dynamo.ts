@@ -3,6 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
+import { getTableName } from './env-context';
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const ddb = DynamoDBDocumentClient.from(client, {
@@ -10,7 +11,10 @@ export const ddb = DynamoDBDocumentClient.from(client, {
 });
 
 // ─── Table names (from env) ───────────────────────────────────────────────────
-export const TABLES = {
+// BASE holds the prod table names read from env vars at cold start.
+// TABLES is a Proxy that applies the per-request env suffix (e.g. '-Staging')
+// transparently, so all existing TABLES.X references stay unchanged.
+const BASE_TABLES = {
   PROGRESS: process.env.DYNAMO_TABLE_PROGRESS ?? 'LessonProgress',
   QUIZ: process.env.DYNAMO_TABLE_QUIZ ?? 'QuizAttempts',
   REFLECTIONS: process.env.DYNAMO_TABLE_REFLECTIONS ?? 'Reflections',
@@ -24,7 +28,15 @@ export const TABLES = {
   ACTIVITY: process.env.DYNAMO_TABLE_ACTIVITY ?? 'LuxActivity',
   CERT_TEMPLATES: process.env.DYNAMO_TABLE_CERT_TEMPLATES ?? 'LuxCertTemplates',
   RESOURCES: process.env.DYNAMO_TABLE_RESOURCES ?? 'LuxResources',
-} as const;
+  TRANSLATIONS: process.env.DYNAMO_TABLE_TRANSLATIONS ?? 'LuxTranslations',
+};
+
+export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
+  get(target, key: string) {
+    const base = target[key as keyof typeof target];
+    return base ? getTableName(base) : base;
+  },
+}) as typeof BASE_TABLES;
 
 // ─── Lesson Progress ──────────────────────────────────────────────────────────
 
@@ -760,16 +772,56 @@ export async function updateLastSeen(userId: string): Promise<void> {
 }
 
 export async function getLastSeenAll(): Promise<{ userId: string; lastSeen: string }[]> {
-  const result = await ddb.send(new ScanCommand({
+  const byUser = new Map<string, string>();
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.PROGRESS,
+      FilterExpression: 'attribute_exists(userId) AND NOT begins_with(sk, :onb) AND sk <> :ir AND userId <> :job',
+      ExpressionAttributeValues: { ':onb': 'ONBOARDING#', ':ir': 'INACTIVITY_REMINDER', ':job': '_AIJOB' },
+      ProjectionExpression: 'userId, sk, lastSeen, completedAt',
+      ExclusiveStartKey: lastKey,
+    }));
+    for (const item of result.Items ?? []) {
+      const uid = String(item['userId'] ?? '');
+      if (!uid || uid.startsWith('_')) continue;
+      const ts = String(item['lastSeen'] ?? item['completedAt'] ?? '');
+      if (!ts) continue;
+      const prev = byUser.get(uid);
+      if (!prev || ts > prev) byUser.set(uid, ts);
+    }
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return Array.from(byUser.entries()).map(([userId, lastSeen]) => ({ userId, lastSeen }));
+}
+
+// ─── Inactivity Reminder Tracking ────────────────────────────────────────────
+// Stored in PROGRESS table: userId = userId, sk = 'INACTIVITY_REMINDER'
+// count: how many inactivity emails have been sent (0 = none yet)
+// lastSent: ISO timestamp of the last sent email
+
+export async function getInactivityReminder(userId: string): Promise<{ count: number; lastSent: string | null }> {
+  const res = await ddb.send(new GetCommand({
     TableName: TABLES.PROGRESS,
-    FilterExpression: 'sk = :hb',
-    ExpressionAttributeValues: { ':hb': 'HEARTBEAT' },
-    ProjectionExpression: 'userId, lastSeen',
+    Key: { userId, sk: 'INACTIVITY_REMINDER' },
   }));
-  return (result.Items ?? []).map((item) => ({
-    userId: String(item['userId'] ?? ''),
-    lastSeen: String(item['lastSeen'] ?? ''),
-  })).filter((item) => item.userId && !item.userId.startsWith('_'));
+  if (!res.Item) return { count: 0, lastSent: null };
+  return { count: Number(res.Item['count'] ?? 0), lastSent: res.Item['lastSent'] ?? null };
+}
+
+export async function setInactivityReminder(userId: string, count: number, lastSent: string | null): Promise<void> {
+  if (count === 0) {
+    // Reset: delete the tracking record
+    await ddb.send(new DeleteCommand({
+      TableName: TABLES.PROGRESS,
+      Key: { userId, sk: 'INACTIVITY_REMINDER' },
+    })).catch(() => {});
+    return;
+  }
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: 'INACTIVITY_REMINDER', count, lastSent },
+  }));
 }
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
@@ -896,4 +948,27 @@ export async function getActivity(userId: string, days = 30): Promise<any[]> {
     ScanIndexForward: false,
   }));
   return result.Items ?? [];
+}
+
+// ─── User Language Preference ─────────────────────────────────────────────────
+// Stored in PushSubscriptions table: userId = userId, sk = 'PREF_LANG'
+
+export async function setUserLang(userId: string, lang: string): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PUSH_SUBS,
+    Item: { userId, sk: 'PREF_LANG', lang },
+  }));
+}
+
+export async function getUserLang(userId: string): Promise<string> {
+  try {
+    const result = await ddb.send(new GetCommand({
+      TableName: TABLES.PUSH_SUBS,
+      Key: { userId, sk: 'PREF_LANG' },
+    }));
+    const lang = result.Item?.lang as string | undefined;
+    return lang === 'en' || lang === 'es' ? lang : 'es';
+  } catch {
+    return 'es';
+  }
 }

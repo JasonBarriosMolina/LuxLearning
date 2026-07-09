@@ -1,9 +1,15 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 
 const ALLOWED_ORIGINS = [
+  'https://luxlearning.academy',
+  'https://www.luxlearning.academy',
+  'https://test.luxlearning.academy',
+  'https://staging.luxlearning.academy',
   'https://lux-learning-tau.vercel.app',
   'https://lux-learning-mentor.vercel.app',
   'https://lux-learning.vercel.app',
+  'https://lux-learning-staging.vercel.app',
+  'https://lux-learning-test.vercel.app',
   'http://localhost:3000',
 ];
 

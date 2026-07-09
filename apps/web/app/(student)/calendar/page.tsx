@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
 import { parseIcsText, normalizeDtstart } from '@/lib/parseIcs';
 import { Button } from '@/components/ui/Button';
+import { useLanguage } from '@/lib/i18n';
 
 interface Task {
   taskId: string;
@@ -26,6 +27,7 @@ interface IcsEvent {
 }
 
 export default function CalendarPage() {
+  const { t } = useLanguage();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState('');
@@ -61,13 +63,13 @@ export default function CalendarPage() {
     try {
       const res = await api.tasks.importIcs(toImport);
       const count = (res as any)?.data?.created ?? toImport.length;
-      setImportToast(`✅ ${count} tarea${count !== 1 ? 's' : ''} importada${count !== 1 ? 's' : ''}`);
+      setImportToast(`✅ ${t.studentCalendar.importSuccess(count)}`);
       setIcsEvents([]);
       setSelectedEvents(new Set());
       loadTasks();
       setTimeout(() => setImportToast(''), 4000);
     } catch {
-      setImportToast('❌ Error al importar');
+      setImportToast(`❌ ${t.studentCalendar.importError}`);
       setTimeout(() => setImportToast(''), 4000);
     } finally {
       setImporting(false);
@@ -113,8 +115,8 @@ export default function CalendarPage() {
         <div className="flex items-center gap-3">
           <CalendarDays className="w-6 h-6 text-cta-from" />
           <div>
-            <h1 className="font-heading font-bold text-2xl text-charcoal">Calendario</h1>
-            <p className="text-sm text-gray-400">Todas tus tareas en vista de calendario</p>
+            <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentCalendar.title}</h1>
+            <p className="text-sm text-gray-400">{t.studentCalendar.subtitle}</p>
           </div>
         </div>
 
@@ -125,7 +127,7 @@ export default function CalendarPage() {
               onChange={(e) => setSelectedCourse(e.target.value)}
               className="input-field text-sm py-2 max-w-[200px]"
             >
-              <option value="">Todos los cursos</option>
+              <option value="">{t.studentCalendar.allCourses}</option>
               {courses.map(([id, title]) => (
                 <option key={id} value={id}>{title}</option>
               ))}
@@ -137,7 +139,7 @@ export default function CalendarPage() {
             leftIcon={<Upload className="w-4 h-4" />}
             onClick={() => fileRef.current?.click()}
           >
-            Importar .ics
+            {t.studentCalendar.importIcs}
           </Button>
           <input ref={fileRef} type="file" accept=".ics" className="hidden" onChange={handleFileChange} />
         </div>
@@ -148,7 +150,7 @@ export default function CalendarPage() {
         <div className="card border-2 border-indigo-200 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-charcoal text-sm">
-              📅 {icsEvents.length} evento{icsEvents.length !== 1 ? 's' : ''} encontrado{icsEvents.length !== 1 ? 's' : ''} — selecciona los que quieres importar
+              📅 {t.studentCalendar.eventsFound(icsEvents.length)} — {t.studentCalendar.selectToImport}
             </h2>
             <button onClick={() => setIcsEvents([])} className="p-1 rounded hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
           </div>
@@ -170,11 +172,11 @@ export default function CalendarPage() {
             ))}
           </div>
           <div className="flex items-center justify-between pt-2 border-t border-border">
-            <span className="text-xs text-gray-400">{selectedEvents.size} seleccionado{selectedEvents.size !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-gray-400">{t.studentCalendar.selected(selectedEvents.size)}</span>
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setIcsEvents([])}>Cancelar</Button>
+              <Button variant="secondary" size="sm" onClick={() => setIcsEvents([])}>{t.studentCalendar.cancelImport}</Button>
               <Button size="sm" loading={importing} onClick={handleImport} disabled={selectedEvents.size === 0}>
-                Importar {selectedEvents.size > 0 ? selectedEvents.size : ''}
+                {t.studentCalendar.importN(selectedEvents.size > 0 ? selectedEvents.size : 0)}
               </Button>
             </div>
           </div>
@@ -184,8 +186,8 @@ export default function CalendarPage() {
       {tasks.length === 0 ? (
         <div className="card text-center py-16">
           <CalendarDays className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="font-heading font-bold text-charcoal">Sin tareas programadas</p>
-          <p className="text-sm text-gray-400 mt-1">Cuando tu evaluador te asigne tareas aparecerán aquí.</p>
+          <p className="font-heading font-bold text-charcoal">{t.studentCalendar.noTasks}</p>
+          <p className="text-sm text-gray-400 mt-1">{t.studentCalendar.noTasksHint}</p>
         </div>
       ) : (
         <div className="card">

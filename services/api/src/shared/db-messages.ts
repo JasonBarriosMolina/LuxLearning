@@ -1,11 +1,12 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { getTableName } from './env-context';
 
 const client = new DynamoDBClient({});
-const ddb = DynamoDBDocumentClient.from(client);
+const ddb = DynamoDBDocumentClient.from(client, { marshallOptions: { removeUndefinedValues: true } });
 
-const CHATS_TABLE = process.env.DYNAMO_TABLE_CHATS ?? 'LuxChats';
-const MSGS_TABLE  = process.env.DYNAMO_TABLE_MESSAGES ?? 'LuxMessages';
+function chatsTable() { return getTableName(process.env.DYNAMO_TABLE_CHATS ?? 'LuxChats'); }
+function msgsTable()  { return getTableName(process.env.DYNAMO_TABLE_MESSAGES ?? 'LuxMessages'); }
 
 function msgId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -15,7 +16,7 @@ function msgId(): string {
 
 export async function getChatsForUser(userId: string): Promise<any[]> {
   const res = await ddb.send(new QueryCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     KeyConditionExpression: 'pk = :pk',
     ExpressionAttributeValues: { ':pk': `USER#${userId}` },
   }));
@@ -31,7 +32,7 @@ export async function getChatsForUser(userId: string): Promise<any[]> {
 
 export async function getChatMeta(chatId: string): Promise<any | null> {
   const res = await ddb.send(new GetCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Key: { pk: `CHAT#${chatId}`, sk: 'META' },
   }));
   return res.Item ?? null;
@@ -39,7 +40,7 @@ export async function getChatMeta(chatId: string): Promise<any | null> {
 
 export async function getUserMembership(userId: string, chatId: string): Promise<any | null> {
   const res = await ddb.send(new GetCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Key: { pk: `USER#${userId}`, sk: chatId },
   }));
   return res.Item ?? null;
@@ -50,7 +51,7 @@ export async function upsertChat(chatId: string, meta: {
 }): Promise<void> {
   const now = new Date().toISOString();
   await ddb.send(new PutCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Item: { pk: `CHAT#${chatId}`, sk: 'META', chatId, ...meta, createdAt: now, lastTs: now },
     ConditionExpression: 'attribute_not_exists(pk)',
   })).catch(() => {}); // ignore if already exists
@@ -61,7 +62,7 @@ export async function upsertMembership(userId: string, chatId: string, meta: {
 }): Promise<void> {
   const now = new Date().toISOString();
   await ddb.send(new UpdateCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Key: { pk: `USER#${userId}`, sk: chatId },
     UpdateExpression: 'SET chatId = if_not_exists(chatId, :cid), chatName = if_not_exists(chatName, :name), chatType = if_not_exists(chatType, :type), unread = if_not_exists(unread, :zero), lastTs = if_not_exists(lastTs, :now)',
     ExpressionAttributeValues: { ':cid': chatId, ':name': meta.chatName, ':type': meta.chatType, ':zero': 0, ':now': now },
@@ -79,7 +80,7 @@ export async function updateChatLastMessage(
 
   // Update chat META record
   await ddb.send(new UpdateCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Key: { pk: `CHAT#${chatId}`, sk: 'META' },
     UpdateExpression: 'SET lastMessage = :msg, lastTs = :ts',
     ExpressionAttributeValues: { ':msg': preview, ':ts': now },
@@ -90,7 +91,7 @@ export async function updateChatLastMessage(
     participants.map((p) => {
       const isSender = p === senderId;
       return ddb.send(new UpdateCommand({
-        TableName: CHATS_TABLE,
+        TableName: chatsTable(),
         Key: { pk: `USER#${p}`, sk: chatId },
         UpdateExpression: isSender
           ? 'SET lastMessage = :msg, lastTs = :ts'
@@ -106,7 +107,7 @@ export async function updateChatLastMessage(
 
 export async function markChatRead(userId: string, chatId: string): Promise<void> {
   await ddb.send(new UpdateCommand({
-    TableName: CHATS_TABLE,
+    TableName: chatsTable(),
     Key: { pk: `USER#${userId}`, sk: chatId },
     UpdateExpression: 'SET #u = :zero',
     ExpressionAttributeNames: { '#u': 'unread' },
@@ -118,7 +119,7 @@ export async function markChatRead(userId: string, chatId: string): Promise<void
 
 export async function getMessages(chatId: string, limit = 50): Promise<any[]> {
   const res = await ddb.send(new QueryCommand({
-    TableName: MSGS_TABLE,
+    TableName: msgsTable(),
     KeyConditionExpression: 'chatId = :cid',
     ExpressionAttributeValues: { ':cid': chatId },
     ScanIndexForward: false,
@@ -136,7 +137,7 @@ export async function putMessage(msg: {
   const now = new Date().toISOString();
   const ts = `${now}#${msgId()}`;
   await ddb.send(new PutCommand({
-    TableName: MSGS_TABLE,
+    TableName: msgsTable(),
     Item: { ...msg, ts, createdAt: now },
   }));
   return { ts, createdAt: now };
@@ -153,7 +154,7 @@ export async function reactToMessage(
 ): Promise<void> {
   // First get current reactions to do toggle logic
   const res = await ddb.send(new QueryCommand({
-    TableName: MSGS_TABLE,
+    TableName: msgsTable(),
     KeyConditionExpression: 'chatId = :cid AND #ts = :ts',
     ExpressionAttributeNames: { '#ts': 'ts' },
     ExpressionAttributeValues: { ':cid': chatId, ':ts': ts },
@@ -179,7 +180,7 @@ export async function reactToMessage(
   }
 
   await ddb.send(new UpdateCommand({
-    TableName: MSGS_TABLE,
+    TableName: msgsTable(),
     Key: { chatId, ts },
     UpdateExpression: 'SET reactions = :r',
     ExpressionAttributeValues: { ':r': reactions },

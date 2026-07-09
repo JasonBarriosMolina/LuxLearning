@@ -1,13 +1,14 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { batchTranslate } from './translate';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const ddb = DynamoDBDocumentClient.from(ddbClient, { marshallOptions: { removeUndefinedValues: true } });
 
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 const TABLE = process.env.DYNAMO_TABLE_EMAIL_TEMPLATES ?? 'LuxEmailTemplates';
 
 export type EmailTemplateType =
@@ -157,9 +158,20 @@ async function getTemplate(type: EmailTemplateType): Promise<{ subject: string; 
 export async function sendTemplatedEmail(
   to: string,
   type: EmailTemplateType,
-  vars: Record<string, string>
+  vars: Record<string, string>,
+  lang = 'es'
 ): Promise<void> {
-  const template = await getTemplate(type);
+  let template = await getTemplate(type);
+  if (lang !== 'es') {
+    try {
+      const tr = await batchTranslate(
+        [{ type: 'emailTemplate' as const, id: type, fields: { subject: template.subject, htmlBody: template.htmlBody } }],
+        lang
+      );
+      const t = tr.get(`emailTemplate#${type}`);
+      if (t) template = { subject: (t.subject as string) ?? template.subject, htmlBody: (t.htmlBody as string) ?? template.htmlBody };
+    } catch { /* fallback to original template */ }
+  }
   const subject = `${EMAIL_SUBJECT_PREFIX}: ${renderTemplate(template.subject, vars)}`;
   const body = renderTemplate(template.htmlBody, vars) + SIGNATURE_HTML;
 

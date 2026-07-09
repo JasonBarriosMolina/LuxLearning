@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { TaskCalendar } from '@/components/shared/TaskCalendar';
+import { useLanguage } from '@/lib/i18n';
 
 interface TaskFormState {
   title: string;
@@ -34,16 +35,6 @@ const EMPTY_FORM: TaskFormState = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const looksLikeUUID = (s: string) => UUID_RE.test((s ?? '').trim());
 
-const TYPE_LABELS: Record<string, string> = {
-  custom: 'Tarea personalizada',
-  complete_module: 'Completar módulo',
-  submit_reflection: 'Enviar reflexión',
-  pass_quiz: 'Aprobar quiz',
-  upload_link: 'Subir enlace (Drive/YouTube)',
-  watch_video: 'Ver video externo',
-  read_resource: 'Leer recurso',
-};
-
 const URL_TASK_TYPES = ['upload_link', 'watch_video', 'read_resource'];
 
 function taskStatusIcon(status: string) {
@@ -59,6 +50,16 @@ function taskStatusVariant(status: string): 'success' | 'error' | 'warning' | 'd
 }
 
 export default function EvaluatorTasksPage() {
+  const { t } = useLanguage();
+  const TYPE_LABELS: Record<string, string> = {
+    custom: t.evaluator.taskTypeCustom,
+    complete_module: t.evaluator.taskTypeCompleteModule,
+    submit_reflection: t.evaluator.taskTypeSubmitReflection,
+    pass_quiz: t.evaluator.taskTypePassQuiz,
+    upload_link: t.evaluator.taskTypeUploadLink,
+    watch_video: t.evaluator.taskTypeWatchVideo,
+    read_resource: t.evaluator.taskTypeReadResource,
+  };
   const [tasks, setTasks] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -200,8 +201,8 @@ export default function EvaluatorTasksPage() {
         <div className="flex items-center gap-3">
           <ClipboardList className="w-6 h-6 text-cta-from" />
           <div>
-            <h1 className="font-heading font-bold text-2xl text-charcoal">Gestión de Tareas</h1>
-            <p className="text-sm text-gray-500">Asigna y gestiona tareas para tus estudiantes</p>
+            <h1 className="font-heading font-bold text-2xl text-charcoal">{t.evaluator.tasksTitle}</h1>
+            <p className="text-sm text-gray-500">{t.evaluator.tasksSubtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -210,20 +211,20 @@ export default function EvaluatorTasksPage() {
             <button
               onClick={() => setViewMode('list')}
               className={`p-2 ${viewMode === 'list' ? 'bg-cta-gradient text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              title="Vista lista"
+              title={t.evaluator.taskListView}
             >
               <List className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('calendar')}
               className={`p-2 ${viewMode === 'calendar' ? 'bg-cta-gradient text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              title="Vista calendario"
+              title={t.evaluator.taskCalView}
             >
               <CalendarDays className="w-4 h-4" />
             </button>
           </div>
           <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
-            Nueva tarea
+            {t.evaluator.createTask}
           </Button>
         </div>
       </div>
@@ -231,9 +232,9 @@ export default function EvaluatorTasksPage() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Total', value: tasks.length, color: 'text-charcoal' },
-          { label: 'Pendientes', value: tasks.filter((t) => t.status === 'PENDING').length, color: 'text-blue-600' },
-          { label: 'Vencidas', value: tasks.filter((t) => t.status === 'OVERDUE').length, color: 'text-red-500' },
+          { label: t.evaluator.statsTotal, value: tasks.length, color: 'text-charcoal' },
+          { label: t.evaluator.statsPending, value: tasks.filter((t) => t.status === 'PENDING').length, color: 'text-blue-600' },
+          { label: t.evaluator.statsOverdue, value: tasks.filter((t) => t.status === 'OVERDUE').length, color: 'text-red-500' },
         ].map((s) => (
           <div key={s.label} className="card text-center py-3">
             <p className={`font-heading font-bold text-2xl ${s.color}`}>{s.value}</p>
@@ -253,8 +254,8 @@ export default function EvaluatorTasksPage() {
       {viewMode === 'list' && (Object.keys(byStudent).length === 0 ? (
         <div className="card text-center py-16">
           <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-semibold text-charcoal">Sin tareas asignadas</p>
-          <p className="text-sm text-gray-400 mt-1">Crea tu primera tarea con el botón de arriba.</p>
+          <p className="font-heading font-semibold text-charcoal">{t.evaluator.noTasks}</p>
+          <p className="text-sm text-gray-400 mt-1">{t.evaluator.noTasksHint}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -263,7 +264,7 @@ export default function EvaluatorTasksPage() {
               <div className="flex items-center gap-2 mb-3">
                 <User className="w-4 h-4 text-gray-400" />
                 <p className="font-semibold text-charcoal text-sm">{getStudentName(userId)}</p>
-                <span className="text-xs text-gray-400">({studentTasks.length} tarea{studentTasks.length !== 1 ? 's' : ''})</span>
+                <span className="text-xs text-gray-400">({t.evaluator.taskCount(studentTasks.length)})</span>
               </div>
               <div className="space-y-2">
                 {studentTasks.map((task) => (
@@ -273,13 +274,13 @@ export default function EvaluatorTasksPage() {
                       <div className="flex items-center gap-2 min-w-0">
                         <p className="text-sm font-medium text-charcoal truncate">{task.title}</p>
                         {looksLikeUUID(task.title) && (
-                          <span className="shrink-0 text-[10px] font-semibold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">⚠ revisar título</span>
+                          <span className="shrink-0 text-[10px] font-semibold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{t.evaluator.reviewTitleFlag}</span>
                         )}
                       </div>
                       <p className="text-xs text-gray-400">{task.dueDate} · {TYPE_LABELS[task.type as keyof typeof TYPE_LABELS] ?? task.type}</p>
                     </div>
                     <Badge variant={taskStatusVariant(task.status)}>
-                      {task.status === 'PENDING' ? 'Pendiente' : task.status === 'COMPLETED' ? 'Completada' : 'Vencida'}
+                      {task.status === 'PENDING' ? t.evaluator.taskStatusPending : task.status === 'COMPLETED' ? t.evaluator.taskStatusCompleted : t.evaluator.taskStatusOverdue}
                     </Badge>
                     <button
                       onClick={() => openEdit(task)}
@@ -303,16 +304,16 @@ export default function EvaluatorTasksPage() {
       ))}
 
       {/* Edit Task Modal */}
-      <Modal open={!!editTask} onClose={() => setEditTask(null)} title="Editar tarea" size="md">
+      <Modal open={!!editTask} onClose={() => setEditTask(null)} title={t.evaluator.editTaskTitle} size="md">
         <form onSubmit={handleEditSave} className="space-y-4">
           <Input
-            label="Título"
+            label={t.evaluator.taskTitle}
             value={editForm.title}
             onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
             required
           />
           <div className="space-y-1">
-            <label className="text-sm font-medium text-charcoal">Descripción</label>
+            <label className="text-sm font-medium text-charcoal">{t.evaluator.taskDescription}</label>
             <textarea
               value={editForm.description}
               onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
@@ -320,42 +321,42 @@ export default function EvaluatorTasksPage() {
             />
           </div>
           <Input
-            label="Fecha límite"
+            label={t.evaluator.taskDueDate}
             type="date"
             value={editForm.dueDate}
             onChange={(e) => setEditForm((f) => ({ ...f, dueDate: e.target.value }))}
           />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setEditTask(null)}>Cancelar</Button>
-            <Button type="submit" loading={editSaving}>Guardar cambios</Button>
+            <Button type="button" variant="secondary" onClick={() => setEditTask(null)}>{t.evaluator.cancelBtn}</Button>
+            <Button type="submit" loading={editSaving}>{t.evaluator.saveTaskChanges}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Create Task Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva tarea" size="lg">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t.evaluator.createTask} size="lg">
         <form onSubmit={handleSave} className="space-y-4">
           <Input
-            label="Título de la tarea"
+            label={t.evaluator.taskTitleInput}
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder="ej. Completar el módulo 2 antes del viernes"
+            placeholder={t.evaluator.taskTitlePlaceholder}
             required
           />
 
           <div className="space-y-1">
-            <label className="text-sm font-medium text-charcoal">Descripción (opcional)</label>
+            <label className="text-sm font-medium text-charcoal">{t.evaluator.descriptionOptional}</label>
             <textarea
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Instrucciones adicionales..."
+              placeholder={t.evaluator.taskDescPlaceholder}
               className="input-field min-h-[60px] resize-y"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Tipo</label>
+              <label className="text-sm font-medium text-charcoal">{t.evaluator.taskType}</label>
               <select
                 value={form.type}
                 onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as any, resourceUrl: '' }))}
@@ -367,7 +368,7 @@ export default function EvaluatorTasksPage() {
               </select>
             </div>
             <Input
-              label="Fecha límite"
+              label={t.evaluator.taskDueDate}
               type="date"
               value={form.dueDate}
               onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
@@ -378,7 +379,7 @@ export default function EvaluatorTasksPage() {
           {/* Resource URL field for URL-based task types */}
           {URL_TASK_TYPES.includes(form.type) && (
             <Input
-              label={form.type === 'upload_link' ? 'URL del recurso (Drive, YouTube, etc.)' : form.type === 'watch_video' ? 'URL del video' : 'URL de lectura'}
+              label={form.type === 'upload_link' ? t.evaluator.taskUrlLabel : form.type === 'watch_video' ? t.evaluator.taskVideoUrl : t.evaluator.taskReadingUrl}
               value={form.resourceUrl}
               onChange={(e) => setForm((f) => ({ ...f, resourceUrl: e.target.value }))}
               placeholder="https://..."
@@ -388,7 +389,7 @@ export default function EvaluatorTasksPage() {
 
           {/* Assign to */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-charcoal">Asignar a</label>
+            <label className="text-sm font-medium text-charcoal">{t.evaluator.assignToLabel}</label>
             <div className="flex gap-3">
               {(['individual', 'course'] as const).map((opt) => (
                 <button
@@ -400,7 +401,7 @@ export default function EvaluatorTasksPage() {
                   }`}
                 >
                   {opt === 'individual' ? <User className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                  {opt === 'individual' ? 'Estudiante individual' : 'Todos en un curso'}
+                  {opt === 'individual' ? t.evaluator.individualStudent : t.evaluator.allInCourse}
                 </button>
               ))}
             </div>
@@ -408,14 +409,14 @@ export default function EvaluatorTasksPage() {
 
           {form.assignTo === 'individual' ? (
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Estudiante</label>
+              <label className="text-sm font-medium text-charcoal">{t.evaluator.studentLabel}</label>
               <div className="relative mb-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Buscar estudiante..."
+                  placeholder={t.evaluator.searchStudent}
                   className="input-field pl-9 text-sm py-2"
                 />
               </div>
@@ -426,7 +427,7 @@ export default function EvaluatorTasksPage() {
                 size={5}
                 required
               >
-                <option value="">— selecciona —</option>
+                <option value="">{t.evaluator.selectStudent}</option>
                 {students
                   .filter((s: any) => {
                     const q = studentSearch.toLowerCase();
@@ -439,14 +440,14 @@ export default function EvaluatorTasksPage() {
             </div>
           ) : (
             <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Curso</label>
+              <label className="text-sm font-medium text-charcoal">{t.evaluator.courseLabel}</label>
               <select
                 value={form.targetCourseId}
                 onChange={(e) => setForm((f) => ({ ...f, targetCourseId: e.target.value }))}
                 className="input-field"
                 required
               >
-                <option value="">Selecciona un curso...</option>
+                <option value="">{t.evaluator.selectCourseOption}</option>
                 {courses.map((c: any) => (
                   <option key={c.id} value={c.id}>{c.title}</option>
                 ))}
@@ -457,11 +458,11 @@ export default function EvaluatorTasksPage() {
           {/* Optional course link */}
           <details className="text-sm">
             <summary className="cursor-pointer text-gray-400 hover:text-charcoal transition-colors py-1">
-              + Vincular a curso/módulo (opcional)
+              {t.evaluator.optionalLink}
             </summary>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-charcoal">Curso</label>
+                <label className="text-xs font-medium text-charcoal">{t.evaluator.courseLabel}</label>
                 <select
                   value={form.courseId}
                   onChange={(e) => {
@@ -475,7 +476,7 @@ export default function EvaluatorTasksPage() {
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-charcoal">Módulo</label>
+                <label className="text-xs font-medium text-charcoal">{t.evaluator.moduleLabel}</label>
                 <select
                   value={form.moduleId}
                   onChange={(e) => {
@@ -500,8 +501,8 @@ export default function EvaluatorTasksPage() {
           )}
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit" loading={saving} disabled={saving}>Asignar tarea</Button>
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>{t.evaluator.cancelBtn}</Button>
+            <Button type="submit" loading={saving} disabled={saving}>{t.evaluator.assignTask}</Button>
           </div>
         </form>
       </Modal>

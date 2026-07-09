@@ -6,14 +6,15 @@ import {
   getAllReflections, getAllLessonProgress, getAllQuizAttempts, getAllEnrollments,
   getReportAnalysis, getRecommendations, saveRecommendations,
 } from '../shared/db-dynamo';
-import { ok, badRequest, forbidden, serverError, cors } from '../shared/response';
+import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://lux-learning.vercel.app';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -41,6 +42,9 @@ async function resolveEmail(userId: string): Promise<string> {
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const auth = event.requestContext.authorizer?.lambda;

@@ -497,13 +497,13 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
                   <div className="flex rounded-lg border border-border overflow-hidden">
-                    {(['text', 'image', 'infographic'] as const).map((t) => (
+                    {(['text', 'image'] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => { setRegenType(t); setRegenStyle(''); }}
                         className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                       >
-                        {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
+                        {t === 'text' ? '📝 Texto' : '🖼 Imagen'}
                       </button>
                     ))}
                   </div>
@@ -532,15 +532,12 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                   </div>
                 )}
 
-                {/* Style (image/infographic) */}
-                {(regenType === 'image' || regenType === 'infographic') && (
+                {/* Style (image only) */}
+                {regenType === 'image' && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {(regenType === 'image'
-                        ? [['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['diagram', '📐 Diagrama'], ['comic', '💥 Cómic']]
-                        : [['minimal', '⬜ Minimal'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']]
-                      ).map(([val, label]) => (
+                      {[['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['minimal', '⬜ Minimal'], ['comic', '💥 Cómic'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']].map(([val, label]) => (
                         <button
                           key={val}
                           onClick={() => setRegenStyle(regenStyle === val ? '' : val)}
@@ -620,7 +617,22 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
                   </div>
                 ) : (regenType === 'image' || regenType === 'infographic') && regenPreviewData?.imageUrl ? (
                   <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-indigo-600 uppercase">Vista previa del contenido generado</p>
+                      <a
+                        href={regenPreviewData.imageUrl}
+                        download={`leccion-${regenType}-${Date.now()}.${regenPreviewData.imageUrl.endsWith('.svg') ? 'svg' : 'jpg'}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700 transition-colors"
+                        title="Descargar imagen"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                        Descargar
+                      </a>
+                    </div>
                     <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
                   </div>
                 ) : null}
@@ -694,6 +706,12 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
   const [aiLessonError, setAiLessonError] = useState('');
   const aiLessonIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [aiQuestionsOpen, setAiQuestionsOpen] = useState(false);
+  const [aiQuestionsContent, setAiQuestionsContent] = useState('');
+  const [aiQuestionsCount, setAiQuestionsCount] = useState(5);
+  const [aiQuestionsLoading, setAiQuestionsLoading] = useState(false);
+  const [aiQuestionsError, setAiQuestionsError] = useState('');
+
   // Cleanup polling intervals on unmount
   useEffect(() => {
     return () => {
@@ -734,6 +752,28 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
     } catch (err: any) {
       setAiLessonError(err.message ?? 'Error al generar lección');
       setAiLessonLoading(false);
+    }
+  };
+
+  const handleAiQuestions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuestionsContent.trim()) return;
+    setAiQuestionsLoading(true);
+    setAiQuestionsError('');
+    try {
+      const res = await api.admin.questions.aiGenerate(mod.id, {
+        content: aiQuestionsContent.trim(),
+        count: aiQuestionsCount,
+      });
+      const created = (res as any)?.data?.created ?? 0;
+      setAiQuestionsOpen(false);
+      setAiQuestionsContent('');
+      setAiQuestionsCount(5);
+      if (created > 0) onRefresh();
+    } catch (err: any) {
+      setAiQuestionsError(err.message ?? 'Error al generar preguntas. Intenta de nuevo.');
+    } finally {
+      setAiQuestionsLoading(false);
     }
   };
 
@@ -885,10 +925,27 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
                 <ClipboardCheck className="w-4 h-4 text-amber-500" />
                 Preguntas del quiz ({mod.questions?.length ?? 0}) — Selección única
               </h4>
-              <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
-                Agregar pregunta
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
+                  onClick={() => {
+                    const preloaded = (mod.lessons ?? []).map((l: any, i: number) => {
+                      const parts = [`Lección ${i + 1}: ${l.title}`];
+                      if (l.content) parts.push(l.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+                      if (Array.isArray(l.points) && l.points.filter(Boolean).length > 0) parts.push('Puntos clave: ' + l.points.filter(Boolean).join('. '));
+                      if (l.tip) parts.push('Consejo: ' + l.tip);
+                      return parts.join('\n');
+                    }).join('\n\n');
+                    setAiQuestionsContent(preloaded);
+                    setAiQuestionsError('');
+                    setAiQuestionsOpen(true);
+                  }}>
+                  IA
+                </Button>
+                <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
+                  Agregar pregunta
+                </Button>
+              </div>
             </div>
             {(mod.questions?.length ?? 0) === 0 && (
               <p className="text-xs text-gray-400 text-center py-4 bg-white rounded-xl border border-dashed border-border">
@@ -944,6 +1001,48 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
             <Button type="button" variant="secondary" size="sm" onClick={() => setAiLessonOpen(false)}>Cancelar</Button>
             <Button type="submit" size="sm" loading={aiLessonLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
               Generar lección
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* AI quiz questions generation modal */}
+      <Modal open={aiQuestionsOpen} onClose={() => setAiQuestionsOpen(false)} title="Generar preguntas con IA" size="md">
+        <form onSubmit={handleAiQuestions} className="space-y-4">
+          <p className="text-sm text-gray-500">
+            El contenido de las lecciones fue precargado automáticamente. Puedes editarlo antes de generar.
+          </p>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Contenido del módulo</label>
+            <textarea
+              autoFocus
+              value={aiQuestionsContent}
+              onChange={(e) => setAiQuestionsContent(e.target.value)}
+              placeholder="Pega aquí el contenido de las lecciones o describe los conceptos clave del módulo..."
+              className="input-field resize-none min-h-[140px] text-sm w-full"
+              required
+              minLength={20}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">Cantidad de preguntas</label>
+            <select
+              value={aiQuestionsCount}
+              onChange={(e) => setAiQuestionsCount(Number(e.target.value))}
+              className="input-field text-sm"
+            >
+              {[3, 5, 7, 10].map((n) => (
+                <option key={n} value={n}>{n} preguntas</option>
+              ))}
+            </select>
+          </div>
+          {aiQuestionsError && <p className="text-xs text-red-500">{aiQuestionsError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAiQuestionsOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" size="sm" loading={aiQuestionsLoading} leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+              Generar preguntas
             </Button>
           </div>
         </form>

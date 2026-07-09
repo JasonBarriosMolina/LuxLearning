@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { savePushSubscription, deletePushSubscription } from '../shared/db-dynamo';
-import { ok, badRequest, serverError, cors } from '../shared/response';
+import { savePushSubscription, deletePushSubscription, setUserLang } from '../shared/db-dynamo';
+import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -8,6 +9,9 @@ type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestCont
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? '';
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const auth = event.requestContext.authorizer?.lambda;
@@ -47,6 +51,16 @@ export const handler = async (event: Event) => {
       if (!endpoint) return badRequest('endpoint required');
       await deletePushSubscription(userId, endpoint);
       return ok({ unsubscribed: true });
+    }
+
+    // PUT /user/preferences — save language preference
+    if (method === 'PUT' && path === '/user/preferences') {
+      if (!userId) return badRequest('Unauthorized');
+      const body = JSON.parse(event.body ?? '{}');
+      const { lang } = body as { lang: string };
+      if (lang !== 'en' && lang !== 'es') return badRequest('lang must be en or es');
+      await setUserLang(userId, lang);
+      return ok({ saved: true });
     }
 
     return badRequest('Unknown route');

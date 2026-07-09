@@ -244,7 +244,6 @@ export default function ReflectionDetailPage() {
 
   // AI feedback generator
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [aiError, setAiError] = useState('');
 
   // AI detection check (manual re-trigger)
@@ -321,12 +320,16 @@ export default function ReflectionDetailPage() {
     if (!reflection?.text) return;
     setAiLoading(true);
     setAiError('');
-    setAiSuggestions([]);
     try {
       const res = await api.evaluator.aiFeedback(reflection.text, reflection.moduleTitle);
-      setAiSuggestions((res as any).data?.suggestions ?? []);
+      const generated = (res as any).data?.feedback ?? '';
+      if (generated) {
+        setFeedback((prev) => (prev ? `${prev}\n\n${generated}` : generated));
+      } else {
+        setAiError('La IA no generó feedback. Intenta de nuevo.');
+      }
     } catch (e: any) {
-      setAiError('No se pudieron generar sugerencias. Intenta de nuevo.');
+      setAiError('No se pudo generar el feedback. Intenta de nuevo.');
     } finally {
       setAiLoading(false);
     }
@@ -621,30 +624,9 @@ export default function ReflectionDetailPage() {
                   </button>
                 </div>
 
-                {/* AI Suggestions */}
+                {/* AI Feedback error */}
                 {aiError && (
                   <p className="text-xs text-red-500">{aiError}</p>
-                )}
-                {aiSuggestions.length > 0 && (
-                  <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-purple-600 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" /> Sugerencias generadas por IA
-                    </p>
-                    {aiSuggestions.map((s, i) => (
-                      <div
-                        key={i}
-                        onClick={() => insertComment(s, 9000 + i)}
-                        className="group flex items-start gap-2 p-2.5 rounded-lg border border-purple-200 bg-white hover:border-purple-400 cursor-pointer transition-all"
-                      >
-                        <p className="text-xs text-gray-700 flex-1 leading-relaxed">{s}</p>
-                        <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {copiedIdx === 9000 + i
-                            ? <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            : <Copy className="w-3.5 h-3.5 text-purple-400" />}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 )}
 
                 <p className="text-xs text-gray-400">{t.reflection.minCharsHint(MIN_FEEDBACK_LEN)}</p>

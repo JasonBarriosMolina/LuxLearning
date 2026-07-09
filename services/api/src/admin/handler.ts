@@ -22,66 +22,142 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
 import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification } from '../shared/db-dynamo';
+import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { jsonrepair } from 'jsonrepair';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+// Stability Image Core is only available in us-west-2
+const bedrockImageClient = new BedrockRuntimeClient({ region: 'us-west-2' });
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
-// ── Nova Canvas image generation helper ─────────────────────────────────────
+// ── Stability Image Core (us-west-2) image generation ───────────────────────
 const STYLE_SUFFIXES: Record<string, string> = {
-  realistic:    ', photorealistic style, high detail, professional photography look',
-  illustration: ', flat illustration style, colorful, modern vector art',
-  diagram:      ', clean technical diagram style, clear labels, professional schematic',
-  comic:        ', comic book style, bold outlines, vibrant colors, graphic novel look',
-  minimal:      ', minimal design, clean white space, simple geometric shapes',
-  colorful:     ', vibrant multicolor palette, energetic infographic style',
-  corporate:    ', professional corporate style, blue and gray tones, business presentation',
+  realistic:    ', photorealistic, high detail, professional photography',
+  illustration: ', flat illustration, colorful, modern vector art style',
+  diagram:      ', clean technical illustration, professional schematic, flat design',
+  comic:        ', comic book style, bold outlines, vibrant colors, graphic novel',
+  minimal:      ', minimal design, clean white background, simple shapes',
+  colorful:     ', vibrant multicolor palette, energetic, dynamic composition',
+  corporate:    ', professional corporate style, blue and gray tones, business',
 };
+
+// Haiku → visual prompt for Stability AI (pure scene description, no text in image)
+async function buildVisualPrompt(lessonTitle: string, moduleTitle: string, content: string): Promise<string> {
+  const snippet = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+  try {
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31', max_tokens: 150,
+        messages: [{ role: 'user', content:
+          `Visual art director task: convert this lesson content into a diffusion model image prompt (max 80 words).\nRules: describe only visual elements (objects, people, settings, colors). NO text, labels, diagrams anywhere in the image. Flat illustration style, colorful, white background.\nLesson: "${lessonTitle}"\nContent: ${snippet}\nReturn ONLY the prompt, nothing else.`
+        }],
+      }),
+    }));
+    const text = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    if (text.length > 20) return text;
+  } catch { /* fall through */ }
+  return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
+}
+
+// Haiku → SVG infographic with real readable text (for regenType 'infographic')
+async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const prompt = `Create a clean educational SVG infographic (1200x1200px) for this lesson.
+
+Lesson: "${lessonTitle}"
+Module: "${moduleTitle}"
+Content: ${snippet}
+
+Generate a complete, valid SVG with:
+- White background (#FFFFFF)
+- Title at top in dark color, large font (32-40px), in Spanish, wrapped with tspan if needed
+- 3-4 content sections, each with: a colored rounded rectangle header, a simple SVG icon built from basic shapes (circle/rect/path — no external images or base64), 2-3 lines of explanatory text in Spanish
+- Color palette: complementary colors (blues #3B82F6, greens #10B981, oranges #F59E0B, purples #8B5CF6)
+- font-family="Arial, Helvetica, sans-serif" on all text elements
+- All text content in Spanish, directly related to the lesson
+- NO external images, NO base64, NO JavaScript, NO CSS classes — pure SVG attributes only
+- viewBox="0 0 1200 1200" width="1200" height="1200"
+
+Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No markdown, no explanation.`;
+
+  try {
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }] }),
+    }));
+    let svgRaw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
+    if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
+    const svg = match[0];
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_IMAGES_BUCKET, Key: key,
+      Body: Buffer.from(svg, 'utf-8'),
+      ContentType: 'image/svg+xml',
+      CacheControl: 'public, max-age=31536000',
+    }));
+    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('[InfographicGen] Error:', err);
+    return null;
+  }
+}
 
 async function generateLessonImage(
   lessonTitle: string,
   moduleTitle: string,
   order: number,
-  override?: { promptText?: string; style?: string }
+  override?: { promptText?: string; style?: string; lessonContent?: string }
 ): Promise<string | null> {
-  const basePrompts: Record<number, string> = {
-    2:  `Clean minimal educational mind map diagram about "${lessonTitle.slice(0, 60)}" in the context of "${moduleTitle.slice(0, 60)}", light blue background, professional illustration, no text labels, vector style`,
-    6:  `Professional educational illustration depicting "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, vivid colors, no text, clean composition`,
-    10: `Clean professional educational infographic layout about "${lessonTitle.slice(0, 60)}" summarizing "${moduleTitle.slice(0, 60)}", structured sections, modern design, geometric shapes`,
-  };
-  let prompt = override?.promptText ?? basePrompts[order]
-    ?? `Educational illustration for lesson "${lessonTitle.slice(0, 60)}" about "${moduleTitle.slice(0, 60)}", modern flat design, professional, no text, clean composition`;
+  // Build prompt: custom override → Haiku visual scene from content → simple fallback
+  let prompt: string;
+  if (override?.promptText) {
+    prompt = override.promptText;
+  } else if (override?.lessonContent) {
+    prompt = await buildVisualPrompt(lessonTitle, moduleTitle, override.lessonContent);
+  } else {
+    prompt = `Flat illustration of "${lessonTitle.slice(0, 60)}" from "${moduleTitle.slice(0, 60)}", colorful educational scene, clean white background, modern design, no text`;
+  }
   if (override?.style && STYLE_SUFFIXES[override.style]) {
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }
   try {
-    const resp = await bedrock.send(new InvokeModelCommand({
-      modelId: 'amazon.nova-canvas-v1:0',
+    // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
+    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+      modelId: 'stability.stable-image-core-v1:1',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
-        taskType: 'TEXT_IMAGE',
-        textToImageParams: { text: prompt, negativeText: 'blurry, low quality, text, watermark, letters, words, nsfw' },
-        imageGenerationConfig: { numberOfImages: 1, quality: 'standard', width: 1024, height: 1024 },
+        prompt,
+        negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, signs, blurry, low quality, distorted, infographic, chart, diagram',
+        mode: 'text-to-image',
+        aspect_ratio: '1:1',
+        output_format: 'jpeg',
       }),
     }));
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
-    if (!base64) return null;
+    if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
     const imgBuffer = Buffer.from(base64, 'base64');
-    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+    if (imgBuffer.length === 0) return null;
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,
       Body: imgBuffer,
-      ContentType: 'image/png',
+      ContentType: 'image/jpeg',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
   } catch (err) {
@@ -170,8 +246,8 @@ async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Promise<a
   catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
 }
 
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.com';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 
 function invitationEmailHtml(name: string, email: string, temporaryPassword: string, courseNames: string[]): string {
   const coursesBlock = courseNames.length > 0
@@ -268,8 +344,10 @@ async function getCallerName(event: Event): Promise<string | null> {
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
   const method = event.requestContext.http.method;
@@ -307,6 +385,8 @@ export const handler = async (event: Event) => {
     // ── GET /admin/courses ──────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'GET') {
       const statusFilter = event.queryStringParameters?.status;
+      const rawLang = event.queryStringParameters?.lang ?? 'es';
+      const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
       let whereClause: Record<string, any> = {};
       if (statusFilter === 'draft') {
         whereClause = { isDraft: true, isArchived: false };
@@ -332,11 +412,21 @@ export const handler = async (event: Event) => {
           },
         },
       });
-      const coursesWithLegacy = courses.map((c) => {
+      let coursesWithLegacy: any[] = courses.map((c) => {
         const isLegacy = c.modules.length > 0 &&
           c.modules.every((m) => (m.lessons as any[]).every((l: any) => l.type === 'video' && !l.content));
         return { ...c, isLegacy };
       });
+      if (lang !== 'es' && coursesWithLegacy.length > 0) {
+        const translations = await batchTranslate(
+          coursesWithLegacy.map((c) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
+          lang
+        );
+        coursesWithLegacy = coursesWithLegacy.map((c) => {
+          const t = translations.get(`course#${c.id}`);
+          return t ? { ...c, title: (t.title as string) ?? c.title, description: (t.description as string) ?? c.description } : c;
+        });
+      }
       return ok(coursesWithLegacy);
     }
 
@@ -525,6 +615,7 @@ export const handler = async (event: Event) => {
             closeDate: closeDate ? new Date(closeDate) : null,
           },
         });
+        await invalidateTranslation('course', courseId);
         return ok(course);
       }
 
@@ -570,6 +661,7 @@ export const handler = async (event: Event) => {
           where: { id: moduleId },
           data: { title, description, duration, passingScore: Number(passingScore), order: Number(order) },
         });
+        await invalidateTranslation('module', moduleId);
         return ok(mod);
       }
 
@@ -833,6 +925,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
             order: Number(order),
           },
         });
+        await invalidateTranslation('lesson', lessonId);
         return ok(lesson);
       }
 
@@ -851,6 +944,84 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
         await prisma.lesson.delete({ where: { id: lessonId } });
         return ok({ deleted: true });
       }
+    }
+
+    // ── POST /admin/modules/:moduleId/questions/ai-generate ─────────────────
+    const aiQuestionsMatch = path.match(/^\/admin\/modules\/([^/]+)\/questions\/ai-generate$/);
+    if (aiQuestionsMatch && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const moduleId = aiQuestionsMatch[1]!;
+      const { content, count = 5 } = body as { content?: string; count?: number };
+
+      if (!content || content.trim().length < 20) {
+        return badRequest('content (mínimo 20 caracteres) es requerido');
+      }
+      const safeCount = Math.min(Math.max(Number(count) || 5, 3), 10);
+
+      const mod = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: { questions: { select: { order: true } } },
+      });
+      if (!mod) return notFound('Módulo no encontrado');
+
+      const nextOrder = mod.questions.length > 0
+        ? Math.max(...mod.questions.map((q: any) => q.order)) + 1
+        : 1;
+
+      const aiPrompt = `Eres un diseñador instruccional experto. Basándote en el siguiente contenido educativo del módulo "${mod.title}", genera exactamente ${safeCount} preguntas de opción múltiple de alta calidad para evaluar la comprensión del estudiante.
+
+CONTENIDO:
+"""
+${content.slice(0, 4000)}
+"""
+
+REGLAS:
+- Cada pregunta debe tener exactamente 4 opciones
+- Una sola respuesta correcta por pregunta (correctIndex entre 0 y 3)
+- Las preguntas deben cubrir diferentes conceptos del contenido
+- Redacta en español, con lenguaje claro y preciso
+- Evalúa comprensión y aplicación, no memorización pura
+
+Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
+[{"text":"¿Pregunta?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0}]`;
+
+      const rawQuestions = await invokeBedrockForJson(aiPrompt, 3000);
+
+      if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+        return serverError('Bedrock no generó preguntas válidas');
+      }
+
+      const validated = rawQuestions.filter((q: any) =>
+        typeof q.text === 'string' && q.text.trim().length > 0 &&
+        Array.isArray(q.options) && q.options.length === 4 &&
+        typeof q.correctIndex === 'number' &&
+        q.correctIndex >= 0 && q.correctIndex < 4
+      ).slice(0, safeCount);
+
+      if (validated.length === 0) {
+        return serverError('Las preguntas generadas no pasaron validación');
+      }
+
+      const shuffled = shuffleQuestionOptions(validated);
+
+      const created = await prisma.question.createMany({
+        data: shuffled.map((q: any, i: number) => ({
+          moduleId,
+          text: String(q.text).trim(),
+          options: q.options.map((o: any) => String(o).trim()),
+          correctIndex: Number(q.correctIndex),
+          order: nextOrder + i,
+        })),
+      });
+
+      // Invalidar traducciones: refetch los IDs recién creados
+      const newQuestions = await prisma.question.findMany({
+        where: { moduleId, order: { gte: nextOrder } },
+        select: { id: true },
+      });
+      await Promise.all(newQuestions.map((q: any) => invalidateTranslation('question', q.id)));
+
+      return ok({ created: created.count });
     }
 
     // ── POST /admin/modules/:moduleId/questions ─────────────────────────────
@@ -890,6 +1061,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
           where: { id: questionId },
           data: { text, options, correctIndex: Number(correctIndex), order: Number(order) },
         });
+        await invalidateTranslation('question', questionId);
         return ok(question);
       }
 
@@ -1140,14 +1312,10 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
           const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
           const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value;
           if (emailAttr && course) {
-            await ses.send(new SendEmailCommand({
-              Source: FROM_EMAIL,
-              Destination: { ToAddresses: [emailAttr] },
-              Message: {
-                Subject: { Data: `¡Nuevo curso disponible: ${course.title}!`, Charset: 'UTF-8' },
-                Body: { Html: { Data: enrollmentEmailHtml(nameAttr || emailAttr.split('@')[0], course.title), Charset: 'UTF-8' } },
-              },
-            }));
+            await sendTemplatedEmail(emailAttr, 'ENROLLMENT', {
+              studentName: nameAttr || emailAttr.split('@')[0],
+              courseTitle: course.title,
+            });
           }
           // Notify evaluator when a student is enrolled in their course
           if (course?.evaluatorId) {
@@ -1640,7 +1808,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
             mod.lessons
               .filter((l) => [2, 6, 10].includes(l.order))
               .map(async (lesson) => {
-                const url = await generateLessonImage(lesson.title, mod.title, lesson.order);
+                const url = await generateLessonImage(lesson.title, mod.title, lesson.order, { lessonContent: lesson.content ?? '' });
                 if (url) await prisma.lesson.update({ where: { id: lesson.id }, data: { imageUrl: url } });
               })
           )
@@ -1736,6 +1904,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
             tip: previewData.tip ?? lesson.tip,
           };
           const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
+          await invalidateTranslation('lesson', lessonId);
           return ok(updated);
         }
         if ((regenType === 'image' || regenType === 'infographic') && previewData.imageUrl) {
@@ -1758,17 +1927,16 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
 
       if (regenType === 'image') {
         // Regenerate the lesson image only (generate+upload to S3, then optionally save to DB)
-        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle });
-        if (!imageUrl) return badRequest('No se pudo generar la imagen (posición de lección no soportada o error en Nova Canvas)');
+        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle, lessonContent: lesson.content ?? '' });
+        if (!imageUrl) return badRequest('No se pudo generar la imagen. Intenta de nuevo en unos segundos.');
         if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
         return ok(updated);
       }
 
       if (regenType === 'infographic') {
-        // Generate infographic-style image with structured prompt
-        const promptText = `Educational infographic for lesson "${lesson.title.slice(0, 60)}" from module "${modTitle.slice(0, 60)}", structured layout with sections and icons, professional design, no text labels, clean composition`;
-        const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { promptText, style: regenStyle });
+        // Generate SVG infographic via Haiku — real readable text, lesson-specific content
+        const imageUrl = await generateLessonInfographic(lesson.title, modTitle, lesson.content ?? '');
         if (!imageUrl) return badRequest('No se pudo generar la infografía');
         if (previewMode) return ok({ imageUrl, preview: true }); // return URL without saving
         const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
@@ -1804,6 +1972,7 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
         tip: regenPayload.tip,
       } : regenPayload;
       const updated = await prisma.lesson.update({ where: { id: lessonId }, data: updateData });
+      await invalidateTranslation('lesson', lessonId);
       return ok(updated);
     }
 
@@ -1984,7 +2153,19 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
 
     // GET /admin/email-templates — list all email templates
     if (method === 'GET' && path === '/admin/email-templates') {
-      const templates = await getAllEmailTemplates();
+      const rawLangEt = event.queryStringParameters?.lang ?? 'es';
+      const langEt = ['en', 'es'].includes(rawLangEt) ? rawLangEt : 'es';
+      let templates = await getAllEmailTemplates();
+      if (langEt !== 'es' && templates.length > 0) {
+        const translations = await batchTranslate(
+          templates.map((tpl) => ({ type: 'emailTemplate' as const, id: tpl.type, fields: { subject: tpl.subject, htmlBody: tpl.htmlBody } })),
+          langEt
+        );
+        templates = templates.map((tpl) => {
+          const tr = translations.get(`emailTemplate#${tpl.type}`);
+          return tr ? { ...tpl, subject: (tr.subject as string) ?? tpl.subject, htmlBody: (tr.htmlBody as string) ?? tpl.htmlBody } : tpl;
+        });
+      }
       return ok(templates);
     }
 

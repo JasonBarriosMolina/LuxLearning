@@ -12,6 +12,9 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
+const getLang = (): string =>
+  typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -42,8 +45,8 @@ async function request<T>(
 
 export const api = {
   courses: {
-    list: () => request<GetCoursesResponse>('/courses'),
-    get: (courseId: string) => request<GetCourseResponse>(`/courses/${courseId}`),
+    list: () => request<GetCoursesResponse>(`/courses?lang=${getLang()}`),
+    get: (courseId: string) => request<GetCourseResponse>(`/courses/${courseId}?lang=${getLang()}`),
     resources: (courseId: string) => request<any>(`/courses/${courseId}/resources`),
   },
 
@@ -56,7 +59,7 @@ export const api = {
       request<any>('/lessons/favorites/toggle', { method: 'POST', body: JSON.stringify(body) }),
     transcript: (lessonId: string, youtubeId: string) =>
       request<any>(`/lessons/transcript?lessonId=${lessonId}&youtubeId=${youtubeId}`),
-    chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string }) =>
+    chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string; lang?: string }) =>
       request<any>('/lessons/chat', { method: 'POST', body: JSON.stringify(body) }),
     complete: (body: MarkLessonCompleteRequest) =>
       request('/lessons/complete', { method: 'POST', body: JSON.stringify(body) }),
@@ -69,6 +72,8 @@ export const api = {
       request(`/quiz/${moduleId}/submit`, { method: 'POST', body: JSON.stringify(body) }),
     attempts: (moduleId: string) =>
       request(`/quiz/${moduleId}/attempts`),
+    gapAnalysis: (moduleId: string, body: { results: any[] }) =>
+      request<any>(`/quiz/${moduleId}/gap-analysis`, { method: 'POST', body: JSON.stringify(body) }),
   },
 
   reflection: {
@@ -81,7 +86,7 @@ export const api = {
   },
 
   evaluator: {
-    myCourses: () => request<any>('/evaluator/my-courses'),
+    myCourses: () => request<any>(`/evaluator/my-courses?lang=${getLang()}`),
     reflections: () => request('/evaluator/reflections'),
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
@@ -146,9 +151,13 @@ export const api = {
   },
 
   notifications: {
-    list: () => request<GetNotificationsResponse>('/notifications'),
+    list: () => request<GetNotificationsResponse>(`/notifications?lang=${getLang()}`),
     markRead: (notifId: string) =>
       request('/notifications/read', { method: 'POST', body: JSON.stringify({ notifId }) }),
+  },
+
+  user: {
+    setLang: (lang: string) => request<any>('/user/preferences', { method: 'PUT', body: JSON.stringify({ lang }) }),
   },
 
   certificates: {
@@ -193,7 +202,7 @@ export const api = {
   admin: {
     // Courses
     courses: {
-      list: () => request<any>('/admin/courses'),
+      list: () => request<any>(`/admin/courses?lang=${getLang()}`),
       get: (courseId: string) => request<any>(`/admin/courses/${courseId}`),
       create: (body: any) => request<any>('/admin/courses', { method: 'POST', body: JSON.stringify(body) }),
       update: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
@@ -218,7 +227,7 @@ export const api = {
       restore: (courseId: string) =>
         request<any>(`/admin/courses/${courseId}/restore`, { method: 'PUT' }),
       listByStatus: (status: 'active' | 'draft' | 'archived') =>
-        request<any>(`/admin/courses?status=${status}`),
+        request<any>(`/admin/courses?status=${status}&lang=${getLang()}`),
     },
     // Modules
     modules: {
@@ -249,6 +258,8 @@ export const api = {
       create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/questions`, { method: 'POST', body: JSON.stringify(body) }),
       update: (questionId: string, body: any) => request<any>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (questionId: string) => request<any>(`/admin/questions/${questionId}`, { method: 'DELETE' }),
+      aiGenerate: (moduleId: string, body: { content: string; count?: number }) =>
+        request<any>(`/admin/modules/${moduleId}/questions/ai-generate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     // Reports (legacy)
     reports: () => request<any>('/admin/reports'),
@@ -285,7 +296,7 @@ export const api = {
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
     },
     emailTemplates: {
-      list: () => request<any>('/admin/email-templates'),
+      list: () => request<any>(`/admin/email-templates?lang=${getLang()}`),
       update: (type: string, subject: string, htmlBody: string) =>
         request<any>(`/admin/email-templates/${type}`, { method: 'PUT', body: JSON.stringify({ subject, htmlBody }) }),
     },

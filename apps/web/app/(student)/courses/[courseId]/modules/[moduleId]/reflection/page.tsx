@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/Button';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { countWords } from '@/lib/utils';
 import type { Reflection } from '@lux/types';
+import { useLanguage } from '@/lib/i18n';
 
 const MIN_WORDS = 80;
 
 export default function ReflectionPage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
   const router = useRouter();
+  const { t, lang } = useLanguage();
 
   const [course, setCourse] = useState<any>(null);
   const [existingReflection, setExistingReflection] = useState<Reflection | null>(null);
@@ -72,7 +74,7 @@ export default function ReflectionPage() {
       await api.reflection.submit({ moduleId, text });
       setSubmitted(true);
     } catch (err: any) {
-      setError(err.message ?? 'Error al enviar la reflexión');
+      setError(err.message ?? t.reflectionPage.errorSubmit);
     } finally {
       setSubmitting(false);
     }
@@ -108,12 +110,12 @@ export default function ReflectionPage() {
           <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
             <Clock className="w-10 h-10 text-cta-from" />
           </div>
-          <h2 className="font-heading font-bold text-2xl text-charcoal">Reflexión enviada</h2>
+          <h2 className="font-heading font-bold text-2xl text-charcoal">{t.reflectionPage.successTitle}</h2>
           <p className="text-gray-500 text-sm max-w-sm mx-auto">
-            Tu reflexión está siendo analizada. Recibirás una notificación cuando el evaluador la revise.
+            {t.reflectionPage.submittedMsg}
           </p>
           <Link href={`/courses/${courseId}/modules/${moduleId}`} className="btn-primary inline-flex">
-            Volver al módulo
+            {t.reflectionPage.backToModuleLink}
           </Link>
         </div>
       </div>
@@ -128,7 +130,7 @@ export default function ReflectionPage() {
           <Link href={`/courses/${courseId}/modules/${moduleId}`} className="p-2 rounded-lg hover:bg-surface">
             <ArrowLeft className="w-5 h-5 text-gray-500" />
           </Link>
-          <h1 className="font-heading font-bold text-xl text-charcoal">Mi Reflexión</h1>
+          <h1 className="font-heading font-bold text-xl text-charcoal">{t.reflectionPage.breadcrumbMyReflection}</h1>
         </div>
 
         <div className="card space-y-4">
@@ -136,7 +138,7 @@ export default function ReflectionPage() {
             <div>
               <p className="font-semibold text-charcoal">{module?.title}</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {existingReflection.wordCount} palabras • Enviada {new Date(existingReflection.submittedAt).toLocaleDateString('es')}
+                {t.reflectionPage.wordDateInfo(existingReflection.wordCount, new Date(existingReflection.submittedAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es'))}
               </p>
             </div>
             <ReflectionStatusBadge status={existingReflection.status} />
@@ -148,23 +150,23 @@ export default function ReflectionPage() {
 
           {existingReflection.evaluatorFeedback && (
             <div className="border-l-4 border-cta-to pl-4">
-              <p className="text-xs font-semibold text-gray-400 mb-1">FEEDBACK DEL EVALUADOR</p>
+              <p className="text-xs font-semibold text-gray-400 mb-1">{t.reflectionPage.feedbackEval}</p>
               <p className="text-sm text-gray-700">{existingReflection.evaluatorFeedback}</p>
             </div>
           )}
 
           {existingReflection.aiResult && existingReflection.status !== 'APPROVED' && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
-              <p className="font-semibold text-amber-800 mb-1">Análisis de IA</p>
+              <p className="font-semibold text-amber-800 mb-1">{t.reflectionPage.aiAnalysisTitle}</p>
               <p className="text-amber-700">
-                Veredicto: {existingReflection.aiResult.verdict} • Confianza: {existingReflection.aiResult.confidence}%
+                {t.reflectionPage.aiVerdict2(existingReflection.aiResult.verdict, existingReflection.aiResult.confidence)}
               </p>
             </div>
           )}
         </div>
 
         <Link href={`/courses/${courseId}/modules/${moduleId}`} className="btn-secondary inline-flex">
-          <ArrowLeft className="w-4 h-4" /> Volver al módulo
+          <ArrowLeft className="w-4 h-4" /> {t.reflectionPage.backToModuleLink}
         </Link>
       </div>
     );
@@ -182,30 +184,29 @@ export default function ReflectionPage() {
                 <AlertCircle className="w-6 h-6 text-amber-600" />
               </div>
               <div>
-                <h3 className="font-heading font-bold text-lg text-charcoal">Contenido posiblemente generado por IA</h3>
-                <p className="text-xs text-gray-500 mt-0.5">El análisis sugiere que tu texto puede no ser 100% auténtico</p>
+                <h3 className="font-heading font-bold text-lg text-charcoal">{t.reflectionPage.aiWarningTitle2}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{t.reflectionPage.aiWarningSubtitle}</p>
               </div>
             </div>
             <p className="text-sm text-gray-600 leading-relaxed">
-              Nuestro análisis indica que esta reflexión podría haber sido generada o fuertemente asistida por IA.
-              El evaluador también realizará una verificación manual.
+              {t.reflectionPage.aiWarningBody}
             </p>
             <p className="text-sm font-semibold text-amber-700 bg-amber-50 rounded-xl px-4 py-3">
-              ¿Estás seguro de que esta es tu reflexión auténtica y personal?
+              {t.reflectionPage.aiWarningQuestion}
             </p>
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowAiWarningModal(false)}
                 className="btn-secondary flex-1 text-sm"
               >
-                Revisar mi texto
+                {t.reflectionPage.aiWarningCancel}
               </button>
               <button
                 onClick={() => { setShowAiWarningModal(false); doSubmit(); }}
                 disabled={submitting}
                 className="flex-1 btn-primary text-sm bg-amber-500 hover:bg-amber-600"
               >
-                Sí, enviar de todos modos
+                {t.reflectionPage.aiWarningContinue}
               </button>
             </div>
           </div>
@@ -219,7 +220,7 @@ export default function ReflectionPage() {
         </Link>
         <div>
           <h1 className="font-heading font-bold text-xl text-charcoal">
-            {existingReflection?.status === 'REJECTED' ? 'Reescribir Reflexión' : 'Reflexión del Módulo'}
+            {existingReflection?.status === 'REJECTED' ? t.reflectionPage.breadcrumbRewrite : t.reflectionPage.breadcrumbNew}
           </h1>
           <p className="text-sm text-gray-500">{module?.title}</p>
         </div>
@@ -231,11 +232,11 @@ export default function ReflectionPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-red-700 text-sm">Reflexión rechazada</p>
+              <p className="font-semibold text-red-700 text-sm">{t.reflectionPage.rejectedNotice}</p>
               {existingReflection.evaluatorFeedback && (
                 <p className="text-sm text-red-600 mt-1">{existingReflection.evaluatorFeedback}</p>
               )}
-              <p className="text-sm text-red-600 mt-1">Por favor escribe una nueva reflexión auténtica.</p>
+              <p className="text-sm text-red-600 mt-1">{t.reflectionPage.writeNewReflection}</p>
             </div>
           </div>
         </div>
@@ -244,20 +245,20 @@ export default function ReflectionPage() {
       {/* Instructions */}
       <div className="card bg-blue-50 border border-blue-200">
         <h2 className="font-heading font-semibold text-base text-blue-800 mb-2">
-          Cómo escribir tu reflexión
+          {t.reflectionPage.instructionsTitle2}
         </h2>
         <ul className="text-sm text-blue-700 space-y-1.5">
           <li className="flex items-start gap-2">
             <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            Escribe en primera persona sobre tu experiencia real con este módulo
+            {t.reflectionPage.instruction1v2}
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            Incluye qué aprendiste, cómo lo aplicarás y qué fue lo más valioso
+            {t.reflectionPage.instruction2v2}
           </li>
           <li className="flex items-start gap-2">
             <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            Mínimo {MIN_WORDS} palabras. Sé auténtico — el contenido generado por IA es detectado automáticamente
+            {t.reflectionPage.instruction3v2(MIN_WORDS)}
           </li>
         </ul>
       </div>
@@ -268,7 +269,7 @@ export default function ReflectionPage() {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={`Escribe tu reflexión sobre "${module?.title}"...\n\nComparte qué aprendiste, cómo lo aplicarás en tu práctica musical, y qué aspecto te resultó más desafiante o revelador.`}
+            placeholder={t.reflectionPage.textareaPlaceholder(module?.title ?? '')}
             className="w-full min-h-[280px] p-6 text-sm text-charcoal placeholder-gray-400 resize-y focus:outline-none font-sans leading-relaxed"
             autoFocus
           />
@@ -276,12 +277,12 @@ export default function ReflectionPage() {
             isReady ? 'bg-emerald-50' : 'bg-surface'
           }`}>
             <span className={`text-sm font-medium ${isReady ? 'text-emerald-600' : 'text-gray-500'}`}>
-              {wordCount} palabras
-              {!isReady && wordsRemaining > 0 && ` • faltan ${wordsRemaining}`}
+              {t.reflectionPage.wordCount(wordCount)}
+              {!isReady && wordsRemaining > 0 && ` • ${t.reflectionPage.wordsRemainingLabel(wordsRemaining)}`}
             </span>
             {isReady && (
               <span className="flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-                <CheckCircle className="w-3.5 h-3.5" /> Listo para enviar
+                <CheckCircle className="w-3.5 h-3.5" /> {t.reflectionPage.readyToSend}
               </span>
             )}
           </div>
@@ -296,7 +297,7 @@ export default function ReflectionPage() {
             className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 border-dashed border-cta-from/40 text-cta-from font-semibold text-sm hover:border-cta-from hover:bg-blue-50 transition-all disabled:opacity-60"
           >
             <Sparkles className="w-4 h-4" />
-            {analyzing ? 'Analizando tu reflexión...' : 'Analizar con IA antes de enviar'}
+            {analyzing ? t.reflectionPage.analyzing : t.reflectionPage.analyzeBeforeSubmit}
           </button>
         )}
 
@@ -311,7 +312,7 @@ export default function ReflectionPage() {
               <div className="flex items-center gap-2">
                 <Sparkles className={`w-4 h-4 ${aiPreview.readyToSubmit ? 'text-emerald-600' : 'text-amber-600'}`} />
                 <span className={`text-sm font-semibold ${aiPreview.readyToSubmit ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {aiPreview.readyToSubmit ? '✅ Tu reflexión está lista para enviar' : '💡 Sugerencias para mejorar antes de enviar'}
+                  {aiPreview.readyToSubmit ? t.reflectionPage.aiReadyToSubmit : t.reflectionPage.aiSuggestImprovements}
                 </span>
               </div>
               {showAiPanel ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
@@ -350,7 +351,7 @@ export default function ReflectionPage() {
           className="w-full"
           leftIcon={<Send className="w-4 h-4" />}
         >
-          Enviar reflexión
+          {t.reflectionPage.submitBtn}
         </Button>
       </form>
     </div>
