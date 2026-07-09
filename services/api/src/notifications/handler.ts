@@ -1,6 +1,9 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
+import { createHash } from 'crypto';
 import { getNotifications, markNotificationRead } from '../shared/db-dynamo';
-import { ok, badRequest, forbidden, notFound, serverError, cors } from '../shared/response';
+import { batchTranslate } from '../shared/translate';
+import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<
@@ -8,6 +11,9 @@ type Event = APIGatewayProxyEventV2WithRequestContext<
 >;
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
@@ -19,7 +25,22 @@ export const handler = async (event: Event) => {
   try {
     // GET /notifications
     if (path === '/notifications' && method === 'GET') {
-      const notifs = await getNotifications(userId);
+      const rawLang = event.queryStringParameters?.lang ?? 'es';
+      const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
+      let notifs = await getNotifications(userId);
+      if (lang !== 'es' && notifs.length > 0) {
+        try {
+          const msgHash = (msg: string) => createHash('sha256').update(msg).digest('hex').slice(0, 16);
+          const translations = await batchTranslate(
+            notifs.map((n) => ({ type: 'notification' as const, id: msgHash(n.message), fields: { message: n.message } })),
+            lang
+          );
+          notifs = notifs.map((n) => {
+            const tr = translations.get(`notification#${msgHash(n.message)}`);
+            return tr?.message ? { ...n, message: tr.message as string } : n;
+          });
+        } catch { /* fallback to original */ }
+      }
       return ok(notifs);
     }
 

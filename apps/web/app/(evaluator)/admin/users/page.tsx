@@ -9,6 +9,7 @@ import {
 import { api } from '@/lib/api';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { useLanguage } from '@/lib/i18n';
 
 type UserRole = 'ADMIN' | 'EVALUATOR' | 'STUDENT';
 
@@ -24,11 +25,13 @@ type AppUser = {
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 
-function RoleBadge({ role }: { role: UserRole }) {
+function RoleBadge({ role, labels }: { role: UserRole; labels?: Record<UserRole, string> }) {
+  const defaultLabels: Record<UserRole, string> = { ADMIN: 'Admin', EVALUATOR: 'Evaluador', STUDENT: 'Estudiante' };
+  const l = labels ?? defaultLabels;
   const map: Record<UserRole, { label: string; className: string; icon: React.ReactNode }> = {
-    ADMIN: { label: 'Admin', className: 'bg-purple-100 text-purple-700', icon: <Shield className="w-3 h-3" /> },
-    EVALUATOR: { label: 'Evaluador', className: 'bg-blue-100 text-blue-700', icon: <ClipboardCheck className="w-3 h-3" /> },
-    STUDENT: { label: 'Estudiante', className: 'bg-emerald-100 text-emerald-700', icon: <GraduationCap className="w-3 h-3" /> },
+    ADMIN: { label: l.ADMIN, className: 'bg-purple-100 text-purple-700', icon: <Shield className="w-3 h-3" /> },
+    EVALUATOR: { label: l.EVALUATOR, className: 'bg-blue-100 text-blue-700', icon: <ClipboardCheck className="w-3 h-3" /> },
+    STUDENT: { label: l.STUDENT, className: 'bg-emerald-100 text-emerald-700', icon: <GraduationCap className="w-3 h-3" /> },
   };
   const { label, className, icon } = map[role];
   return (
@@ -40,19 +43,30 @@ function RoleBadge({ role }: { role: UserRole }) {
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, enabled }: { status: string; enabled: boolean }) {
-  if (!enabled) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">Desactivado</span>;
-  if (status === 'FORCE_CHANGE_PASSWORD') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Pendiente activación</span>;
-  if (status === 'CONFIRMED') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Activo</span>;
+function StatusBadge({ status, enabled, labels }: { status: string; enabled: boolean; labels?: { disabled: string; pending: string; active: string } }) {
+  const l = labels ?? { disabled: 'Desactivado', pending: 'Pendiente activación', active: 'Activo' };
+  if (!enabled) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">{l.disabled}</span>;
+  if (status === 'FORCE_CHANGE_PASSWORD') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">{l.pending}</span>;
+  if (status === 'CONFIRMED') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">{l.active}</span>;
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">{status}</span>;
 }
 
 // ─── Invite Modal ─────────────────────────────────────────────────────────────
 
-function InviteModal({ onClose, onCreated, courses }: {
+interface InviteStrings {
+  titleCreated: string; titleNew: string; subCreated: string; subNew: string;
+  successMsg: string; emailLabel: string; passLabel: string; copyPass: string;
+  warning: string; closeBtn: string; emailField: string; emailPh: string;
+  nameLabel: string; namePh: string; roleLabel: string; coursesLabel: string;
+  coursesHint: string; cancelBtn: string; inviteBtn: string; emailRequired: string;
+  roleStudent: string; roleEvaluator: string; roleAdmin: string;
+}
+
+function InviteModal({ onClose, onCreated, courses, strings }: {
   onClose: () => void;
   onCreated: (u: AppUser) => void;
   courses: { id: string; title: string }[];
+  strings: InviteStrings;
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -75,7 +89,7 @@ function InviteModal({ onClose, onCreated, courses }: {
   };
 
   const submit = async () => {
-    if (!email.trim()) { setError('El email es requerido'); return; }
+    if (!email.trim()) { setError(strings.emailRequired); return; }
     setLoading(true); setError('');
     try {
       const res: any = await api.admin.users.invite({
@@ -115,10 +129,10 @@ function InviteModal({ onClose, onCreated, courses }: {
             </div>
             <div>
               <h2 className="font-heading font-bold text-charcoal">
-                {created ? 'Usuario creado' : 'Invitar usuario'}
+                {created ? strings.titleCreated : strings.titleNew}
               </h2>
               <p className="text-xs text-gray-400">
-                {created ? 'Comparte las credenciales con el usuario' : 'El usuario deberá cambiar la contraseña al primer ingreso'}
+                {created ? strings.subCreated : strings.subNew}
               </p>
             </div>
           </div>
@@ -133,15 +147,15 @@ function InviteModal({ onClose, onCreated, courses }: {
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
               <div className="flex items-center gap-2 text-emerald-700">
                 <Check className="w-4 h-4 shrink-0" />
-                <p className="text-sm font-semibold">Cuenta creada exitosamente</p>
+                <p className="text-sm font-semibold">{strings.successMsg}</p>
               </div>
               <div className="space-y-2 text-sm">
                 <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Correo electrónico</p>
+                  <p className="text-xs text-gray-500 mb-0.5">{strings.emailLabel}</p>
                   <p className="font-medium text-charcoal">{created.email}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Contraseña temporal</p>
+                  <p className="text-xs text-gray-500 mb-0.5">{strings.passLabel}</p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 bg-white border border-emerald-200 rounded-lg px-3 py-1.5 font-mono text-sm text-charcoal font-bold tracking-wider">
                       {created.temporaryPassword}
@@ -149,7 +163,7 @@ function InviteModal({ onClose, onCreated, courses }: {
                     <button
                       onClick={copyPassword}
                       className="p-2 rounded-lg border border-emerald-200 bg-white text-emerald-600 hover:bg-emerald-50 transition-colors"
-                      title="Copiar contraseña"
+                      title={strings.copyPass}
                     >
                       {copied ? <CheckCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                     </button>
@@ -157,11 +171,11 @@ function InviteModal({ onClose, onCreated, courses }: {
                 </div>
               </div>
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                ⚠️ Comparte esta contraseña con el usuario. Deberá cambiarla en su primer inicio de sesión.
+                {strings.warning}
               </p>
             </div>
             <Button className="w-full" size="sm" onClick={onClose}>
-              Cerrar
+              {strings.closeBtn}
             </Button>
           </div>
         )}
@@ -170,25 +184,25 @@ function InviteModal({ onClose, onCreated, courses }: {
         {/* Fields */}
         {!created && (<><div className="space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Email *</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">{strings.emailField}</label>
             <Input
               type="email"
-              placeholder="correo@ejemplo.com"
+              placeholder={strings.emailPh}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               leftIcon={<Mail className="w-4 h-4" />}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Nombre completo</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">{strings.nameLabel}</label>
             <Input
-              placeholder="Nombre del usuario"
+              placeholder={strings.namePh}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Rol</label>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">{strings.roleLabel}</label>
             <div className="flex gap-2">
               {(['STUDENT', 'EVALUATOR', 'ADMIN'] as UserRole[]).map((r) => (
                 <button
@@ -202,7 +216,7 @@ function InviteModal({ onClose, onCreated, courses }: {
                       : 'border-border text-gray-400 hover:border-gray-300'
                   }`}
                 >
-                  {r === 'STUDENT' ? 'Estudiante' : r === 'EVALUATOR' ? 'Evaluador' : 'Admin'}
+                  {r === 'STUDENT' ? strings.roleStudent : r === 'EVALUATOR' ? strings.roleEvaluator : strings.roleAdmin}
                 </button>
               ))}
             </div>
@@ -211,7 +225,7 @@ function InviteModal({ onClose, onCreated, courses }: {
           {courses.length > 0 && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Cursos asignados <span className="font-normal text-gray-400">(obligatorio para Estudiantes — sin cursos asignados no verá contenido)</span>
+                {strings.coursesLabel} <span className="font-normal text-gray-400">{strings.coursesHint}</span>
               </label>
               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                 {courses.map((c) => {
@@ -246,10 +260,10 @@ function InviteModal({ onClose, onCreated, courses }: {
         )}
 
         <div className="flex gap-3 pt-1">
-          <Button variant="secondary" onClick={onClose} className="flex-1" size="sm">Cancelar</Button>
+          <Button variant="secondary" onClick={onClose} className="flex-1" size="sm">{strings.cancelBtn}</Button>
           <Button onClick={submit} loading={loading} className="flex-1" size="sm">
             <UserPlus className="w-4 h-4" />
-            Invitar
+            {strings.inviteBtn}
           </Button>
         </div></>)}
 
@@ -260,15 +274,16 @@ function InviteModal({ onClose, onCreated, courses }: {
 
 // ─── Role selector dropdown (portal-based to escape overflow:hidden) ─────────
 
-function RoleSelector({ user, onChange }: { user: AppUser; onChange: (role: UserRole) => void }) {
+function RoleSelector({ user, onChange, labels }: { user: AppUser; onChange: (role: UserRole) => void; labels?: Record<UserRole, string> }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
+  const l = labels ?? { STUDENT: 'Estudiante', EVALUATOR: 'Evaluador', ADMIN: 'Admin' };
 
   const roles: { value: UserRole; label: string }[] = [
-    { value: 'STUDENT', label: 'Estudiante' },
-    { value: 'EVALUATOR', label: 'Evaluador' },
-    { value: 'ADMIN', label: 'Admin' },
+    { value: 'STUDENT', label: l.STUDENT },
+    { value: 'EVALUATOR', label: l.EVALUATOR },
+    { value: 'ADMIN', label: l.ADMIN },
   ];
 
   const handleOpen = () => {
@@ -324,7 +339,8 @@ function RoleSelector({ user, onChange }: { user: AppUser; onChange: (role: User
 
 // ─── Confirm delete dialog ────────────────────────────────────────────────────
 
-function ConfirmDelete({ email, onConfirm, onCancel }: { email: string; onConfirm: () => void; onCancel: () => void }) {
+function ConfirmDelete({ email, onConfirm, onCancel, strings }: { email: string; onConfirm: () => void; onCancel: () => void; strings?: { title: string; subtitle: string; msg: (e: string) => string; confirmBtn: string; cancelBtn: string } }) {
+  const s = strings ?? { title: 'Eliminar usuario', subtitle: 'Esta acción no se puede deshacer', msg: (e: string) => `¿Estás seguro de que deseas eliminar a ${e}? El usuario perderá acceso inmediatamente.`, confirmBtn: 'Eliminar', cancelBtn: 'Cancelar' };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 animate-fade-in">
@@ -333,17 +349,14 @@ function ConfirmDelete({ email, onConfirm, onCancel }: { email: string; onConfir
             <Trash2 className="w-5 h-5 text-red-600" />
           </div>
           <div>
-            <h3 className="font-heading font-bold text-charcoal text-sm">Eliminar usuario</h3>
-            <p className="text-xs text-gray-400">Esta acción no se puede deshacer</p>
+            <h3 className="font-heading font-bold text-charcoal text-sm">{s.title}</h3>
+            <p className="text-xs text-gray-400">{s.subtitle}</p>
           </div>
         </div>
-        <p className="text-sm text-gray-600">
-          ¿Estás seguro de que deseas eliminar a <strong className="text-charcoal">{email}</strong>?
-          El usuario perderá acceso inmediatamente.
-        </p>
+        <p className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: s.msg(email).replace(email, `<strong class="text-charcoal">${email}</strong>`) }} />
         <div className="flex gap-3">
-          <Button variant="secondary" onClick={onCancel} className="flex-1" size="sm">Cancelar</Button>
-          <Button variant="danger" onClick={onConfirm} className="flex-1" size="sm">Eliminar</Button>
+          <Button variant="secondary" onClick={onCancel} className="flex-1" size="sm">{s.cancelBtn}</Button>
+          <Button variant="danger" onClick={onConfirm} className="flex-1" size="sm">{s.confirmBtn}</Button>
         </div>
       </div>
     </div>
@@ -353,6 +366,7 @@ function ConfirmDelete({ email, onConfirm, onCancel }: { email: string; onConfir
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
+  const { t, lang } = useLanguage();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [courses, setCourses] = useState<{ id: string; title: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -440,22 +454,22 @@ export default function UsersPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Gestión de Usuarios</h1>
-          <p className="text-gray-500 mt-1 text-sm">Invita, edita roles y gestiona el acceso de los usuarios</p>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.usersPageTitle}</h1>
+          <p className="text-gray-500 mt-1 text-sm">{t.admin.usersPageSubtitle}</p>
         </div>
         <Button onClick={() => setShowInvite(true)} size="sm">
           <UserPlus className="w-4 h-4" />
-          Invitar usuario
+          {t.admin.inviteUserBtn}
         </Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total usuarios', value: stats.total, color: 'text-charcoal', bg: 'bg-surface' },
-          { label: 'Estudiantes', value: stats.students, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Evaluadores', value: stats.evaluators, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: 'Admins', value: stats.admins, color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: t.admin.statTotalUsers, value: stats.total, color: 'text-charcoal', bg: 'bg-surface' },
+          { label: t.admin.statStudents, value: stats.students, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: t.admin.statEvaluators, value: stats.evaluators, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: t.admin.statAdmins, value: stats.admins, color: 'text-purple-600', bg: 'bg-purple-50' },
         ].map((s) => (
           <div key={s.label} className={`card ${s.bg} text-center py-4`}>
             <p className={`font-bold text-2xl font-heading ${s.color}`}>{loading ? '—' : s.value}</p>
@@ -468,7 +482,7 @@ export default function UsersPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Input
-            placeholder="Buscar por email o nombre..."
+            placeholder={t.admin.searchByEmailName}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={<Search className="w-4 h-4" />}
@@ -483,7 +497,7 @@ export default function UsersPage() {
                 roleFilter === r ? 'bg-white shadow-sm text-charcoal' : 'text-gray-500 hover:text-charcoal'
               }`}
             >
-              {r === 'ALL' ? 'Todos' : r === 'STUDENT' ? 'Estudiantes' : r === 'EVALUATOR' ? 'Evaluadores' : 'Admins'}
+              {r === 'ALL' ? t.admin.filterAllUsers : r === 'STUDENT' ? t.admin.filterStudents : r === 'EVALUATOR' ? t.admin.filterEvaluators : t.admin.filterAdmins}
             </button>
           ))}
         </div>
@@ -499,9 +513,9 @@ export default function UsersPage() {
       ) : filtered.length === 0 ? (
         <div className="card text-center py-16">
           <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-heading font-bold text-charcoal">Sin resultados</p>
+          <p className="font-heading font-bold text-charcoal">{t.admin.noUsersFound}</p>
           <p className="text-gray-500 text-sm mt-1">
-            {search || roleFilter !== 'ALL' ? 'Ningún usuario coincide con el filtro.' : 'Todavía no hay usuarios registrados.'}
+            {t.admin.noUsersMsg(search !== '' || roleFilter !== 'ALL')}
           </p>
         </div>
       ) : (
@@ -511,11 +525,11 @@ export default function UsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">Usuario</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Rol</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Estado</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Registrado</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500">Acciones</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">{t.admin.colUser}</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">{t.admin.colRole}</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">{t.admin.colStatus}</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">{t.admin.colRegistered}</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500">{t.admin.colActions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -537,15 +551,15 @@ export default function UsersPage() {
                       </td>
                       {/* Role */}
                       <td className="px-4 py-3.5">
-                        <RoleSelector user={user} onChange={(r) => handleRoleChange(user, r)} />
+                        <RoleSelector user={user} onChange={(r) => handleRoleChange(user, r)} labels={{ STUDENT: t.admin.roleStudentLabel, EVALUATOR: t.admin.roleEvaluatorLabel, ADMIN: t.admin.roleAdminLabel }} />
                       </td>
                       {/* Status */}
                       <td className="px-4 py-3.5">
-                        <StatusBadge status={user.status} enabled={user.enabled} />
+                        <StatusBadge status={user.status} enabled={user.enabled} labels={{ disabled: t.admin.statusDisabled, pending: t.admin.statusPendingActivation, active: t.admin.statusActiveLabel }} />
                       </td>
                       {/* Date */}
                       <td className="px-4 py-3.5 text-xs text-gray-400">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                       </td>
                       {/* Actions */}
                       <td className="px-5 py-3.5">
@@ -554,7 +568,7 @@ export default function UsersPage() {
                           <button
                             onClick={() => handleToggleStatus(user)}
                             disabled={busy}
-                            title={user.enabled ? 'Desactivar usuario' : 'Activar usuario'}
+                            title={user.enabled ? t.admin.deactivateUser : t.admin.activateUser}
                             className="p-1.5 rounded-lg hover:bg-surface transition-colors text-gray-400 hover:text-charcoal disabled:opacity-40"
                           >
                             {user.enabled
@@ -565,7 +579,7 @@ export default function UsersPage() {
                           <button
                             onClick={() => setDeleteTarget(user)}
                             disabled={busy}
-                            title="Eliminar usuario"
+                            title={t.admin.deleteUserBtn}
                             className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-gray-300 hover:text-red-500 disabled:opacity-40"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -619,6 +633,31 @@ export default function UsersPage() {
           onClose={() => { setShowInvite(false); load(); }}
           onCreated={(u) => setUsers((prev) => [u, ...prev])}
           courses={courses}
+          strings={{
+            titleCreated: t.admin.inviteModalTitleCreated,
+            titleNew: t.admin.inviteModalTitleNew,
+            subCreated: t.admin.inviteModalSubCreated,
+            subNew: t.admin.inviteModalSubNew,
+            successMsg: t.admin.inviteCreatedSuccess,
+            emailLabel: t.admin.inviteEmailLabel,
+            passLabel: t.admin.inviteTempPassLabel,
+            copyPass: t.admin.inviteCopyPassword,
+            warning: t.admin.inviteWarning,
+            closeBtn: t.admin.inviteCloseBtn,
+            emailField: t.admin.inviteEmailFieldLabel,
+            emailPh: t.admin.inviteEmailPlaceholder,
+            nameLabel: t.admin.inviteNameLabel,
+            namePh: t.admin.inviteNamePlaceholder,
+            roleLabel: t.admin.inviteRoleLabel,
+            coursesLabel: t.admin.inviteCoursesLabel,
+            coursesHint: t.admin.inviteCoursesHint,
+            cancelBtn: t.admin.inviteCancelBtn,
+            inviteBtn: t.admin.inviteBtn,
+            emailRequired: t.admin.inviteEmailRequired,
+            roleStudent: t.admin.roleStudentLabel,
+            roleEvaluator: t.admin.roleEvaluatorLabel,
+            roleAdmin: t.admin.roleAdminLabel,
+          }}
         />
       )}
       {deleteTarget && (
@@ -626,6 +665,13 @@ export default function UsersPage() {
           email={deleteTarget.email}
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
+          strings={{
+            title: t.admin.deleteUserModalTitle,
+            subtitle: t.admin.deleteUserModalSubtitle,
+            msg: t.admin.deleteUserModalMsg,
+            confirmBtn: t.admin.deleteUserConfirmBtn,
+            cancelBtn: t.admin.deleteUserCancelBtn,
+          }}
         />
       )}
     </div>

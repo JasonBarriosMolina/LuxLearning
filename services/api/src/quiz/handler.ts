@@ -1,15 +1,21 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
+
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
-  setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
 
   const userId = event.requestContext.authorizer?.lambda?.userId!;
   const method = event.requestContext.http.method;
@@ -109,6 +115,76 @@ export const handler = async (event: Event) => {
         totalQuestions: module.questions.length,
         results,
       });
+    }
+
+    // POST /quiz/:moduleId/gap-analysis — AI analysis of wrong answers
+    const gapMatch = path.match(/^\/quiz\/([^/]+)\/gap-analysis$/);
+    if (gapMatch && method === 'POST') {
+      const moduleId = gapMatch[1]!;
+      const body = JSON.parse(event.body ?? '{}');
+      const results: Array<{
+        questionText: string; options: string[];
+        selectedIndex: number; correctIndex: number; isCorrect: boolean;
+      }> = body.results ?? [];
+
+      if (!Array.isArray(results) || results.length === 0) {
+        return badRequest('results array es requerido');
+      }
+
+      const incorrect = results.filter((r) => !r.isCorrect);
+      if (incorrect.length === 0) return ok({ gaps: [], overallPattern: null });
+
+      const mod = await prisma.module.findUnique({
+        where: { id: moduleId },
+        select: { title: true },
+      });
+
+      const prompt = `Eres un pedagogo experto en identificar brechas de conocimiento.
+Un estudiante falló las siguientes preguntas del módulo "${mod?.title ?? 'del curso'}":
+
+${incorrect.map((r, i) =>
+  `${i + 1}. "${r.questionText}"
+   Seleccionó: "${r.options[r.selectedIndex] ?? 'Sin respuesta'}"
+   Correcto era: "${r.options[r.correctIndex]}"`
+).join('\n\n')}
+
+Analiza los errores e identifica las brechas de conocimiento. Sé conciso y orientado a la acción.
+
+Responde ÚNICAMENTE con JSON (sin markdown):
+{
+  "gaps": [
+    {
+      "concept": "Nombre del concepto donde tiene debilidad",
+      "suggestedFocus": "1 oración concreta de qué revisar o practicar"
+    }
+  ],
+  "overallPattern": "1 oración sobre el patrón general de errores (o null si son errores aislados)"
+}
+Máximo ${Math.min(incorrect.length, 3)} gaps.`;
+
+      try {
+        const bedrockRes = await bedrock.send(new InvokeModelCommand({
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 600,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        }));
+        const raw = JSON.parse(new TextDecoder().decode(bedrockRes.body)).content?.[0]?.text ?? '{}';
+        const clean = raw.replace(/```json\s*|```/g, '').trim();
+        const jsonMatch = clean.match(/\{[\s\S]*/);
+        const parsed = JSON.parse(jsonMatch?.[0] ?? '{}');
+        return ok({
+          gaps: Array.isArray(parsed.gaps) ? parsed.gaps.slice(0, 3) : [],
+          overallPattern: parsed.overallPattern ?? null,
+        });
+      } catch (bedrockErr) {
+        console.error('[gap-analysis] Bedrock error:', bedrockErr);
+        return ok({ gaps: [], overallPattern: null });
+      }
     }
 
     return badRequest('Unknown route');

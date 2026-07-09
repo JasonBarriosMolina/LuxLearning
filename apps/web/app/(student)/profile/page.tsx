@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { updateName, changePassword } from '@/lib/auth';
 import { updateUserAttributes } from 'aws-amplify/auth';
+import { useLanguage } from '@/lib/i18n';
 
 const NAME_CHANGE_KEY = 'lux-name-change-count';
 
@@ -19,6 +20,7 @@ function incrementNameChangeCount() {
 
 export default function ProfilePage() {
   const { email, role } = useAuth();
+  const { t } = useLanguage();
 
   // Name form
   const [name, setName] = useState('');
@@ -60,7 +62,7 @@ export default function ProfilePage() {
       setNameSuccess(true);
       setTimeout(() => setNameSuccess(false), 3000);
     } catch (err: any) {
-      setNameError(err?.message ?? 'Error al actualizar el nombre');
+      setNameError(err?.message ?? t.studentProfile.errorUpdateName);
     } finally {
       setNameLoading(false);
     }
@@ -75,7 +77,7 @@ export default function ProfilePage() {
       setPictureSuccess(true);
       setTimeout(() => setPictureSuccess(false), 3000);
     } catch (err: any) {
-      setPictureError(err?.message ?? 'Error al actualizar la foto');
+      setPictureError(err?.message ?? t.studentProfile.errorUpdatePhoto);
     } finally {
       setPictureLoading(false);
     }
@@ -83,8 +85,8 @@ export default function ProfilePage() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPwd !== confirmPwd) { setPwdError('Las contraseñas nuevas no coinciden.'); return; }
-    if (newPwd.length < 8) { setPwdError('La nueva contraseña debe tener al menos 8 caracteres.'); return; }
+    if (newPwd !== confirmPwd) { setPwdError(t.studentProfile.passwordMismatch); return; }
+    if (newPwd.length < 8) { setPwdError(t.studentProfile.passwordTooShort); return; }
     setPwdLoading(true); setPwdError(''); setPwdSuccess(false);
     try {
       await changePassword(oldPwd, newPwd);
@@ -94,13 +96,13 @@ export default function ProfilePage() {
     } catch (err: any) {
       const msg = err?.message ?? '';
       if (msg.includes('NotAuthorizedException') || msg.includes('Incorrect')) {
-        setPwdError('La contraseña actual es incorrecta.');
+        setPwdError(t.studentProfile.errorWrongPassword);
       } else if (msg.includes('InvalidPassword') || msg.includes('Password does not conform')) {
-        setPwdError('La nueva contraseña debe tener al menos 8 caracteres, mayúsculas, minúsculas y números.');
+        setPwdError(t.studentProfile.errorInvalidPassword);
       } else if (msg.includes('LimitExceeded') || msg.includes('TooManyRequests')) {
-        setPwdError('Demasiados intentos. Por favor espera unos minutos.');
+        setPwdError(t.studentProfile.errorTooManyAttempts);
       } else {
-        setPwdError('Error al cambiar la contraseña. Intenta de nuevo.');
+        setPwdError(t.studentProfile.errorGenericPassword);
       }
     } finally {
       setPwdLoading(false);
@@ -108,20 +110,20 @@ export default function ProfilePage() {
   };
 
   const isValidUrl = (url: string) => { try { new URL(url); return true; } catch { return false; } };
-  const roleLabel = role === 'ADMIN' ? 'Super Admin' : role === 'EVALUATOR' ? 'Evaluador' : 'Estudiante';
+  const roleLabel = role === 'ADMIN' ? t.studentProfile.roleAdmin : role === 'EVALUATOR' ? t.studentProfile.roleEvaluator : t.studentProfile.roleStudent;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div>
-        <h1 className="font-heading font-bold text-2xl text-charcoal">Mi perfil</h1>
-        <p className="text-gray-500 mt-1 text-sm">Actualiza tu información y contraseña</p>
+        <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentProfile.title}</h1>
+        <p className="text-gray-500 mt-1 text-sm">{t.studentProfile.subtitle}</p>
       </div>
 
       {/* Account info */}
       <div className="card">
         <div className="flex items-center gap-4 mb-4">
           {picture && isValidUrl(picture) ? (
-            <img src={picture} alt="Foto de perfil" className="w-14 h-14 rounded-full object-cover shrink-0 border border-border" />
+            <img src={picture} alt={t.studentProfile.photoSection} className="w-14 h-14 rounded-full object-cover shrink-0 border border-border" />
           ) : (
             <div className="w-14 h-14 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-xl font-heading shrink-0">
               {email?.[0]?.toUpperCase() ?? 'U'}
@@ -134,7 +136,7 @@ export default function ProfilePage() {
         </div>
         <p className="text-xs text-gray-400 flex items-center gap-1">
           <Lock className="w-3 h-3" />
-          El correo electrónico no se puede cambiar desde aquí.
+          {t.studentProfile.emailNote}
         </p>
       </div>
 
@@ -145,13 +147,13 @@ export default function ProfilePage() {
             <ImageIcon className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <h2 className="font-heading font-semibold text-charcoal">Foto de perfil</h2>
-            <p className="text-xs text-gray-500">URL de tu foto (Google Drive, Imgur, etc.)</p>
+            <h2 className="font-heading font-semibold text-charcoal">{t.studentProfile.photoSection}</h2>
+            <p className="text-xs text-gray-500">{t.studentProfile.photoSubtitle}</p>
           </div>
         </div>
         <form onSubmit={handleUpdatePicture} className="space-y-3">
           <Input
-            placeholder="https://ejemplo.com/mi-foto.jpg"
+            placeholder={t.studentProfile.photoPlaceholder}
             value={picture}
             onChange={(e) => setPicture(e.target.value)}
             leftIcon={<ImageIcon className="w-4 h-4" />}
@@ -160,7 +162,7 @@ export default function ProfilePage() {
           {picture && isValidUrl(picture) && (
             <div className="flex items-center gap-3">
               <img src={picture} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-border" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              <p className="text-xs text-gray-400">Preview de la foto</p>
+              <p className="text-xs text-gray-400">{t.studentProfile.photoPreview}</p>
             </div>
           )}
           {pictureError && (
@@ -170,11 +172,11 @@ export default function ProfilePage() {
           )}
           {pictureSuccess && (
             <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
-              <Check className="w-4 h-4 shrink-0" />Foto actualizada correctamente.
+              <Check className="w-4 h-4 shrink-0" />{t.studentProfile.photoSaved}
             </div>
           )}
           <Button type="submit" loading={pictureLoading} size="sm" disabled={!picture.trim()}>
-            Guardar foto
+            {t.studentProfile.savePhoto}
           </Button>
         </form>
       </div>
@@ -186,19 +188,19 @@ export default function ProfilePage() {
             <User className="w-4 h-4 text-cta-from" />
           </div>
           <div>
-            <h2 className="font-heading font-semibold text-charcoal">Nombre</h2>
-            <p className="text-xs text-gray-500">Actualiza cómo apareces en la plataforma</p>
+            <h2 className="font-heading font-semibold text-charcoal">{t.studentProfile.nameSection}</h2>
+            <p className="text-xs text-gray-500">{t.studentProfile.nameSubtitle}</p>
           </div>
         </div>
         {nameRestricted ? (
           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>Ya cambiaste tu nombre una vez. Para cambiarlo nuevamente, solicita aprobación al administrador.</span>
+            <span>{t.studentProfile.nameRestriction}</span>
           </div>
         ) : (
           <form onSubmit={handleUpdateName} className="space-y-3">
             <Input
-              placeholder="Tu nombre completo"
+              placeholder={t.studentProfile.namePlaceholder}
               value={name}
               onChange={(e) => setName(e.target.value)}
               leftIcon={<User className="w-4 h-4" />}
@@ -210,11 +212,11 @@ export default function ProfilePage() {
             )}
             {nameSuccess && (
               <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
-                <Check className="w-4 h-4 shrink-0" />Nombre actualizado correctamente.
+                <Check className="w-4 h-4 shrink-0" />{t.studentProfile.nameSaved}
               </div>
             )}
             <Button type="submit" loading={nameLoading} size="sm" disabled={!name.trim()}>
-              Guardar nombre
+              {t.studentProfile.saveName}
             </Button>
           </form>
         )}
@@ -227,14 +229,14 @@ export default function ProfilePage() {
             <Lock className="w-4 h-4 text-purple-600" />
           </div>
           <div>
-            <h2 className="font-heading font-semibold text-charcoal">Cambiar contraseña</h2>
-            <p className="text-xs text-gray-500">Usa una contraseña segura con mayúsculas, minúsculas y números</p>
+            <h2 className="font-heading font-semibold text-charcoal">{t.studentProfile.changePasswordTitle}</h2>
+            <p className="text-xs text-gray-500">{t.studentProfile.passwordHintFull}</p>
           </div>
         </div>
         <form onSubmit={handleChangePassword} className="space-y-3">
           <div className="relative">
             <Input
-              label="Contraseña actual"
+              label={t.studentProfile.currentPassword}
               type={showOld ? 'text' : 'password'}
               value={oldPwd}
               onChange={(e) => setOldPwd(e.target.value)}
@@ -249,11 +251,11 @@ export default function ProfilePage() {
           </div>
           <div className="relative">
             <Input
-              label="Nueva contraseña"
+              label={t.studentProfile.newPassword}
               type={showNew ? 'text' : 'password'}
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
-              placeholder="Mínimo 8 caracteres"
+              placeholder={t.studentProfile.minCharsHint}
               required
               leftIcon={<Lock className="w-4 h-4" />}
             />
@@ -263,11 +265,11 @@ export default function ProfilePage() {
             </button>
           </div>
           <Input
-            label="Confirmar nueva contraseña"
+            label={t.studentProfile.confirmPassword}
             type="password"
             value={confirmPwd}
             onChange={(e) => setConfirmPwd(e.target.value)}
-            placeholder="Repite la contraseña"
+            placeholder={t.studentProfile.confirmPasswordPlaceholder}
             required
             leftIcon={<Lock className="w-4 h-4" />}
           />
@@ -278,11 +280,11 @@ export default function ProfilePage() {
           )}
           {pwdSuccess && (
             <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
-              <Check className="w-4 h-4 shrink-0" />Contraseña cambiada correctamente.
+              <Check className="w-4 h-4 shrink-0" />{t.studentProfile.changePasswordSaved}
             </div>
           )}
           <Button type="submit" loading={pwdLoading} size="sm" disabled={!oldPwd || !newPwd || !confirmPwd}>
-            Cambiar contraseña
+            {t.studentProfile.changePasswordBtn}
           </Button>
         </form>
       </div>

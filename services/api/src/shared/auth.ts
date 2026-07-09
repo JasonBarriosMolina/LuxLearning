@@ -29,7 +29,9 @@ export async function verifyToken(token: string): Promise<VerifiedClaims> {
   });
 
   const groups = (payload['cognito:groups'] as string[] | undefined) ?? [];
-  const role: UserRole = groups.includes('ADMIN')
+  const role: UserRole = groups.includes('SUPER_ADMIN')
+    ? 'SUPER_ADMIN'
+    : groups.includes('ADMIN')
     ? 'ADMIN'
     : groups.includes('EVALUATOR')
     ? 'EVALUATOR'

@@ -5,23 +5,34 @@
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask } from '../shared/db-dynamo';
+import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 import { sendTemplatedEmail } from '../shared/email';
+import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.com';
-const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://lux-learning.vercel.app';
+const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 
-// Hours of inactivity before sending a reminder
-const INACTIVITY_HOURS = 72;
-// Don't send a reminder if we sent one less than this many days ago
-// (we store in a simple in-memory map; Lambda is stateless, so this is reset per invocation)
-// For a stateless check we use DynamoDB lastActivity timestamp only.
+// Inactivity reminder sequence: 3 days → first, 5 days total → second, then every 5 days
+const INACTIVITY_HOURS = 72;           // trigger first reminder at 3 days inactivity
+const SECOND_EMAIL_HOURS = 48;         // 2 more days → 5 days total inactivity for 2nd reminder
+const WEEKLY_EMAIL_HOURS = 120;        // 5 days between subsequent reminders
+const MAX_REMINDER_COUNT = 5;          // stop after 5 reminders
 
-function reminderEmailHtml(name: string, daysInactive: number): string {
+function reminderEmailHtml(name: string, daysInactive: number, emailNum: number): string {
+  const isFinal = emailNum >= 5;
+  const header = isFinal
+    ? `Te extrañamos en Lux Learning`
+    : `¡Te echamos de menos!`;
+  const body = isFinal
+    ? `Llevas ya varias semanas sin actividad. Te extrañamos y nos encantaría que continuaras con nosotros. Si has decidido pausar tu formación o deseas darte de baja, no dudes en escribirnos — estaremos encantados de ayudarte.`
+    : `Llevas <strong>${daysInactive} día${daysInactive !== 1 ? 's' : ''}</strong> sin actividad en Lux Learning. Tu aprendizaje está esperando — unos minutos cada día marcan la diferencia.`;
+  const cta = isFinal
+    ? `<a href="mailto:${FROM_EMAIL}" style="display:inline-block;background:#7B2FBE;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">Contáctanos</a>&nbsp;&nbsp;<a href="${FRONTEND_URL}/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">Volver a aprender</a>`
+    : `<a href="${FRONTEND_URL}/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">Continuar aprendiendo</a>`;
   return `
 <!DOCTYPE html>
 <html>
@@ -34,21 +45,13 @@ function reminderEmailHtml(name: string, daysInactive: number): string {
     </div>
     <div style="padding:40px;">
       <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">
-        ${name ? `¡Hola ${name}!` : '¡Te echamos de menos!'}
+        ${name ? `¡Hola ${name}! — ${header}` : header}
       </h2>
-      <p style="color:#555;line-height:1.6;">
-        Llevas <strong>${daysInactive} días</strong> sin actividad en Lux Learning.
-        Tu aprendizaje está esperando — unos minutos cada día marcan la diferencia.
-      </p>
-      <div style="background:#F0FBFF;border-left:4px solid #00B4D8;padding:16px 20px;border-radius:4px;margin:24px 0;">
-        <p style="margin:0;color:#0077A8;font-style:italic;">
-          "La consistencia supera a la intensidad. Un módulo a la vez."
-        </p>
-      </div>
-      <a href="${FRONTEND_URL}/dashboard"
-         style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
-        Continuar aprendiendo
-      </a>
+      <p style="color:#555;line-height:1.6;">${body}</p>
+      ${!isFinal ? `<div style="background:#F0FBFF;border-left:4px solid #00B4D8;padding:16px 20px;border-radius:4px;margin:24px 0;">
+        <p style="margin:0;color:#0077A8;font-style:italic;">"La consistencia supera a la intensidad. Un módulo a la vez."</p>
+      </div>` : ''}
+      ${cta}
       <p style="color:#aaa;font-size:12px;margin-top:32px;">
         Recibes este email porque estás inscrito en Lux Learning.
       </p>
@@ -154,9 +157,12 @@ export const handler = async () => {
     const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, new Date(ls.lastSeen).getTime()]));
 
     // Build last activity timestamp per user (fallback)
+    // Guard: PROGRESS table contains non-lesson items (HEARTBEAT, INACTIVITY_REMINDER, etc.) — skip those
     const lastActivity = new Map<string, number>();
     allProgress.forEach((p) => {
+      if (!p.completedAt) return;
       const t = new Date(p.completedAt).getTime();
+      if (isNaN(t)) return;
       if (!lastActivity.has(p.userId) || t > lastActivity.get(p.userId)!) lastActivity.set(p.userId, t);
     });
     allReflections.forEach((r) => {
@@ -182,6 +188,29 @@ export const handler = async () => {
         continue;
       }
 
+      // Check reminder sequence tracking
+      let reminder;
+      try {
+        reminder = await getInactivityReminder(userId);
+      } catch {
+        reminder = { count: 0, lastSent: null };
+      }
+
+      if (reminder.count >= MAX_REMINDER_COUNT) {
+        skipped++;
+        continue;
+      }
+
+      // Determine if enough time has passed since last reminder
+      if (reminder.lastSent) {
+        const hoursSinceLast = Math.floor((now - new Date(reminder.lastSent).getTime()) / 3600000);
+        const requiredHours = reminder.count <= 1 ? SECOND_EMAIL_HOURS : WEEKLY_EMAIL_HOURS;
+        if (hoursSinceLast < requiredHours) {
+          skipped++;
+          continue;
+        }
+      }
+
       // Look up user email + name from Cognito
       try {
         const res = await cognito.send(new AdminGetUserCommand({
@@ -194,18 +223,45 @@ export const handler = async () => {
         if (!email) { skipped++; continue; }
 
         const name = attr('name') || email.split('@')[0] || '';
+        const daysInactive = Math.floor(hoursInactive / 24) || 1;
+        const nextCount = reminder.count + 1;
+        const isFinal = nextCount >= MAX_REMINDER_COUNT;
+        const subject = isFinal
+          ? `Te extrañamos en Lux Learning ❤️`
+          : `${name ? name + ', t' : 'T'}e echamos de menos en Lux Learning 🌟`;
 
         await ses.send(new SendEmailCommand({
           Source: FROM_EMAIL,
           Destination: { ToAddresses: [email] },
           Message: {
-            Subject: { Data: `${name ? name + ', t' : 'T'}e echamos de menos en Lux Learning 🌟`, Charset: 'UTF-8' },
-            Body: { Html: { Data: reminderEmailHtml(name, Math.floor(hoursInactive / 24) || 1), Charset: 'UTF-8' } },
+            Subject: { Data: subject, Charset: 'UTF-8' },
+            Body: { Html: { Data: reminderEmailHtml(name, daysInactive, nextCount), Charset: 'UTF-8' } },
           },
         }));
 
         sent++;
-        console.log(`[Reminders] Sent to ${email} (${hoursInactive}h inactive)`);
+        console.log(`[Reminders] Sent #${nextCount} to ${email} (${hoursInactive}h inactive)`);
+
+        // Also send in-app notification so the student sees it on the platform
+        createNotification({
+          userId,
+          notifId: createId(),
+          type: 'INACTIVITY_REMINDER',
+          message: isFinal
+            ? 'Te extrañamos en Lux Learning — ¡continuemos tu formación!'
+            : `Llevas ${Math.floor(hoursInactive / 24)} días sin actividad — ¡te echamos de menos!`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          actionUrl: '/dashboard',
+        }).catch((err) => {
+          console.warn(`[Reminders] In-app notification failed for ${userId}:`, err);
+        });
+
+        try {
+          await setInactivityReminder(userId, nextCount, new Date().toISOString());
+        } catch (ddbErr) {
+          console.warn(`[Reminders] Counter update failed for ${userId} — email was sent, counter not advanced:`, ddbErr);
+        }
       } catch (err) {
         console.warn(`[Reminders] Failed for userId ${userId}:`, err);
         skipped++;

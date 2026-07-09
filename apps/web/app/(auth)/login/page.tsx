@@ -62,7 +62,7 @@ function LoginForm() {
         return;
       }
       const role = await getUserRole();
-      const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' ? '/evaluator/dashboard' : '/dashboard');
+      const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' || role === 'SUPER_ADMIN' ? '/evaluator/dashboard' : '/dashboard');
       router.push(destination);
     } catch (err: unknown) {
       setError(translateError(err));
@@ -80,7 +80,7 @@ function LoginForm() {
     try {
       await completeNewPassword(newPassword);
       const role = await getUserRole();
-      const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' ? '/evaluator/dashboard' : '/dashboard');
+      const destination = redirectTo ?? (role === 'EVALUATOR' || role === 'ADMIN' || role === 'SUPER_ADMIN' ? '/evaluator/dashboard' : '/dashboard');
       router.push(destination);
     } catch (err: unknown) {
       setError(translateError(err));
@@ -141,10 +141,13 @@ function LoginForm() {
   // ── Normal login ──────────────────────────────────────────────────────────
   return (
     <div className="bg-white rounded-2xl shadow-card-hover p-8">
+      <div className="flex justify-center mb-6">
+        <PrismaLogo size={144} showText={false} />
+      </div>
       <div className="mb-6 flex items-start justify-between gap-2">
         <div>
           <h1 className="font-heading font-bold text-2xl text-charcoal">{t.auth.signIn === 'Sign in' ? 'Welcome' : 'Bienvenido'}</h1>
-          <p className="text-gray-500 mt-1 text-sm">{lang === 'en' ? 'Sign in to your Lux Learning account' : 'Ingresa a tu cuenta de Lux Learning'}</p>
+          <p className="text-gray-500 mt-1 text-sm">{t.auth.subtitle}</p>
         </div>
         <div className="flex gap-1 border border-border rounded-lg overflow-hidden shrink-0">
           {LANGS.map((l) => (
@@ -226,9 +229,6 @@ export default function LoginPage() {
         <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-cta-to/30 rounded-full blur-3xl" />
       </div>
       <div className="relative w-full max-w-md">
-        <div className="flex justify-center mb-8">
-          <PrismaLogo size={40} />
-        </div>
         <Suspense fallback={
           <div className="bg-white rounded-2xl shadow-card-hover p-8 flex items-center justify-center h-64">
             <div className="w-8 h-8 border-2 border-cta-from border-t-transparent rounded-full animate-spin" />

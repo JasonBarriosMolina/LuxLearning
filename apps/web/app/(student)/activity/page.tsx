@@ -8,6 +8,7 @@ import {
 import { BarChart2, Clock, Flame, BookOpen, TrendingUp, CheckCircle2, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { TASK_TYPE_COLORS, TASK_TYPE_LABELS } from '@/lib/constants/task-colors';
+import { useLanguage } from '@/lib/i18n';
 
 interface Session {
   sessionId: string;
@@ -113,32 +114,40 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const CumulativeTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white border border-border rounded-xl px-3 py-2 shadow-lg text-xs">
-        <p className="font-semibold text-charcoal">{label}</p>
-        <p className="text-emerald-600">Acumulado: {payload[0].value} h</p>
-      </div>
-    );
-  }
-  return null;
-};
+function makeCumulativeTooltip(cumulativeLabel: string) {
+  return function CumulativeTooltip({ active, payload, label }: any) {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white border border-border rounded-xl px-3 py-2 shadow-lg text-xs">
+          <p className="font-semibold text-charcoal">{label}</p>
+          <p className="text-emerald-600">{cumulativeLabel} {payload[0].value} h</p>
+        </div>
+      );
+    }
+    return null;
+  };
+}
 
-const QuizTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const d = payload[0].payload;
-    return (
-      <div className="bg-white border border-border rounded-xl px-3 py-2 shadow-lg text-xs">
-        <p className="font-semibold text-charcoal">{new Date(d.submittedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</p>
-        <p className={d.passed ? 'text-emerald-600' : 'text-red-500'}>Score: {d.score}% — {d.passed ? 'Aprobado' : 'Reprobado'}</p>
-      </div>
-    );
-  }
-  return null;
-};
+function makeQuizTooltip(passedLabel: string, failedLabel: string, locale: string) {
+  return function QuizTooltip({ active, payload }: any) {
+    if (active && payload && payload.length) {
+      const d = payload[0].payload;
+      return (
+        <div className="bg-white border border-border rounded-xl px-3 py-2 shadow-lg text-xs">
+          <p className="font-semibold text-charcoal">{new Date(d.submittedAt).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}</p>
+          <p className={d.passed ? 'text-emerald-600' : 'text-red-500'}>Score: {d.score}% — {d.passed ? passedLabel : failedLabel}</p>
+        </div>
+      );
+    }
+    return null;
+  };
+}
 
 export default function ActivityPage() {
+  const { t, lang } = useLanguage();
+  const locale = lang === 'en' ? 'en-US' : 'es-ES';
+  const CumulativeTooltip = makeCumulativeTooltip(t.studentActivity.cumulativeLabel);
+  const QuizTooltip = makeQuizTooltip(t.studentActivity.quizPassedLabel, t.studentActivity.quizFailedLabel, locale);
   const [summary, setSummary] = useState<ActivitySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -169,8 +178,8 @@ export default function ActivityPage() {
       <div className="max-w-4xl mx-auto">
         <div className="card text-center py-16">
           <BarChart2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="font-heading font-bold text-charcoal">Sin datos de actividad</p>
-          <p className="text-sm text-gray-400 mt-1">Navega por la plataforma para generar tu historial.</p>
+          <p className="font-heading font-bold text-charcoal">{t.studentActivity.noActivity}</p>
+          <p className="text-sm text-gray-400 mt-1">{t.studentActivity.noActivityHint}</p>
         </div>
       </div>
     );
@@ -205,8 +214,8 @@ export default function ActivityPage() {
       <div className="flex items-center gap-3">
         <BarChart2 className="w-6 h-6 text-cta-from" />
         <div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">Mi Actividad</h1>
-          <p className="text-sm text-gray-400">Últimos 30 días</p>
+          <h1 className="font-heading font-bold text-2xl text-charcoal">{t.studentActivity.title}</h1>
+          <p className="text-sm text-gray-400">{t.studentActivity.last30Days}</p>
         </div>
       </div>
 
@@ -217,7 +226,7 @@ export default function ActivityPage() {
             <Clock className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Horas este mes</p>
+            <p className="text-xs text-gray-400 font-medium">{t.studentActivity.hoursThisMonth}</p>
             <p className="text-xl font-bold text-charcoal">{formatHours(totalHoursThisMonth)}</p>
           </div>
         </div>
@@ -227,8 +236,8 @@ export default function ActivityPage() {
             <Flame className="w-5 h-5 text-amber-500" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Racha actual</p>
-            <p className="text-xl font-bold text-charcoal">{streak} {streak === 1 ? 'día' : 'días'}</p>
+            <p className="text-xs text-gray-400 font-medium">{t.studentActivity.currentStreak}</p>
+            <p className="text-xl font-bold text-charcoal">{t.studentActivity.streakDays(streak)}</p>
           </div>
         </div>
 
@@ -237,7 +246,7 @@ export default function ActivityPage() {
             <BookOpen className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Días activos</p>
+            <p className="text-xs text-gray-400 font-medium">{t.studentActivity.activeDays}</p>
             <p className="text-xl font-bold text-charcoal">{activeDays}</p>
           </div>
         </div>
@@ -247,7 +256,7 @@ export default function ActivityPage() {
             <TrendingUp className="w-5 h-5 text-purple-600" />
           </div>
           <div>
-            <p className="text-xs text-gray-400 font-medium">Día pico</p>
+            <p className="text-xs text-gray-400 font-medium">{t.studentActivity.peakDay}</p>
             <p className="text-xl font-bold text-charcoal">{peakDay.hours > 0 ? `${peakDay.hours}h` : '—'}</p>
           </div>
         </div>
@@ -255,7 +264,7 @@ export default function ActivityPage() {
 
       {/* Bar chart — hours per day */}
       <div className="card space-y-3">
-        <h2 className="font-heading font-semibold text-base text-charcoal">Horas por día</h2>
+        <h2 className="font-heading font-semibold text-base text-charcoal">{t.studentActivity.hoursPerDay}</h2>
         <div style={{ height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} barSize={10}>
@@ -288,7 +297,7 @@ export default function ActivityPage() {
 
       {/* Line chart — cumulative progress */}
       <div className="card space-y-3">
-        <h2 className="font-heading font-semibold text-base text-charcoal">Progreso acumulado</h2>
+        <h2 className="font-heading font-semibold text-base text-charcoal">{t.studentActivity.cumulativeProgress}</h2>
         <div style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={cumulativeData}>
@@ -318,7 +327,7 @@ export default function ActivityPage() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <p className="text-xs text-gray-400 text-right">Total acumulado: <strong>{formatHours(totalHoursThisMonth)}</strong></p>
+        <p className="text-xs text-gray-400 text-right">{t.studentActivity.cumulativeTotal(formatHours(totalHoursThisMonth))}</p>
       </div>
 
       {/* Streak motivational note */}
@@ -327,10 +336,10 @@ export default function ActivityPage() {
           <Flame className="w-6 h-6 text-amber-500 shrink-0" />
           <div>
             <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">
-              🔥 ¡{streak} días seguidos! Mantén el ritmo.
+              {t.studentActivity.streakMotivation(streak)}
             </p>
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-              La constancia es la clave del aprendizaje.
+              {t.studentActivity.streakHint}
             </p>
           </div>
         </div>
@@ -341,33 +350,33 @@ export default function ActivityPage() {
         <div className="card space-y-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-cta-from" />
-            <h2 className="font-heading font-semibold text-base text-charcoal">Tareas Completadas</h2>
-            <span className="ml-auto text-xs text-gray-400">{summary.completedTasks?.length ?? 0} en total</span>
+            <h2 className="font-heading font-semibold text-base text-charcoal">{t.studentActivity.tasksCompleted}</h2>
+            <span className="ml-auto text-xs text-gray-400">{t.studentActivity.tasksTotal(summary.completedTasks?.length ?? 0)}</span>
           </div>
           <div className="space-y-2">
-            {completedTasks.map((t) => (
-              <div key={t.taskId} className="flex items-center gap-3 p-3 rounded-xl bg-surface">
+            {completedTasks.map((tk) => (
+              <div key={tk.taskId} className="flex items-center gap-3 p-3 rounded-xl bg-surface">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-charcoal truncate">{t.title}</p>
-                  {t.courseTitle && <p className="text-xs text-gray-400">{t.courseTitle}</p>}
+                  <p className="text-sm font-medium text-charcoal truncate">{tk.title}</p>
+                  {tk.courseTitle && <p className="text-xs text-gray-400">{tk.courseTitle}</p>}
                 </div>
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full text-white shrink-0"
-                  style={{ backgroundColor: TASK_TYPE_COLORS[t.type] ?? '#6B7280' }}
+                  style={{ backgroundColor: TASK_TYPE_COLORS[tk.type] ?? '#6B7280' }}
                 >
-                  {TASK_TYPE_LABELS[t.type] ?? t.type}
+                  {TASK_TYPE_LABELS[tk.type] ?? tk.type}
                 </span>
-                {t.completedAt && (
+                {tk.completedAt && (
                   <span className="text-xs text-gray-400 shrink-0 hidden sm:block">
-                    {new Date(t.completedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                    {new Date(tk.completedAt).toLocaleDateString(locale, { day: 'numeric', month: 'short' })}
                   </span>
                 )}
               </div>
             ))}
           </div>
           {(summary.completedTasks?.length ?? 0) > 20 && (
-            <p className="text-xs text-gray-400 text-center">Mostrando las últimas 20 tareas</p>
+            <p className="text-xs text-gray-400 text-center">{t.studentActivity.showingLast20Tasks}</p>
           )}
         </div>
       )}
@@ -375,7 +384,7 @@ export default function ActivityPage() {
       {/* Quiz grades chart */}
       {quizAttempts.length > 0 && (
         <div className="card space-y-3">
-          <h2 className="font-heading font-semibold text-base text-charcoal">Calificaciones de Quiz</h2>
+          <h2 className="font-heading font-semibold text-base text-charcoal">{t.studentActivity.quizScores}</h2>
           <div style={{ height: 200 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart>
@@ -409,9 +418,9 @@ export default function ActivityPage() {
             </ResponsiveContainer>
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-500">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />Aprobado</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />Reprobado</span>
-            <span className="ml-auto">{quizAttempts.filter((a) => a.passed).length} / {quizAttempts.length} aprobados</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />{t.studentActivity.approvedLegend}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />{t.studentActivity.failedLegend}</span>
+            <span className="ml-auto">{t.studentActivity.quizSummary(quizAttempts.filter((a) => a.passed).length, quizAttempts.length)}</span>
           </div>
         </div>
       )}
@@ -424,7 +433,7 @@ export default function ActivityPage() {
             className="w-full flex items-center justify-between"
           >
             <h2 className="font-heading font-semibold text-base text-charcoal">
-              Historial de Sesiones <span className="text-gray-400 font-normal text-sm">({sessions.length})</span>
+              {t.studentActivity.sessionHistory} <span className="text-gray-400 font-normal text-sm">({sessions.length})</span>
             </h2>
             {sessionsOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
           </button>
@@ -433,9 +442,9 @@ export default function ActivityPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Fecha</th>
-                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Hora</th>
-                    <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">Duración</th>
+                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">{t.studentActivity.colDate}</th>
+                    <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">{t.studentActivity.colTime}</th>
+                    <th className="text-right text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2">{t.studentActivity.colDuration}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -444,10 +453,10 @@ export default function ActivityPage() {
                     return (
                       <tr key={s.sessionId} className="hover:bg-surface/50 transition-colors">
                         <td className="py-2 text-charcoal">
-                          {d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })}
                         </td>
                         <td className="py-2 text-gray-500 text-xs">
-                          {d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                          {d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td className="py-2 text-right font-medium text-charcoal">
                           {formatDuration(s.durationSeconds ?? 0)}
@@ -458,7 +467,7 @@ export default function ActivityPage() {
                 </tbody>
               </table>
               {(summary.sessions?.length ?? 0) > 20 && (
-                <p className="text-xs text-gray-400 text-center mt-2">Mostrando las últimas 20 sesiones</p>
+                <p className="text-xs text-gray-400 text-center mt-2">{t.studentActivity.showingLast20Sessions}</p>
               )}
             </div>
           )}

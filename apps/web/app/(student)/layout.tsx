@@ -14,7 +14,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     if (!isLoading && !isAuthenticated) {
       router.replace('/login');
     }
-    if (!isLoading && isAuthenticated && (role === 'EVALUATOR' || role === 'ADMIN')) {
+    if (!isLoading && isAuthenticated && (role === 'EVALUATOR' || role === 'ADMIN' || role === 'SUPER_ADMIN')) {
       router.replace('/evaluator/dashboard');
     }
   }, [isLoading, isAuthenticated, role, router]);

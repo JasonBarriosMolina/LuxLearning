@@ -5,11 +5,13 @@ import { UserPlus, BookOpen, Search, CheckCircle, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { useLanguage } from '@/lib/i18n';
 
 type Student = { username: string; email: string; name: string; role: string; enabled: boolean };
 type Course = { id: string; title: string; isActive: boolean; modules?: any[] };
 
 export default function AssignCoursesPage() {
+  const { t } = useLanguage();
   const [mode, setMode] = useState<'by-course' | 'by-student'>('by-course');
 
   // Data
@@ -48,7 +50,7 @@ export default function AssignCoursesPage() {
       setCourses(allCourses);
       setStudents(allUsers.filter((u) => u.role === 'STUDENT' && u.enabled));
       setLoading(false);
-    }).catch((err: any) => { setLoadError(err.message ?? 'Error al cargar datos'); setLoading(false); });
+    }).catch((err: any) => { setLoadError(err.message ?? t.admin.loadError); setLoading(false); });
   }, []);
 
   // Load enrollments when a course is selected
@@ -147,22 +149,22 @@ export default function AssignCoursesPage() {
       <div>
         <h1 className="font-heading font-bold text-2xl text-charcoal flex items-center gap-2">
           <UserPlus className="w-6 h-6 text-cta-from" />
-          Asignar Cursos
+          {t.admin.assignCoursesTitle}
         </h1>
-        <p className="text-gray-500 mt-1 text-sm">Inscribe estudiantes a cursos de forma individual o masiva</p>
+        <p className="text-gray-500 mt-1 text-sm">{t.admin.assignCoursesSubtitle}</p>
       </div>
 
       {loadError && (
         <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-          Error al cargar datos: {loadError}
+          {t.admin.loadError}: {loadError}
         </div>
       )}
 
       {/* Mode toggle */}
       <div className="flex bg-surface rounded-xl p-1 gap-1 w-fit">
         {([
-          { key: 'by-course', label: '📋 Por Curso' },
-          { key: 'by-student', label: '👤 Por Estudiante' },
+          { key: 'by-course', label: `📋 ${t.admin.byCourse}` },
+          { key: 'by-student', label: `👤 ${t.admin.byStudent}` },
         ] as const).map((m) => (
           <button
             key={m.key}
@@ -184,15 +186,15 @@ export default function AssignCoursesPage() {
         /* ── BY COURSE ── */
         <div className="space-y-4">
           <div className="card space-y-3">
-            <label className="text-sm font-semibold text-charcoal">Selecciona un curso</label>
+            <label className="text-sm font-semibold text-charcoal">{t.admin.selectCourseLabel}</label>
             <select
               value={selectedCourseId}
               onChange={(e) => setSelectedCourseId(e.target.value)}
               className="input-field"
             >
-              <option value="">— Elige un curso —</option>
+              <option value="">{t.admin.chooseCourse}</option>
               {courses.map((c) => (
-                <option key={c.id} value={c.id}>{c.title}{c.isActive ? '' : ' (inactivo)'}</option>
+                <option key={c.id} value={c.id}>{c.title}{c.isActive ? '' : ` ${t.admin.inactive}`}</option>
               ))}
             </select>
           </div>
@@ -201,7 +203,7 @@ export default function AssignCoursesPage() {
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-charcoal">
-                  Estudiantes ({pendingCourse.size} inscritos)
+                  {t.admin.studentsEnrolled(pendingCourse.size)}
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -209,7 +211,7 @@ export default function AssignCoursesPage() {
                     onClick={() => setPendingCourse(new Set(students.map((s) => s.username)))}
                     className="text-xs text-cta-from font-medium hover:opacity-70"
                   >
-                    Todos
+                    {t.admin.selectAll}
                   </button>
                   <span className="text-xs text-gray-300">|</span>
                   <button
@@ -217,13 +219,13 @@ export default function AssignCoursesPage() {
                     onClick={() => setPendingCourse(new Set())}
                     className="text-xs text-gray-400 font-medium hover:opacity-70"
                   >
-                    Ninguno
+                    {t.admin.selectNone}
                   </button>
                 </div>
               </div>
 
               <Input
-                placeholder="Buscar estudiante..."
+                placeholder={t.admin.searchStudent}
                 value={searchStudent}
                 onChange={(e) => setSearchStudent(e.target.value)}
                 leftIcon={<Search className="w-4 h-4" />}
@@ -258,13 +260,13 @@ export default function AssignCoursesPage() {
                           <p className="text-xs text-gray-400 truncate">{s.email}</p>
                         </div>
                         {wasEnrolled && (
-                          <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-medium shrink-0">Inscrito</span>
+                          <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-medium shrink-0">{t.admin.enrolled}</span>
                         )}
                       </label>
                     );
                   })}
                   {filteredStudents.length === 0 && (
-                    <p className="text-center text-sm text-gray-400 py-6">No se encontraron estudiantes</p>
+                    <p className="text-center text-sm text-gray-400 py-6">{t.admin.noStudentsFound}</p>
                   )}
                 </div>
               )}
@@ -272,11 +274,11 @@ export default function AssignCoursesPage() {
               <div className="flex items-center justify-between pt-2">
                 {saved ? (
                   <span className="text-sm text-emerald-600 flex items-center gap-1.5 font-medium">
-                    <CheckCircle className="w-4 h-4" /> Cambios guardados
+                    <CheckCircle className="w-4 h-4" /> {t.admin.changesSaved}
                   </span>
                 ) : <span />}
                 <Button onClick={handleSaveByCourse} loading={saving}>
-                  Guardar cambios
+                  {t.admin.saveChanges}
                 </Button>
               </div>
             </div>
@@ -286,9 +288,9 @@ export default function AssignCoursesPage() {
         /* ── BY STUDENT ── */
         <div className="space-y-4">
           <div className="card space-y-3">
-            <label className="text-sm font-semibold text-charcoal">Selecciona un estudiante</label>
+            <label className="text-sm font-semibold text-charcoal">{t.admin.selectStudentLabel}</label>
             <Input
-              placeholder="Buscar estudiante..."
+              placeholder={t.admin.searchStudent}
               value={searchStudent}
               onChange={(e) => setSearchStudent(e.target.value)}
               leftIcon={<Search className="w-4 h-4" />}
@@ -315,7 +317,7 @@ export default function AssignCoursesPage() {
                 </button>
               ))}
               {filteredStudents.length === 0 && (
-                <p className="text-center text-sm text-gray-400 py-4">No se encontraron estudiantes</p>
+                <p className="text-center text-sm text-gray-400 py-4">{t.admin.noStudentsFound}</p>
               )}
             </div>
           </div>
@@ -324,7 +326,7 @@ export default function AssignCoursesPage() {
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-charcoal">
-                  Cursos ({pendingStudent.size} asignados)
+                  {t.admin.coursesAssigned(pendingStudent.size)}
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -332,7 +334,7 @@ export default function AssignCoursesPage() {
                     onClick={() => setPendingStudent(new Set(courses.map((c) => c.id)))}
                     className="text-xs text-cta-from font-medium hover:opacity-70"
                   >
-                    Todos
+                    {t.admin.selectAll}
                   </button>
                   <span className="text-xs text-gray-300">|</span>
                   <button
@@ -340,13 +342,13 @@ export default function AssignCoursesPage() {
                     onClick={() => setPendingStudent(new Set())}
                     className="text-xs text-gray-400 font-medium hover:opacity-70"
                   >
-                    Ninguno
+                    {t.admin.selectNone}
                   </button>
                 </div>
               </div>
 
               <Input
-                placeholder="Buscar curso..."
+                placeholder={t.admin.searchCourse}
                 value={searchCourse}
                 onChange={(e) => setSearchCourse(e.target.value)}
                 leftIcon={<Search className="w-4 h-4" />}
@@ -378,16 +380,16 @@ export default function AssignCoursesPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-charcoal truncate">{c.title}</p>
-                          <p className="text-xs text-gray-400">{c.modules?.length ?? 0} módulos</p>
+                          <p className="text-xs text-gray-400">{c.modules?.length ?? 0} {t.courses.modules}</p>
                         </div>
                         {wasEnrolled && (
-                          <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-medium shrink-0">Inscrito</span>
+                          <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-medium shrink-0">{t.admin.enrolled}</span>
                         )}
                       </label>
                     );
                   })}
                   {filteredCourses.length === 0 && (
-                    <p className="text-center text-sm text-gray-400 py-4">No hay cursos activos</p>
+                    <p className="text-center text-sm text-gray-400 py-4">{t.admin.noActiveCourses}</p>
                   )}
                 </div>
               )}
@@ -395,11 +397,11 @@ export default function AssignCoursesPage() {
               <div className="flex items-center justify-between pt-2">
                 {saved ? (
                   <span className="text-sm text-emerald-600 flex items-center gap-1.5 font-medium">
-                    <CheckCircle className="w-4 h-4" /> Cambios guardados
+                    <CheckCircle className="w-4 h-4" /> {t.admin.changesSaved}
                   </span>
                 ) : <span />}
                 <Button onClick={handleSaveByStudent} loading={saving}>
-                  Guardar cambios
+                  {t.admin.saveChanges}
                 </Button>
               </div>
             </div>

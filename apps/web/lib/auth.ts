@@ -105,7 +105,7 @@ export async function getUserRole(): Promise<UserRole> {
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
     const groups = (payload?.['cognito:groups'] as string[] | undefined) ?? [];
-    return groups.includes('ADMIN') ? 'ADMIN' : groups.includes('EVALUATOR') ? 'EVALUATOR' : 'STUDENT';
+    return groups.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' : groups.includes('ADMIN') ? 'ADMIN' : groups.includes('EVALUATOR') ? 'EVALUATOR' : 'STUDENT';
   } catch {
     return 'STUDENT';
   }

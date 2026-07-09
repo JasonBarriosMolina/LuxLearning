@@ -2,7 +2,8 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getCertificate, getCertificatesByUser, getCertificateByUserAndCourse, saveCertificate, getReflection, getCertTemplate, saveCertTemplate, type CertTemplate } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
-import { ok, notFound, badRequest, forbidden, serverError, cors } from '../shared/response';
+import { ok, notFound, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const DEFAULT_TEMPLATE: CertTemplate = {
@@ -32,6 +33,9 @@ async function resolveStudentName(userId: string, fallbackEmail: string): Promis
 }
 
 export const handler = async (event: Event) => {
+  const origin = event.headers?.origin ?? event.headers?.Origin;
+  setRequestOrigin(origin);
+  setEnvironmentFromOrigin(origin);
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const path = event.rawPath;

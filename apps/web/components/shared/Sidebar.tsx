@@ -101,7 +101,7 @@ function UnreadBadge() {
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
-  const { role, email, signOut } = useAuth();
+  const { role, email, name, signOut } = useAuth();
   const { canInstall, install } = useInstallPrompt();
   const { t } = useLanguage();
 
@@ -112,12 +112,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
-        <PrismaLogo size={28} />
+      <div className="flex items-center justify-center px-6 py-5 border-b border-white/10 relative">
+        <PrismaLogo size={72} showText={false} />
         {onMobileClose && (
           <button
             onClick={onMobileClose}
-            className="lg:hidden p-1 text-white/60 hover:text-white"
+            className="lg:hidden absolute right-4 top-1/2 -translate-y-1/2 p-1 text-white/60 hover:text-white"
             aria-label="Cerrar menú"
           >
             <X className="w-5 h-5" />
@@ -129,12 +129,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       <div className="px-6 py-4 border-b border-white/10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-cta-gradient flex items-center justify-center text-white font-heading font-bold text-sm">
-            {email?.[0]?.toUpperCase() ?? 'U'}
+            {(name ?? email)?.[0]?.toUpperCase() ?? 'U'}
           </div>
           <div className="min-w-0">
-            <p className="text-white text-sm font-medium truncate">{email ?? 'Usuario'}</p>
+            <p className="text-white text-sm font-medium truncate">{name ?? email ?? 'Usuario'}</p>
             <p className="text-white/50 text-xs">
-              {role === 'ADMIN' ? t.roles.superAdmin : role === 'EVALUATOR' ? t.roles.evaluator : t.roles.student}
+              {role === 'SUPER_ADMIN' || role === 'ADMIN' ? t.roles.superAdmin : role === 'EVALUATOR' ? t.roles.evaluator : t.roles.student}
             </p>
           </div>
         </div>
