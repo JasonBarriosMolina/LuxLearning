@@ -2,93 +2,117 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Pause, Play, Square } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n';
 
 interface Props {
   text: string;
-  audioUrl?: string; // Polly pre-generated audio (course voice — optional)
+  audioUrl?: string;
   className?: string;
-  adminMode?: boolean; // admin preview: show only Polly audio, no profile selector
+  adminMode?: boolean; // admin preview: only Polly audio, no profile selector
 }
 
-// ── Voice profiles ─────────────────────────────────────────────────────────────
-const PROFILES = [
-  { id: 'sofia',  label: 'Sofía ♀',  gender: 'female' as const },
-  { id: 'carlos', label: 'Carlos ♀', gender: 'female' as const },
-  { id: 'jorge',  label: 'Jorge ♂',  gender: 'male'   as const },
-  { id: 'miguel', label: 'Miguel ♂', gender: 'male'   as const },
-] as const;
-
-type ProfileId = (typeof PROFILES)[number]['id'];
+// ── Voice profile definition ───────────────────────────────────────────────────
+type Gender  = 'female' | 'male';
 type TTSState  = 'idle' | 'speaking' | 'paused';
 type TTSSource = 'web' | 'polly';
 
-// ── Female/male name patterns for Spanish TTS voices ───────────────────────────
-const FEMALE_MARKERS = [
-  'mónica','monica','paulina','lucía','lucia','sara','lupe','mia','marisol',
-  'helena','sabina','sofía','sofia','isabella','valentina','camila','maria',
-  'laura','ana','elena','rosa','isabel','andrea','diana','carlos',
+interface Profile { id: string; labelEs: string; labelEn: string; gender: Gender; }
+
+const PROFILES: Profile[] = [
+  { id: 'f', labelEs: 'Voz femenina ♀', labelEn: 'Female voice ♀', gender: 'female' },
+  { id: 'm', labelEs: 'Voz masculina ♂', labelEn: 'Male voice ♂',   gender: 'male'   },
+];
+
+// ── Comprehensive gender name lists ────────────────────────────────────────────
+// Spanish feminine names found across macOS, Windows, iOS, Android
+const ES_FEMALE = [
+  'mónica','monica','paulina','lucía','lucia','lupe','marisol','helena','sabina',
+  'sofía','sofia','isabella','valentina','camila','maria','laura','ana','elena',
+  'rosa','isabel','andrea','diana','mia','penélope','penelope','dalia','pilar',
+  'conchita','jorge'/* some OS label a neutral voice Jorge but it reads female */,
   'female','mujer','femenin',
+  // Windows Neural voices (spanish)
+  'abril','beatriz','candela','carlota','catalina','irene','laia','salome',
+  'ximena','renata','nuria','paloma','clara','estrella','vera','raquel',
 ];
-const MALE_MARKERS = [
+// Spanish masculine names
+const ES_MALE = [
   'jorge','pablo','enrique','diego','pedro','andrés','andres','miguel',
-  'juan','sergio','raúl','raul','antonio','manuel','carlos','alberto',
+  'juan','sergio','raúl','raul','antonio','manuel','alberto','ernesto',
   'male','hombre','masculin',
+  // Windows Neural voices
+  'alejandro','alvaro','armando','dario','gerardo','jacobo','lionel',
+  'tomas','jorge','placido','rodrigo',
 ];
 
-function isFemale(v: SpeechSynthesisVoice) {
-  const n = v.name.toLowerCase();
-  return FEMALE_MARKERS.some((m) => n.includes(m));
-}
-function isMale(v: SpeechSynthesisVoice) {
-  const n = v.name.toLowerCase();
-  return MALE_MARKERS.some((m) => n.includes(m));
-}
+// English feminine names
+const EN_FEMALE = [
+  'samantha','karen','victoria','tessa','kate','fiona','moira','veena',
+  'ava','allison','susan','zoe','emily','joanna','ivy','kendra','kimberly',
+  'salli','female','woman','girl',
+  // Windows Neural
+  'aria','jenny','michelle','elizabeth','amber','ana','ashley','cora',
+  'emma','jane','nancy','sara','steffan',
+];
+// English masculine names
+const EN_MALE = [
+  'alex','daniel','fred','lee','tom','gordon','rishi','oliver',
+  'justin','matthew','joey','brian','eric',
+  'male','man','guy',
+  // Windows Neural
+  'andrew','christopher','eric','guy','jacob','liam','ryan','tony',
+  'davis','jason','brandon','derek','gabriel','james','logan','william',
+];
 
-// ── Async voice loader ─────────────────────────────────────────────────────────
-function useSpanishVoices() {
+function nameLower(v: SpeechSynthesisVoice) { return v.name.toLowerCase(); }
+
+function isFemaleES(v: SpeechSynthesisVoice) { return ES_FEMALE.some((m) => nameLower(v).includes(m)); }
+function isMaleES(v: SpeechSynthesisVoice)   { return ES_MALE.some((m) => nameLower(v).includes(m)); }
+function isFemaleEN(v: SpeechSynthesisVoice) { return EN_FEMALE.some((m) => nameLower(v).includes(m)); }
+function isMaleEN(v: SpeechSynthesisVoice)   { return EN_MALE.some((m) => nameLower(v).includes(m)); }
+
+// ── Async voice loader (Chrome needs onvoiceschanged) ──────────────────────────
+function useVoices() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-
-    const load = () => {
-      const all = window.speechSynthesis.getVoices();
-      // Prefer voices with a Spanish lang tag; fall back to all voices
-      const es = all.filter((v) => v.lang.startsWith('es'));
-      setVoices(es.length > 0 ? es : all);
-    };
-
-    load(); // synchronous attempt (works in Firefox/Safari)
-    window.speechSynthesis.onvoiceschanged = load; // async for Chrome
+    const load = () => setVoices(window.speechSynthesis.getVoices());
+    load();
+    window.speechSynthesis.onvoiceschanged = load;
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
-
   return voices;
 }
 
-// ── Profile → actual voice mapping ────────────────────────────────────────────
-// Returns the best Spanish voice for a given profile, or null.
-function pickVoice(profileId: ProfileId, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+// ── Pick the best voice for a given lang + gender ─────────────────────────────
+// Priority: exact lang-country match → lang prefix → fallback to any voice
+function pickVoice(
+  gender: Gender,
+  appLang: 'es' | 'en',
+  voices: SpeechSynthesisVoice[],
+): SpeechSynthesisVoice | null {
   if (voices.length === 0) return null;
-  const profile = PROFILES.find((p) => p.id === profileId);
-  if (!profile) return voices[0];
 
-  const females = voices.filter(isFemale);
-  const males   = voices.filter(isMale);
-  const unknowns = voices.filter((v) => !isFemale(v) && !isMale(v));
+  const isFemale = appLang === 'es' ? isFemaleES : isFemaleEN;
+  const isMale   = appLang === 'es' ? isMaleES   : isMaleEN;
 
-  if (profile.gender === 'female') {
-    const pool = females.length > 0 ? females : (unknowns.length > 0 ? unknowns : voices);
-    // carlos → try second female if available (different from sofia)
-    return profileId === 'carlos' ? (pool[1] ?? pool[0]) : pool[0];
+  // Filter by language prefix
+  const byLang = voices.filter((v) => v.lang.toLowerCase().startsWith(appLang));
+  const pool   = byLang.length > 0 ? byLang : voices;
+
+  const females = pool.filter(isFemale);
+  const males   = pool.filter(isMale);
+  const unknown = pool.filter((v) => !isFemale(v) && !isMale(v));
+
+  if (gender === 'female') {
+    // Prefer labelled female, then unknown (could be female), then male as last resort
+    return females[0] ?? unknown[0] ?? males[0] ?? pool[0];
   } else {
-    const pool = males.length > 0 ? males : (unknowns.length > 0 ? unknowns : voices);
-    // miguel → try second male if available (different from jorge)
-    return profileId === 'miguel' ? (pool[1] ?? pool[0]) : pool[0];
+    return males[0] ?? unknown[1] ?? unknown[0] ?? females[0] ?? pool[0];
   }
 }
 
-// ── Strip HTML ─────────────────────────────────────────────────────────────────
+// ── Strip HTML for speech synthesis ───────────────────────────────────────────
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n')
@@ -98,7 +122,25 @@ function stripHtml(html: string): string {
     .replace(/&nbsp;/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// ── Polly / HTML5 audio player ─────────────────────────────────────────────────
+// ── Speed selector (shared) ───────────────────────────────────────────────────
+function RateSelect({ value, onChange }: { value: number; onChange: (r: number) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value))}
+      className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
+      title="Velocidad"
+    >
+      <option value={0.75}>0.75×</option>
+      <option value={1}>1×</option>
+      <option value={1.25}>1.25×</option>
+      <option value={1.5}>1.5×</option>
+      <option value={2}>2×</option>
+    </select>
+  );
+}
+
+// ── Polly (pre-generated audio) player ────────────────────────────────────────
 function PollyPlayer({ audioUrl, rate, onRateChange }: {
   audioUrl: string; rate: number; onRateChange: (r: number) => void;
 }) {
@@ -108,7 +150,7 @@ function PollyPlayer({ audioUrl, rate, onRateChange }: {
   useEffect(() => { return () => { audioRef.current?.pause(); }; }, []);
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = rate; }, [rate]);
 
-  const handlePlay = () => {
+  const play = () => {
     const a = audioRef.current; if (!a) return;
     if (state === 'paused') { a.play(); return; }
     a.playbackRate = rate; a.currentTime = 0; a.play();
@@ -122,7 +164,7 @@ function PollyPlayer({ audioUrl, rate, onRateChange }: {
         onEnded={() => setState('idle')} />
 
       {state === 'idle' && (
-        <button onClick={handlePlay}
+        <button onClick={play}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white dark:bg-[#1A1A2E] text-gray-600 dark:text-gray-300 hover:border-cta-from hover:text-cta-from text-xs font-medium transition-colors">
           <Volume2 className="w-3.5 h-3.5" /> Escuchar
         </button>
@@ -134,13 +176,13 @@ function PollyPlayer({ audioUrl, rate, onRateChange }: {
         </button>
       )}
       {state === 'paused' && (
-        <button onClick={handlePlay}
+        <button onClick={play}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium transition-colors">
           <Play className="w-3.5 h-3.5" /> Continuar
         </button>
       )}
       {state !== 'idle' && (
-        <button onClick={() => { audioRef.current?.pause(); if (audioRef.current) { audioRef.current.currentTime = 0; } setState('idle'); }}
+        <button onClick={() => { audioRef.current?.pause(); if (audioRef.current) audioRef.current.currentTime = 0; setState('idle'); }}
           className="p-1.5 rounded-lg border border-border text-gray-400 hover:text-red-500 hover:border-red-300 transition-colors">
           <Square className="w-3.5 h-3.5" />
         </button>
@@ -150,34 +192,18 @@ function PollyPlayer({ audioUrl, rate, onRateChange }: {
   );
 }
 
-// ── Shared rate selector ───────────────────────────────────────────────────────
-function RateSelect({ value, onChange }: { value: number; onChange: (r: number) => void }) {
-  return (
-    <select value={value} onChange={(e) => onChange(parseFloat(e.target.value))}
-      className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
-      title="Velocidad">
-      <option value={0.75}>0.75×</option>
-      <option value={1}>1×</option>
-      <option value={1.25}>1.25×</option>
-      <option value={1.5}>1.5×</option>
-      <option value={2}>2×</option>
-    </select>
-  );
-}
-
 // ── Web Speech player ──────────────────────────────────────────────────────────
-function WebSpeechPlayer({ text, rate, onRateChange, profileId, voices }: {
+function WebSpeechPlayer({ text, rate, onRateChange, gender, appLang, voices }: {
   text: string; rate: number; onRateChange: (r: number) => void;
-  profileId: ProfileId; voices: SpeechSynthesisVoice[];
+  gender: Gender; appLang: 'es' | 'en'; voices: SpeechSynthesisVoice[];
 }) {
   const [state, setState] = useState<TTSState>('idle');
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Cancel when profile or rate changes so next play picks the new settings
+  // Cancel on voice setting change so next play picks new settings
   useEffect(() => {
     window.speechSynthesis?.cancel();
     setState('idle');
-  }, [profileId, rate]);
+  }, [gender, appLang, rate]);
 
   useEffect(() => { return () => { window.speechSynthesis?.cancel(); }; }, []);
 
@@ -190,29 +216,28 @@ function WebSpeechPlayer({ text, rate, onRateChange, profileId, voices }: {
     if (!plain.trim()) return;
 
     const utterance = new SpeechSynthesisUtterance(plain);
-    // Always set Spanish lang so the engine applies Spanish phonology
-    utterance.lang = 'es-ES';
-    utterance.rate = rate;
+    const voice = pickVoice(gender, appLang, voices);
 
-    const voice = pickVoice(profileId, voices);
     if (voice) {
       utterance.voice = voice;
-      // Override lang to match the selected voice's lang for correct phonology
-      utterance.lang = voice.lang || 'es-ES';
+      utterance.lang  = voice.lang;
+    } else {
+      utterance.lang = appLang === 'es' ? 'es-ES' : 'en-US';
     }
+    utterance.rate = rate;
 
     utterance.onstart  = () => setState('speaking');
     utterance.onpause  = () => setState('paused');
     utterance.onresume = () => setState('speaking');
     utterance.onend    = () => setState('idle');
     utterance.onerror  = () => setState('idle');
-    utteranceRef.current = utterance;
+
     window.speechSynthesis.speak(utterance);
     setState('speaking');
-  }, [state, text, rate, profileId, voices]);
+  }, [state, text, rate, gender, appLang, voices]);
 
-  const handlePause = useCallback(() => { window.speechSynthesis?.pause(); setState('paused'); }, []);
-  const handleStop  = useCallback(() => { window.speechSynthesis?.cancel(); setState('idle'); }, []);
+  const handlePause = () => { window.speechSynthesis?.pause(); setState('paused'); };
+  const handleStop  = () => { window.speechSynthesis?.cancel(); setState('idle'); };
 
   if (typeof window !== 'undefined' && !window.speechSynthesis) return null;
 
@@ -221,19 +246,19 @@ function WebSpeechPlayer({ text, rate, onRateChange, profileId, voices }: {
       {state === 'idle' && (
         <button onClick={handlePlay}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white dark:bg-[#1A1A2E] text-gray-600 dark:text-gray-300 hover:border-cta-from hover:text-cta-from text-xs font-medium transition-colors">
-          <Volume2 className="w-3.5 h-3.5" /> Escuchar
+          <Volume2 className="w-3.5 h-3.5" /> {appLang === 'es' ? 'Escuchar' : 'Listen'}
         </button>
       )}
       {state === 'speaking' && (
         <button onClick={handlePause}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cta-from bg-cta-from/10 text-cta-from text-xs font-medium transition-colors">
-          <Pause className="w-3.5 h-3.5" /> Pausar
+          <Pause className="w-3.5 h-3.5" /> {appLang === 'es' ? 'Pausar' : 'Pause'}
         </button>
       )}
       {state === 'paused' && (
         <button onClick={handlePlay}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs font-medium transition-colors">
-          <Play className="w-3.5 h-3.5" /> Continuar
+          <Play className="w-3.5 h-3.5" /> {appLang === 'es' ? 'Continuar' : 'Continue'}
         </button>
       )}
       {state !== 'idle' && (
@@ -249,12 +274,13 @@ function WebSpeechPlayer({ text, rate, onRateChange, profileId, voices }: {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false }: Props) {
-  const voices = useSpanishVoices();
+  const { lang } = useLanguage();
+  const voices   = useVoices();
 
-  const [profileId, setProfileId] = useState<ProfileId>(() => {
-    if (typeof window === 'undefined') return 'sofia';
-    const saved = localStorage.getItem('tts-voice-profile');
-    return (PROFILES.find((p) => p.id === saved)?.id ?? 'sofia') as ProfileId;
+  // Each preference is stored independently in localStorage (per user/browser)
+  const [gender, setGender] = useState<Gender>(() => {
+    if (typeof window === 'undefined') return 'female';
+    return localStorage.getItem('tts-gender') === 'male' ? 'male' : 'female';
   });
 
   const [source, setSource] = useState<TTSSource>(() => {
@@ -266,22 +292,19 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
     typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts-rate') ?? '1') : 1
   );
 
-  const handleProfileChange = (id: ProfileId) => {
-    setProfileId(id);
-    localStorage.setItem('tts-voice-profile', id);
-    // Switching profile always goes back to web speech — Polly has a fixed voice
+  const handleGenderChange = (g: Gender) => {
+    setGender(g);
+    localStorage.setItem('tts-gender', g);
+    // Switching voice profile → always use web speech so the new voice is heard
     if (source === 'polly') { setSource('web'); localStorage.setItem('tts-source', 'web'); }
   };
 
-  const handleSourceChange = (s: TTSSource) => {
-    setSource(s); localStorage.setItem('tts-source', s);
-  };
-
   const handleRateChange = (r: number) => {
-    setRate(r); localStorage.setItem('tts-rate', String(r));
+    setRate(r);
+    localStorage.setItem('tts-rate', String(r));
   };
 
-  // Admin mode: only show Polly player (no profile selector, no source switcher)
+  // Admin preview mode: only Polly audio, no controls for the editor
   if (adminMode && audioUrl) {
     return (
       <div className={`flex items-center gap-2 flex-wrap ${className}`}>
@@ -290,29 +313,41 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
     );
   }
 
+  const profileLabel = (p: Profile) => lang === 'en' ? p.labelEn : p.labelEs;
+
   return (
     <div className={`flex items-center gap-2 flex-wrap ${className}`}>
       {/* Audio player */}
       {audioUrl && source === 'polly'
         ? <PollyPlayer audioUrl={audioUrl} rate={rate} onRateChange={handleRateChange} />
-        : <WebSpeechPlayer text={text} rate={rate} onRateChange={handleRateChange}
-            profileId={profileId} voices={voices} />
+        : <WebSpeechPlayer
+            text={text} rate={rate} onRateChange={handleRateChange}
+            gender={gender} appLang={lang} voices={voices}
+          />
       }
 
-      {/* Profile selector */}
-      <select value={profileId} onChange={(e) => handleProfileChange(e.target.value as ProfileId)}
+      {/* Profile selector — always visible to the user (student/evaluator/admin) */}
+      <select
+        value={gender}
+        onChange={(e) => handleGenderChange(e.target.value as Gender)}
         className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
-        title="Perfil de voz">
-        {PROFILES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        title={lang === 'en' ? 'Voice profile' : 'Perfil de voz'}
+      >
+        {PROFILES.map((p) => (
+          <option key={p.id} value={p.id}>{profileLabel(p)}</option>
+        ))}
       </select>
 
       {/* Source switcher — only when Polly audio exists */}
       {audioUrl && (
-        <select value={source} onChange={(e) => handleSourceChange(e.target.value as TTSSource)}
+        <select
+          value={source}
+          onChange={(e) => { const s = e.target.value as TTSSource; setSource(s); localStorage.setItem('tts-source', s); }}
           className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
-          title="Fuente de audio">
-          <option value="web">Mi voz preferida</option>
-          <option value="polly">Voz del curso</option>
+          title={lang === 'en' ? 'Audio source' : 'Fuente de audio'}
+        >
+          <option value="web">{lang === 'en' ? 'My voice' : 'Mi voz preferida'}</option>
+          <option value="polly">{lang === 'en' ? 'Course voice' : 'Voz del curso'}</option>
         </select>
       )}
     </div>
