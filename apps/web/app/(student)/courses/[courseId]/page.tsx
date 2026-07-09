@@ -82,11 +82,23 @@ export default function CoursePage() {
   const isCourseComplete = (course.modules?.length ?? 0) > 0 &&
     course.modules?.every((m: any) => m.reflectionStatus === 'APPROVED');
 
-  // Find first incomplete lesson for "Continue where you left off"
-  const firstIncomplete = allLessons.find((l: any) => !l.completed);
-  const continueUrl = firstIncomplete
-    ? `/courses/${courseId}/modules/${firstIncomplete.moduleId}/lessons/${firstIncomplete.id}`
-    : null;
+  // "Continue where you left off" — respects module gate order:
+  // lessons → quiz → reflection must all be complete before advancing to the next module.
+  const continueUrl = (() => {
+    for (const mod of (course.modules ?? [])) {
+      const firstIncompleteLesson = (mod.lessons ?? []).find((l: any) => !l.completed);
+      if (firstIncompleteLesson) {
+        return `/courses/${courseId}/modules/${mod.id}/lessons/${firstIncompleteLesson.id}`;
+      }
+      if (!mod.quizPassed) {
+        return `/courses/${courseId}/modules/${mod.id}`;
+      }
+      if (mod.reflectionStatus !== 'APPROVED') {
+        return `/courses/${courseId}/modules/${mod.id}`;
+      }
+    }
+    return null; // all modules complete
+  })();
 
   const handleContactEvaluator = async () => {
     if (!course.evaluatorId) return;

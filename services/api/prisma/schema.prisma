@@ -55,10 +55,11 @@ model Lesson {
   youtubeId String   @default("")
   content   String?
   imageUrl  String?
-  audioUrl  String?
-  points    String[]
-  tip       String
-  module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  audioUrl     String?
+  points       String[]
+  tip          String
+  prevSnapshot String?   // JSON snapshot of fields before last manual edit — for "restore previous version"
+  module       Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@unique([moduleId, order])
 }

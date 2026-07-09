@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen } from 'lucide-react';
+import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 
@@ -96,6 +96,20 @@ export default function MyCoursesPage() {
 
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+                <Link
+                  href={`/admin/courses/${course.id}`}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  {t.evaluator.editCourse ?? 'Editar curso'}
+                </Link>
+                <Link
+                  href={`/admin/courses/${course.id}/preview`}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  {t.evaluator.viewAsStudent ?? 'Ver como estudiante'}
+                </Link>
                 <Link
                   href="/evaluator/reflections"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cta-from text-white text-xs font-semibold hover:opacity-90 transition-opacity"

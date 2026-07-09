@@ -312,6 +312,8 @@ export default function StudentDashboardPage() {
                       const getModuleHref = () => {
                         if (!mod.unlocked) return '#';
                         if (!mod.quizPassed) return `/courses/${course.id}/modules/${mod.id}`;
+                        // Reflection pending review — send to module page (not /reflection, already submitted)
+                        if (mod.reflectionStatus === 'PENDING_EVAL' || mod.reflectionStatus === 'PENDING_AI') return `/courses/${course.id}/modules/${mod.id}`;
                         if (mod.reflectionStatus !== 'APPROVED') return `/courses/${course.id}/modules/${mod.id}/reflection`;
                         return `/courses/${course.id}/modules/${mod.id}`;
                       };

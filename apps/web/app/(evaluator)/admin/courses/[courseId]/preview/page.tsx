@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen } from 'lucide-react';
+import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen, Pencil } from 'lucide-react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
@@ -14,6 +15,7 @@ export default function CoursePreviewPage() {
   const [loading, setLoading] = useState(true);
   const [expandedMods, setExpandedMods] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<any>(null);
+  const contentPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.admin.courses.get(courseId).then((res) => {
@@ -58,12 +60,20 @@ export default function CoursePreviewPage() {
       {/* Banner */}
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
         <span className="font-semibold">📚 Vista de Estudiante — modo solo lectura</span>
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Volver al editor
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/admin/courses/${courseId}`}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" /> Editar contenido
+          </Link>
+          <button
+            onClick={() => router.push('/evaluator/my-courses')}
+            className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Volver a Mis Cursos
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
@@ -98,7 +108,11 @@ export default function CoursePreviewPage() {
                   {(mod.lessons ?? []).map((lesson: any, idx: number) => (
                     <button
                       key={lesson.id}
-                      onClick={() => setSelectedLesson(lesson)}
+                      onClick={() => {
+                        setSelectedLesson(lesson);
+                        // On small screens the content panel is below — scroll to it
+                        setTimeout(() => contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                      }}
                       className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${
                         selectedLesson?.id === lesson.id
                           ? 'bg-cta-from/10 border-l-2 border-cta-from'
@@ -126,7 +140,7 @@ export default function CoursePreviewPage() {
         </div>
 
         {/* ── Right panel: lesson content ── */}
-        <div className="space-y-5">
+        <div className="space-y-5" ref={contentPanelRef}>
           {selectedLesson ? (
             <>
               {/* Lesson title + TTS */}
@@ -137,15 +151,12 @@ export default function CoursePreviewPage() {
                 )}
               </div>
 
-              {/* TTS */}
-              {(selectedLesson.content || selectedLesson.points?.length > 0) && (
+              {/* Polly audio preview (admin only — no voice profile selector) */}
+              {selectedLesson.audioUrl && (
                 <TextToSpeechButton
-                  text={[
-                    selectedLesson.content ? selectedLesson.content.replace(/<[^>]+>/g, ' ') : '',
-                    ...(selectedLesson.points ?? []),
-                    selectedLesson.tip ?? '',
-                  ].join(' ')}
+                  text=""
                   audioUrl={selectedLesson.audioUrl}
+                  adminMode
                 />
               )}
 
