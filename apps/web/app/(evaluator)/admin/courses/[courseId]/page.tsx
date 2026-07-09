@@ -927,7 +927,18 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
               </h4>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
-                  onClick={() => { setAiQuestionsContent(''); setAiQuestionsError(''); setAiQuestionsOpen(true); }}>
+                  onClick={() => {
+                    const preloaded = (mod.lessons ?? []).map((l: any, i: number) => {
+                      const parts = [`Lección ${i + 1}: ${l.title}`];
+                      if (l.content) parts.push(l.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+                      if (Array.isArray(l.points) && l.points.filter(Boolean).length > 0) parts.push('Puntos clave: ' + l.points.filter(Boolean).join('. '));
+                      if (l.tip) parts.push('Consejo: ' + l.tip);
+                      return parts.join('\n');
+                    }).join('\n\n');
+                    setAiQuestionsContent(preloaded);
+                    setAiQuestionsError('');
+                    setAiQuestionsOpen(true);
+                  }}>
                   IA
                 </Button>
                 <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
@@ -999,7 +1010,7 @@ function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; 
       <Modal open={aiQuestionsOpen} onClose={() => setAiQuestionsOpen(false)} title="Generar preguntas con IA" size="md">
         <form onSubmit={handleAiQuestions} className="space-y-4">
           <p className="text-sm text-gray-500">
-            Pega el contenido del módulo o describe los temas clave. La IA generará preguntas de opción múltiple listas para usar.
+            El contenido de las lecciones fue precargado automáticamente. Puedes editarlo antes de generar.
           </p>
           <div className="space-y-1">
             <label className="text-sm font-medium text-charcoal">Contenido del módulo</label>
