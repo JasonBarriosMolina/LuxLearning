@@ -23,7 +23,17 @@ type CourseStat = {
   modules: ModuleStat[];
 };
 
-type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' };
+type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive'; taskCounts?: { pending: number; overdue: number; completed: number } | null };
+
+function getCurrentModule(modules: ModuleStat[]): ModuleStat | null {
+  const sorted = [...modules].sort((a, b) => a.order - b.order);
+  for (const mod of sorted) {
+    if (mod.completedLessons < mod.totalLessons) return mod;
+    if (!mod.quizPassed) return mod;
+    if (mod.reflectionStatus === null) return mod;
+  }
+  return null;
+}
 
 type SP = Translations['studentsPage'];
 
@@ -65,11 +75,12 @@ function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
   return <BookOpen className="w-4 h-4 text-cta-from" />;
 }
 
-function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds }: {
+function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, selectedCourseId }: {
   student: Student; courses: { id: string; title: string }[]; ts: SP;
   onSendReminder?: (student: Student) => void;
   sendingReminderId?: string | null;
   reminderSentIds?: Set<string>;
+  selectedCourseId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [activeCourse, setActiveCourse] = useState(0);
@@ -139,6 +150,35 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
             <p className="font-bold text-lg text-charcoal">{totalModules}</p>
             <p className="text-xs text-gray-400">{ts.modulesLabel}</p>
           </div>
+          {selectedCourseId && (() => {
+            const cs = student.courses.find((c) => c.courseId === selectedCourseId);
+            if (!cs) return null;
+            const cur = getCurrentModule(cs.modules);
+            return (
+              <div className="text-center hidden sm:block max-w-[110px]">
+                <p className="font-semibold text-xs text-charcoal truncate" title={cur?.title ?? '—'}>
+                  {cur ? `${cur.order}. ${cur.title}` : '✓ Completo'}
+                </p>
+                <p className="text-xs text-gray-400">Módulo actual</p>
+              </div>
+            );
+          })()}
+          {student.taskCounts && selectedCourseId && (
+            <div className="text-center hidden sm:block">
+              <div className="flex gap-1 text-xs font-semibold">
+                {student.taskCounts.overdue > 0 && (
+                  <span className="bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{student.taskCounts.overdue} venc.</span>
+                )}
+                {student.taskCounts.pending > 0 && (
+                  <span className="bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">{student.taskCounts.pending} pend.</span>
+                )}
+                {student.taskCounts.completed > 0 && (
+                  <span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full">{student.taskCounts.completed} comp.</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Tareas</p>
+            </div>
+          )}
           {expanded
             ? <ChevronDown className="w-4 h-4 text-gray-400" />
             : <ChevronRight className="w-4 h-4 text-gray-400" />}
@@ -665,7 +705,7 @@ function StudentsPageInner() {
         setLoading(false);
       }).catch(() => setLoading(false));
     } else {
-      api.evaluator.students().then((res) => {
+      api.evaluator.students(courseIdParam ? { courseId: courseIdParam } : undefined).then((res) => {
         setData((res as any).data ?? null);
         setLoading(false);
       }).catch(() => setLoading(false));
@@ -801,6 +841,7 @@ function StudentsPageInner() {
               <StudentCard
                 key={student.userId} student={student} courses={data.courses} ts={ts}
                 onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                selectedCourseId={selectedCourseId || undefined}
               />
             ))
           )}
