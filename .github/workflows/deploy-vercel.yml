@@ -1,0 +1,50 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - test
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }}
+
+      - name: Build project
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }}
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_TEAM_ID }})
+          echo "deployment_url=$URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $URL"
+
+      - name: Alias to test.luxlearning.academy
+        if: github.ref == 'refs/heads/test'
+        run: |
+          vercel alias set ${{ steps.deploy.outputs.deployment_url }} test.luxlearning.academy \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_TEAM_ID }}
+          echo "Aliased to test.luxlearning.academy"
+
+      - name: Alias to staging.luxlearning.academy
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          vercel alias set ${{ steps.deploy.outputs.deployment_url }} staging.luxlearning.academy \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_TEAM_ID }}
+          echo "Aliased to staging.luxlearning.academy"
