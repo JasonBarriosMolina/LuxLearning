@@ -73,6 +73,27 @@ export default function ModulePage() {
     );
   }
 
+  // Gate: module is locked until previous module's reflection is approved
+  if (module.unlocked === false) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
+        <Link href={`/courses/${courseId}`} className="flex items-center gap-1 text-sm text-gray-500 hover:text-charcoal">
+          <ArrowLeft className="w-4 h-4" /> {course.title}
+        </Link>
+        <div className="card text-center py-16 space-y-4">
+          <Lock className="w-12 h-12 text-gray-300 mx-auto" />
+          <div>
+            <p className="font-heading font-bold text-xl text-charcoal">{module.title}</p>
+            <p className="text-sm text-gray-500 mt-2">{t.moduleView.lockedHint}</p>
+          </div>
+          <Link href={`/courses/${courseId}`} className="btn-secondary inline-flex items-center gap-2 mt-2">
+            <ArrowLeft className="w-4 h-4" /> {t.moduleView.backToCourse}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const completedLessons = module.lessons?.filter((l: any) => l.completed) ?? [];
   const totalLessons = module.lessons?.length ?? 0;
   const allLessonsDone = completedLessons.length === totalLessons;

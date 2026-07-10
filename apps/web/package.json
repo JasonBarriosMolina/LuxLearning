@@ -16,6 +16,15 @@
     "@aws-amplify/auth": "^6.4.0",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@lux/types": "*",
+    "@tiptap/extension-color": "^3.27.3",
+    "@tiptap/extension-highlight": "^3.27.3",
+    "@tiptap/extension-image": "^3.27.3",
+    "@tiptap/extension-link": "^3.27.3",
+    "@tiptap/extension-text-style": "^3.27.3",
+    "@tiptap/extension-underline": "^3.27.3",
+    "@tiptap/pm": "^3.27.3",
+    "@tiptap/react": "^3.27.3",
+    "@tiptap/starter-kit": "^3.27.3",
     "@types/react-big-calendar": "^1.16.3",
     "@types/react-signature-canvas": "^1.0.7",
     "aws-amplify": "^6.4.0",
@@ -33,6 +42,7 @@
     "node": "20.x"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20.14.0",

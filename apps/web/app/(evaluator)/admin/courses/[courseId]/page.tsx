@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2, Volume2,
-  ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Eye, GraduationCap, Sparkles,
+  ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Eye, GraduationCap, Sparkles, RotateCcw,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
+import { RichTextEditor } from '@/components/shared/RichTextEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,14 +24,14 @@ interface ModuleForm {
 }
 interface LessonForm {
   title: string; duration: string; youtubeId: string; imageUrl: string;
-  points: string[]; tip: string; order: number;
+  content: string; points: string[]; tip: string; order: number;
 }
 interface QuestionForm {
   text: string; options: string[]; correctIndex: number; order: number;
 }
 
 const EMPTY_MODULE: ModuleForm = { title: '', description: '', duration: '', passingScore: 70, order: 1 };
-const newLessonForm = (order = 1): LessonForm => ({ title: '', duration: '', youtubeId: '', imageUrl: '', points: [''], tip: '', order });
+const newLessonForm = (order = 1): LessonForm => ({ title: '', duration: '', youtubeId: '', imageUrl: '', content: '', points: [''], tip: '', order });
 const newQuestionForm = (order = 1): QuestionForm => ({ text: '', options: ['', '', '', ''], correctIndex: 0, order });
 
 // ─── Confirm delete ───────────────────────────────────────────────────────────
@@ -162,11 +163,20 @@ function LessonFields({ form, setForm }: { form: LessonForm; setForm: (f: Lesson
           <Input label="Título" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
         </div>
         <Input label="Duración" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="ej. 12 min" required />
-        <Input label="YouTube ID" value={form.youtubeId} onChange={(e) => setForm({ ...form, youtubeId: e.target.value })} placeholder="dQw4w9WgXcQ" required />
+        <Input label="YouTube ID (opcional)" value={form.youtubeId} onChange={(e) => setForm({ ...form, youtubeId: e.target.value })} placeholder="dQw4w9WgXcQ" />
         <Input label="Orden" type="number" value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} required />
         <div className="col-span-1">
           <Input label="URL imagen (opcional)" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} />
         </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-charcoal">Contenido</label>
+        <RichTextEditor
+          value={form.content}
+          onChange={(html) => setForm({ ...form, content: html })}
+          minHeight={220}
+        />
+        <p className="text-xs text-gray-400">Editor WYSIWYG. El contenido se guarda como HTML enriquecido.</p>
       </div>
       <PointsList points={form.points} onChange={(pts) => setForm({ ...form, points: pts })} />
       <Input label="Consejo (tip)" value={form.tip} onChange={(e) => setForm({ ...form, tip: e.target.value })} placeholder="Consejo práctico para el estudiante..." />
@@ -266,8 +276,8 @@ function QuestionRow({ question, onRefresh }: { question: any; onRefresh: () => 
 function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<LessonForm>({
-    title: lesson.title, duration: lesson.duration, youtubeId: lesson.youtubeId,
-    imageUrl: lesson.imageUrl ?? '',
+    title: lesson.title, duration: lesson.duration, youtubeId: lesson.youtubeId ?? '',
+    imageUrl: lesson.imageUrl ?? '', content: lesson.content ?? '',
     points: lesson.points?.length > 0 ? lesson.points : [''],
     tip: lesson.tip ?? '', order: lesson.order,
   });
@@ -395,7 +405,28 @@ function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }
           <button onClick={() => { setRegenOpen(true); setRegenPhase('config'); setRegenPreviewData(null); setRegenError(''); }} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-white transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-charcoal hover:bg-white transition-colors" title="Editar lección"><Pencil className="w-3.5 h-3.5" /></button>
+          {lesson.prevSnapshot && (
+            <button
+              title="Restaurar versión anterior"
+              onClick={() => {
+                try {
+                  const snap = JSON.parse(lesson.prevSnapshot);
+                  setForm({
+                    title: snap.title ?? '', duration: snap.duration ?? '',
+                    youtubeId: snap.youtubeId ?? '', imageUrl: snap.imageUrl ?? '',
+                    content: snap.content ?? '',
+                    points: snap.points?.length > 0 ? snap.points : [''],
+                    tip: snap.tip ?? '', order: snap.order ?? lesson.order,
+                  });
+                  setEditing(true);
+                } catch {}
+              }}
+              className="p-1.5 rounded-lg text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button onClick={() => setConfirmDel(true)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>
         <ConfirmDelete open={confirmDel} onClose={() => setConfirmDel(false)} onConfirm={handleDelete} loading={deleting} label="lección" />
@@ -1204,7 +1235,14 @@ export default function AdminCourseDetailPage() {
       </div>
     );
   }
-  if (!course) return null;
+  if (!course) return (
+    <div className="max-w-4xl mx-auto py-16 text-center space-y-3">
+      <p className="text-gray-500 text-sm">No se pudo cargar el curso. Puede que no exista o no tengas acceso.</p>
+      <Link href="/admin/courses" className="inline-flex items-center gap-1.5 text-sm text-cta-from hover:underline">
+        <ArrowLeft className="w-4 h-4" /> Volver a cursos
+      </Link>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">

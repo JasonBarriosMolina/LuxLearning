@@ -1,10 +1,8 @@
 'use client';
 
-// TODO FASE 6: agregar sección "Recursos" por curso (botón que lleva a recursos del evaluador asignados a ese curso)
-
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen } from 'lucide-react';
+import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap, MoreVertical, Pin, Archive } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 
@@ -24,6 +22,9 @@ export default function MyCoursesPage() {
   const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<MyCourse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.evaluator.myCourses()
@@ -31,6 +32,31 @@ export default function MyCoursesPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [lang]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    }
+    if (openMenu) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openMenu]);
+
+  const togglePin = (id: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setOpenMenu(null);
+  };
+
+  const sortedCourses = [...courses].sort((a, b) => {
+    const aPin = pinnedIds.has(a.id) ? 0 : 1;
+    const bPin = pinnedIds.has(b.id) ? 0 : 1;
+    return aPin - bPin;
+  });
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -54,7 +80,7 @@ export default function MyCoursesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {courses.map((course) => (
+          {sortedCourses.map((course) => (
             <div key={course.id} className="card space-y-4">
               {/* Header */}
               <div className="flex items-start gap-4">
@@ -66,7 +92,10 @@ export default function MyCoursesPage() {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <h2 className="font-heading font-bold text-base text-charcoal truncate">{course.title}</h2>
+                  <div className="flex items-center gap-2">
+                    {pinnedIds.has(course.id) && <Pin className="w-3.5 h-3.5 text-cta-from shrink-0" />}
+                    <h2 className="font-heading font-bold text-base text-charcoal truncate">{course.title}</h2>
+                  </div>
                   <p className="text-sm text-gray-500 line-clamp-2 mt-0.5">{course.description}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${course.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -95,10 +124,10 @@ export default function MyCoursesPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+              <div className="flex items-center gap-2 pt-2 border-t border-border" ref={openMenu === course.id ? menuRef : undefined}>
                 <Link
-                  href="/evaluator/reflections"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cta-from text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+                  href={`/evaluator/reflections?courseId=${course.id}`}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-cta-from text-white text-xs font-semibold hover:opacity-90 transition-opacity"
                 >
                   <ClipboardList className="w-3.5 h-3.5" />
                   {t.evaluator.viewReflections}
@@ -106,27 +135,78 @@ export default function MyCoursesPage() {
                     <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]">{course.pendingReflections}</span>
                   )}
                 </Link>
-                <Link
-                  href={`/evaluator/communications?chatId=${course.groupChatId}`}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  {t.evaluator.groupChat}
-                </Link>
-                <Link
-                  href="/evaluator/students"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  {t.nav.students}
-                </Link>
-                <Link
-                  href={`/evaluator/my-resources?courseId=${course.id}`}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-gray-600 hover:bg-surface transition-colors"
-                >
-                  <FolderOpen className="w-3.5 h-3.5" />
-                  {t.evaluator.resources}
-                </Link>
+
+                {/* 3-dot menu */}
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => setOpenMenu(openMenu === course.id ? null : course.id)}
+                    className="p-2 rounded-xl hover:bg-surface text-gray-500 hover:text-charcoal transition-colors border border-border"
+                    title="Más opciones"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                  {openMenu === course.id && (
+                    <div className="absolute right-0 bottom-full mb-1 z-20 bg-white dark:bg-[#1A1A2E] border border-border rounded-xl shadow-lg py-1 w-52">
+                      <Link
+                        href={`/admin/courses/${course.id}`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <Pencil className="w-4 h-4 text-gray-400" />
+                        {t.evaluator.editCourse ?? 'Editar curso'}
+                      </Link>
+                      <Link
+                        href={`/admin/courses/${course.id}/preview`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <GraduationCap className="w-4 h-4 text-gray-400" />
+                        {t.evaluator.viewAsStudent ?? 'Ver como estudiante'}
+                      </Link>
+                      <Link
+                        href={`/evaluator/students?courseId=${course.id}`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <Users className="w-4 h-4 text-gray-400" />
+                        {t.nav.students}
+                      </Link>
+                      <Link
+                        href={`/evaluator/communications?chatId=${course.groupChatId}`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <MessageSquare className="w-4 h-4 text-gray-400" />
+                        {t.evaluator.groupChat}
+                      </Link>
+                      <Link
+                        href={`/evaluator/my-resources?courseId=${course.id}`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <FolderOpen className="w-4 h-4 text-gray-400" />
+                        {t.evaluator.resources}
+                      </Link>
+                      <div className="border-t border-border my-1" />
+                      <button
+                        onClick={() => togglePin(course.id)}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <Pin className={`w-4 h-4 ${pinnedIds.has(course.id) ? 'text-cta-from' : 'text-gray-400'}`} />
+                        {pinnedIds.has(course.id) ? 'Desfijar curso' : 'Fijar curso'}
+                      </button>
+                      <button
+                        onClick={() => setOpenMenu(null)}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-400 hover:bg-surface transition-colors cursor-not-allowed opacity-50"
+                        disabled
+                        title="Disponible pronto"
+                      >
+                        <Archive className="w-4 h-4" />
+                        Archivar curso
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}

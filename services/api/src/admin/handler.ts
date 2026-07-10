@@ -652,7 +652,7 @@ export const handler = async (event: Event) => {
       const moduleId = moduleMatch[1]!;
 
       if (method === 'PUT') {
-        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+        if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
         const { title, description, duration, passingScore, order } = body;
         if (!title || !description || !duration || passingScore == null) {
           return badRequest('title, description, duration y passingScore son requeridos');
@@ -910,19 +910,29 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
       const lessonId = lessonMatch[1]!;
 
       if (method === 'PUT') {
-        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-        const { title, duration, youtubeId, imageUrl, points, tip, order } = body;
-        if (!title || !duration || !youtubeId) {
-          return badRequest('title, duration y youtubeId son requeridos');
+        if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+        const { title, duration, youtubeId, imageUrl, points, tip, order, content } = body;
+        if (!title || !duration) {
+          return badRequest('title y duration son requeridos');
         }
+        // Snapshot current version before overwriting
+        const currentLesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+        const prevSnapshot = currentLesson ? JSON.stringify({
+          title: currentLesson.title, duration: currentLesson.duration,
+          youtubeId: currentLesson.youtubeId, imageUrl: currentLesson.imageUrl,
+          content: currentLesson.content, points: currentLesson.points,
+          tip: currentLesson.tip, order: currentLesson.order,
+        }) : null;
         const lesson = await prisma.lesson.update({
           where: { id: lessonId },
           data: {
-            title, duration, youtubeId,
+            title, duration, youtubeId: youtubeId || '',
             imageUrl: imageUrl || null,
+            content: content || null,
             points: Array.isArray(points) ? points : [],
             tip: tip ?? '',
             order: Number(order),
+            prevSnapshot,
           },
         });
         await invalidateTranslation('lesson', lessonId);
@@ -1052,7 +1062,7 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
       const questionId = questionMatch[1]!;
 
       if (method === 'PUT') {
-        if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+        if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
         const { text, options, correctIndex, order } = body;
         if (!text || !Array.isArray(options) || options.length < 2 || correctIndex == null) {
           return badRequest('text, options (mínimo 2) y correctIndex son requeridos');

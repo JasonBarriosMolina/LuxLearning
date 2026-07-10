@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList, Search, Clock, AlertTriangle, ArrowUpDown, Flag } from 'lucide-react';
+import { ClipboardList, Search, Clock, AlertTriangle, ArrowUpDown, Flag, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
@@ -11,7 +11,7 @@ import { formatDate } from '@/lib/utils';
 import type { Reflection, ReflectionStatus } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
 
-type EnrichedReflection = Reflection & { moduleTitle?: string; courseTitle?: string; studentName?: string };
+type EnrichedReflection = Reflection & { moduleTitle?: string; courseId?: string | null; courseTitle?: string; studentName?: string };
 
 type StatusFilter = { labelKey: 'filterAll' | 'filterPending' | 'filterApproved' | 'filterRejected'; value: ReflectionStatus | 'ALL' };
 
@@ -46,6 +46,7 @@ function getTimeRemaining(submittedAt: string, deadlineIso: string | undefined, 
 function EvaluatorReflectionsInner() {
   const { t, lang } = useLanguage();
   const searchParams = useSearchParams();
+  const courseIdFilter = searchParams.get('courseId');
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -66,12 +67,13 @@ function EvaluatorReflectionsInner() {
   const filtered = reflections
     .filter((r) => {
       const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
+      const matchesCourse = !courseIdFilter || r.courseId === courseIdFilter;
       const matchesSearch =
         search === '' ||
         (r.studentName ?? r.userId).toLowerCase().includes(search.toLowerCase()) ||
         r.moduleTitle?.toLowerCase().includes(search.toLowerCase()) ||
         r.courseTitle?.toLowerCase().includes(search.toLowerCase());
-      return matchesStatus && matchesSearch;
+      return matchesStatus && matchesCourse && matchesSearch;
     })
     .sort((a, b) => {
       if (!sortByUrgent) return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
@@ -80,6 +82,10 @@ function EvaluatorReflectionsInner() {
       if (b.status === 'PENDING_EVAL' && a.status !== 'PENDING_EVAL') return 1;
       return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
     });
+
+  const activeCourseTitle = courseIdFilter
+    ? reflections.find((r) => r.courseId === courseIdFilter)?.courseTitle
+    : null;
 
   const pendingCount = reflections.filter((r) => r.status === 'PENDING_EVAL').length;
   const urgentCount = reflections.filter((r) => {
@@ -103,6 +109,19 @@ function EvaluatorReflectionsInner() {
           </p>
         </div>
       </div>
+
+      {/* Course filter badge */}
+      {courseIdFilter && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">
+            <ClipboardList className="w-3.5 h-3.5" />
+            {activeCourseTitle ?? 'Curso seleccionado'}
+            <a href="/evaluator/reflections" className="ml-1 hover:text-purple-900">
+              <X className="w-3.5 h-3.5" />
+            </a>
+          </span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">

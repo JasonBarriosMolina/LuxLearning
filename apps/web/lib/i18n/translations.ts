@@ -265,6 +265,8 @@ export const es = {
     viewReflections: 'Ver reflexiones',
     groupChat: 'Chat del grupo',
     resources: 'Recursos',
+    editCourse: 'Editar curso',
+    viewAsStudent: 'Ver como estudiante',
     // Profile page
     accountInfo: 'Información de tu cuenta',
     noName: '(sin nombre)',
@@ -1113,6 +1115,8 @@ export const es = {
     reflectionRejected: 'Rechazada — puedes reescribirla',
     passQuizFirst: 'Aprueba el quiz primero',
     writeReflectionHint: 'Escribe tu reflexión para completar el módulo',
+    lockedHint: 'Completa la reflexión del módulo anterior para desbloquear este módulo.',
+    backToCourse: 'Volver al curso',
   },
   quizPage: {
     title: (moduleTitle: string) => `Quiz — ${moduleTitle}`,
@@ -1484,6 +1488,8 @@ export const en: typeof es = {
     viewReflections: 'View reflections',
     groupChat: 'Group chat',
     resources: 'Resources',
+    editCourse: 'Edit course',
+    viewAsStudent: 'View as student',
     // Profile page
     accountInfo: 'Your account information',
     noName: '(no name)',
@@ -2331,6 +2337,8 @@ export const en: typeof es = {
     reflectionRejected: 'Rejected — you can rewrite it',
     passQuizFirst: 'Pass the quiz first',
     writeReflectionHint: 'Write your reflection to complete the module',
+    lockedHint: 'Complete the previous module\'s reflection to unlock this module.',
+    backToCourse: 'Back to course',
   },
   quizPage: {
     title: (moduleTitle: string) => `Quiz — ${moduleTitle}`,

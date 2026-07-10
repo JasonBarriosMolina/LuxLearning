@@ -41,36 +41,38 @@ type NavKey =
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
   | 'communications' | 'myResources' | 'adminCerts';
 
+type AllRole = 'STUDENT' | 'EVALUATOR' | 'ADMIN' | 'SUPER_ADMIN';
+
 interface NavItem {
   href: string;
   labelKey: NavKey;
   icon: React.ReactNode;
-  roles: ('STUDENT' | 'EVALUATOR' | 'ADMIN')[];
+  roles: AllRole[];
 }
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="w-5 h-5" />, roles: ['STUDENT'] },
-  { href: '/evaluator/dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/dashboard', labelKey: 'dashboard', icon: <LayoutDashboard className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/progress', labelKey: 'myProgress', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/tasks', labelKey: 'myTasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['STUDENT'] },
-  { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/evaluator/my-courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/evaluator/my-resources', labelKey: 'myResources', icon: <FolderOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/admin/courses', labelKey: 'contentMgmt', icon: <Settings2 className="w-5 h-5" />, roles: ['ADMIN'] },
-  { href: '/admin/reports', labelKey: 'reports', icon: <BarChart2 className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/admin/assign-courses', labelKey: 'assignCourses', icon: <UserPlus className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/admin/users', labelKey: 'users', icon: <UserCog className="w-5 h-5" />, roles: ['ADMIN'] },
-  { href: '/admin/email-templates', labelKey: 'emailTemplates', icon: <Mail className="w-5 h-5" />, roles: ['ADMIN'] },
-  { href: '/admin/certificates', labelKey: 'adminCerts', icon: <Download className="w-5 h-5" />, roles: ['ADMIN'] },
+  { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/my-courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/my-resources', labelKey: 'myResources', icon: <FolderOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/courses', labelKey: 'contentMgmt', icon: <Settings2 className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/reports', labelKey: 'reports', icon: <BarChart2 className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/assign-courses', labelKey: 'assignCourses', icon: <UserPlus className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/users', labelKey: 'users', icon: <UserCog className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/email-templates', labelKey: 'emailTemplates', icon: <Mail className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/certificates', labelKey: 'adminCerts', icon: <Download className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
   { href: '/activity', labelKey: 'myActivity', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['STUDENT'] },
-  { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
-  { href: '/evaluator/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN'] },
+  { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
 ];
 
 function UnreadBadge() {
@@ -106,7 +108,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { t } = useLanguage();
 
   const visibleItems = NAV_ITEMS.filter((item) =>
-    role ? item.roles.includes(role as 'STUDENT' | 'EVALUATOR' | 'ADMIN') : false
+    role ? (item.roles as string[]).includes(role) : false
   );
 
   const sidebarContent = (

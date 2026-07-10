@@ -234,7 +234,7 @@ export const handler = async (event: Event) => {
       const uniqueModuleIds = [...new Set(reflections.map((r) => r.moduleId))];
       const modules = await prisma.module.findMany({
         where: { id: { in: uniqueModuleIds } },
-        include: { course: { select: { title: true } } },
+        include: { course: { select: { id: true, title: true } } },
       });
       const moduleMap = new Map(modules.map((m) => [m.id, m]));
 
@@ -245,6 +245,7 @@ export const handler = async (event: Event) => {
           return {
             ...r,
             moduleTitle: mod?.title ?? 'Unknown',
+            courseId: mod?.course.id ?? null,
             courseTitle: mod?.course.title ?? 'Unknown',
             studentName,
           };
