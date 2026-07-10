@@ -1,9 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { FolderOpen, Plus, Pencil, Trash2, RotateCcw, BookOpen, Loader2, Link2, ChevronLeft } from 'lucide-react';
+import {
+  FolderOpen, FolderClosed, Plus, Pencil, Trash2, RotateCcw, BookOpen,
+  Loader2, Link2, ChevronLeft, ChevronRight, X, Calendar, FileType2,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -29,6 +32,8 @@ interface Resource {
 
 interface Course { id: string; title: string; isArchived?: boolean; }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatSize(bytes?: number) {
   if (!bytes) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -47,20 +52,181 @@ function fileIcon(fileType: string) {
   return '📁';
 }
 
+function fileCategory(fileType: string): string {
+  if (fileType.includes('pdf')) return 'pdf';
+  if (fileType.includes('word') || fileType.includes('docx')) return 'doc';
+  if (fileType.includes('ppt') || fileType.includes('presentation')) return 'ppt';
+  if (fileType.includes('excel') || fileType.includes('sheet')) return 'sheet';
+  if (fileType.includes('image')) return 'image';
+  if (fileType.includes('video')) return 'video';
+  if (fileType.includes('zip') || fileType.includes('rar')) return 'zip';
+  return 'other';
+}
+
+function startOfWeek() {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+function startOfMonth() {
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(1);
+  return d;
+}
+
+// ─── Folder tree ──────────────────────────────────────────────────────────────
+
+interface FolderNode {
+  name: string;
+  path: string;
+  children: FolderNode[];
+  count: number; // resources directly in this folder
+  total: number; // resources in this folder + all children
+}
+
+function buildTree(resources: Resource[]): FolderNode[] {
+  const map = new Map<string, FolderNode>();
+
+  for (const r of resources) {
+    if (!r.folder) continue;
+    const parts = r.folder.split('/').map((p) => p.trim()).filter(Boolean);
+    for (let i = 0; i < parts.length; i++) {
+      const path = parts.slice(0, i + 1).join('/');
+      if (!map.has(path)) {
+        map.set(path, { name: parts[i]!, path, children: [], count: 0, total: 0 });
+      }
+      if (i === parts.length - 1) {
+        map.get(path)!.count++;
+      }
+    }
+  }
+
+  // Wire children
+  const roots: FolderNode[] = [];
+  for (const [path, node] of map) {
+    const lastSlash = path.lastIndexOf('/');
+    if (lastSlash === -1) {
+      roots.push(node);
+    } else {
+      const parentPath = path.slice(0, lastSlash);
+      map.get(parentPath)?.children.push(node);
+    }
+  }
+
+  // Compute totals bottom-up
+  function computeTotal(node: FolderNode): number {
+    node.total = node.count + node.children.reduce((s, c) => s + computeTotal(c), 0);
+    return node.total;
+  }
+  roots.forEach(computeTotal);
+
+  // Sort alphabetically
+  function sortNode(node: FolderNode) {
+    node.children.sort((a, b) => a.name.localeCompare(b.name));
+    node.children.forEach(sortNode);
+  }
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.forEach(sortNode);
+
+  return roots;
+}
+
+function FolderTree({
+  nodes, selected, onSelect, depth = 0,
+}: {
+  nodes: FolderNode[];
+  selected: string | null;
+  onSelect: (path: string | null) => void;
+  depth?: number;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (path: string) =>
+    setExpanded((prev) => { const s = new Set(prev); s.has(path) ? s.delete(path) : s.add(path); return s; });
+
+  return (
+    <ul className="space-y-0.5">
+      {nodes.map((node) => {
+        const isSelected = selected === node.path;
+        const isExpanded = expanded.has(node.path);
+        const hasChildren = node.children.length > 0;
+        return (
+          <li key={node.path}>
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-sm transition-colors select-none
+                ${isSelected ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-surface'}`}
+              style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            >
+              {hasChildren ? (
+                <button onClick={() => toggle(node.path)} className="shrink-0 text-gray-400 hover:text-gray-600">
+                  {isExpanded ? <ChevronRight className="w-3.5 h-3.5 rotate-90 transition-transform" /> : <ChevronRight className="w-3.5 h-3.5 transition-transform" />}
+                </button>
+              ) : (
+                <span className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <button
+                onClick={() => onSelect(isSelected ? null : node.path)}
+                className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+              >
+                {isExpanded || isSelected
+                  ? <FolderOpen className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                  : <FolderClosed className="w-3.5 h-3.5 shrink-0 text-gray-400" />}
+                <span className="truncate">{node.name}</span>
+                <span className="ml-auto text-xs text-gray-400 shrink-0">{node.total}</span>
+              </button>
+            </div>
+            {isExpanded && hasChildren && (
+              <FolderTree nodes={node.children} selected={selected} onSelect={onSelect} depth={depth + 1} />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+const FILE_TYPES = [
+  { key: 'all', label: 'Todos' },
+  { key: 'pdf', label: '📄 PDF' },
+  { key: 'video', label: '🎬 Video' },
+  { key: 'image', label: '🖼️ Imagen' },
+  { key: 'doc', label: '📝 Documento' },
+  { key: 'ppt', label: '📊 Presentación' },
+  { key: 'sheet', label: '📈 Hoja de cálculo' },
+  { key: 'other', label: '📁 Otro' },
+];
+
+const DATE_FILTERS = [
+  { key: 'all', label: 'Todo' },
+  { key: 'week', label: 'Esta semana' },
+  { key: 'month', label: 'Este mes' },
+];
+
 function MyResourcesInner() {
   const { t } = useLanguage();
   const { role, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const courseIdFilter = searchParams.get('courseId');
+
   const [resources, setResources] = useState<Resource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const [folderFilter, setFolderFilter] = useState<string>('all');
+
+  // Filters
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'month'>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [courseFilter, setCourseFilter] = useState<string>(courseIdFilter ?? 'all');
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadForm, setUploadForm] = useState({ title: '', description: '', folder: '', courseIds: [] as string[], fileUrl: '', fileName: '', fileType: '', fileSize: 0 });
+  const [uploadForm, setUploadForm] = useState({
+    title: '', description: '', folder: '', courseIds: [] as string[],
+    fileUrl: '', fileName: '', fileType: '', fileSize: 0,
+  });
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
@@ -69,10 +235,8 @@ function MyResourcesInner() {
   const [editForm, setEditForm] = useState({ title: '', description: '', folder: '', courseIds: [] as string[] });
   const [saving, setSaving] = useState(false);
 
-  // Delete/restore state
   const [deleting, setDeleting] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState('');
 
   const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
 
@@ -90,29 +254,73 @@ function MyResourcesInner() {
     } finally { setLoading(false); }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!authLoading) load(); }, [authLoading, role]);
+  useEffect(() => { if (!authLoading) load(); }, [authLoading, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const folders = ['all', ...Array.from(new Set(
-    resources
-      .filter(r => r.folder && (!courseIdFilter || r.courseIds.includes(courseIdFilter)))
-      .map(r => r.folder!)
-  ))];
+  // Sync courseFilter with URL param
+  useEffect(() => { if (courseIdFilter) setCourseFilter(courseIdFilter); }, [courseIdFilter]);
 
-  const activeCourse = courseIdFilter ? courses.find((c) => c.id === courseIdFilter) : null;
+  // Active resources (not archived) for tree building
+  const activeResources = useMemo(
+    () => resources.filter((r) => r.archived === showArchived),
+    [resources, showArchived],
+  );
 
-  const filtered = resources.filter(r => {
-    if (r.archived !== showArchived) return false;
-    if (folderFilter !== 'all' && r.folder !== folderFilter) return false;
-    if (courseIdFilter && !r.courseIds.includes(courseIdFilter)) return false;
-    return true;
-  });
+  const folderTree = useMemo(() => buildTree(activeResources), [activeResources]);
+
+  // All known folder paths (for datalist autocomplete)
+  const allFolderPaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const r of resources) {
+      if (!r.folder) continue;
+      const parts = r.folder.split('/').map((p) => p.trim()).filter(Boolean);
+      for (let i = 1; i <= parts.length; i++) paths.add(parts.slice(0, i).join('/'));
+    }
+    return Array.from(paths).sort();
+  }, [resources]);
+
+  const filtered = useMemo(() => {
+    const weekStart = startOfWeek();
+    const monthStart = startOfMonth();
+    return activeResources.filter((r) => {
+      // Course filter
+      const effectiveCourse = courseIdFilter ?? (courseFilter !== 'all' ? courseFilter : null);
+      if (effectiveCourse && !r.courseIds.includes(effectiveCourse)) return false;
+      // Folder filter (prefix match for subfolders)
+      if (selectedFolder) {
+        if (!r.folder) return false;
+        if (r.folder !== selectedFolder && !r.folder.startsWith(selectedFolder + '/')) return false;
+      }
+      // Date filter
+      if (dateFilter !== 'all') {
+        const created = new Date(r.createdAt);
+        if (dateFilter === 'week' && created < weekStart) return false;
+        if (dateFilter === 'month' && created < monthStart) return false;
+      }
+      // Type filter
+      if (typeFilter !== 'all' && fileCategory(r.fileType) !== typeFilter) return false;
+      return true;
+    });
+  }, [activeResources, courseIdFilter, courseFilter, selectedFolder, dateFilter, typeFilter]);
+
+  const activeFiltersCount = [
+    courseFilter !== 'all' && !courseIdFilter,
+    selectedFolder !== null,
+    dateFilter !== 'all',
+    typeFilter !== 'all',
+  ].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setSelectedFolder(null);
+    setDateFilter('all');
+    setTypeFilter('all');
+    if (!courseIdFilter) setCourseFilter('all');
+  };
 
   const openUpload = (preselectedCourseId?: string) => {
     const ids = preselectedCourseId
       ? [preselectedCourseId]
-      : courseIdFilter ? [courseIdFilter] : [];
-    setUploadForm({ title: '', description: '', folder: '', courseIds: ids, fileUrl: '', fileName: '', fileType: '', fileSize: 0 });
+      : courseIdFilter ? [courseIdFilter] : courseFilter !== 'all' ? [courseFilter] : [];
+    setUploadForm({ title: '', description: '', folder: selectedFolder ?? '', courseIds: ids, fileUrl: '', fileName: '', fileType: '', fileSize: 0 });
     setUploadError('');
     setUploadOpen(true);
   };
@@ -184,11 +392,27 @@ function MyResourcesInner() {
   if (loading || authLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>;
 
   if (loadError) return (
-    <div className="max-w-4xl mx-auto flex flex-col items-center justify-center h-64 gap-3 text-center">
+    <div className="max-w-5xl mx-auto flex flex-col items-center justify-center h-64 gap-3 text-center">
       <p className="text-red-500 font-medium">{loadError}</p>
       <button onClick={() => { setLoading(true); load(); }} className="text-sm text-cta-from hover:underline">Reintentar</button>
     </div>
   );
+
+  const renderFolderBreadcrumb = (folder: string) => {
+    const parts = folder.split('/').filter(Boolean);
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        {parts.map((part, i) => (
+          <span key={i} className="flex items-center gap-1 text-xs text-indigo-600">
+            {i > 0 && <ChevronRight className="w-3 h-3 text-gray-300" />}
+            <span className={`${i === parts.length - 1 ? 'bg-indigo-50 px-2 py-0.5 rounded-full font-medium' : 'text-gray-400'}`}>
+              {i === 0 && '📂 '}{part}
+            </span>
+          </span>
+        ))}
+      </div>
+    );
+  };
 
   const renderCard = (r: Resource) => (
     <div key={r.resourceId} className="card p-4 space-y-3">
@@ -214,8 +438,8 @@ function MyResourcesInner() {
           )}
         </div>
       </div>
-      {r.folder && <div className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full w-fit">📂 {r.folder}</div>}
-      {!courseIdFilter && r.courseIds.length > 0 && (
+      {r.folder && renderFolderBreadcrumb(r.folder)}
+      {!courseIdFilter && courseFilter === 'all' && r.courseIds.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {r.courseIds.map((cid) => {
             const c = courses.find((x) => x.id === cid);
@@ -229,14 +453,13 @@ function MyResourcesInner() {
     </div>
   );
 
+  const activeCourse = courseIdFilter ? courses.find((c) => c.id === courseIdFilter) : null;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Back link when filtered by course */}
+    <div className="max-w-6xl mx-auto space-y-5 animate-fade-in">
+      {/* Back link */}
       {courseIdFilter && (
-        <Link
-          href={isAdmin ? '/admin/courses' : '/evaluator/my-courses'}
-          className="inline-flex items-center gap-1.5 text-sm text-cta-from font-medium hover:underline"
-        >
+        <Link href={isAdmin ? '/admin/courses' : '/evaluator/my-courses'} className="inline-flex items-center gap-1.5 text-sm text-cta-from font-medium hover:underline">
           <ChevronLeft className="w-4 h-4" />
           {isAdmin ? t.admin.contentMgmt : t.nav.myCourses}
         </Link>
@@ -247,9 +470,7 @@ function MyResourcesInner() {
         <div>
           <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.myResourcesTitle}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {courseIdFilter
-              ? (activeCourse ? activeCourse.title : '...')
-              : t.admin.myResourcesSubtitle}
+            {courseIdFilter ? (activeCourse ? activeCourse.title : '...') : t.admin.myResourcesSubtitle}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -265,112 +486,119 @@ function MyResourcesInner() {
         </div>
       </div>
 
-      {courseIdFilter ? (
-        // ── Filtered view: resources for a single course ─────────────────
-        <>
-          {folders.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {folders.map((f) => (
+      {/* ── Filter bar ── */}
+      <div className="card p-4 space-y-3">
+        {/* Row 1: Curso + Fecha */}
+        <div className="flex flex-wrap gap-3 items-center">
+          {/* Curso filter (only when not locked by URL param) */}
+          {!courseIdFilter && (
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-gray-400 shrink-0" />
+              <select
+                value={courseFilter}
+                onChange={(e) => { setCourseFilter(e.target.value); setSelectedFolder(null); }}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-charcoal focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              >
+                <option value="all">Todos los cursos</option>
+                {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Date filter */}
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
+            <div className="flex gap-1">
+              {DATE_FILTERS.map((f) => (
                 <button
-                  key={f}
-                  onClick={() => setFolderFilter(f)}
-                  className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${folderFilter === f ? 'bg-indigo-100 text-indigo-700' : 'bg-surface text-gray-500 hover:bg-indigo-50'}`}
+                  key={f.key}
+                  onClick={() => setDateFilter(f.key as any)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${dateFilter === f.key ? 'bg-indigo-100 border-indigo-300 text-indigo-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-indigo-200'}`}
                 >
-                  {f === 'all' ? t.admin.myResourcesFolderAll : `📂 ${f}`}
+                  {f.label}
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Clear filters */}
+          {activeFiltersCount > 0 && (
+            <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 ml-auto">
+              <X className="w-3.5 h-3.5" /> Limpiar filtros ({activeFiltersCount})
+            </button>
           )}
+        </div>
+
+        {/* Row 2: File type */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <FileType2 className="w-4 h-4 text-gray-400 shrink-0" />
+          <div className="flex flex-wrap gap-1">
+            {FILE_TYPES.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setTypeFilter(f.key)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${typeFilter === f.key ? 'bg-indigo-100 border-indigo-300 text-indigo-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-indigo-200'}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main layout: folder tree + content ── */}
+      <div className="flex gap-5 items-start">
+        {/* Folder tree sidebar */}
+        {folderTree.length > 0 && (
+          <div className="hidden md:block w-52 shrink-0 card p-3 sticky top-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-2 mb-2">Carpetas</p>
+            <button
+              onClick={() => setSelectedFolder(null)}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors mb-1 ${selectedFolder === null ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-500 hover:bg-surface'}`}
+            >
+              <FolderOpen className="w-3.5 h-3.5" /> Todas
+            </button>
+            <FolderTree nodes={folderTree} selected={selectedFolder} onSelect={setSelectedFolder} />
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Active folder badge */}
+          {selectedFolder && (
+            <div className="flex items-center gap-2 mb-4">
+              {renderFolderBreadcrumb(selectedFolder)}
+              <button onClick={() => setSelectedFolder(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Results count */}
+          <p className="text-xs text-gray-400 mb-3">{filtered.length} recurso{filtered.length !== 1 ? 's' : ''}</p>
+
           {filtered.length === 0 ? (
             <div className="card text-center py-16">
               <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="font-heading font-bold text-charcoal">{showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}</p>
-              <p className="text-gray-500 text-sm mt-1">{showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint}</p>
-              {!showArchived && (
-                <button onClick={() => openUpload(courseIdFilter ?? undefined)} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cta-from hover:underline">
+              <p className="font-heading font-bold text-charcoal">
+                {showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}
+              </p>
+              <p className="text-gray-500 text-sm mt-1">
+                {activeFiltersCount > 0 ? 'Prueba cambiando los filtros.' : (showArchived ? t.admin.myResourcesEmptyArchivedHint : t.admin.myResourcesEmptyHint)}
+              </p>
+              {!showArchived && activeFiltersCount === 0 && (
+                <button onClick={() => openUpload()} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cta-from hover:underline">
                   <Plus className="w-4 h-4" /> Subir el primer recurso
                 </button>
               )}
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(renderCard)}
             </div>
           )}
-        </>
-      ) : (
-        // ── General view: one section per course ──────────────────────────
-        <>
-          {courses.length === 0 && resources.filter(r => r.archived === showArchived).length === 0 ? (
-            <div className="card text-center py-16">
-              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="font-heading font-bold text-charcoal">{t.admin.myResourcesEmpty}</p>
-              <p className="text-gray-500 text-sm mt-1">{t.admin.myResourcesEmptyHint}</p>
-              <button onClick={() => openUpload()} className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cta-from hover:underline">
-                <Plus className="w-4 h-4" /> Subir el primer recurso
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {courses.map((course) => {
-                const courseResources = resources.filter(
-                  (r) => r.archived === showArchived && r.courseIds.includes(course.id)
-                );
-                return (
-                  <div key={course.id} className="space-y-3">
-                    <div className="flex items-center justify-between border-b border-border pb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
-                        <h2 className="font-semibold text-charcoal truncate">{course.title}</h2>
-                        {course.isArchived && (
-                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">{t.admin.statusArchived}</span>
-                        )}
-                        <span className="text-xs text-gray-400 shrink-0">({courseResources.length})</span>
-                      </div>
-                      <button
-                        onClick={() => openUpload(course.id)}
-                        className="flex items-center gap-1 text-xs text-cta-from font-medium hover:underline shrink-0 ml-3"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Añadir
-                      </button>
-                    </div>
-                    {courseResources.length === 0 ? (
-                      <div className="flex items-center gap-2 py-3 px-4 bg-surface rounded-xl text-sm text-gray-400">
-                        <FolderOpen className="w-4 h-4 shrink-0" />
-                        {showArchived ? t.admin.myResourcesEmptyArchived : t.admin.myResourcesEmpty}
-                      </div>
-                    ) : (
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        {courseResources.map(renderCard)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Unassigned resources */}
-              {(() => {
-                const unassigned = resources.filter(
-                  (r) => r.archived === showArchived && r.courseIds.length === 0
-                );
-                if (unassigned.length === 0) return null;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 border-b border-border pb-2">
-                      <FolderOpen className="w-4 h-4 text-gray-400 shrink-0" />
-                      <h2 className="font-semibold text-gray-500">Sin asignar a curso</h2>
-                      <span className="text-xs text-gray-400">({unassigned.length})</span>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {unassigned.map(renderCard)}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </>
-      )}
+        </div>
+      </div>
 
       {/* Upload Modal */}
       <Modal open={uploadOpen} onClose={() => setUploadOpen(false)} title={t.admin.myResourcesUploadModalTitle} size="md">
@@ -390,18 +618,30 @@ function MyResourcesInner() {
             className="input-field w-full"
           />
           <textarea
-            placeholder={t.admin.myResourcesDescPlaceholder}
-            rows={2}
+            placeholder={t.admin.myResourcesDescPlaceholder} rows={2}
             value={uploadForm.description}
             onChange={(e) => setUploadForm((p) => ({ ...p, description: e.target.value }))}
             className="input-field w-full resize-none"
           />
-          <input
-            type="text" placeholder={t.admin.myResourcesFolderPlaceholder}
-            value={uploadForm.folder}
-            onChange={(e) => setUploadForm((p) => ({ ...p, folder: e.target.value }))}
-            className="input-field w-full"
-          />
+          {/* Folder input with subfolder support */}
+          <div>
+            <input
+              list="folder-suggestions"
+              type="text"
+              placeholder="Carpeta (ej: Material/Semana 1)"
+              value={uploadForm.folder}
+              onChange={(e) => setUploadForm((p) => ({ ...p, folder: e.target.value }))}
+              className="input-field w-full"
+            />
+            <datalist id="folder-suggestions">
+              {allFolderPaths.map((p) => <option key={p} value={p} />)}
+            </datalist>
+            {uploadForm.folder && uploadForm.folder.includes('/') && (
+              <div className="mt-1.5">{renderFolderBreadcrumb(uploadForm.folder)}</div>
+            )}
+            <p className="text-xs text-gray-400 mt-1">Usa / para crear subcarpetas. Ej: <span className="font-mono">Módulo 1/Lecturas</span></p>
+          </div>
+          {/* Course assignment */}
           {courses.length > 0 && (
             <div>
               <p className="text-sm font-medium text-charcoal mb-2">{t.admin.myResourcesAssignLabel}</p>
@@ -444,12 +684,23 @@ function MyResourcesInner() {
               onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
               className="input-field w-full resize-none"
             />
-            <input
-              type="text" placeholder={t.admin.myResourcesFolderFieldPlaceholder}
-              value={editForm.folder}
-              onChange={(e) => setEditForm((p) => ({ ...p, folder: e.target.value }))}
-              className="input-field w-full"
-            />
+            <div>
+              <input
+                list="folder-suggestions-edit"
+                type="text"
+                placeholder="Carpeta (ej: Material/Semana 1)"
+                value={editForm.folder}
+                onChange={(e) => setEditForm((p) => ({ ...p, folder: e.target.value }))}
+                className="input-field w-full"
+              />
+              <datalist id="folder-suggestions-edit">
+                {allFolderPaths.map((p) => <option key={p} value={p} />)}
+              </datalist>
+              {editForm.folder && editForm.folder.includes('/') && (
+                <div className="mt-1.5">{renderFolderBreadcrumb(editForm.folder)}</div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">Usa / para subcarpetas. Ej: <span className="font-mono">Módulo 1/Lecturas</span></p>
+            </div>
             {courses.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-charcoal mb-2">{t.admin.myResourcesAssignedLabel}</p>
