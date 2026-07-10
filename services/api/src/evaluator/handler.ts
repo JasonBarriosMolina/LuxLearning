@@ -477,6 +477,7 @@ export const handler = async (event: Event) => {
 
     // GET /evaluator/students — full progress per student (filtered to this evaluator's courses)
     if (method === 'GET' && path === '/evaluator/students') {
+      const courseIdFilter = event.queryStringParameters?.courseId ?? null;
       const [allProgress, allReflections, allAttempts, allEnrollments, courses, allLastSeen] = await Promise.all([
         getAllLessonProgress(),
         getAllReflections(),
@@ -638,7 +639,21 @@ export const handler = async (event: Event) => {
         return pB - pA;
       });
 
-      return ok({ students: studentsOnly, courses: courses.map((c) => ({ id: c.id, title: c.title })) });
+      let tasksByCourse: Record<string, { pending: number; overdue: number; completed: number }> = {};
+      if (courseIdFilter) {
+        const tasks = await getTasksByCourse(courseIdFilter);
+        for (const task of tasks) {
+          if (!tasksByCourse[task.userId]) tasksByCourse[task.userId] = { pending: 0, overdue: 0, completed: 0 };
+          if (task.status === 'PENDING' || task.status === 'SUBMITTED') tasksByCourse[task.userId]!.pending++;
+          else if (task.status === 'OVERDUE') tasksByCourse[task.userId]!.overdue++;
+          else if (task.status === 'COMPLETED') tasksByCourse[task.userId]!.completed++;
+        }
+      }
+
+      return ok({
+        students: studentsOnly.map((s) => ({ ...s, taskCounts: tasksByCourse[s.userId] ?? null })),
+        courses: courses.map((c) => ({ id: c.id, title: c.title })),
+      });
     }
 
     // POST /evaluator/reminder — send inactivity reminder email to a student

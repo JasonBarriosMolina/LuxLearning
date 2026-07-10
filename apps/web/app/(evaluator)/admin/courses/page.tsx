@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle, FolderOpen } from 'lucide-react';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle, FolderOpen, ClipboardList, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -477,6 +477,25 @@ export default function AdminCoursesPage() {
                       title="Recursos del curso"
                     >
                       <FolderOpen className="w-4 h-4" />
+                    </Link>
+                    <Link
+                      href={`/evaluator/reflections?courseId=${course.id}`}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-purple-600 hover:bg-purple-50 transition-colors"
+                      title="Ver reflexiones de este curso"
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      {(course as any).pendingReflections > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 rounded-full">
+                          {(course as any).pendingReflections}
+                        </span>
+                      )}
+                    </Link>
+                    <Link
+                      href={`/evaluator/students?courseId=${course.id}`}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                      title="Ver estudiantes de este curso"
+                    >
+                      <Users className="w-4 h-4" />
                     </Link>
                     <button
                       onClick={() => openEdit(course)}

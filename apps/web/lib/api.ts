@@ -90,7 +90,10 @@ export const api = {
     reflections: () => request('/evaluator/reflections'),
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
-    students: () => request('/evaluator/students'),
+    students: (params?: { courseId?: string }) => {
+      const qs = params?.courseId ? `?courseId=${encodeURIComponent(params.courseId)}` : '';
+      return request(`/evaluator/students${qs}`);
+    },
     studentCertificates: (userId: string) => request<any>(`/evaluator/students/${userId}/certificates`),
     sendReminder: (body: { userId: string; studentEmail: string; studentName?: string; hoursInactive?: number; courseTitle?: string }) =>
       request<any>('/evaluator/reminder', { method: 'POST', body: JSON.stringify(body) }),
