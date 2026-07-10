@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X } from 'lucide-react';
+import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X, BookMarked } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -606,6 +606,7 @@ function StudentsPageInner() {
   const { t } = useLanguage();
   const ts = t.studentsPage;
   const searchParams = useSearchParams();
+  const courseIdParam = searchParams.get('courseId') ?? '';
   const initialPresenceFilter = (() => {
     const fromQuery = searchParams.get('presence');
     const valid: PresenceFilter[] = ['all', 'online', 'active', 'inactive'];
@@ -614,9 +615,9 @@ function StudentsPageInner() {
   const [data, setData] = useState<{ students: Student[]; courses: { id: string; title: string }[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<'students' | 'courses'>('students');
+  const [view, setView] = useState<'students' | 'courses'>(courseIdParam ? 'courses' : 'students');
   const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>(initialPresenceFilter);
-  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [selectedCourseId, setSelectedCourseId] = useState(courseIdParam);
   const [expandedCourseStudents, setExpandedCourseStudents] = useState<Set<string>>(new Set());
   const [adminCourses, setAdminCourses] = useState<{ id: string; title: string; evaluatorName?: string }[]>([]);
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
@@ -711,12 +712,29 @@ function StudentsPageInner() {
     );
   }
 
+  const activeCourseTitle = selectedCourseId
+    ? data?.courses.find((c) => c.id === selectedCourseId)?.title
+    : null;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       <div>
         <h1 className="font-heading font-bold text-2xl text-charcoal">{ts.title}</h1>
         <p className="text-gray-500 mt-1 text-sm">{ts.subtitle}</p>
       </div>
+
+      {/* Course filter badge */}
+      {courseIdParam && activeCourseTitle && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">
+            <BookMarked className="w-3.5 h-3.5" />
+            {activeCourseTitle}
+            <a href="/evaluator/students" className="ml-1 hover:text-purple-900">
+              <X className="w-3.5 h-3.5" />
+            </a>
+          </span>
+        </div>
+      )}
 
       {/* View toggle */}
       <div className="flex flex-wrap gap-3">
