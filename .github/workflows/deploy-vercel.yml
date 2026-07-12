@@ -5,6 +5,7 @@ on:
     branches:
       - test
       - staging
+      - master
 
 jobs:
   deploy:
@@ -46,3 +47,10 @@ jobs:
           vercel alias set ${{ steps.deploy.outputs.deployment_url }} staging.luxlearning.academy \
             --token=${{ secrets.VERCEL_TOKEN }}
           echo "Aliased to staging.luxlearning.academy"
+
+      - name: Alias to luxlearning.academy (prod)
+        if: github.ref == 'refs/heads/master'
+        run: |
+          vercel alias set ${{ steps.deploy.outputs.deployment_url }} luxlearning.academy \
+            --token=${{ secrets.VERCEL_TOKEN }}
+          echo "Aliased to luxlearning.academy"
