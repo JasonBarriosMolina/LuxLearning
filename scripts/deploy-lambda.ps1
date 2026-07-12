@@ -1,11 +1,16 @@
 # deploy-lambda.ps1 — Build and deploy one or more Lambda functions
 # Usage:  .\scripts\deploy-lambda.ps1 lux-admin lux-reflection
-#         .\scripts\deploy-lambda.ps1 all          (deploy every lambda)
+#         .\scripts\deploy-lambda.ps1 all              (deploy every lambda to prod)
+#         .\scripts\deploy-lambda.ps1 all -Env test    (deploy to test environment)
+#         .\scripts\deploy-lambda.ps1 all -Env staging (deploy to staging environment)
 #
 # Lambdas that use Prisma automatically get node_modules/@prisma/client
 # and .prisma/client bundled into the zip.
 
-param([Parameter(ValueFromRemainingArguments)][string[]]$targets)
+param(
+  [Parameter(ValueFromRemainingArguments)][string[]]$targets,
+  [ValidateSet('prod','staging','test')][string]$Env = 'prod'
+)
 
 Set-StrictMode -Off
 $ErrorActionPreference = "Stop"
@@ -43,19 +48,22 @@ $LAMBDAS = [ordered]@{
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+$ENV_SUFFIX = if ($Env -eq 'prod') { '' } else { "-$Env" }
+
 function Deploy-Lambda([string]$name) {
   if (-not $LAMBDAS.Contains($name)) {
     Write-Host "  [SKIP] Unknown lambda: $name" -ForegroundColor Yellow
     return
   }
 
+  $targetName = "$name$ENV_SUFFIX"   # e.g. lux-admin-test
   $entry      = $LAMBDAS[$name][0]
   $usesPrisma = $LAMBDAS[$name][1]
   $outDir     = "$DIST\$($name -replace 'lux-','')"
   $stage      = "$outDir\_stage"
   $zipPath    = "$outDir\$name.zip"
 
-  Write-Host "`n==> $name" -ForegroundColor Cyan
+  Write-Host "`n==> $targetName" -ForegroundColor Cyan
 
   # 1. Build
   New-Item -ItemType Directory -Force $outDir | Out-Null
@@ -93,10 +101,10 @@ function Deploy-Lambda([string]$name) {
 
   # 4. Deploy code
   $codeSize = aws lambda update-function-code `
-    --function-name $name `
+    --function-name $targetName `
     --zip-file "fileb://$zipPath" `
     --query "CodeSize" --output text
-  if ($LASTEXITCODE -ne 0) { throw "Deploy failed for $name" }
+  if ($LASTEXITCODE -ne 0) { throw "Deploy failed for $targetName" }
   Write-Host "   Deployed: $([math]::Round([int]$codeSize / 1MB, 1)) MB" -ForegroundColor Green
 
   # 5. Ensure PRISMA_QUERY_ENGINE_LIBRARY is set (merge, never wipe other vars)
@@ -104,7 +112,7 @@ function Deploy-Lambda([string]$name) {
   if ($usesPrisma) {
     $tmpEnv = "$DIST\env-tmp.json"
     $noBom = New-Object System.Text.UTF8Encoding($false)
-    $rawVars = (aws lambda get-function-configuration --function-name $name --query "Environment.Variables" --output json) -join ""
+    $rawVars = (aws lambda get-function-configuration --function-name $targetName --query "Environment.Variables" --output json) -join ""
     $dObj = $rawVars | ConvertFrom-Json
     $h = @{}
     $dObj.PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value }
@@ -113,7 +121,7 @@ function Deploy-Lambda([string]$name) {
     if (-not $h.ContainsKey('DB_SECRET_ARN_TEST'))    { $h['DB_SECRET_ARN_TEST']    = 'arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/neon-db-test-FFtXaR' }
     $envBody = @{ Variables = $h } | ConvertTo-Json -Compress
     [System.IO.File]::WriteAllText($tmpEnv, $envBody, $noBom)
-    aws lambda update-function-configuration --function-name $name --environment "file://$tmpEnv" --query "FunctionName" --output text | Out-Null
+    aws lambda update-function-configuration --function-name $targetName --environment "file://$tmpEnv" --query "FunctionName" --output text | Out-Null
     Write-Host "   Env vars synced" -ForegroundColor Gray
   }
 }
