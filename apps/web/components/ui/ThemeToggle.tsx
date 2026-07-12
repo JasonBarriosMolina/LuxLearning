@@ -9,8 +9,7 @@ export function ThemeToggle() {
   // Initialize from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('lux-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const isDark = stored ? stored === 'dark' : prefersDark;
+    const isDark = stored === 'dark';
     setDark(isDark);
     document.documentElement.classList.toggle('dark', isDark);
   }, []);

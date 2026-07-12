@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Prevent flash of wrong theme */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('lux-theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){}})();(function(){try{var l=localStorage.getItem('lux-lang');if(l)document.documentElement.setAttribute('lang',l);}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('lux-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();(function(){try{var l=localStorage.getItem('lux-lang');if(l)document.documentElement.setAttribute('lang',l);}catch(e){}})();`,
           }}
         />
       </head>
