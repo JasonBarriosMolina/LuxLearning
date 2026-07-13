@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award, Flame, X, ClipboardList, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, TrendingUp, CheckCircle, Clock, ArrowRight, Lock, Award, Flame, X, ClipboardList, Calendar, AlertCircle, ChevronDown, ChevronUp, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -30,6 +30,8 @@ export default function StudentDashboardPage() {
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [studyPlan, setStudyPlan] = useState<{ plan: string; generatedAt: string } | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [expandedCourse, setExpandedCourse] = useState<string | null>(null);
 
@@ -59,8 +61,23 @@ export default function StudentDashboardPage() {
     api.tasks.list().then((res: any) => {
       setTasks(res?.data ?? []);
     }).catch(() => {});
-
+    api.studyPlan.get().then((res: any) => {
+      const d = res?.data ?? res;
+      if (d?.plan) setStudyPlan(d);
+    }).catch(() => {});
   }, [lang]);
+
+  const loadStudyPlan = async (forceRefresh = false) => {
+    setPlanLoading(true);
+    try {
+      if (forceRefresh) await api.studyPlan.refresh();
+      const res: any = await api.studyPlan.get();
+      const d = res?.data ?? res;
+      if (d?.plan) setStudyPlan(d);
+    } catch { /* non-fatal */ } finally {
+      setPlanLoading(false);
+    }
+  };
 
   const firstName = email?.split('@')[0] ?? t.roles.student;
 
@@ -242,6 +259,39 @@ export default function StudentDashboardPage() {
               </div>
             );
           })()}
+
+          {/* Study Planner widget */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-heading font-semibold text-base text-charcoal flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-500" />
+                {lang === 'en' ? 'My Weekly Study Plan' : 'Mi plan de estudio semanal'}
+              </h2>
+              <button
+                onClick={() => studyPlan ? loadStudyPlan(true) : loadStudyPlan(false)}
+                disabled={planLoading}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-cta-from transition-colors disabled:opacity-50"
+              >
+                {planLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {lang === 'en' ? 'Regenerate' : 'Regenerar'}
+              </button>
+            </div>
+            {planLoading && !studyPlan ? (
+              <div className="flex items-center gap-2 py-6 justify-center text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">{lang === 'en' ? 'Generating your plan…' : 'Generando tu plan…'}</span>
+              </div>
+            ) : studyPlan?.plan ? (
+              <div className="text-sm text-charcoal whitespace-pre-line leading-relaxed">{studyPlan.plan}</div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <p className="text-sm text-gray-400">{lang === 'en' ? 'Get a personalized 5-day study plan powered by AI.' : 'Obtén un plan de 5 días personalizado con IA.'}</p>
+                <button onClick={() => loadStudyPlan(false)} className="btn-primary text-xs px-4 py-2">
+                  {lang === 'en' ? 'Generate plan' : 'Generar plan'}
+                </button>
+              </div>
+            )}
+          </div>
 
           <h2 className="font-heading font-bold text-xl text-charcoal">{t.courses.myCourses}</h2>
           {courses.map((course) => {

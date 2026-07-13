@@ -329,5 +329,10 @@ export const api = {
       request<any>(`/messages/${chatId}/read`, { method: 'PUT' }),
     react: (chatId: string, ts: string, emoji: string) =>
       request<any>(`/messages/${chatId}/react`, { method: 'POST', body: JSON.stringify({ ts, emoji }) }),
+    forum: (lessonId: string) => request<any>(`/messages/forum/${lessonId}`),
+  },
+  studyPlan: {
+    get: () => request<any>('/my-study-plan'),
+    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 };

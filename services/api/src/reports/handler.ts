@@ -231,6 +231,55 @@ export const handler = async (event: Event) => {
         (s) => s.reflectionsTotal > 0 || s.avgQuizScore > 0 || s.lastActivity !== null
       );
 
+      // ── Dropout risk scores ───────────────────────────────────────────────
+      const riskScores = await Promise.all(
+        enrolledUserIds.map(async (uid) => {
+          // Signal 1: days inactive (0-40 pts)
+          const last = lastActivityByStudent.get(uid);
+          const daysSinceLast = last != null ? (now - last) / 86400000 : 999;
+          const activityPts = daysSinceLast > 30 ? 40 : daysSinceLast > 14 ? 30 : daysSinceLast > 7 ? 20 : daysSinceLast > 3 ? 10 : 0;
+
+          // Signal 2: quiz failure rate (0-30 pts)
+          const studentAttempts = scopedAttempts.filter((a) => a.userId === uid);
+          const failedAttempts = studentAttempts.filter((a) => !a.passed).length;
+          const quizFailureRate = studentAttempts.length > 0 ? failedAttempts / studentAttempts.length : 0;
+          const quizPts = Math.round(quizFailureRate * 30);
+
+          // Signal 3: lesson completion rate inverted (0-20 pts)
+          const myEnrollments = scopedEnrollments.filter((e) => e.userId === uid);
+          const totalLessons = myEnrollments.reduce((sum, e) => {
+            const course = visibleCourses.find((c) => c.id === e.courseId);
+            return sum + (course?.modules?.flatMap((m) => m.lessons).length ?? 0);
+          }, 0);
+          const completedLessons = scopedProgress.filter((p) => p.userId === uid).length;
+          const completionRate = totalLessons > 0 ? completedLessons / totalLessons : 0;
+          const lessonPts = Math.round((1 - completionRate) * 20);
+
+          // Signal 4: pending/rejected reflections (0-10 pts)
+          const badReflections = scopedReflections.filter((r) => r.userId === uid && (r.status === 'PENDING_AI' || r.status === 'REJECTED')).length;
+          const reflPts = Math.min(10, badReflections * 3);
+
+          const riskScore = Math.min(100, activityPts + quizPts + lessonPts + reflPts);
+          const riskLevel: 'low' | 'medium' | 'high' | 'critical' =
+            riskScore >= 75 ? 'critical' : riskScore >= 50 ? 'high' : riskScore >= 25 ? 'medium' : 'low';
+
+          const sp = studentProgress.find((s) => s.userId === uid);
+          return {
+            userId: uid,
+            studentName: sp?.studentName ?? await resolveName(uid),
+            riskScore,
+            riskLevel,
+            factors: {
+              daysSinceLastActivity: Math.round(Math.min(999, daysSinceLast)),
+              quizFailureRate: Math.round(quizFailureRate * 100),
+              lessonCompletionRate: Math.round(completionRate * 100),
+              pendingOrRejectedReflections: badReflections,
+            },
+          };
+        })
+      );
+      riskScores.sort((a, b) => b.riskScore - a.riskScore);
+
       // ── AI Analysis (from nightly job cache) ─────────────────────────────
       const allModuleIds = visibleCourses.flatMap((c) => c.modules.map((m) => m.id));
       const analysisResults = await Promise.allSettled(allModuleIds.map((id) => getReportAnalysis(id)));
@@ -258,6 +307,7 @@ export const handler = async (event: Event) => {
         moduleStats,
         heatMap,
         studentProgress: activeStudentProgress,
+        riskScores,
         analysis,
         recommendations,
       });

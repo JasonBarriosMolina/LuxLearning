@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X, BookMarked } from 'lucide-react';
+import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X, BookMarked, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -36,6 +36,29 @@ function getCurrentModule(modules: ModuleStat[]): ModuleStat | null {
 }
 
 type SP = Translations['studentsPage'];
+
+function riskLevel(presenceStatus?: string, overallPct?: number): 'critical' | 'high' | 'medium' | 'low' {
+  const inactive = presenceStatus === 'inactive';
+  const pct = overallPct ?? 0;
+  if (inactive && pct < 20) return 'critical';
+  if (inactive || pct < 25) return 'high';
+  if (pct < 50) return 'medium';
+  return 'low';
+}
+
+function RiskBadge({ level }: { level: 'critical' | 'high' | 'medium' | 'low' }) {
+  if (level === 'low') return null;
+  const cfg = {
+    critical: { label: 'Riesgo crítico', cls: 'bg-red-100 text-red-700 border-red-200' },
+    high:     { label: 'En riesgo',      cls: 'bg-orange-100 text-orange-700 border-orange-200' },
+    medium:   { label: 'Atención',       cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  }[level];
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.cls}`}>
+      <AlertTriangle className="w-3 h-3" />{cfg.label}
+    </span>
+  );
+}
 
 function PresenceBadge({ status, ts }: { status?: string; ts: SP }) {
   if (status === 'online') return (
@@ -110,6 +133,7 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
             <PresenceBadge status={student.presenceStatus} ts={ts} />
+            <RiskBadge level={riskLevel(student.presenceStatus, overallPct)} />
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen, ts)}</p>
           <div className="mt-1.5">

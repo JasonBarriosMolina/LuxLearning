@@ -11,12 +11,12 @@ import {
   markOnboardingDone, isOnboardingDone,
   getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
-  setInactivityReminder,
+  setInactivityReminder, getAllEnrollments,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { getPrismaClient } from '../shared/db-neon';
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
@@ -196,6 +196,96 @@ export const handler = async (event: Event) => {
       const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
       const reply = parsed.content?.[0]?.text ?? '';
       return ok({ reply });
+    }
+
+    // ── GET /my-study-plan ──────────────────────────────────────────────────
+    if (method === 'GET' && path === '/my-study-plan') {
+      const cacheItem = await ddb.send(new GetCommand({
+        TableName: TABLES.PROGRESS,
+        Key: { userId: 'STUDYPLAN', lessonId: userId },
+      })).then((r) => r.Item).catch(() => null);
+
+      if (cacheItem?.plan) {
+        const age = Date.now() - new Date(cacheItem.generatedAt as string).getTime();
+        if (age < 7 * 24 * 60 * 60 * 1000) {
+          return ok({ plan: cacheItem.plan, generatedAt: cacheItem.generatedAt, cached: true });
+        }
+      }
+
+      const prisma = await getPrismaClient();
+      const [allEnrollments, quizAttempts] = await Promise.all([
+        getAllEnrollments(),
+        getAllQuizAttemptsForUser(userId),
+      ]);
+      const myEnrollments = allEnrollments.filter((e) => e.userId === userId);
+      const courseIds = myEnrollments.map((e) => e.courseId);
+      if (courseIds.length === 0) return ok({ plan: null });
+
+      const courses = await prisma.course.findMany({
+        where: { id: { in: courseIds } },
+        include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true } } } } },
+      });
+
+      const progressResults = await Promise.all(courseIds.map((cid) => getLessonProgress(userId, cid)));
+      const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
+      const passedModuleIds = new Set(quizAttempts.filter((a) => a.passed).map((a) => a.moduleId));
+
+      const lines: string[] = [];
+      for (const course of courses) {
+        lines.push(`Curso: ${course.title}`);
+        for (const mod of (course as any).modules) {
+          const done = mod.lessons.filter((l: any) => completedLessonIds.has(l.id)).length;
+          const total = mod.lessons.length;
+          const quizPassed = passedModuleIds.has(mod.id);
+          const status = done === 0 ? 'no iniciado'
+            : done < total ? `${done}/${total} lecciones completadas`
+            : !quizPassed ? 'lecciones completas — quiz pendiente'
+            : 'módulo completado ✓';
+          lines.push(`  - Módulo ${mod.order}: ${mod.title} — ${status}`);
+        }
+      }
+
+      const prompt = `Eres un coach educativo de Lux Learning. Crea un plan de estudio semanal personalizado para este estudiante.
+
+PROGRESO ACTUAL:
+${lines.join('\n')}
+
+Genera un plan concreto de 5 días (Lunes a Viernes). Para cada día indica:
+- Qué módulo/lección trabajar (sé específico con los nombres)
+- Objetivo del día en 1 frase
+- Tiempo estimado (30-60 min)
+
+Tono motivador y cercano. Máximo 350 palabras. Solo en español.`;
+
+      const bedrockRes = await bedrock.send(new InvokeModelCommand({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      }));
+      const bedrockParsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
+      const plan = bedrockParsed.content?.[0]?.text?.trim() ?? '';
+
+      const generatedAt = new Date().toISOString();
+      await ddb.send(new PutCommand({
+        TableName: TABLES.PROGRESS,
+        Item: { userId: 'STUDYPLAN', lessonId: userId, plan, generatedAt },
+      })).catch(() => {});
+
+      return ok({ plan, generatedAt, cached: false });
+    }
+
+    // ── POST /my-study-plan/refresh — force regenerate ──────────────────────
+    if (method === 'POST' && path === '/my-study-plan/refresh') {
+      await ddb.send(new PutCommand({
+        TableName: TABLES.PROGRESS,
+        Item: { userId: 'STUDYPLAN', lessonId: userId, plan: null, generatedAt: '1970-01-01T00:00:00.000Z' },
+      })).catch(() => {});
+      return ok({ cleared: true });
     }
 
     // ── POST /student/heartbeat ───────────────────────────────────────────────
