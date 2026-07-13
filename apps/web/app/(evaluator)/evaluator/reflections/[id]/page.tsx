@@ -324,7 +324,7 @@ export default function ReflectionDetailPage() {
       const res = await api.evaluator.aiFeedback(reflection.text, reflection.moduleTitle);
       const generated = (res as any).data?.feedback ?? '';
       if (generated) {
-        setFeedback((prev) => (prev ? `${prev}\n\n${generated}` : generated));
+        setFeedback(generated);
       } else {
         setAiError('La IA no generó feedback. Intenta de nuevo.');
       }

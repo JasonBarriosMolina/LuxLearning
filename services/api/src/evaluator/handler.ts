@@ -806,24 +806,30 @@ export const handler = async (event: Event) => {
       const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
       if (!text) return badRequest('text is required');
 
-      const prompt = `Eres un evaluador experto en desarrollo personal y aprendizaje. Se te ha presentado la siguiente reflexión de un estudiante del módulo "${moduleTitle ?? 'del curso'}".
+      const prompt = `Eres un evaluador pedagógico experto en desarrollo personal y aprendizaje significativo. Has revisado la reflexión de un estudiante del módulo "${moduleTitle ?? 'del curso'}".
 
-REFLEXIÓN:
+REFLEXIÓN DEL ESTUDIANTE:
 """
-${text.slice(0, 3000)}
+${text.slice(0, 4000)}
 """
 
-Genera un feedback evaluativo completo con exactamente 3 párrafos (mínimo 150 palabras en total) que:
-- Sea constructivo, específico y se refiera directamente al contenido de la reflexión
-- Párrafo 1: reconoce las fortalezas y aspectos positivos observados
-- Párrafo 2: señala áreas de mejora con ejemplos concretos del texto
-- Párrafo 3: conclusión motivadora con próximos pasos sugeridos
-- Sea profesional, cálido y listo para enviar directamente al estudiante
-- Esté en español
+Genera un feedback evaluativo COMPLETO, listo para enviar directamente al estudiante sin edición adicional. El feedback debe:
+
+ESTRUCTURA (4 párrafos, mínimo 300 palabras en total):
+1. **Reconocimiento**: Abre con el nombre implícito del contexto. Señala 2-3 fortalezas específicas que observas en el texto, citando frases o ideas concretas de la reflexión.
+2. **Análisis profundo**: Evalúa la profundidad del aprendizaje — ¿el estudiante conectó el contenido con su experiencia real? ¿demostró pensamiento crítico? ¿identificó implicaciones prácticas? Sé específico con el contenido de la reflexión.
+3. **Áreas de crecimiento**: Con tono constructivo (nunca crítico ni condescendiente), señala 1-2 aspectos donde el estudiante puede profundizar. Sugiere preguntas concretas que el estudiante debería reflexionar para mejorar.
+4. **Cierre motivador**: Concluye con un reconocimiento del esfuerzo y una orientación hacia los próximos pasos de aprendizaje. Conecta con el módulo o el curso en general.
+
+TONO Y ESTILO:
+- Profesional, cálido, personalizado — nunca genérico ni robótico
+- Usa segunda persona ("tu reflexión muestra...", "has demostrado...")
+- En español, sin tecnicismos innecesarios
+- Mínimo 300 palabras, máximo 500 palabras
 
 Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 {
-  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3..."
+  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3...\n\nPárrafo 4..."
 }`;
 
       try {
@@ -833,7 +839,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 2048,
+            max_tokens: 3000,
             messages: [{ role: 'user', content: prompt }],
           }),
         }));
