@@ -24,8 +24,29 @@ jobs:
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
 
+      - name: Set environment variables for branch
+        id: env_vars
+        run: |
+          if [ "${{ github.ref_name }}" = "test" ]; then
+            echo "NEXT_PUBLIC_API_URL=https://42sivnad2b.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=27nj4pm082sk77l0sssnc0g2gu" >> $GITHUB_ENV
+          elif [ "${{ github.ref_name }}" = "staging" ]; then
+            echo "NEXT_PUBLIC_API_URL=https://v4vabtmerb.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=63ujfu3mt11s45p9g6m7p0n648" >> $GITHUB_ENV
+          else
+            echo "NEXT_PUBLIC_API_URL=https://v4vabtmerb.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=63ujfu3mt11s45p9g6m7p0n648" >> $GITHUB_ENV
+          fi
+
       - name: Build project
         run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ env.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ env.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
 
       - name: Deploy to Vercel
         id: deploy
