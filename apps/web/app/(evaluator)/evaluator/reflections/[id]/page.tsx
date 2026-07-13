@@ -318,6 +318,10 @@ export default function ReflectionDetailPage() {
 
   const generateAiFeedback = async () => {
     if (!reflection?.text) return;
+    if (feedback.trim().length > 0) {
+      const ok = window.confirm('¿Reemplazar el feedback actual con el generado por IA? Esta acción no se puede deshacer.');
+      if (!ok) return;
+    }
     setAiLoading(true);
     setAiError('');
     try {

@@ -19,6 +19,7 @@ import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
+import { jsonrepair } from 'jsonrepair';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -827,10 +828,8 @@ TONO Y ESTILO:
 - En español, sin tecnicismos innecesarios
 - Mínimo 300 palabras, máximo 500 palabras
 
-Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
-{
-  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3...\n\nPárrafo 4..."
-}`;
+Responde ÚNICAMENTE con un objeto JSON (sin markdown, sin texto extra):
+{"feedback": "Párrafo 1...\\n\\nPárrafo 2...\\n\\nPárrafo 3...\\n\\nPárrafo 4..."}`;
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({
@@ -839,17 +838,19 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 3000,
+            max_tokens: 1000,
             messages: [{ role: 'user', content: prompt }],
           }),
         }));
 
         const raw = JSON.parse(new TextDecoder().decode(response.body));
         const content = raw.content?.[0]?.text ?? '';
-        const clean = content.replace(/```json|```/g, '').trim();
-        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        const clean = content.replace(/```json\s*|```/g, '').trim();
+        const jsonMatch = clean.match(/\{[\s\S]*/);
         if (!jsonMatch) return serverError('AI response format error');
-        const parsed = JSON.parse(jsonMatch[0]);
+        let parsed: any;
+        try { parsed = JSON.parse(jsonMatch[0]); }
+        catch { try { parsed = JSON.parse(jsonrepair(jsonMatch[0])); } catch { return serverError('AI response format error'); } }
         return ok({ feedback: parsed.feedback ?? '' });
       } catch (aiErr) {
         console.error('[Evaluator] Bedrock AI feedback error:', aiErr);
