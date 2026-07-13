@@ -179,13 +179,23 @@ async function sendWeeklyEvaluatorSummaries(
   const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, new Date(ls.lastSeen)]));
 
   // Collect evaluators + admins from Cognito
-  const [evRes, adminRes] = await Promise.allSettled([
-    cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'EVALUATOR', Limit: 60 })),
-    cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'ADMIN', Limit: 60 })),
-  ]);
+  const listGroup = async (groupName: string) => {
+    const users: any[] = [];
+    let nextToken: string | undefined;
+    do {
+      const res = await cognito.send(new ListUsersInGroupCommand({
+        UserPoolId: USER_POOL_ID, GroupName: groupName, Limit: 60,
+        ...(nextToken ? { NextToken: nextToken } : {}),
+      }));
+      users.push(...(res.Users ?? []));
+      nextToken = res.NextToken;
+    } while (nextToken);
+    return users;
+  };
+  const [evUsers, adminUsers] = await Promise.allSettled([listGroup('EVALUATOR'), listGroup('ADMIN')]);
   const evaluators = [
-    ...((evRes.status === 'fulfilled' ? evRes.value.Users : []) ?? []),
-    ...((adminRes.status === 'fulfilled' ? adminRes.value.Users : []) ?? []),
+    ...((evUsers.status === 'fulfilled' ? evUsers.value : []) ?? []),
+    ...((adminUsers.status === 'fulfilled' ? adminUsers.value : []) ?? []),
   ];
 
   let sent = 0;
@@ -193,7 +203,7 @@ async function sendWeeklyEvaluatorSummaries(
     const attr = (n: string) => ev.Attributes?.find((a: any) => a.Name === n)?.Value ?? '';
     const email = attr('email');
     const name = attr('name') || email.split('@')[0] || '';
-    const evaluatorId = ev.Username ?? '';
+    const evaluatorId = attr('sub');
     if (!email || !evaluatorId) continue;
 
     try {
@@ -215,7 +225,7 @@ async function sendWeeklyEvaluatorSummaries(
       const weekRejected = weekNew.filter((r) => r.status === 'REJECTED');
       const inactive = studentIds.filter((uid) => {
         const ls = lastSeenMap.get(uid);
-        return !ls || ls < fiveDaysAgo;
+        return ls !== undefined && ls < fiveDaysAgo;
       });
 
       const statsText = `Semana del ${oneWeekAgo.toLocaleDateString('es-ES')} al ${now.toLocaleDateString('es-ES')}

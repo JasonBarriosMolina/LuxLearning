@@ -381,8 +381,7 @@ function BulkImportModal({ onClose, onDone, courses }: { onClose: () => void; on
     setLoading(true);
     try {
       const res = await api.admin.users.bulkImport({ csv, courseIds: selectedCourses, role });
-      setResult((res as any).data ?? res);
-      onDone();
+      setResult(res as any);
     } catch (err: any) {
       alert(err?.body?.error ?? 'Error al importar. Intenta de nuevo.');
     } finally {
@@ -439,7 +438,7 @@ function BulkImportModal({ onClose, onDone, courses }: { onClose: () => void; on
                 ))}
               </div>
             )}
-            <button onClick={onClose} className="btn-primary w-full">Cerrar</button>
+            <button onClick={() => { onDone(); onClose(); }} className="btn-primary w-full">Cerrar</button>
           </div>
         ) : (
           <form onSubmit={handleImport} className="p-6 space-y-5">
