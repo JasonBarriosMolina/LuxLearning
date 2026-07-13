@@ -42,11 +42,11 @@ jobs:
           fi
 
       - name: Build project
-        run: |
-          vercel build --token=${{ secrets.VERCEL_TOKEN }} \
-            --build-env NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-            --build-env NEXT_PUBLIC_COGNITO_USER_POOL_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_ID \
-            --build-env NEXT_PUBLIC_COGNITO_CLIENT_ID=$NEXT_PUBLIC_COGNITO_CLIENT_ID
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ env.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ env.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
 
       - name: Deploy to Vercel
         id: deploy
