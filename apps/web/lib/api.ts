@@ -297,6 +297,8 @@ export const api = {
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId }) }),
       removeEnrollment: (username: string, courseId: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
+      bulkImport: (body: { csv: string; courseIds?: string[]; role?: string }) =>
+        request<any>('/admin/users/bulk-import', { method: 'POST', body: JSON.stringify(body) }),
     },
     emailTemplates: {
       list: () => request<any>(`/admin/email-templates?lang=${getLang()}`),
