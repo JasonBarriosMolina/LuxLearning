@@ -1016,8 +1016,16 @@ export async function getAllVisibleCalendarEvents(
   requestorRole: string,
 ): Promise<CalendarEvent[]> {
   // Scan all events; filter by visibility + ownership
-  const result = await ddb.send(new ScanCommand({ TableName: TABLES.CALENDAR }));
-  const items = (result.Items ?? []) as CalendarEvent[];
+  const items: CalendarEvent[] = [];
+  let lastKey: Record<string, any> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.CALENDAR,
+      ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+    }));
+    items.push(...((result.Items ?? []) as CalendarEvent[]));
+    lastKey = result.LastEvaluatedKey as Record<string, any> | undefined;
+  } while (lastKey);
   const isAdmin = requestorRole === 'ADMIN' || requestorRole === 'SUPER_ADMIN';
   return items.filter((ev) => {
     if (ev.creatorId === requestorId) return true;              // own events always visible

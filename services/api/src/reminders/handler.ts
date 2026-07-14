@@ -198,6 +198,23 @@ async function sendWeeklyEvaluatorSummaries(
     ...((adminUsers.status === 'fulfilled' ? adminUsers.value : []) ?? []),
   ];
 
+  // Batch-load all courses in one query to avoid N+1 per evaluator
+  const evaluatorIds = evaluators
+    .map((ev) => ev.Attributes?.find((a: any) => a.Name === 'sub')?.Value ?? '')
+    .filter(Boolean);
+  const allCourses = evaluatorIds.length > 0
+    ? await prisma.course.findMany({
+        where: { evaluatorId: { in: evaluatorIds } },
+        select: { id: true, title: true, evaluatorId: true, modules: { select: { id: true } } },
+      })
+    : [];
+  const coursesByEvaluator = new Map<string, typeof allCourses>();
+  for (const c of allCourses) {
+    const list = coursesByEvaluator.get(c.evaluatorId) ?? [];
+    list.push(c);
+    coursesByEvaluator.set(c.evaluatorId, list);
+  }
+
   let sent = 0;
   for (const ev of evaluators) {
     const attr = (n: string) => ev.Attributes?.find((a: any) => a.Name === n)?.Value ?? '';
@@ -207,10 +224,7 @@ async function sendWeeklyEvaluatorSummaries(
     if (!email || !evaluatorId) continue;
 
     try {
-      const courses = await prisma.course.findMany({
-        where: { evaluatorId },
-        select: { id: true, title: true, modules: { select: { id: true } } },
-      });
+      const courses = coursesByEvaluator.get(evaluatorId) ?? [];
       if (courses.length === 0) continue;
 
       const courseIds = courses.map((c: any) => c.id);

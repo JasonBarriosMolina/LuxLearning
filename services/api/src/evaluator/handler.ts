@@ -220,7 +220,8 @@ export const handler = async (event: Event) => {
   if (auth?.role !== 'EVALUATOR' && auth?.role !== 'ADMIN' && auth?.role !== 'SUPER_ADMIN') return forbidden('Evaluator role required');
 
   const userId = auth?.userId ?? '';
-  const isAdminRole = auth?.role === 'ADMIN' || auth?.role === 'SUPER_ADMIN';
+  const role = auth?.role ?? '';
+  const isAdminRole = role === 'ADMIN' || role === 'SUPER_ADMIN';
   const method = event.requestContext.http.method;
   const path = event.rawPath;
   const prisma = await getPrismaClient();
@@ -1218,6 +1219,7 @@ ${text.trim()}`;
 
     // POST /evaluator/calendar/events
     if (method === 'POST' && path === '/evaluator/calendar/events') {
+      const body = JSON.parse(event.body ?? '{}');
       const { title, description, type, startDate, endDate, allDay, visibility, color, location, targetCourseId } = body as {
         title?: string; description?: string;
         type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
@@ -1250,6 +1252,7 @@ ${text.trim()}`;
     // PUT /evaluator/calendar/events/:eventId
     const calEditMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
     if (method === 'PUT' && calEditMatch) {
+      const body = JSON.parse(event.body ?? '{}');
       const eventId = calEditMatch[1]!;
       const existing = await getCalendarEventById(userId, eventId);
       // Admins can update any event; evaluators only their own
@@ -1274,6 +1277,7 @@ ${text.trim()}`;
     // DELETE /evaluator/calendar/events/:eventId
     const calDeleteMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
     if (method === 'DELETE' && calDeleteMatch) {
+      const body = JSON.parse(event.body ?? '{}');
       const eventId = calDeleteMatch[1]!;
       const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
       const existing = await getCalendarEventById(userId, eventId);
