@@ -473,6 +473,21 @@ foreach ($route in $prodRoutes) {
 
 Ok "Routes: $created created, $skipped skipped"
 
+# ─── Step 10: SQS Event Source Mapping (sqsconsumer) ─────────────────────────
+Step "SQS trigger for lux-sqsconsumer$SUFFIX"
+$sqsArn = "arn:aws:sqs:${REGION}:${ACCOUNT}:$SQS_NAME"
+$existingMappings = aws lambda list-event-source-mappings --function-name "lux-sqsconsumer$SUFFIX" --query "EventSourceMappings[*].EventSourceArn" --output json 2>$null | ConvertFrom-Json
+if ($existingMappings -contains $sqsArn) {
+  Skip "SQS trigger already exists"
+} else {
+  aws lambda create-event-source-mapping `
+    --function-name "lux-sqsconsumer$SUFFIX" `
+    --event-source-arn $sqsArn `
+    --batch-size 1 `
+    --query "UUID" --output text | Out-Null
+  Ok "SQS trigger created: $sqsArn -> lux-sqsconsumer$SUFFIX"
+}
+
 # ─── Done ────────────────────────────────────────────────────────────────────
 $API_ENDPOINT = aws apigatewayv2 get-api --api-id $API_ID --query "ApiEndpoint" --output text
 
