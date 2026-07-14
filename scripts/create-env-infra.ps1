@@ -1,4 +1,4 @@
-# create-env-infra.ps1 — Creates a full isolated environment (test or staging)
+﻿# create-env-infra.ps1 — Creates a full isolated environment (test or staging)
 # Usage: .\scripts\create-env-infra.ps1 -Env test
 #        .\scripts\create-env-infra.ps1 -Env staging
 #
@@ -115,7 +115,7 @@ foreach ($entry in $DDB_SIMPLE.GetEnumerator()) {
 }
 foreach ($t in $DDB_EXPECTED) {
   if ($existingTables -contains $t) { Skip "$t exists" }
-  else { Write-Host "  WARNING: $t does not exist — create it manually" -ForegroundColor Red }
+  else { Write-Host "  WARNING: $t does not exist - create it manually" -ForegroundColor Red }
 }
 
 # ─── Step 1: S3 Bucket ───────────────────────────────────────────────────────
@@ -255,8 +255,8 @@ foreach ($baseName in $LAMBDAS.Keys) {
   if (-not $prodCode -or $prodCode -eq 'None') {
     Write-Host "  WARNING: could not get prod code for $baseName - creating with placeholder" -ForegroundColor Yellow
     # Create minimal placeholder zip
-    $placeholderJs = "exports.handler = async () => ({ statusCode: 200, body: 'placeholder' });"
     $placeholderPath = "$env:TEMP\placeholder.js"
+    $placeholderJs = 'exports.handler = async function() { return { statusCode: 200, body: "placeholder" }; };'
     [System.IO.File]::WriteAllText($placeholderPath, $placeholderJs, $noBom)
     Compress-Archive -Path $placeholderPath -DestinationPath $tmpZip -Force
     $codeArg = @("--zip-file", "fileb://$tmpZip")
