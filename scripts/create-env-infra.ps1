@@ -10,10 +10,13 @@ param([Parameter(Mandatory)][ValidateSet('test','staging')][string]$Env)
 Set-StrictMode -Off
 $ErrorActionPreference = "Stop"
 
-$ACCOUNT   = "798694628803"
-$REGION    = "us-east-1"
-$SUFFIX    = "-$Env"          # "-test" or "-staging"
-$ENVUP     = $Env.ToUpper()
+$ACCOUNT    = "798694628803"
+$REGION     = "us-east-1"
+$SUFFIX     = "-$Env"          # "-test" or "-staging"  (lambdas, S3, SQS, API GW)
+$ENVUP      = $Env.ToUpper()
+# DynamoDB tables were created with Title Case suffix (-Test / -Staging)
+$ENV_TITLE  = $Env.Substring(0,1).ToUpper() + $Env.Substring(1)
+$DDB_SUFFIX = "-$ENV_TITLE"   # "-Test" or "-Staging"
 
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  Creating LUX $ENVUP environment infra" -ForegroundColor Cyan
@@ -44,25 +47,26 @@ $VAPID_PUBLIC  = $prodVapidCfg.VAPID_PUBLIC_KEY
 $VAPID_PRIVATE = $prodVapidCfg.VAPID_PRIVATE_KEY
 $VAPID_EMAIL   = $prodVapidCfg.VAPID_EMAIL
 
-# DynamoDB table names for this environment
+# DynamoDB table names for this environment (Title Case suffix: -Test / -Staging)
 $DDB = @{
-  PROGRESS        = "LessonProgress$SUFFIX"
-  QUIZ            = "QuizAttempts$SUFFIX"
-  REFLECTIONS     = "Reflections$SUFFIX"
-  NOTIFS          = "Notifications$SUFFIX"
-  ENROLLMENTS     = "Enrollments$SUFFIX"
-  CERTIFICATES    = "Certificates$SUFFIX"
-  PUSH_SUBS       = "PushSubscriptions$SUFFIX"
-  TASKS           = "ScheduledTasks$SUFFIX"
-  REPORT_ANALYSIS = "ReportAnalysis$SUFFIX"
-  RECOMMENDATIONS = "CurriculumRecommendations$SUFFIX"
-  ACTIVITY        = "LuxActivity$SUFFIX"
-  CHATS           = "LuxChats$SUFFIX"
-  MESSAGES        = "LuxMessages$SUFFIX"
-  RESOURCES       = "LuxResources$SUFFIX"
-  CERT_TEMPLATES  = "LuxCertTemplates$SUFFIX"
-  EMAIL_TEMPLATES = "LuxEmailTemplates$SUFFIX"
-  TRANSLATIONS    = "LuxTranslations$SUFFIX"
+  PROGRESS        = "LessonProgress$DDB_SUFFIX"
+  QUIZ            = "QuizAttempts$DDB_SUFFIX"
+  REFLECTIONS     = "Reflections$DDB_SUFFIX"
+  NOTIFS          = "Notifications$DDB_SUFFIX"
+  ENROLLMENTS     = "Enrollments$DDB_SUFFIX"
+  CERTIFICATES    = "Certificates$DDB_SUFFIX"
+  PUSH_SUBS       = "PushSubscriptions$DDB_SUFFIX"
+  TASKS           = "ScheduledTasks$DDB_SUFFIX"
+  REPORT_ANALYSIS = "ReportAnalysis$DDB_SUFFIX"
+  RECOMMENDATIONS = "CurriculumRecommendations$DDB_SUFFIX"
+  ACTIVITY        = "LuxActivity$DDB_SUFFIX"
+  CHATS           = "LuxChats$DDB_SUFFIX"
+  MESSAGES        = "LuxMessages$DDB_SUFFIX"
+  RESOURCES       = "LuxResources$DDB_SUFFIX"
+  CERT_TEMPLATES  = "LuxCertTemplates$DDB_SUFFIX"
+  EMAIL_TEMPLATES = "LuxEmailTemplates$DDB_SUFFIX"
+  TRANSLATIONS    = "LuxTranslations$DDB_SUFFIX"
+  CALENDAR        = "LuxCalendarEvents$DDB_SUFFIX"
 }
 
 $ENGINE_PATH = "/var/task/node_modules/.prisma/client/libquery_engine-linux-arm64-openssl-3.0.x.so.node"
@@ -75,6 +79,43 @@ function Skip([string]$msg) { Write-Host "    SKIP: $msg" -ForegroundColor DarkG
 function Lambda-Exists([string]$name) {
   try { aws lambda get-function --function-name $name --output text --query 'Configuration.FunctionName' 2>$null | Out-Null; return $true }
   catch { return $false }
+}
+
+# ─── Step 0: DynamoDB tables ─────────────────────────────────────────────────
+Step "DynamoDB tables"
+# Tables that need a simple PK-only schema (billing: PAY_PER_REQUEST)
+$DDB_SIMPLE = @{
+  $DDB.CALENDAR = @{ pk = "creatorId"; pkType = "S"; sk = "eventId"; skType = "S" }
+}
+# Tables already expected to exist (created during initial infra setup)
+$DDB_EXPECTED = @(
+  $DDB.PROGRESS, $DDB.QUIZ, $DDB.REFLECTIONS, $DDB.NOTIFS, $DDB.ENROLLMENTS,
+  $DDB.CERTIFICATES, $DDB.PUSH_SUBS, $DDB.TASKS, $DDB.REPORT_ANALYSIS,
+  $DDB.RECOMMENDATIONS, $DDB.ACTIVITY, $DDB.CHATS, $DDB.MESSAGES,
+  $DDB.RESOURCES, $DDB.CERT_TEMPLATES, $DDB.EMAIL_TEMPLATES, $DDB.TRANSLATIONS
+)
+$existingTables = aws dynamodb list-tables --query "TableNames" --output json | ConvertFrom-Json
+foreach ($entry in $DDB_SIMPLE.GetEnumerator()) {
+  $tName = $entry.Key
+  $pk    = $entry.Value.pk
+  $pkT   = $entry.Value.pkType
+  $sk    = $entry.Value.sk
+  $skT   = $entry.Value.skType
+  if ($existingTables -contains $tName) {
+    Skip "$tName already exists"
+  } else {
+    aws dynamodb create-table `
+      --table-name $tName `
+      --attribute-definitions "AttributeName=$pk,AttributeType=$pkT" "AttributeName=$sk,AttributeType=$skT" `
+      --key-schema "AttributeName=$pk,KeyType=HASH" "AttributeName=$sk,KeyType=RANGE" `
+      --billing-mode PAY_PER_REQUEST `
+      --query "TableDescription.TableName" --output text | Out-Null
+    Ok "Created $tName"
+  }
+}
+foreach ($t in $DDB_EXPECTED) {
+  if ($existingTables -contains $t) { Skip "$t exists" }
+  else { Write-Host "  WARNING: $t does not exist — create it manually" -ForegroundColor Red }
 }
 
 # ─── Step 1: S3 Bucket ───────────────────────────────────────────────────────
@@ -156,6 +197,7 @@ $BASE_ENV = @{
   DYNAMO_TABLE_CERT_TEMPLATES  = $DDB.CERT_TEMPLATES
   DYNAMO_TABLE_EMAIL_TEMPLATES = $DDB.EMAIL_TEMPLATES
   DYNAMO_TABLE_TRANSLATIONS    = $DDB.TRANSLATIONS
+  DYNAMO_TABLE_CALENDAR        = $DDB.CALENDAR
   PRISMA_QUERY_ENGINE_LIBRARY  = $ENGINE_PATH
 }
 
