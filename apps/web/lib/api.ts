@@ -229,6 +229,10 @@ export const api = {
         request<any>('/admin/courses/ai-publish', { method: 'POST', body: JSON.stringify(body) }),
       regenerate: (courseId: string) =>
         request<any>(`/admin/courses/${courseId}/regenerate`, { method: 'POST' }),
+      generateCover: (courseId: string, body: { promptText: string; style?: string }) =>
+        request<any>(`/admin/courses/${courseId}/generate-cover`, { method: 'POST', body: JSON.stringify(body) }),
+      approveCover: (courseId: string, body: { imageUrl: string }) =>
+        request<any>(`/admin/courses/${courseId}/approve-cover`, { method: 'POST', body: JSON.stringify(body) }),
       assignEvaluator: (courseId: string, body: { evaluatorId: string; evaluatorName: string }) =>
         request<any>(`/admin/courses/${courseId}/evaluator`, { method: 'PUT', body: JSON.stringify(body) }),
       validateVideos: (courseId: string) => request<any>(`/admin/courses/${courseId}/validate-videos`),
@@ -318,6 +322,10 @@ export const api = {
       presign: (body: { fileName: string; fileType: string; folder?: 'tasks' | 'resources' | 'uploads' }) =>
         request<any>('/admin/files/presign', { method: 'POST', body: JSON.stringify(body) }),
     },
+    generateImage: (body: { promptText: string; style?: string }) =>
+      request<any>('/admin/generate-image', { method: 'POST', body: JSON.stringify(body) }),
+    stockPhotos: (q: string, page = 1) =>
+      request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}`),
   },
   profile: {
     get: () => request<any>('/user/profile'),

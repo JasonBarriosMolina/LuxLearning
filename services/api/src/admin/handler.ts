@@ -119,7 +119,7 @@ async function generateLessonImage(
   lessonTitle: string,
   moduleTitle: string,
   order: number,
-  override?: { promptText?: string; style?: string; lessonContent?: string }
+  override?: { promptText?: string; style?: string; lessonContent?: string; aspectRatio?: string; s3Prefix?: string }
 ): Promise<string | null> {
   // Build prompt: custom override → Haiku visual scene from content → simple fallback
   let prompt: string;
@@ -143,7 +143,7 @@ async function generateLessonImage(
         prompt,
         negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, signs, blurry, low quality, distorted, infographic, chart, diagram',
         mode: 'text-to-image',
-        aspect_ratio: '1:1',
+        aspect_ratio: override?.aspectRatio ?? '1:1',
         output_format: 'jpeg',
       }),
     }));
@@ -152,7 +152,8 @@ async function generateLessonImage(
     if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
     const imgBuffer = Buffer.from(base64, 'base64');
     if (imgBuffer.length === 0) return null;
-    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const prefix = override?.s3Prefix ?? 'lessons';
+    const key = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,
@@ -2295,6 +2296,72 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 600 });
       const publicUrl = `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${fileKey}`;
       return ok({ uploadUrl, fileKey, publicUrl });
+    }
+
+    // ── POST /admin/courses/:courseId/generate-cover ─────────────────────────
+    const generateCoverMatch = path.match(/^\/admin\/courses\/([^/]+)\/generate-cover$/);
+    if (generateCoverMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const body = JSON.parse(event.body ?? '{}');
+      const courseId = generateCoverMatch[1]!;
+      const { promptText, style } = body as { promptText?: string; style?: string };
+      if (!promptText?.trim()) return badRequest('promptText es requerido');
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+      if (!course) return notFound('Curso no encontrado');
+      const imageUrl = await generateLessonImage(course.title, '', 0, {
+        promptText: promptText.trim(), style, aspectRatio: '16:9', s3Prefix: 'covers',
+      });
+      if (!imageUrl) return badRequest('No se pudo generar la imagen. Intenta de nuevo.');
+      return ok({ imageUrl, preview: true });
+    }
+
+    // ── POST /admin/courses/:courseId/approve-cover ──────────────────────────
+    const approveCoverMatch = path.match(/^\/admin\/courses\/([^/]+)\/approve-cover$/);
+    if (approveCoverMatch && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const body = JSON.parse(event.body ?? '{}');
+      const courseId = approveCoverMatch[1]!;
+      const { imageUrl } = body as { imageUrl?: string };
+      if (!imageUrl) return badRequest('imageUrl es requerido');
+      const updated = await prisma.course.update({ where: { id: courseId }, data: { imageUrl } });
+      return ok(updated);
+    }
+
+    // ── POST /admin/generate-image — imagen libre para editor de lecciones ───
+    if (path === '/admin/generate-image' && method === 'POST') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const body = JSON.parse(event.body ?? '{}');
+      const { promptText, style } = body as { promptText?: string; style?: string };
+      if (!promptText?.trim()) return badRequest('promptText es requerido');
+      const imageUrl = await generateLessonImage('', '', 0, {
+        promptText: promptText.trim(), style, s3Prefix: 'editor',
+      });
+      if (!imageUrl) return badRequest('No se pudo generar la imagen. Intenta de nuevo.');
+      return ok({ imageUrl });
+    }
+
+    // ── GET /admin/stock-photos — proxy Unsplash ─────────────────────────────
+    if (path === '/admin/stock-photos' && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const q = event.queryStringParameters?.q ?? '';
+      const page = parseInt(event.queryStringParameters?.page ?? '1', 10);
+      if (!q.trim()) return badRequest('q es requerido');
+      const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY ?? '';
+      if (!UNSPLASH_KEY) return serverError('Unsplash no configurado — agregar UNSPLASH_ACCESS_KEY al Lambda');
+      const res = await fetch(
+        `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&page=${page}&per_page=12&orientation=landscape`,
+        { headers: { Authorization: `Client-ID ${UNSPLASH_KEY}` } },
+      );
+      if (!res.ok) return serverError('Error al buscar en Unsplash');
+      const data = await res.json() as any;
+      const photos = (data.results ?? []).map((p: any) => ({
+        id: p.id,
+        thumb: p.urls.small,
+        full: p.urls.regular,
+        author: p.user.name,
+        authorUrl: p.user.links.html,
+      }));
+      return ok({ photos, totalPages: data.total_pages });
     }
 
     return notFound('Ruta no encontrada');

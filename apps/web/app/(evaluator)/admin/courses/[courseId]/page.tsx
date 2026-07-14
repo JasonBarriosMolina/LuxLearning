@@ -7,6 +7,7 @@ import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2, Volume2,
   ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Eye, GraduationCap, Sparkles, RotateCcw,
+  Wand2, Check,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -1205,6 +1206,44 @@ export default function AdminCourseDetailPage() {
     }
   };
 
+  // ── Cover generation ────────────────────────────────────────────────────────
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [coverPrompt, setCoverPrompt] = useState('');
+  const [coverStyle, setCoverStyle] = useState('illustration');
+  const [coverLoading, setCoverLoading] = useState(false);
+  const [coverPreview, setCoverPreview] = useState('');
+  const [coverError, setCoverError] = useState('');
+  const [coverSaving, setCoverSaving] = useState(false);
+
+  const COVER_STYLES = [
+    { value: 'illustration', label: 'Ilustración' },
+    { value: 'realistic', label: 'Realista' },
+    { value: 'minimal', label: 'Minimalista' },
+    { value: 'colorful', label: 'Colorida' },
+    { value: 'corporate', label: 'Corporativo' },
+  ];
+
+  const handleGenerateCover = async () => {
+    if (!coverPrompt.trim()) return;
+    setCoverLoading(true); setCoverError(''); setCoverPreview('');
+    try {
+      const res = await api.admin.courses.generateCover(courseId, { promptText: coverPrompt.trim(), style: coverStyle });
+      setCoverPreview((res as any)?.data?.imageUrl ?? '');
+    } catch { setCoverError('No se pudo generar la portada. Intenta de nuevo.'); }
+    finally { setCoverLoading(false); }
+  };
+
+  const handleApproveCover = async () => {
+    if (!coverPreview) return;
+    setCoverSaving(true);
+    try {
+      await api.admin.courses.approveCover(courseId, { imageUrl: coverPreview });
+      setCourse((prev: any) => ({ ...prev, imageUrl: coverPreview }));
+      setCoverOpen(false); setCoverPrompt(''); setCoverPreview('');
+    } catch { setCoverError('Error al guardar la portada.'); }
+    finally { setCoverSaving(false); }
+  };
+
   const load = useCallback(async () => {
     try {
       const res = await api.admin.courses.get(courseId);
@@ -1280,6 +1319,14 @@ export default function AdminCourseDetailPage() {
             className="shrink-0"
           >
             Validar videos
+          </Button>
+          <Button
+            variant="secondary"
+            leftIcon={<Wand2 className="w-4 h-4 text-pink-500" />}
+            onClick={() => { setCoverPrompt(''); setCoverPreview(''); setCoverError(''); setCoverOpen(true); }}
+            className="shrink-0"
+          >
+            Generar portada
           </Button>
           <Button
             variant="secondary"
@@ -1359,6 +1406,72 @@ export default function AdminCourseDetailPage() {
       </Modal>
 
       {/* AI module generation modal */}
+      {/* Cover generation modal */}
+      <Modal open={coverOpen} onClose={() => setCoverOpen(false)} title="Generar portada con IA" size="md">
+        <div className="space-y-4">
+          {course?.imageUrl && !coverPreview && (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500 font-medium">Portada actual</p>
+              <img src={course.imageUrl} alt="Portada actual" className="w-full h-32 object-cover rounded-xl" />
+            </div>
+          )}
+          <div>
+            <label className="text-sm font-medium text-charcoal block mb-1.5">Describe la portada que quieres generar</label>
+            <textarea
+              autoFocus
+              className="input-field resize-none w-full"
+              rows={3}
+              placeholder={`Ej: ${course?.title ?? 'Curso de arte'}, estudiantes creativos, colores vibrantes, ambiente inspirador`}
+              value={coverPrompt}
+              onChange={(e) => setCoverPrompt(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-charcoal block mb-1.5">Estilo</label>
+            <div className="flex flex-wrap gap-2">
+              {COVER_STYLES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setCoverStyle(s.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    coverStyle === s.value
+                      ? 'border-cta-from bg-blue-50 text-cta-from'
+                      : 'border-border text-gray-500 hover:border-gray-400'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button
+            onClick={handleGenerateCover}
+            loading={coverLoading}
+            disabled={!coverPrompt.trim()}
+            leftIcon={<Wand2 className="w-4 h-4" />}
+            className="w-full justify-center"
+          >
+            {coverLoading ? 'Generando portada...' : 'Generar portada'}
+          </Button>
+          {coverError && <p className="text-sm text-red-500">{coverError}</p>}
+          {coverPreview && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 font-medium">Vista previa — la portada NO se guarda hasta que apruebes</p>
+              <img src={coverPreview} alt="Vista previa portada" className="w-full rounded-xl object-cover aspect-video" />
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={handleGenerateCover} loading={coverLoading} leftIcon={<RefreshCw className="w-4 h-4" />} className="flex-1 justify-center">
+                  Regenerar
+                </Button>
+                <Button onClick={handleApproveCover} loading={coverSaving} leftIcon={<Check className="w-4 h-4" />} className="flex-1 justify-center">
+                  Aprobar y publicar
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       <Modal open={aiModuleOpen} onClose={() => setAiModuleOpen(false)} title="Crear módulo con IA" size="sm">
         <form onSubmit={handleAiModule} className="space-y-4">
           <p className="text-sm text-gray-500">La IA generará un módulo completo (10 lecciones + 10 preguntas de quiz) sobre el tema que indiques.</p>
