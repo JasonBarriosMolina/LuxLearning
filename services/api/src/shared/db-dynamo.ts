@@ -29,6 +29,7 @@ const BASE_TABLES = {
   CERT_TEMPLATES: process.env.DYNAMO_TABLE_CERT_TEMPLATES ?? 'LuxCertTemplates',
   RESOURCES: process.env.DYNAMO_TABLE_RESOURCES ?? 'LuxResources',
   TRANSLATIONS: process.env.DYNAMO_TABLE_TRANSLATIONS ?? 'LuxTranslations',
+  CALENDAR: process.env.DYNAMO_TABLE_CALENDAR ?? 'LuxCalendarEvents',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
@@ -971,4 +972,95 @@ export async function getUserLang(userId: string): Promise<string> {
   } catch {
     return 'es';
   }
+}
+
+// ─── Calendar Events ──────────────────────────────────────────────────────────
+// Table: LuxCalendarEvents, PK: creatorId, SK: eventId
+
+export interface CalendarEvent {
+  creatorId: string;
+  eventId: string;
+  title: string;
+  description?: string;
+  type: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
+  startDate: string;   // ISO datetime
+  endDate: string;     // ISO datetime
+  allDay: boolean;
+  visibility: 'private' | 'evaluators' | 'students' | 'community';
+  color?: string;
+  location?: string;
+  targetCourseId?: string;
+  creatorName?: string;
+  creatorRole?: string;
+  createdAt: string;
+}
+
+export async function createCalendarEvent(event: CalendarEvent): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.CALENDAR,
+    Item: event,
+  }));
+}
+
+export async function getCalendarEventsByCreator(creatorId: string): Promise<CalendarEvent[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.CALENDAR,
+    KeyConditionExpression: 'creatorId = :cid',
+    ExpressionAttributeValues: { ':cid': creatorId },
+  }));
+  return (result.Items ?? []) as CalendarEvent[];
+}
+
+export async function getAllVisibleCalendarEvents(
+  requestorId: string,
+  requestorRole: string,
+): Promise<CalendarEvent[]> {
+  // Scan all events; filter by visibility + ownership
+  const result = await ddb.send(new ScanCommand({ TableName: TABLES.CALENDAR }));
+  const items = (result.Items ?? []) as CalendarEvent[];
+  const isAdmin = requestorRole === 'ADMIN' || requestorRole === 'SUPER_ADMIN';
+  return items.filter((ev) => {
+    if (ev.creatorId === requestorId) return true;              // own events always visible
+    if (isAdmin) return true;                                   // admins see everything
+    if (ev.visibility === 'evaluators') return true;            // shared with evaluators
+    if (ev.visibility === 'community') return true;             // shared with all
+    return false;
+  });
+}
+
+export async function updateCalendarEvent(creatorId: string, eventId: string, updates: Partial<Omit<CalendarEvent, 'creatorId' | 'eventId' | 'createdAt'>>): Promise<void> {
+  const sets: string[] = [];
+  const vals: Record<string, any> = {};
+  const names: Record<string, string> = {};
+  for (const [key, val] of Object.entries(updates)) {
+    if (val === undefined) continue;
+    const alias = `#f_${key}`;
+    const placeholder = `:v_${key}`;
+    sets.push(`${alias} = ${placeholder}`);
+    names[alias] = key;
+    vals[placeholder] = val;
+  }
+  if (sets.length === 0) return;
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.CALENDAR,
+    Key: { creatorId, eventId },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: vals,
+  }));
+}
+
+export async function deleteCalendarEvent(creatorId: string, eventId: string): Promise<void> {
+  await ddb.send(new DeleteCommand({
+    TableName: TABLES.CALENDAR,
+    Key: { creatorId, eventId },
+  }));
+}
+
+export async function getCalendarEventById(creatorId: string, eventId: string): Promise<CalendarEvent | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.CALENDAR,
+    Key: { creatorId, eventId },
+  }));
+  return (result.Item as CalendarEvent) ?? null;
 }

@@ -3,6 +3,7 @@ import './globals.css';
 import { AmplifyProvider } from '@/components/shared/AmplifyProvider';
 import { PwaUpdatePrompt } from '@/components/shared/PwaUpdatePrompt';
 import { LanguageProvider } from '@/lib/i18n';
+import { Watermark } from '@/components/shared/Watermark';
 
 export const metadata: Metadata = {
   title: { default: 'Lux Learning', template: '%s — Lux Learning' },
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <LanguageProvider>
             {children}
             <PwaUpdatePrompt />
+            <Watermark />
           </LanguageProvider>
         </AmplifyProvider>
       </body>

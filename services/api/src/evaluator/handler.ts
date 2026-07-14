@@ -13,12 +13,12 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById } from '../shared/db-dynamo';
+import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
-import { createId } from '@paralleldrive/cuid2';
 import { jsonrepair } from 'jsonrepair';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -1206,6 +1206,86 @@ ${text.trim()}`;
       const translatedText = translateRaw.content?.[0]?.text?.trim() ?? '';
       if (!translatedText) return serverError('Translation returned empty result');
       return ok({ translatedText });
+    }
+
+    // ─── Calendar Events ───────────────────────────────────────────────────────
+
+    // GET /evaluator/calendar/events
+    if (method === 'GET' && path === '/evaluator/calendar/events') {
+      const events = await getAllVisibleCalendarEvents(userId, role);
+      return ok(events);
+    }
+
+    // POST /evaluator/calendar/events
+    if (method === 'POST' && path === '/evaluator/calendar/events') {
+      const { title, description, type, startDate, endDate, allDay, visibility, color, location, targetCourseId } = body as {
+        title?: string; description?: string;
+        type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
+        startDate?: string; endDate?: string; allDay?: boolean;
+        visibility?: 'private' | 'evaluators' | 'students' | 'community';
+        color?: string; location?: string; targetCourseId?: string;
+      };
+      if (!title || !startDate || !endDate) return badRequest('title, startDate y endDate son requeridos');
+      const eventId = createId();
+      const event = {
+        creatorId: userId,
+        eventId,
+        title: title.trim(),
+        description: description?.trim(),
+        type: type ?? 'event',
+        startDate,
+        endDate,
+        allDay: allDay ?? false,
+        visibility: visibility ?? 'private',
+        color,
+        location: location?.trim(),
+        targetCourseId,
+        creatorRole: role,
+        createdAt: new Date().toISOString(),
+      };
+      await createCalendarEvent(event);
+      return ok(event);
+    }
+
+    // PUT /evaluator/calendar/events/:eventId
+    const calEditMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
+    if (method === 'PUT' && calEditMatch) {
+      const eventId = calEditMatch[1]!;
+      const existing = await getCalendarEventById(userId, eventId);
+      // Admins can update any event; evaluators only their own
+      const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+      if (!existing) {
+        // Try to find by scanning if admin (event may belong to another creator)
+        if (!isAdmin) return notFound('Evento no encontrado');
+        // For admin, get creatorId from body
+        const { creatorId: bodyCreatorId } = body as { creatorId?: string };
+        if (!bodyCreatorId) return badRequest('creatorId requerido para admin');
+        const adminExisting = await getCalendarEventById(bodyCreatorId, eventId);
+        if (!adminExisting) return notFound('Evento no encontrado');
+        const { creatorId: _c, eventId: _e, createdAt: _t, ...rest } = body as any;
+        await updateCalendarEvent(bodyCreatorId, eventId, rest);
+        return ok({ updated: true });
+      }
+      const { creatorId: _c, eventId: _e, createdAt: _t, ...updates } = body as any;
+      await updateCalendarEvent(userId, eventId, updates);
+      return ok({ updated: true });
+    }
+
+    // DELETE /evaluator/calendar/events/:eventId
+    const calDeleteMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
+    if (method === 'DELETE' && calDeleteMatch) {
+      const eventId = calDeleteMatch[1]!;
+      const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+      const existing = await getCalendarEventById(userId, eventId);
+      if (!existing) {
+        if (!isAdmin) return notFound('Evento no encontrado');
+        const { creatorId: bodyCreatorId } = body as { creatorId?: string };
+        if (!bodyCreatorId) return badRequest('creatorId requerido para admin');
+        await deleteCalendarEvent(bodyCreatorId, eventId);
+        return ok({ deleted: true });
+      }
+      await deleteCalendarEvent(userId, eventId);
+      return ok({ deleted: true });
     }
 
     return badRequest('Unknown route');

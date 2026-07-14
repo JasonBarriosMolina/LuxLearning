@@ -118,6 +118,15 @@ export const api = {
       delete: (taskId: string, userId: string) =>
         request<any>(`/evaluator/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
     },
+    calendar: {
+      list: () => request<any>('/evaluator/calendar/events'),
+      create: (body: { title: string; description?: string; type?: string; startDate: string; endDate: string; allDay?: boolean; visibility?: string; color?: string; location?: string; targetCourseId?: string }) =>
+        request<any>('/evaluator/calendar/events', { method: 'POST', body: JSON.stringify(body) }),
+      update: (eventId: string, body: Record<string, any>) =>
+        request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (eventId: string, creatorId?: string) =>
+        request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'DELETE', body: JSON.stringify({ creatorId }) }),
+    },
     signature: {
       get: () => request<any>('/evaluator/signature'),
       save: (signature: string) => request<any>('/evaluator/signature', { method: 'PUT', body: JSON.stringify({ signature }) }),
