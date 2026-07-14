@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -174,6 +174,14 @@ export default function LessonPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Forum
+  const [forumOpen, setForumOpen] = useState(false);
+  const [forumMessages, setForumMessages] = useState<{ messageId: string; senderId: string; senderName: string; content: string; ts: string }[]>([]);
+  const [forumInput, setForumInput] = useState('');
+  const [forumLoading, setForumLoading] = useState(false);
+  const [forumSending, setForumSending] = useState(false);
+  const forumEndRef = useRef<HTMLDivElement>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [transcriptError, setTranscriptError] = useState(false);
@@ -329,6 +337,35 @@ export default function LessonPage() {
       setChatHistory([...newHistory, { role: 'assistant', content: t.lessonPage.mentorError }]);
     } finally { setChatLoading(false); }
   };
+
+  // ── Forum ────────────────────────────────────────────────────────────────────
+
+  const loadForumMessages = useCallback(async () => {
+    setForumLoading(true);
+    try {
+      const res = await api.messages.forum(lessonId);
+      setForumMessages((res as any).messages ?? []);
+      setTimeout(() => forumEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch { /* silent */ }
+    finally { setForumLoading(false); }
+  }, [lessonId]);
+
+  const sendForumMessage = async () => {
+    const msg = forumInput.trim();
+    if (!msg || forumSending) return;
+    setForumInput('');
+    setForumSending(true);
+    try {
+      const chatId = `forum_${lessonId}`;
+      await api.messages.send(chatId, msg);
+      await loadForumMessages();
+    } catch { /* silent */ }
+    finally { setForumSending(false); }
+  };
+
+  useEffect(() => {
+    if (forumOpen) loadForumMessages();
+  }, [forumOpen, loadForumMessages]);
 
   // ── Mark complete ────────────────────────────────────────────────────────────
 
@@ -622,6 +659,68 @@ export default function LessonPage() {
         className="fixed bottom-6 right-4 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-cta-from to-cta-to text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
       >
         {chatOpen ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
+      </button>
+
+      {/* Forum panel (fixed overlay) */}
+      {forumOpen && (
+        <div className="fixed bottom-24 right-20 z-50 w-80 h-[70vh] flex flex-col bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl border border-border animate-fade-in overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-emerald-500 to-teal-500">
+            <div className="flex items-center gap-2">
+              <UsersRound className="w-4 h-4 text-white" />
+              <span className="text-white font-semibold text-sm">Foro de la lección</span>
+            </div>
+            <button onClick={() => setForumOpen(false)} className="text-white/80 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {forumLoading ? (
+              <div className="flex justify-center mt-8">
+                <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+              </div>
+            ) : forumMessages.length === 0 ? (
+              <div className="text-center text-sm text-gray-400 mt-8 px-4">
+                <UsersRound className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                <p>Sé el primero en participar en este foro</p>
+              </div>
+            ) : (
+              forumMessages.map((msg) => (
+                <div key={msg.messageId ?? msg.ts} className="flex flex-col gap-0.5">
+                  <span className="text-[10px] text-gray-400 font-medium px-1">{msg.senderName}</span>
+                  <div className="max-w-[85%] px-3 py-2 rounded-2xl text-sm leading-relaxed bg-surface dark:bg-[#16213E] text-charcoal border border-border rounded-tl-sm">
+                    {msg.content}
+                  </div>
+                </div>
+              ))
+            )}
+            <div ref={forumEndRef} />
+          </div>
+          <div className="p-3 border-t border-border flex gap-2">
+            <input
+              value={forumInput}
+              onChange={(e) => setForumInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendForumMessage(); } }}
+              placeholder="Escribe en el foro…"
+              className="flex-1 text-sm px-3 py-2 rounded-xl border border-border bg-surface dark:bg-[#0F0F1A] text-charcoal placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <button
+              onClick={sendForumMessage}
+              disabled={forumSending || !forumInput.trim()}
+              className="w-9 h-9 flex items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white disabled:opacity-40 transition-opacity shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating forum button */}
+      <button
+        onClick={() => setForumOpen((prev) => !prev)}
+        title="Foro"
+        className="fixed bottom-6 right-20 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+      >
+        {forumOpen ? <X className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
       </button>
 
       {/* Navigation + Complete */}

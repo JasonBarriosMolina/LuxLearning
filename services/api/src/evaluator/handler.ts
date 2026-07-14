@@ -13,12 +13,13 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById } from '../shared/db-dynamo';
+import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
-import { createId } from '@paralleldrive/cuid2';
+import { jsonrepair } from 'jsonrepair';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -806,25 +807,29 @@ export const handler = async (event: Event) => {
       const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
       if (!text) return badRequest('text is required');
 
-      const prompt = `Eres un evaluador experto en desarrollo personal y aprendizaje. Se te ha presentado la siguiente reflexión de un estudiante del módulo "${moduleTitle ?? 'del curso'}".
+      const prompt = `Eres un evaluador pedagógico experto en desarrollo personal y aprendizaje significativo. Has revisado la reflexión de un estudiante del módulo "${moduleTitle ?? 'del curso'}".
 
-REFLEXIÓN:
+REFLEXIÓN DEL ESTUDIANTE:
 """
-${text.slice(0, 3000)}
+${text.slice(0, 4000)}
 """
 
-Genera un feedback evaluativo completo con exactamente 3 párrafos (mínimo 150 palabras en total) que:
-- Sea constructivo, específico y se refiera directamente al contenido de la reflexión
-- Párrafo 1: reconoce las fortalezas y aspectos positivos observados
-- Párrafo 2: señala áreas de mejora con ejemplos concretos del texto
-- Párrafo 3: conclusión motivadora con próximos pasos sugeridos
-- Sea profesional, cálido y listo para enviar directamente al estudiante
-- Esté en español
+Genera un feedback evaluativo COMPLETO, listo para enviar directamente al estudiante sin edición adicional. El feedback debe:
 
-Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
-{
-  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3..."
-}`;
+ESTRUCTURA (4 párrafos, mínimo 300 palabras en total):
+1. **Reconocimiento**: Abre con el nombre implícito del contexto. Señala 2-3 fortalezas específicas que observas en el texto, citando frases o ideas concretas de la reflexión.
+2. **Análisis profundo**: Evalúa la profundidad del aprendizaje — ¿el estudiante conectó el contenido con su experiencia real? ¿demostró pensamiento crítico? ¿identificó implicaciones prácticas? Sé específico con el contenido de la reflexión.
+3. **Áreas de crecimiento**: Con tono constructivo (nunca crítico ni condescendiente), señala 1-2 aspectos donde el estudiante puede profundizar. Sugiere preguntas concretas que el estudiante debería reflexionar para mejorar.
+4. **Cierre motivador**: Concluye con un reconocimiento del esfuerzo y una orientación hacia los próximos pasos de aprendizaje. Conecta con el módulo o el curso en general.
+
+TONO Y ESTILO:
+- Profesional, cálido, personalizado — nunca genérico ni robótico
+- Usa segunda persona ("tu reflexión muestra...", "has demostrado...")
+- En español, sin tecnicismos innecesarios
+- Mínimo 300 palabras, máximo 500 palabras
+
+Responde ÚNICAMENTE con un objeto JSON (sin markdown, sin texto extra):
+{"feedback": "Párrafo 1...\\n\\nPárrafo 2...\\n\\nPárrafo 3...\\n\\nPárrafo 4..."}`;
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({
@@ -833,17 +838,19 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 2048,
+            max_tokens: 1500,
             messages: [{ role: 'user', content: prompt }],
           }),
         }));
 
         const raw = JSON.parse(new TextDecoder().decode(response.body));
         const content = raw.content?.[0]?.text ?? '';
-        const clean = content.replace(/```json|```/g, '').trim();
+        const clean = content.replace(/```json\s*|```/g, '').trim();
         const jsonMatch = clean.match(/\{[\s\S]*\}/);
         if (!jsonMatch) return serverError('AI response format error');
-        const parsed = JSON.parse(jsonMatch[0]);
+        let parsed: any;
+        try { parsed = JSON.parse(jsonMatch[0]); }
+        catch { try { parsed = JSON.parse(jsonrepair(jsonMatch[0])); } catch { return serverError('AI response format error'); } }
         return ok({ feedback: parsed.feedback ?? '' });
       } catch (aiErr) {
         console.error('[Evaluator] Bedrock AI feedback error:', aiErr);
@@ -1165,6 +1172,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 
     // POST /evaluator/translate — translate evaluator feedback text using Bedrock
     if (method === 'POST' && path === '/evaluator/translate') {
+      const body = JSON.parse(event.body ?? '{}');
       const { text, targetLang } = body as { text?: string; targetLang?: string };
       if (!text?.trim()) return badRequest('text is required');
       const validLangs: Record<string, string> = {
@@ -1198,6 +1206,86 @@ ${text.trim()}`;
       const translatedText = translateRaw.content?.[0]?.text?.trim() ?? '';
       if (!translatedText) return serverError('Translation returned empty result');
       return ok({ translatedText });
+    }
+
+    // ─── Calendar Events ───────────────────────────────────────────────────────
+
+    // GET /evaluator/calendar/events
+    if (method === 'GET' && path === '/evaluator/calendar/events') {
+      const events = await getAllVisibleCalendarEvents(userId, role);
+      return ok(events);
+    }
+
+    // POST /evaluator/calendar/events
+    if (method === 'POST' && path === '/evaluator/calendar/events') {
+      const { title, description, type, startDate, endDate, allDay, visibility, color, location, targetCourseId } = body as {
+        title?: string; description?: string;
+        type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
+        startDate?: string; endDate?: string; allDay?: boolean;
+        visibility?: 'private' | 'evaluators' | 'students' | 'community';
+        color?: string; location?: string; targetCourseId?: string;
+      };
+      if (!title || !startDate || !endDate) return badRequest('title, startDate y endDate son requeridos');
+      const eventId = createId();
+      const event = {
+        creatorId: userId,
+        eventId,
+        title: title.trim(),
+        description: description?.trim(),
+        type: type ?? 'event',
+        startDate,
+        endDate,
+        allDay: allDay ?? false,
+        visibility: visibility ?? 'private',
+        color,
+        location: location?.trim(),
+        targetCourseId,
+        creatorRole: role,
+        createdAt: new Date().toISOString(),
+      };
+      await createCalendarEvent(event);
+      return ok(event);
+    }
+
+    // PUT /evaluator/calendar/events/:eventId
+    const calEditMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
+    if (method === 'PUT' && calEditMatch) {
+      const eventId = calEditMatch[1]!;
+      const existing = await getCalendarEventById(userId, eventId);
+      // Admins can update any event; evaluators only their own
+      const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+      if (!existing) {
+        // Try to find by scanning if admin (event may belong to another creator)
+        if (!isAdmin) return notFound('Evento no encontrado');
+        // For admin, get creatorId from body
+        const { creatorId: bodyCreatorId } = body as { creatorId?: string };
+        if (!bodyCreatorId) return badRequest('creatorId requerido para admin');
+        const adminExisting = await getCalendarEventById(bodyCreatorId, eventId);
+        if (!adminExisting) return notFound('Evento no encontrado');
+        const { creatorId: _c, eventId: _e, createdAt: _t, ...rest } = body as any;
+        await updateCalendarEvent(bodyCreatorId, eventId, rest);
+        return ok({ updated: true });
+      }
+      const { creatorId: _c, eventId: _e, createdAt: _t, ...updates } = body as any;
+      await updateCalendarEvent(userId, eventId, updates);
+      return ok({ updated: true });
+    }
+
+    // DELETE /evaluator/calendar/events/:eventId
+    const calDeleteMatch = path.match(/^\/evaluator\/calendar\/events\/([^/]+)$/);
+    if (method === 'DELETE' && calDeleteMatch) {
+      const eventId = calDeleteMatch[1]!;
+      const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+      const existing = await getCalendarEventById(userId, eventId);
+      if (!existing) {
+        if (!isAdmin) return notFound('Evento no encontrado');
+        const { creatorId: bodyCreatorId } = body as { creatorId?: string };
+        if (!bodyCreatorId) return badRequest('creatorId requerido para admin');
+        await deleteCalendarEvent(bodyCreatorId, eventId);
+        return ok({ deleted: true });
+      }
+      await deleteCalendarEvent(userId, eventId);
+      return ok({ deleted: true });
     }
 
     return badRequest('Unknown route');

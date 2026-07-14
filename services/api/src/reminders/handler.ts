@@ -4,13 +4,15 @@
  * 2. Sends "course starts tomorrow" emails to enrolled students
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 import { sendTemplatedEmail } from '../shared/email';
 import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
@@ -138,6 +140,144 @@ function taskReminderEmailHtml(name: string, taskTitle: string, daysLeft: number
   </div>
 </body>
 </html>`;
+}
+
+function weeklyEmailHtml(name: string, summary: string, pending: number, courseNames: string[]): string {
+  const courses = courseNames.slice(0, 5).map((c) => `<li style="color:#555;margin:4px 0;">${c}</li>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Resumen semanal — ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">¡Hola ${name}! 👋</h2>
+      ${pending > 0 ? `<div style="background:#FFF7ED;border-left:4px solid #F59E0B;padding:16px 20px;border-radius:4px;margin:0 0 24px;">
+        <p style="margin:0;color:#92400E;font-weight:600;">📋 ${pending} reflexión${pending !== 1 ? 'es' : ''} pendiente${pending !== 1 ? 's' : ''} de evaluación</p>
+      </div>` : ''}
+      <div style="background:#F8F8FF;border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+        <p style="color:#555;line-height:1.7;margin:0;">${summary.replace(/\n/g, '<br>')}</p>
+      </div>
+      ${courseNames.length > 0 ? `<p style="color:#888;font-size:13px;margin-bottom:8px;">Cursos a cargo:</p><ul style="padding-left:20px;margin:0 0 24px;">${courses}</ul>` : ''}
+      <a href="${FRONTEND_URL}/evaluator/reflections" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;">
+        Ver reflexiones pendientes →
+      </a>
+      <p style="color:#aaa;font-size:12px;margin-top:32px;">Recibes este email como evaluador en Lux Learning.</p>
+    </div>
+  </div>
+</body></html>`;
+}
+
+async function sendWeeklyEvaluatorSummaries(
+  allReflections: any[], allEnrollments: any[], allLastSeen: any[]
+): Promise<number> {
+  const prisma = await getPrismaClient();
+  const now = new Date();
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+  const lastSeenMap = new Map(allLastSeen.map((ls) => [ls.userId, new Date(ls.lastSeen)]));
+
+  // Collect evaluators + admins from Cognito
+  const listGroup = async (groupName: string) => {
+    const users: any[] = [];
+    let nextToken: string | undefined;
+    do {
+      const res = await cognito.send(new ListUsersInGroupCommand({
+        UserPoolId: USER_POOL_ID, GroupName: groupName, Limit: 60,
+        ...(nextToken ? { NextToken: nextToken } : {}),
+      }));
+      users.push(...(res.Users ?? []));
+      nextToken = res.NextToken;
+    } while (nextToken);
+    return users;
+  };
+  const [evUsers, adminUsers] = await Promise.allSettled([listGroup('EVALUATOR'), listGroup('ADMIN')]);
+  const evaluators = [
+    ...((evUsers.status === 'fulfilled' ? evUsers.value : []) ?? []),
+    ...((adminUsers.status === 'fulfilled' ? adminUsers.value : []) ?? []),
+  ];
+
+  let sent = 0;
+  for (const ev of evaluators) {
+    const attr = (n: string) => ev.Attributes?.find((a: any) => a.Name === n)?.Value ?? '';
+    const email = attr('email');
+    const name = attr('name') || email.split('@')[0] || '';
+    const evaluatorId = attr('sub');
+    if (!email || !evaluatorId) continue;
+
+    try {
+      const courses = await prisma.course.findMany({
+        where: { evaluatorId },
+        select: { id: true, title: true, modules: { select: { id: true } } },
+      });
+      if (courses.length === 0) continue;
+
+      const courseIds = courses.map((c: any) => c.id);
+      const moduleIds = courses.flatMap((c: any) => c.modules.map((m: any) => m.id));
+      const courseNames = courses.map((c: any) => c.title);
+
+      const studentIds = [...new Set(allEnrollments.filter((e) => courseIds.includes(e.courseId)).map((e) => e.userId))];
+      const myReflections = allReflections.filter((r) => moduleIds.includes(r.moduleId));
+      const pending = myReflections.filter((r) => r.status === 'PENDING_EVAL');
+      const weekNew = myReflections.filter((r) => new Date(r.submittedAt) >= oneWeekAgo);
+      const weekApproved = weekNew.filter((r) => r.status === 'APPROVED');
+      const weekRejected = weekNew.filter((r) => r.status === 'REJECTED');
+      const inactive = studentIds.filter((uid) => {
+        const ls = lastSeenMap.get(uid);
+        return ls !== undefined && ls < fiveDaysAgo;
+      });
+
+      const statsText = `Semana del ${oneWeekAgo.toLocaleDateString('es-ES')} al ${now.toLocaleDateString('es-ES')}
+Cursos: ${courseNames.join(', ')}
+Total estudiantes: ${studentIds.length}
+Reflexiones nuevas esta semana: ${weekNew.length}
+Reflexiones pendientes de evaluación: ${pending.length}
+Aprobadas esta semana: ${weekApproved.length}
+Rechazadas esta semana: ${weekRejected.length}
+Estudiantes inactivos (>5 días): ${inactive.length}`;
+
+      const prompt = `Eres el asistente de evaluación de Lux Learning. Genera un resumen semanal ejecutivo para el evaluador "${name}".
+
+DATOS:
+${statsText}
+
+Redacta un párrafo de máximo 120 palabras en español. Tono profesional y motivador. Destaca lo más importante: carga de trabajo pendiente, tendencias de la semana y si hay estudiantes en riesgo. Sé concreto con los números.`;
+
+      let summary = statsText;
+      try {
+        const bedrockRes = await bedrock.send(new InvokeModelCommand({
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 300,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        }));
+        const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
+        const text = parsed.content?.[0]?.text?.trim();
+        if (text) summary = text;
+      } catch (bedrockErr) {
+        console.warn('[Reminders] Bedrock weekly summary failed — using raw stats:', bedrockErr);
+      }
+
+      await ses.send(new SendEmailCommand({
+        Source: FROM_EMAIL,
+        Destination: { ToAddresses: [email] },
+        Message: {
+          Subject: { Data: `📊 Resumen semanal Lux Learning — ${pending.length} reflexión${pending.length !== 1 ? 'es' : ''} pendiente${pending.length !== 1 ? 's' : ''}`, Charset: 'UTF-8' },
+          Body: { Html: { Data: weeklyEmailHtml(name, summary, pending.length, courseNames), Charset: 'UTF-8' } },
+        },
+      }));
+      sent++;
+      console.log(`[Reminders] Weekly summary sent to ${email} (${pending.length} pending)`);
+    } catch (err) {
+      console.warn(`[Reminders] Weekly summary failed for ${email}:`, err);
+    }
+  }
+  return sent;
 }
 
 export const handler = async () => {
@@ -359,7 +499,18 @@ export const handler = async () => {
       console.warn('[Reminders] Task reminder check failed:', e);
     }
 
-    return { sent, skipped, startSent, taskReminderSent };
+    // ── Weekly AI summary for evaluators (Mondays only) ─────────────────────
+    let weeklySent = 0;
+    if (new Date().getDay() === 1) {
+      try {
+        weeklySent = await sendWeeklyEvaluatorSummaries(allReflections, allEnrollments, allLastSeen);
+        console.log(`[Reminders] Weekly summaries sent: ${weeklySent}`);
+      } catch (e) {
+        console.warn('[Reminders] Weekly summary block failed:', e);
+      }
+    }
+
+    return { sent, skipped, startSent, taskReminderSent, weeklySent };
   } catch (err) {
     console.error('[Reminders] Fatal error:', err);
     throw err;

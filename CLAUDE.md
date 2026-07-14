@@ -102,6 +102,7 @@ DYNAMO_TABLE_RECOMMENDATIONS  CurriculumRecommendations
 DYNAMO_TABLE_ACTIVITY     LuxActivity
 DYNAMO_TABLE_CHATS        LuxChats
 DYNAMO_TABLE_MESSAGES     LuxMessages
+DYNAMO_TABLE_CALENDAR     LuxCalendarEvents
 ```
 
 ### Prisma lambdas (admin, reflection, evaluator, courses, quiz, certs, analysis, reminders, reports)
@@ -188,6 +189,7 @@ Allowed origins are in `shared/response.ts` `ALLOWED_ORIGINS[]`. Add new Vercel 
 | ScheduledTasks | userId | taskId | per-student tasks |
 | LuxCertTemplates | `TEMPLATE` | `GLOBAL` | Certificate template (colors, logo, watermark) — env: `DYNAMO_TABLE_CERT_TEMPLATES` |
 | LessonProgress (`_AIJOB`) | `_AIJOB` | jobId | AI generation jobs — reuses LessonProgress table with special userId. Status: `processing` → `done`\|`error` |
+| LuxCalendarEvents | creatorId | eventId | Evaluator/Admin calendar events — env: `DYNAMO_TABLE_CALENDAR`. visibility: private\|evaluators\|students\|community |
 
 ---
 

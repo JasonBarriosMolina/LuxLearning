@@ -176,7 +176,33 @@ export const handler = async (event: Event) => {
         return ok({ chatId });
       }
 
+      if (type === 'FORUM') {
+        const lessonId = body.lessonId as string | undefined;
+        if (!lessonId) return badRequest('lessonId es requerido para foro');
+        const chatId = `forum_${lessonId}`;
+        const chatName = (body.name as string | undefined) ?? 'Foro de la lección';
+        await upsertChat(chatId, { type: 'FORUM', name: chatName, participants: [] });
+        await upsertMembership(userId, chatId, { chatName, chatType: 'FORUM' });
+        return ok({ chatId });
+      }
+
       return badRequest(`Tipo de chat no soportado: ${type}`);
+    }
+
+    // ── GET /messages/forum/:lessonId — get or init lesson forum ───────────
+    const forumMatch = path.match(/^\/messages\/forum\/([^/]+)$/);
+    if (forumMatch && method === 'GET') {
+      const lessonId = forumMatch[1]!;
+      const chatId = `forum_${lessonId}`;
+      let meta = await getChatMeta(chatId);
+      if (!meta) {
+        await upsertChat(chatId, { type: 'FORUM', name: 'Foro de la lección', participants: [] });
+        meta = { type: 'FORUM', name: 'Foro de la lección', participants: [] };
+      }
+      await upsertMembership(userId, chatId, { chatName: meta.name ?? 'Foro de la lección', chatType: 'FORUM' });
+      const messages = await getMessages(chatId, 50);
+      await markChatRead(userId, chatId);
+      return ok({ chatId, messages });
     }
 
     // ── GET /messages/{chatId} — get messages ───────────────────────────────
@@ -186,13 +212,13 @@ export const handler = async (event: Event) => {
 
       // Ensure user is a participant (auto-join group chats for legacy/unlisted members)
       let membership = await getUserMembership(userId, chatId);
-      if (!membership && chatId.startsWith('group_')) {
+      if (!membership && (chatId.startsWith('group_') || chatId.startsWith('forum_'))) {
         const meta = await getChatMeta(chatId);
         await upsertMembership(userId, chatId, {
-          chatName: meta?.name ?? 'Chat del curso',
-          chatType: 'GROUP',
+          chatName: meta?.name ?? (chatId.startsWith('forum_') ? 'Foro de la lección' : 'Chat del curso'),
+          chatType: meta?.type ?? (chatId.startsWith('forum_') ? 'FORUM' : 'GROUP'),
         });
-        membership = { chatId, chatName: meta?.name ?? 'Chat del curso' };
+        membership = { chatId, chatName: meta?.name ?? (chatId.startsWith('forum_') ? 'Foro de la lección' : 'Chat del curso') };
       }
       if (!membership) return forbidden('No eres participante de este chat');
 
@@ -209,13 +235,13 @@ export const handler = async (event: Event) => {
       if (!text?.trim()) return badRequest('El mensaje no puede estar vacío');
 
       let membership = await getUserMembership(userId, chatId);
-      if (!membership && chatId.startsWith('group_')) {
+      if (!membership && (chatId.startsWith('group_') || chatId.startsWith('forum_'))) {
         const meta = await getChatMeta(chatId);
         await upsertMembership(userId, chatId, {
-          chatName: meta?.name ?? 'Chat del curso',
-          chatType: 'GROUP',
+          chatName: meta?.name ?? (chatId.startsWith('forum_') ? 'Foro de la lección' : 'Chat del curso'),
+          chatType: meta?.type ?? (chatId.startsWith('forum_') ? 'FORUM' : 'GROUP'),
         });
-        membership = { chatId, chatName: meta?.name ?? 'Chat del curso' };
+        membership = { chatId, chatName: meta?.name ?? (chatId.startsWith('forum_') ? 'Foro de la lección' : 'Chat del curso') };
       }
       if (!membership) return forbidden('No eres participante de este chat');
 

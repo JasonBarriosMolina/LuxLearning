@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -22,7 +23,6 @@ import {
   Mail,
   FolderOpen,
 } from 'lucide-react';
-import { PrismaLogo } from './PrismaLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useInstallPrompt } from '@/lib/hooks/useInstallPrompt';
 import { cn } from '@/lib/utils';
@@ -57,6 +57,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/progress', labelKey: 'myProgress', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/tasks', labelKey: 'myTasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['STUDENT'] },
+  { href: '/evaluator/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
@@ -114,12 +115,31 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center justify-center px-6 py-5 border-b border-white/10 relative">
-        <PrismaLogo size={72} showText={false} />
+      <div className="flex items-center justify-center px-6 py-5 border-b border-gray-200 dark:border-white/10 relative">
+        {/* Light mode: full color logo */}
+        <Image
+          src="/lux-logo-fullcolor.svg"
+          alt="Lux Learning"
+          width={160}
+          height={47}
+          style={{ objectFit: 'contain' }}
+          priority
+          className="block dark:hidden"
+        />
+        {/* Dark mode: white logo */}
+        <Image
+          src="/lux-logo-white.svg"
+          alt="Lux Learning"
+          width={160}
+          height={47}
+          style={{ objectFit: 'contain' }}
+          priority
+          className="hidden dark:block"
+        />
         {onMobileClose && (
           <button
             onClick={onMobileClose}
-            className="lg:hidden absolute right-4 top-1/2 -translate-y-1/2 p-1 text-white/60 hover:text-white"
+            className="lg:hidden absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-500 dark:text-white/60 hover:text-gray-900 dark:hover:text-white"
             aria-label="Cerrar menú"
           >
             <X className="w-5 h-5" />
@@ -128,14 +148,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       {/* User info */}
-      <div className="px-6 py-4 border-b border-white/10">
+      <div className="px-6 py-4 border-b border-gray-200 dark:border-white/10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-cta-gradient flex items-center justify-center text-white font-heading font-bold text-sm">
             {(name ?? email)?.[0]?.toUpperCase() ?? 'U'}
           </div>
           <div className="min-w-0">
-            <p className="text-white text-sm font-medium truncate">{name ?? email ?? 'Usuario'}</p>
-            <p className="text-white/50 text-xs">
+            <p className="text-gray-900 dark:text-white text-sm font-medium truncate">{name ?? email ?? 'Usuario'}</p>
+            <p className="text-gray-500 dark:text-white/50 text-xs">
               {role === 'SUPER_ADMIN' || role === 'ADMIN' ? t.roles.superAdmin : role === 'EVALUATOR' ? t.roles.evaluator : t.roles.student}
             </p>
           </div>
@@ -155,8 +175,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               className={cn(
                 'flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-all duration-200',
                 isActive
-                  ? 'bg-white/15 text-white border-l-[3px] border-cta-from pl-[13px]'
-                  : 'text-white/60 hover:bg-white/10 hover:text-white'
+                  ? 'bg-blue-50 dark:bg-white/15 text-[#17527E] dark:text-white border-l-[3px] border-cta-from pl-[13px]'
+                  : 'text-gray-500 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
               )}
             >
               {item.icon}
@@ -168,11 +188,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </nav>
 
       {/* Bottom actions */}
-      <div className="px-3 py-4 border-t border-white/10 space-y-1">
+      <div className="px-3 py-4 border-t border-gray-200 dark:border-white/10 space-y-1">
         {canInstall && (
           <button
             onClick={install}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-500 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-all duration-200"
           >
             <Download className="w-5 h-5" />
             {t.nav.installApp}
@@ -180,7 +200,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
         )}
         <button
           onClick={signOut}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-500 dark:text-white/60 hover:bg-gray-200 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-all duration-200"
         >
           <LogOut className="w-5 h-5" />
           {t.nav.signOut}
@@ -192,7 +212,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-[#2C2C2C] dark:bg-[#0D0D1F] flex-col h-screen sticky top-0 shrink-0">
+      <aside className="hidden lg:flex w-64 bg-[#EFEFEF] dark:bg-[#1A1A2E] flex-col h-screen sticky top-0 shrink-0">
         {sidebarContent}
       </aside>
 
@@ -203,7 +223,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={onMobileClose}
           />
-          <aside className="relative z-10 w-72 bg-[#2C2C2C] dark:bg-[#0D0D1F] flex flex-col h-full animate-slide-up">
+          <aside className="relative z-10 w-72 bg-[#EFEFEF] dark:bg-[#1A1A2E] flex flex-col h-full animate-slide-up">
             {sidebarContent}
           </aside>
         </div>

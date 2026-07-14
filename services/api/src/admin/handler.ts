@@ -1149,6 +1149,99 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
       return ok(users);
     }
 
+    // ── POST /admin/users/bulk-import — import CSV of students ──────────────
+    if (path === '/admin/users/bulk-import' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const { csv, courseIds = [], role = 'STUDENT' } = body as { csv: string; courseIds?: string[]; role?: string };
+      if (!csv || typeof csv !== 'string') return badRequest('csv es requerido');
+      if (!['STUDENT', 'EVALUATOR'].includes(role)) return badRequest('rol inválido');
+
+      // Parse CSV: skip header if starts with "email", allow email or email,name
+      const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const rows = lines[0]?.toLowerCase().startsWith('email') ? lines.slice(1) : lines;
+      if (rows.length === 0) return badRequest('CSV sin filas de datos');
+      if (rows.length > 100) return badRequest('Máximo 100 usuarios por importación');
+
+      // Fetch course names once for welcome email
+      let importCourseNames: string[] = [];
+      if (Array.isArray(courseIds) && courseIds.length > 0) {
+        try {
+          const cs = await prisma.course.findMany({ where: { id: { in: courseIds } }, select: { title: true } });
+          importCourseNames = cs.map((c: any) => c.title);
+        } catch { /* non-fatal */ }
+      }
+
+      const results: { email: string; status: 'created' | 'skipped' | 'error'; reason?: string }[] = [];
+
+      for (const row of rows) {
+        const [rawEmail, rawName] = row.split(',').map((s) => s.trim().replace(/^["']|["']$/g, ''));
+        const userEmail = rawEmail?.toLowerCase() ?? '';
+        const userName = rawName ?? '';
+        if (!userEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+          results.push({ email: userEmail || row, status: 'error', reason: 'Email inválido' });
+          continue;
+        }
+
+        // Generate temporary password (same logic as single invite)
+        const chars = 'abcdefghijklmnopqrstuvwxyz';
+        const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const digits = '0123456789';
+        const cryptoItem = (s: string) => s[randomInt(s.length)]!;
+        const pwChars = [cryptoItem(uppers), cryptoItem(uppers), cryptoItem(chars), cryptoItem(chars), cryptoItem(chars), cryptoItem(chars), cryptoItem(digits), cryptoItem(digits)];
+        for (let i = pwChars.length - 1; i > 0; i--) { const j = randomInt(i + 1); [pwChars[i], pwChars[j]] = [pwChars[j]!, pwChars[i]!]; }
+        const temporaryPassword = pwChars.join('');
+
+        try {
+          const createRes = await cognito.send(new AdminCreateUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: userEmail,
+            TemporaryPassword: temporaryPassword,
+            MessageAction: 'SUPPRESS',
+            UserAttributes: [
+              { Name: 'email', Value: userEmail },
+              { Name: 'email_verified', Value: 'true' },
+              ...(userName ? [{ Name: 'name', Value: userName }] : []),
+            ],
+          }));
+
+          const username = createRes.User?.Username ?? userEmail;
+
+          await cognito.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID, Username: username, GroupName: role,
+          })).catch((e: any) => console.warn('[BulkImport] AddToGroup failed:', e));
+
+          if (courseIds.length > 0) {
+            await Promise.allSettled(courseIds.map((cid) => createEnrollment(username, cid)));
+          }
+
+          // Welcome email (non-fatal)
+          ses.send(new SendEmailCommand({
+            Source: FROM_EMAIL,
+            Destination: { ToAddresses: [userEmail] },
+            Message: {
+              Subject: { Data: '¡Bienvenido a Lux Learning! — Tu cuenta está lista', Charset: 'UTF-8' },
+              Body: { Html: { Data: invitationEmailHtml(userName, userEmail, temporaryPassword, importCourseNames), Charset: 'UTF-8' } },
+            },
+          })).catch((e: any) => console.warn('[BulkImport] Email failed for', userEmail, e));
+
+          results.push({ email: userEmail, status: 'created' });
+        } catch (err: any) {
+          const errName: string = err?.name ?? err?.__type ?? '';
+          if (errName === 'UsernameExistsException') {
+            results.push({ email: userEmail, status: 'skipped', reason: 'Ya existe' });
+          } else {
+            results.push({ email: userEmail, status: 'error', reason: err?.message ?? 'Error desconocido' });
+          }
+        }
+      }
+
+      const created = results.filter((r) => r.status === 'created').length;
+      const skipped = results.filter((r) => r.status === 'skipped').length;
+      const errors = results.filter((r) => r.status === 'error');
+      console.log(`[BulkImport] created=${created} skipped=${skipped} errors=${errors.length}`);
+      return ok({ created, skipped, errors, total: rows.length });
+    }
+
     // ── POST /admin/users — invite/create user ──────────────────────────────
     if (path === '/admin/users' && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');

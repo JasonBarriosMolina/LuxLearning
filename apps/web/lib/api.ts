@@ -118,6 +118,15 @@ export const api = {
       delete: (taskId: string, userId: string) =>
         request<any>(`/evaluator/tasks/${taskId}`, { method: 'DELETE', body: JSON.stringify({ userId }) }),
     },
+    calendar: {
+      list: () => request<any>('/evaluator/calendar/events'),
+      create: (body: { title: string; description?: string; type?: string; startDate: string; endDate: string; allDay?: boolean; visibility?: string; color?: string; location?: string; targetCourseId?: string }) =>
+        request<any>('/evaluator/calendar/events', { method: 'POST', body: JSON.stringify(body) }),
+      update: (eventId: string, body: Record<string, any>) =>
+        request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (eventId: string, creatorId?: string) =>
+        request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'DELETE', body: JSON.stringify({ creatorId }) }),
+    },
     signature: {
       get: () => request<any>('/evaluator/signature'),
       save: (signature: string) => request<any>('/evaluator/signature', { method: 'PUT', body: JSON.stringify({ signature }) }),
@@ -297,6 +306,8 @@ export const api = {
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId }) }),
       removeEnrollment: (username: string, courseId: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
+      bulkImport: (body: { csv: string; courseIds?: string[]; role?: string }) =>
+        request<any>('/admin/users/bulk-import', { method: 'POST', body: JSON.stringify(body) }),
     },
     emailTemplates: {
       list: () => request<any>(`/admin/email-templates?lang=${getLang()}`),
@@ -327,5 +338,10 @@ export const api = {
       request<any>(`/messages/${chatId}/read`, { method: 'PUT' }),
     react: (chatId: string, ts: string, emoji: string) =>
       request<any>(`/messages/${chatId}/react`, { method: 'POST', body: JSON.stringify({ ts, emoji }) }),
+    forum: (lessonId: string) => request<any>(`/messages/forum/${lessonId}`),
+  },
+  studyPlan: {
+    get: () => request<any>('/my-study-plan'),
+    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 };

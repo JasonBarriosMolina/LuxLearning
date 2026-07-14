@@ -318,13 +318,17 @@ export default function ReflectionDetailPage() {
 
   const generateAiFeedback = async () => {
     if (!reflection?.text) return;
+    if (feedback.trim().length > 0) {
+      const ok = window.confirm('¿Reemplazar el feedback actual con el generado por IA? Esta acción no se puede deshacer.');
+      if (!ok) return;
+    }
     setAiLoading(true);
     setAiError('');
     try {
       const res = await api.evaluator.aiFeedback(reflection.text, reflection.moduleTitle);
       const generated = (res as any).data?.feedback ?? '';
       if (generated) {
-        setFeedback((prev) => (prev ? `${prev}\n\n${generated}` : generated));
+        setFeedback(generated);
       } else {
         setAiError('La IA no generó feedback. Intenta de nuevo.');
       }

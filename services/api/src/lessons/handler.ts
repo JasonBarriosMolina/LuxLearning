@@ -11,12 +11,12 @@ import {
   markOnboardingDone, isOnboardingDone,
   getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
-  setInactivityReminder,
+  setInactivityReminder, getAllEnrollments,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { getPrismaClient } from '../shared/db-neon';
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
@@ -169,8 +169,8 @@ export const handler = async (event: Event) => {
 
       const isEn = lang === 'en';
       const systemPrompt = isEn
-        ? `You are the Lux Learning Mentor, an expert pedagogical assistant in ${moduleTitle ?? 'the lesson topic'}. The student is viewing the lesson "${lessonTitle ?? ''}".${lessonContent ? `\n\nLesson content:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCTIONS:\n- Always respond in English\n- Use clean markdown: ## for sections, - for lists, **bold** for key concepts\n- Maximum 2-3 short paragraphs per response\n- Be concise, pedagogical and encouraging\n- Do NOT use triple asterisks or underlines`
-        : `Eres el Mentor de Lux Learning, un asistente pedagógico experto en ${moduleTitle ?? 'el tema de la lección'}. El estudiante está viendo la lección "${lessonTitle ?? ''}".${lessonContent ? `\n\nContenido de la lección:\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nINSTRUCCIONES:\n- Responde SIEMPRE en español\n- Usa markdown limpio: ## para secciones, - para listas, **negrita** para conceptos clave\n- Máximo 2-3 párrafos cortos por respuesta\n- Sé conciso, pedagógico y motivador\n- NO uses asteriscos triples ni subrayados`;
+        ? `You are the Lux Learning Mentor, a Socratic pedagogical guide for the lesson "${lessonTitle ?? ''}" in the module "${moduleTitle ?? 'the course'}".${lessonContent ? `\n\nLesson content (your knowledge base):\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nSOCRATIC METHOD — RULES:\n- For conceptual or reasoning questions (how, why, what does this mean, how would you apply…): ask 1-2 guiding questions that lead the student to discover the answer themselves. Do NOT give the answer directly on the first turn.\n- For purely factual questions (a date, a name, a formula, a definition with a single correct answer): answer directly and clearly — Socratic questioning is not appropriate here.\n- If the student is stuck after 2+ attempts on a reasoning question, or explicitly says "just tell me" / "I give up", then explain directly and clearly.\n- Acknowledge what the student already understands correctly before asking the next question.\n- Keep responses short: 1 guiding question + 1 encouraging sentence for reasoning; direct answer + brief explanation for factual. Never lecture.\n- Use clean markdown: **bold** for key concepts, - for lists. No triple asterisks or underlines.\n- Always respond in English.`
+        : `Eres el Mentor de Lux Learning, un guía socrático para la lección "${lessonTitle ?? ''}" del módulo "${moduleTitle ?? 'el curso'}".${lessonContent ? `\n\nContenido de la lección (tu base de conocimiento):\n${String(lessonContent).slice(0, 3000)}` : ''}\n\nMÉTODO SOCRÁTICO — REGLAS:\n- Para preguntas conceptuales o de razonamiento (cómo, por qué, qué significa, cómo aplicarías…): haz 1-2 preguntas guía que lleven al estudiante a descubrir la respuesta por sí mismo. NO des la respuesta directa en el primer turno.\n- Para preguntas puramente factuales (una fecha, un nombre, una fórmula, una definición con una única respuesta correcta): responde directamente y con claridad — el método socrático no aplica aquí.\n- Si el estudiante lleva 2+ intentos en una pregunta de razonamiento sin llegar a la respuesta, o dice explícitamente "dime la respuesta" / "me rindo", entonces explica de forma directa y clara.\n- Reconoce primero lo que el estudiante ya entiende correctamente antes de hacer la siguiente pregunta.\n- Respuestas cortas: 1 pregunta guía + 1 frase de aliento para razonamiento; respuesta directa + breve explicación para lo factual. No des clases magistrales.\n- Usa markdown limpio: **negrita** para conceptos clave, - para listas. NO uses asteriscos triples ni subrayados.\n- Responde SIEMPRE en español.`;
 
       const messages = [
         ...((Array.isArray(history) ? history : []) as { role: string; content: string }[]).map((h) => ({
@@ -196,6 +196,96 @@ export const handler = async (event: Event) => {
       const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
       const reply = parsed.content?.[0]?.text ?? '';
       return ok({ reply });
+    }
+
+    // ── GET /my-study-plan ──────────────────────────────────────────────────
+    if (method === 'GET' && path === '/my-study-plan') {
+      const cacheItem = await ddb.send(new GetCommand({
+        TableName: TABLES.PROGRESS,
+        Key: { userId: 'STUDYPLAN', lessonId: userId },
+      })).then((r) => r.Item).catch(() => null);
+
+      if (cacheItem?.plan) {
+        const age = Date.now() - new Date(cacheItem.generatedAt as string).getTime();
+        if (age < 7 * 24 * 60 * 60 * 1000) {
+          return ok({ plan: cacheItem.plan, generatedAt: cacheItem.generatedAt, cached: true });
+        }
+      }
+
+      const prisma = await getPrismaClient();
+      const [allEnrollments, quizAttempts] = await Promise.all([
+        getAllEnrollments(),
+        getAllQuizAttemptsForUser(userId),
+      ]);
+      const myEnrollments = allEnrollments.filter((e) => e.userId === userId);
+      const courseIds = myEnrollments.map((e) => e.courseId);
+      if (courseIds.length === 0) return ok({ plan: null });
+
+      const courses = await prisma.course.findMany({
+        where: { id: { in: courseIds } },
+        include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true } } } } },
+      });
+
+      const progressResults = await Promise.all(courseIds.map((cid) => getLessonProgress(userId, cid)));
+      const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
+      const passedModuleIds = new Set(quizAttempts.filter((a) => a.passed).map((a) => a.moduleId));
+
+      const lines: string[] = [];
+      for (const course of courses) {
+        lines.push(`Curso: ${course.title}`);
+        for (const mod of (course as any).modules) {
+          const done = mod.lessons.filter((l: any) => completedLessonIds.has(l.id)).length;
+          const total = mod.lessons.length;
+          const quizPassed = passedModuleIds.has(mod.id);
+          const status = done === 0 ? 'no iniciado'
+            : done < total ? `${done}/${total} lecciones completadas`
+            : !quizPassed ? 'lecciones completas — quiz pendiente'
+            : 'módulo completado ✓';
+          lines.push(`  - Módulo ${mod.order}: ${mod.title} — ${status}`);
+        }
+      }
+
+      const prompt = `Eres un coach educativo de Lux Learning. Crea un plan de estudio semanal personalizado para este estudiante.
+
+PROGRESO ACTUAL:
+${lines.join('\n')}
+
+Genera un plan concreto de 5 días (Lunes a Viernes). Para cada día indica:
+- Qué módulo/lección trabajar (sé específico con los nombres)
+- Objetivo del día en 1 frase
+- Tiempo estimado (30-60 min)
+
+Tono motivador y cercano. Máximo 350 palabras. Solo en español.`;
+
+      const bedrockRes = await bedrock.send(new InvokeModelCommand({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      }));
+      const bedrockParsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
+      const plan = bedrockParsed.content?.[0]?.text?.trim() ?? '';
+
+      const generatedAt = new Date().toISOString();
+      await ddb.send(new PutCommand({
+        TableName: TABLES.PROGRESS,
+        Item: { userId: 'STUDYPLAN', lessonId: userId, plan, generatedAt },
+      })).catch(() => {});
+
+      return ok({ plan, generatedAt, cached: false });
+    }
+
+    // ── POST /my-study-plan/refresh — force regenerate ──────────────────────
+    if (method === 'POST' && path === '/my-study-plan/refresh') {
+      await ddb.send(new PutCommand({
+        TableName: TABLES.PROGRESS,
+        Item: { userId: 'STUDYPLAN', lessonId: userId, plan: null, generatedAt: '1970-01-01T00:00:00.000Z' },
+      })).catch(() => {});
+      return ok({ cleared: true });
     }
 
     // ── POST /student/heartbeat ───────────────────────────────────────────────

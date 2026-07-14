@@ -1,8 +1,8 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X, BookMarked } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Users, ChevronDown, ChevronRight, CheckCircle, Clock, XCircle, Lock, BookOpen, Search, Wifi, Activity, WifiOff, UserCheck, X, BookMarked, AlertTriangle, MessageSquare } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -25,6 +25,15 @@ type CourseStat = {
 
 type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive'; taskCounts?: { pending: number; overdue: number; completed: number } | null };
 
+function formatReminderAge(sentAt: Date): string {
+  const mins = Math.round((Date.now() - sentAt.getTime()) / 60000);
+  if (mins < 1) return 'hace un momento';
+  if (mins < 60) return `hace ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `hace ${hrs}h`;
+  return `hace ${Math.floor(hrs / 24)}d`;
+}
+
 function getCurrentModule(modules: ModuleStat[]): ModuleStat | null {
   const sorted = [...modules].sort((a, b) => a.order - b.order);
   for (const mod of sorted) {
@@ -36,6 +45,29 @@ function getCurrentModule(modules: ModuleStat[]): ModuleStat | null {
 }
 
 type SP = Translations['studentsPage'];
+
+function riskLevel(presenceStatus?: string, overallPct?: number): 'critical' | 'high' | 'medium' | 'low' {
+  const inactive = presenceStatus === 'inactive';
+  const pct = overallPct ?? 0;
+  if (inactive && pct < 20) return 'critical';
+  if (inactive || pct < 25) return 'high';
+  if (pct < 50) return 'medium';
+  return 'low';
+}
+
+function RiskBadge({ level }: { level: 'critical' | 'high' | 'medium' | 'low' }) {
+  if (level === 'low') return null;
+  const cfg = {
+    critical: { label: 'Riesgo crítico', cls: 'bg-red-100 text-red-700 border-red-200' },
+    high:     { label: 'En riesgo',      cls: 'bg-orange-100 text-orange-700 border-orange-200' },
+    medium:   { label: 'Atención',       cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  }[level];
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${cfg.cls}`}>
+      <AlertTriangle className="w-3 h-3" />{cfg.label}
+    </span>
+  );
+}
 
 function PresenceBadge({ status, ts }: { status?: string; ts: SP }) {
   if (status === 'online') return (
@@ -75,11 +107,13 @@ function ModuleStatusIcon({ mod }: { mod: ModuleStat }) {
   return <BookOpen className="w-4 h-4 text-cta-from" />;
 }
 
-function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, selectedCourseId }: {
+function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, onOpenChat, openingChatId, selectedCourseId }: {
   student: Student; courses: { id: string; title: string }[]; ts: SP;
   onSendReminder?: (student: Student) => void;
   sendingReminderId?: string | null;
-  reminderSentIds?: Set<string>;
+  reminderSentIds?: Map<string, Date>;
+  onOpenChat?: (student: Student) => void;
+  openingChatId?: string | null;
   selectedCourseId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -110,6 +144,7 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
             <PresenceBadge status={student.presenceStatus} ts={ts} />
+            <RiskBadge level={riskLevel(student.presenceStatus, overallPct)} />
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen, ts)}</p>
           <div className="mt-1.5">
@@ -118,20 +153,41 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
         </div>
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0">
-          {student.presenceStatus === 'inactive' && onSendReminder && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onSendReminder(student); }}
-              disabled={sendingReminderId === student.userId || reminderSentIds?.has(student.userId)}
-              title={ts.sendReminderTitle2}
-              className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shrink-0 ${
-                reminderSentIds?.has(student.userId)
-                  ? 'bg-emerald-100 text-emerald-600 cursor-default'
-                  : 'bg-red-100 text-red-600 hover:bg-red-200'
-              }`}
-            >
-              {reminderSentIds?.has(student.userId) ? ts.reminderSent : ts.sendReminderBtn}
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            {student.presenceStatus === 'inactive' && onSendReminder && (() => {
+              const sentAt = reminderSentIds?.get(student.userId);
+              return (
+                <div className="flex flex-col items-center gap-0.5">
+                  <button
+                    onClick={() => onSendReminder(student)}
+                    disabled={sendingReminderId === student.userId || !!sentAt}
+                    title={ts.sendReminderTitle2}
+                    className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${
+                      sentAt
+                        ? 'bg-emerald-100 text-emerald-600 cursor-default'
+                        : 'bg-red-100 text-red-600 hover:bg-red-200'
+                    }`}
+                  >
+                    {sentAt ? ts.reminderSent : ts.sendReminderBtn}
+                  </button>
+                  {sentAt && (
+                    <span className="text-[10px] text-gray-400 leading-none">{formatReminderAge(sentAt)}</span>
+                  )}
+                </div>
+              );
+            })()}
+            {onOpenChat && (
+              <button
+                onClick={() => onOpenChat(student)}
+                disabled={openingChatId === student.userId}
+                title="Abrir chat con este estudiante"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Chat
+              </button>
+            )}
+          </div>
           <div className="text-center hidden sm:block">
             <p className="font-bold text-lg text-charcoal">{overallPct}%</p>
             <p className="text-xs text-gray-400">{ts.progressLabel}</p>
@@ -337,6 +393,7 @@ function CourseOverview({ students, course }: { students: Student[]; course: { i
 function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: string; title: string; evaluatorName?: string }[]; initialPresenceFilter?: PresenceFilter }) {
   const { t } = useLanguage();
   const ts = t.studentsPage;
+  const router = useRouter();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -346,7 +403,8 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
   const [presenceMap, setPresenceMap] = useState<Record<string, { presenceStatus?: string; lastSeen?: string | null; studentEmail?: string | null }>>({});
   const [presenceFilter, setPresenceFilter] = useState<PresenceFilter>(initialPresenceFilter ?? 'all');
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
-  const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
+  const [reminderSent, setReminderSent] = useState<Map<string, Date>>(new Map());
+  const [openingChat, setOpeningChat] = useState<string | null>(null);
 
   useEffect(() => {
     api.admin.users.list().then((res) => {
@@ -384,10 +442,21 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
       );
       const results = await Promise.allSettled(tasks);
       if (results.some((r) => r.status === 'fulfilled')) {
-        setReminderSent((prev) => new Set([...prev, u.username]));
+        setReminderSent((prev) => new Map([...prev, [u.username, new Date()]]));
       }
     } catch { /* non-fatal */ } finally {
       setSendingReminder(null);
+    }
+  };
+
+  const handleOpenChat = async (u: any) => {
+    setOpeningChat(u.username);
+    try {
+      const res = await api.messages.chats.create({ type: 'DIRECT', targetUserId: u.username });
+      const chatId = (res as any)?.data?.chatId;
+      if (chatId) router.push(`/evaluator/communications?chatId=${chatId}`);
+    } catch { /* non-fatal */ } finally {
+      setOpeningChat(null);
     }
   };
 
@@ -554,20 +623,37 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
                     {/* Acciones */}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {presenceMap[u.sub ?? u.username]?.presenceStatus === 'inactive' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleSendReminder(u); }}
-                            disabled={sendingReminder === u.username || reminderSent.has(u.username)}
-                            title={ts.sendReminderTitle2}
-                            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap ${
-                              reminderSent.has(u.username)
-                                ? 'bg-emerald-100 text-emerald-600 cursor-default'
-                                : 'bg-red-100 text-red-600 hover:bg-red-200'
-                            }`}
-                          >
-                            {reminderSent.has(u.username) ? ts.reminderSent : ts.sendReminderBtn}
-                          </button>
-                        )}
+                        {presenceMap[u.sub ?? u.username]?.presenceStatus === 'inactive' && (() => {
+                          const sentAt = reminderSent.get(u.username);
+                          return (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSendReminder(u); }}
+                                disabled={sendingReminder === u.username || !!sentAt}
+                                title={ts.sendReminderTitle2}
+                                className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap ${
+                                  sentAt
+                                    ? 'bg-emerald-100 text-emerald-600 cursor-default'
+                                    : 'bg-red-100 text-red-600 hover:bg-red-200'
+                                }`}
+                              >
+                                {sentAt ? ts.reminderSent : ts.sendReminderBtn}
+                              </button>
+                              {sentAt && (
+                                <span className="text-[10px] text-gray-400 leading-none">{formatReminderAge(sentAt)}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenChat(u); }}
+                          disabled={openingChat === u.username}
+                          title="Abrir chat con este estudiante"
+                          className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors shrink-0"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Chat
+                        </button>
                         <button
                           onClick={(e) => openProfile(e, u)}
                           className="text-xs text-cta-from font-semibold hover:underline px-2 py-1 rounded-lg hover:bg-purple-50 transition-colors whitespace-nowrap"
@@ -645,6 +731,7 @@ function StudentsPageInner() {
   const { role, isLoading: authLoading } = useAuth();
   const { t } = useLanguage();
   const ts = t.studentsPage;
+  const router = useRouter();
   const searchParams = useSearchParams();
   const courseIdParam = searchParams.get('courseId') ?? '';
   const initialPresenceFilter = (() => {
@@ -661,7 +748,8 @@ function StudentsPageInner() {
   const [expandedCourseStudents, setExpandedCourseStudents] = useState<Set<string>>(new Set());
   const [adminCourses, setAdminCourses] = useState<{ id: string; title: string; evaluatorName?: string }[]>([]);
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
-  const [reminderSent, setReminderSent] = useState<Set<string>>(new Set());
+  const [reminderSent, setReminderSent] = useState<Map<string, Date>>(new Map());
+  const [openingChat, setOpeningChat] = useState<string | null>(null);
 
   const handleSendReminder = async (student: Student) => {
     setSendingReminder(student.userId);
@@ -690,10 +778,21 @@ function StudentsPageInner() {
       );
       const results = await Promise.allSettled(tasks);
       if (results.some((r) => r.status === 'fulfilled')) {
-        setReminderSent((prev) => new Set([...prev, student.userId]));
+        setReminderSent((prev) => new Map([...prev, [student.userId, new Date()]]));
       }
     } catch { /* non-fatal */ } finally {
       setSendingReminder(null);
+    }
+  };
+
+  const handleOpenChat = async (student: Student) => {
+    setOpeningChat(student.userId);
+    try {
+      const res = await api.messages.chats.create({ type: 'DIRECT', targetUserId: student.userId });
+      const chatId = (res as any)?.data?.chatId;
+      if (chatId) router.push(`/evaluator/communications?chatId=${chatId}`);
+    } catch { /* non-fatal */ } finally {
+      setOpeningChat(null);
     }
   };
 
@@ -841,6 +940,7 @@ function StudentsPageInner() {
               <StudentCard
                 key={student.userId} student={student} courses={data.courses} ts={ts}
                 onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                onOpenChat={handleOpenChat} openingChatId={openingChat}
                 selectedCourseId={selectedCourseId || undefined}
               />
             ))
@@ -908,6 +1008,7 @@ function StudentsPageInner() {
                         <StudentCard
                           student={student} courses={data.courses} ts={ts}
                           onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                          onOpenChat={handleOpenChat} openingChatId={openingChat}
                         />
                       </div>
                     )}
