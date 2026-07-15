@@ -11,7 +11,7 @@ import {
   markOnboardingDone, isOnboardingDone,
   getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
-  setInactivityReminder, getAllEnrollments,
+  setInactivityReminder, getAllEnrollments, getEnrollments,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
@@ -213,11 +213,10 @@ export const handler = async (event: Event) => {
       }
 
       const prisma = await getPrismaClient();
-      const [allEnrollments, quizAttempts] = await Promise.all([
-        getAllEnrollments(),
+      const [myEnrollments, quizAttempts] = await Promise.all([
+        getEnrollments(userId),
         getAllQuizAttemptsForUser(userId),
       ]);
-      const myEnrollments = allEnrollments.filter((e) => e.userId === userId);
       const courseIds = myEnrollments.map((e) => e.courseId);
       if (courseIds.length === 0) return ok({ plan: null });
 

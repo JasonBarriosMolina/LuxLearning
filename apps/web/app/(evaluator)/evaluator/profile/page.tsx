@@ -126,7 +126,8 @@ export default function ProfilePage() {
     try {
       const presignRes = await api.admin.files.presign({ fileName: file.name, fileType: file.type, folder: 'photos' });
       const { uploadUrl, publicUrl } = (presignRes as any).data;
-      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const putRes = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!putRes.ok) throw new Error(`S3 upload failed: ${putRes.status}`);
       await api.profile.update({ picture: publicUrl });
       setProfile((p) => p ? { ...p, picture: publicUrl } : p);
       showToast('Foto actualizada correctamente.');

@@ -1216,7 +1216,7 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
           }
 
           // Welcome email (non-fatal)
-          ses.send(new SendEmailCommand({
+          await ses.send(new SendEmailCommand({
             Source: FROM_EMAIL,
             Destination: { ToAddresses: [userEmail] },
             Message: {

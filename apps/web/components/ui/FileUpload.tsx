@@ -5,7 +5,7 @@ import { Upload, FileText, X, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface FileUploadProps {
-  folder?: 'tasks' | 'resources' | 'uploads';
+  folder?: 'tasks' | 'resources' | 'uploads' | 'photos' | 'covers' | 'editor';
   accept?: string; // e.g. ".pdf,.docx,.pptx"
   maxSizeMB?: number;
   onUploaded: (result: { fileUrl: string; fileKey: string; fileName: string; fileType: string; fileSize: number }) => void;

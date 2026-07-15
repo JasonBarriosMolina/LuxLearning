@@ -1032,6 +1032,7 @@ export async function getAllVisibleCalendarEvents(
     if (ev.creatorId === requestorId) return true;              // own events always visible
     if (isAdmin) return true;                                   // admins see everything
     if (ev.visibility === 'evaluators') return true;            // shared with evaluators
+    if (ev.visibility === 'students') return true;              // broadcast to students — evaluators also see these
     if (ev.visibility === 'community') return true;             // shared with all
     return false;
   });
