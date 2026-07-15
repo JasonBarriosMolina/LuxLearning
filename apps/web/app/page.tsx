@@ -19,31 +19,31 @@ export default function LandingPage() {
 
   if (isLoading || isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#070712] flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-cta-from border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#070712] text-white overflow-hidden">
+    <div className="min-h-screen bg-white text-charcoal overflow-hidden">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-cta-from/15 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 -left-40 w-[500px] h-[500px] bg-cta-to/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 right-1/3 w-[400px] h-[400px] bg-cta-from/10 rounded-full blur-3xl" />
+        <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-cta-from/8 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-40 w-[500px] h-[500px] bg-cta-to/6 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 right-1/3 w-[400px] h-[400px] bg-cta-from/6 rounded-full blur-3xl" />
       </div>
 
       {/* Navbar */}
-      <nav className="relative z-10 flex items-center justify-between px-6 lg:px-16 py-5">
+      <nav className="relative z-10 flex items-center justify-between px-6 lg:px-16 py-5 border-b border-border">
         <PrismaLogo size={32} />
         <div className="flex items-center gap-3">
-          <Link href="/login" className="text-white/70 hover:text-white text-sm font-medium transition-colors">
+          <Link href="/login" className="text-gray-500 hover:text-charcoal text-sm font-medium transition-colors">
             Iniciar sesión
           </Link>
           <Link
             href="/register"
-            className="bg-white text-charcoal text-sm font-semibold px-4 py-2 rounded-xl hover:bg-white/90 transition-colors"
+            className="bg-cta-gradient text-white text-sm font-semibold px-4 py-2 rounded-xl hover:opacity-90 transition-opacity"
           >
             Registrarse
           </Link>
@@ -52,19 +52,19 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="relative z-10 px-6 lg:px-16 pt-20 pb-24 text-center max-w-4xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 rounded-full text-xs font-semibold text-white/80 mb-8 border border-white/10">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full text-xs font-semibold text-gray-500 mb-8 border border-border">
           <span className="w-2 h-2 rounded-full bg-cta-from animate-pulse" />
           Plataforma de aprendizaje activo
         </div>
 
-        <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl leading-tight mb-6">
+        <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl leading-tight mb-6 text-charcoal">
           Claridad que{' '}
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#00B4D8] to-[#7B2FBE]">
             transforma
           </span>
         </h1>
 
-        <p className="text-white/60 text-lg max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p className="text-gray-500 text-lg max-w-2xl mx-auto mb-10 leading-relaxed">
           Aprende a tu ritmo con lecciones en video, evaluaciones y reflexiones guiadas.
           Cada módulo desbloqueado es un paso real en tu crecimiento.
         </p>
@@ -78,7 +78,7 @@ export default function LandingPage() {
           </Link>
           <Link
             href="/login"
-            className="inline-flex items-center justify-center gap-2 bg-white/10 border border-white/20 text-white font-heading font-semibold px-8 py-4 rounded-xl hover:bg-white/15 transition-colors text-base"
+            className="inline-flex items-center justify-center gap-2 bg-gray-100 border border-border text-charcoal font-heading font-semibold px-8 py-4 rounded-xl hover:bg-gray-200 transition-colors text-base"
           >
             Ya tengo cuenta
           </Link>
@@ -93,48 +93,48 @@ export default function LandingPage() {
               icon: <BookOpen className="w-6 h-6" />,
               title: 'Lecciones en video',
               desc: 'Contenido estructurado en módulos con puntos clave y consejos prácticos.',
-              color: 'from-cyan-500/20 to-cyan-500/5',
-              iconBg: 'bg-cyan-500/20 text-cyan-400',
+              border: 'border-cyan-200',
+              iconBg: 'bg-cyan-50 text-cyan-600',
             },
             {
               icon: <ClipboardCheck className="w-6 h-6" />,
               title: 'Quiz por módulo',
               desc: 'Evalúa tu comprensión antes de avanzar. Retroalimentación inmediata.',
-              color: 'from-purple-500/20 to-purple-500/5',
-              iconBg: 'bg-purple-500/20 text-purple-400',
+              border: 'border-purple-200',
+              iconBg: 'bg-purple-50 text-purple-600',
             },
             {
               icon: <TrendingUp className="w-6 h-6" />,
               title: 'Reflexión guiada',
               desc: 'Escribe y comparte tu aprendizaje. Un evaluador te da retroalimentación personal.',
-              color: 'from-emerald-500/20 to-emerald-500/5',
-              iconBg: 'bg-emerald-500/20 text-emerald-400',
+              border: 'border-emerald-200',
+              iconBg: 'bg-emerald-50 text-emerald-600',
             },
             {
               icon: <Shield className="w-6 h-6" />,
               title: 'Progreso real',
               desc: 'Cada módulo se desbloquea solo cuando realmente lo completaste.',
-              color: 'from-amber-500/20 to-amber-500/5',
-              iconBg: 'bg-amber-500/20 text-amber-400',
+              border: 'border-amber-200',
+              iconBg: 'bg-amber-50 text-amber-600',
             },
           ].map((f) => (
             <div
               key={f.title}
-              className={`relative overflow-hidden rounded-2xl bg-gradient-to-b ${f.color} border border-white/10 p-5`}
+              className={`relative overflow-hidden rounded-2xl bg-white border ${f.border} p-5 shadow-sm`}
             >
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${f.iconBg}`}>
                 {f.icon}
               </div>
-              <h3 className="font-heading font-bold text-white text-base mb-1.5">{f.title}</h3>
-              <p className="text-white/50 text-sm leading-relaxed">{f.desc}</p>
+              <h3 className="font-heading font-bold text-charcoal text-base mb-1.5">{f.title}</h3>
+              <p className="text-gray-500 text-sm leading-relaxed">{f.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="relative z-10 px-6 lg:px-16 pb-20 text-center">
-        <p className="text-white/30 text-sm">
+      {/* Footer */}
+      <section className="relative z-10 px-6 lg:px-16 pb-20 text-center border-t border-border pt-8">
+        <p className="text-gray-400 text-sm">
           &copy; {new Date().getFullYear()} Lux Learning. Claridad que transforma.
         </p>
       </section>
