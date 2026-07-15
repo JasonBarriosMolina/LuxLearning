@@ -239,7 +239,7 @@ async function sendWeeklyEvaluatorSummaries(
       const weekRejected = weekNew.filter((r) => r.status === 'REJECTED');
       const inactive = studentIds.filter((uid) => {
         const ls = lastSeenMap.get(uid);
-        return ls !== undefined && ls < fiveDaysAgo;
+        return ls === undefined || ls < fiveDaysAgo;
       });
 
       const statsText = `Semana del ${oneWeekAgo.toLocaleDateString('es-ES')} al ${now.toLocaleDateString('es-ES')}

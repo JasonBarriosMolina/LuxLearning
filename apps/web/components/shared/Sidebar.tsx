@@ -73,7 +73,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
-  { href: '/evaluator/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['EVALUATOR'] },
+  { href: '/admin/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
 ];
 
 function UnreadBadge() {
