@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   ArrowRight, BookOpen, ClipboardCheck, TrendingUp, Shield,
   Award, MessageCircle, Calendar, Users, Zap, Bell, CheckCircle,
@@ -56,7 +57,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="relative z-10 px-6 lg:px-16 pt-20 pb-24 text-center max-w-4xl mx-auto">
         <div className="flex justify-center mb-8">
-          <PrismaLogo size={72} textColor="#2C2C2C" />
+          <Image src="/lux-logo-fullcolor.svg" alt="Lux Learning" width={224} height={65} priority />
         </div>
 
         <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl leading-tight mb-6 text-charcoal">
