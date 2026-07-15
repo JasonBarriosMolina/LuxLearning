@@ -33,8 +33,8 @@ jobs:
             echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=27nj4pm082sk77l0sssnc0g2gu" >> $GITHUB_ENV
           elif [ "${{ github.ref_name }}" = "staging" ]; then
             echo "NEXT_PUBLIC_API_URL=https://1ohrw48nii.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
-            echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_239WWd87I" >> $GITHUB_ENV
-            echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=5ss73gvm12af2qcbndd2ak66j1" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=63ujfu3mt11s45p9g6m7p0n648" >> $GITHUB_ENV
           else
             echo "NEXT_PUBLIC_API_URL=https://v4vabtmerb.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
             echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
