@@ -260,24 +260,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-border px-6 lg:px-16 py-10">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <PrismaLogo size={28} />
-            <span className="text-gray-400 text-sm">Claridad que transforma.</span>
-          </div>
-
-          <div className="flex items-center gap-6 text-sm">
-            <Link href="/login" className="text-gray-500 hover:text-charcoal transition-colors">Iniciar sesión</Link>
-            <Link href="/register" className="text-gray-500 hover:text-charcoal transition-colors">Registrarse</Link>
-          </div>
-
-          <p className="text-gray-400 text-xs">
-            &copy; {new Date().getFullYear()} Lux Learning. Todos los derechos reservados.
-          </p>
-        </div>
-      </footer>
+      {/* Copyright mínimo */}
+      <div className="relative z-10 py-8 text-center">
+        <p className="text-gray-400 text-xs">
+          &copy; {new Date().getFullYear()} Lux Learning. Todos los derechos reservados.
+        </p>
+      </div>
     </div>
   );
 }
