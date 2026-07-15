@@ -55,9 +55,8 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="relative z-10 px-6 lg:px-16 pt-20 pb-24 text-center max-w-4xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full text-xs font-semibold text-gray-500 mb-8 border border-border">
-          <span className="w-2 h-2 rounded-full bg-cta-from animate-pulse" />
-          Plataforma de aprendizaje activo
+        <div className="flex justify-center mb-8">
+          <PrismaLogo size={72} textColor="#2C2C2C" />
         </div>
 
         <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl leading-tight mb-6 text-charcoal">
