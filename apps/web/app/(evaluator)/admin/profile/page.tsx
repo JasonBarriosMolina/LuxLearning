@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ShieldCheck, User, Mail, Upload, Edit2, Save, Phone, FileText,
   AlertTriangle, Check, Users, BookOpen, Link2, Plus, X, Trash2, Briefcase,
@@ -9,6 +10,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/i18n';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 interface ProfileData {
   username: string;
@@ -61,6 +63,8 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 
 export default function AdminProfilePage() {
   const { t } = useLanguage();
+  const { role, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +100,13 @@ export default function AdminProfilePage() {
   // Toast
   const [toast, setToast] = useState('');
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  useEffect(() => {
+    if (!authLoading && role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      router.replace('/evaluator/profile');
+      return;
+    }
+  }, [authLoading, role, router]);
 
   useEffect(() => {
     api.profile.get().then((res: any) => {
@@ -198,6 +209,12 @@ export default function AdminProfilePage() {
     } catch { /* ignore */ }
   };
 
+  if (authLoading || (role !== 'ADMIN' && role !== 'SUPER_ADMIN')) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-cta-from border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
   if (loading) return (
     <div className="max-w-2xl mx-auto space-y-4 animate-pulse">
       <div className="h-8 bg-gray-200 rounded w-1/3" />
@@ -258,7 +275,7 @@ export default function AdminProfilePage() {
               <Mail className="w-3.5 h-3.5" /><span className="truncate">{profile.email}</span>
             </div>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 mt-1 inline-block">
-              Super Admin
+              {role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
             </span>
           </div>
         </div>
