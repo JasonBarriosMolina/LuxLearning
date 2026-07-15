@@ -30,6 +30,7 @@ const BASE_TABLES = {
   RESOURCES: process.env.DYNAMO_TABLE_RESOURCES ?? 'LuxResources',
   TRANSLATIONS: process.env.DYNAMO_TABLE_TRANSLATIONS ?? 'LuxTranslations',
   CALENDAR: process.env.DYNAMO_TABLE_CALENDAR ?? 'LuxCalendarEvents',
+  USER_PROFILES: process.env.DYNAMO_TABLE_USER_PROFILES ?? 'LuxUserProfiles',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
@@ -1071,4 +1072,60 @@ export async function getCalendarEventById(creatorId: string, eventId: string): 
     Key: { creatorId, eventId },
   }));
   return (result.Item as CalendarEvent) ?? null;
+}
+
+// ─── Extended User Profiles ───────────────────────────────────────────────────
+// Table: LuxUserProfiles, PK: userId — stores fields not available in Cognito
+
+export interface UserProfileExtended {
+  userId: string;
+  phone?: string;
+  bio?: string;
+  university?: string;
+  career?: string;
+  semester?: string;
+  title?: string;
+  specialty?: string;
+  experience?: string;
+  socialLinks?: { platform: string; url: string }[];
+  updatedAt?: string;
+}
+
+export async function getUserProfile(userId: string): Promise<UserProfileExtended | null> {
+  try {
+    const result = await ddb.send(new GetCommand({
+      TableName: TABLES.USER_PROFILES,
+      Key: { userId },
+    }));
+    return (result.Item as UserProfileExtended) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveUserProfile(userId: string, data: Omit<UserProfileExtended, 'userId'>): Promise<void> {
+  const sets: string[] = [];
+  const vals: Record<string, any> = {};
+  const names: Record<string, string> = {};
+
+  for (const [key, val] of Object.entries(data)) {
+    if (val === undefined) continue;
+    const alias = `#f_${key}`;
+    const placeholder = `:v_${key}`;
+    sets.push(`${alias} = ${placeholder}`);
+    names[alias] = key;
+    vals[placeholder] = val;
+  }
+  sets.push('#updatedAt = :updatedAt');
+  names['#updatedAt'] = 'updatedAt';
+  vals[':updatedAt'] = new Date().toISOString();
+
+  if (sets.length <= 1) return;
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.USER_PROFILES,
+    Key: { userId },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: vals,
+  }));
 }

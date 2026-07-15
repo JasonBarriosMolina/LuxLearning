@@ -21,7 +21,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification, getUserProfile, saveUserProfile } from '../shared/db-dynamo';
 import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
@@ -2223,15 +2223,26 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       if (!isAuthorized(event)) return forbidden('No autorizado');
       const userId = event.requestContext.authorizer?.lambda?.userId;
       if (!userId) return badRequest('userId no disponible');
-      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
-      const attr = (name: string) => res.UserAttributes?.find((a) => a.Name === name)?.Value ?? '';
+      const [cognitoRes, extProfile] = await Promise.all([
+        cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId })),
+        getUserProfile(userId),
+      ]);
+      const attr = (name: string) => cognitoRes.UserAttributes?.find((a) => a.Name === name)?.Value ?? '';
       return ok({
         username: userId,
         name: attr('name'),
         email: attr('email') || userId,
-        phone: attr('phone_number'),
-        bio: attr('custom:bio'),
         picture: attr('picture'),
+        // Extended fields from DynamoDB
+        phone: extProfile?.phone ?? '',
+        bio: extProfile?.bio ?? '',
+        university: extProfile?.university ?? '',
+        career: extProfile?.career ?? '',
+        semester: extProfile?.semester ?? '',
+        title: extProfile?.title ?? '',
+        specialty: extProfile?.specialty ?? '',
+        experience: extProfile?.experience ?? '',
+        socialLinks: extProfile?.socialLinks ?? [],
       });
     }
 
@@ -2240,18 +2251,45 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       if (!isAuthorized(event)) return forbidden('No autorizado');
       const userId = event.requestContext.authorizer?.lambda?.userId;
       if (!userId) return badRequest('userId no disponible');
-      const { name, phone, bio, picture } = body as { name?: string; phone?: string; bio?: string; picture?: string };
-      const attrs: { Name: string; Value: string }[] = [];
-      if (name !== undefined) attrs.push({ Name: 'name', Value: name });
-      if (phone !== undefined) attrs.push({ Name: 'phone_number', Value: phone });
-      if (bio !== undefined) attrs.push({ Name: 'custom:bio', Value: bio });
-      if (picture !== undefined) attrs.push({ Name: 'picture', Value: picture });
-      if (attrs.length === 0) return badRequest('No hay campos para actualizar');
-      await cognito.send(new AdminUpdateUserAttributesCommand({
-        UserPoolId: USER_POOL_ID,
-        Username: userId,
-        UserAttributes: attrs,
-      }));
+      const { name, picture, phone, bio, university, career, semester, title, specialty, experience, socialLinks } =
+        body as {
+          name?: string; picture?: string;
+          phone?: string; bio?: string;
+          university?: string; career?: string; semester?: string;
+          title?: string; specialty?: string; experience?: string;
+          socialLinks?: { platform: string; url: string }[];
+        };
+
+      // Update Cognito attributes (name + picture only)
+      const cognitoAttrs: { Name: string; Value: string }[] = [];
+      if (name !== undefined) cognitoAttrs.push({ Name: 'name', Value: name });
+      if (picture !== undefined) cognitoAttrs.push({ Name: 'picture', Value: picture });
+
+      // Update DynamoDB extended profile
+      const extFields: Record<string, any> = {};
+      if (phone !== undefined) extFields.phone = phone;
+      if (bio !== undefined) extFields.bio = bio;
+      if (university !== undefined) extFields.university = university;
+      if (career !== undefined) extFields.career = career;
+      if (semester !== undefined) extFields.semester = semester;
+      if (title !== undefined) extFields.title = title;
+      if (specialty !== undefined) extFields.specialty = specialty;
+      if (experience !== undefined) extFields.experience = experience;
+      if (socialLinks !== undefined) extFields.socialLinks = socialLinks;
+
+      const ops: Promise<any>[] = [];
+      if (cognitoAttrs.length > 0) {
+        ops.push(cognito.send(new AdminUpdateUserAttributesCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: userId,
+          UserAttributes: cognitoAttrs,
+        })));
+      }
+      if (Object.keys(extFields).length > 0) {
+        ops.push(saveUserProfile(userId, extFields));
+      }
+      if (ops.length === 0) return badRequest('No hay campos para actualizar');
+      await Promise.all(ops);
       return ok({ updated: true });
     }
 
@@ -2289,7 +2327,7 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
       const { fileName, fileType, folder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
       if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
-      const safeFolder = ['tasks', 'resources', 'uploads'].includes(folder) ? folder : 'uploads';
+      const safeFolder = ['tasks', 'resources', 'uploads', 'photos', 'covers', 'editor'].includes(folder) ? folder : 'uploads';
       const ext = fileName.split('.').pop() ?? 'bin';
       const fileKey = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const command = new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: fileKey, ContentType: fileType });

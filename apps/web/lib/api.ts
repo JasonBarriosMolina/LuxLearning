@@ -319,7 +319,7 @@ export const api = {
         request<any>(`/admin/email-templates/${type}`, { method: 'PUT', body: JSON.stringify({ subject, htmlBody }) }),
     },
     files: {
-      presign: (body: { fileName: string; fileType: string; folder?: 'tasks' | 'resources' | 'uploads' }) =>
+      presign: (body: { fileName: string; fileType: string; folder?: 'tasks' | 'resources' | 'uploads' | 'photos' | 'covers' | 'editor' }) =>
         request<any>('/admin/files/presign', { method: 'POST', body: JSON.stringify(body) }),
     },
     generateImage: (body: { promptText: string; style?: string }) =>
@@ -329,8 +329,13 @@ export const api = {
   },
   profile: {
     get: () => request<any>('/user/profile'),
-    update: (body: { name?: string; phone?: string; bio?: string; picture?: string }) =>
-      request<any>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
+    update: (body: {
+      name?: string; picture?: string;
+      phone?: string; bio?: string;
+      university?: string; career?: string; semester?: string;
+      title?: string; specialty?: string; experience?: string;
+      socialLinks?: { platform: string; url: string }[];
+    }) => request<any>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
   },
   messages: {
     contacts: () => request<any>('/messages/contacts'),
