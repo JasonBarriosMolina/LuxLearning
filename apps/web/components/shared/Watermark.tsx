@@ -2,7 +2,7 @@ import Image from 'next/image';
 
 export function Watermark() {
   return (
-    <div className="fixed bottom-8 right-8 w-48 md:w-56 opacity-30 z-0 pointer-events-none select-none">
+    <div className="fixed bottom-8 right-8 w-48 md:w-56 opacity-30 z-30 pointer-events-none select-none">
       {/* Light mode */}
       <Image
         src="/lux-logo-fullcolor.svg"

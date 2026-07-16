@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand, DeleteCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { LessonProgress, QuizAttempt, Reflection, Notification, Certificate } from '@lux/types';
 import { getTableName } from './env-context';
 
@@ -987,13 +987,21 @@ export interface CalendarEvent {
   startDate: string;   // ISO datetime
   endDate: string;     // ISO datetime
   allDay: boolean;
-  visibility: 'private' | 'evaluators' | 'students' | 'community';
+  visibility: 'private' | 'evaluators' | 'students' | 'community' | 'course_mine' | 'course_all';
   color?: string;
   location?: string;
   targetCourseId?: string;
   creatorName?: string;
   creatorRole?: string;
   createdAt: string;
+  // Recurrence
+  recurrence?: 'none' | 'weekly' | 'monthly' | 'weekdays' | 'custom_days';
+  recurrenceDays?: number[];  // 0=Sun … 6=Sat, used with custom_days
+  recurrenceEndDate?: string; // ISO date — last possible occurrence
+  recurrenceGroupId?: string; // shared across all instances of a recurring series
+  // Reminder tracking (set by lux-reminders after sending)
+  reminder48hSent?: boolean;
+  reminder2hSent?: boolean;
 }
 
 export async function createCalendarEvent(event: CalendarEvent): Promise<void> {
@@ -1001,6 +1009,35 @@ export async function createCalendarEvent(event: CalendarEvent): Promise<void> {
     TableName: TABLES.CALENDAR,
     Item: event,
   }));
+}
+
+export async function batchCreateCalendarEvents(events: CalendarEvent[]): Promise<void> {
+  const CHUNK = 25;
+  for (let i = 0; i < events.length; i += CHUNK) {
+    const chunk = events.slice(i, i + CHUNK);
+    await ddb.send(new BatchWriteCommand({
+      RequestItems: {
+        [TABLES.CALENDAR]: chunk.map((ev) => ({ PutRequest: { Item: ev } })),
+      },
+    }));
+  }
+}
+
+// Used by lux-reminders to find upcoming events needing reminder emails
+export async function scanCalendarEventsInRange(fromIso: string, toIso: string): Promise<CalendarEvent[]> {
+  const items: CalendarEvent[] = [];
+  let lastKey: Record<string, any> | undefined;
+  do {
+    const result = await ddb.send(new ScanCommand({
+      TableName: TABLES.CALENDAR,
+      FilterExpression: 'startDate BETWEEN :from AND :to AND visibility <> :priv',
+      ExpressionAttributeValues: { ':from': fromIso, ':to': toIso, ':priv': 'private' },
+      ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+    }));
+    items.push(...((result.Items ?? []) as CalendarEvent[]));
+    lastKey = result.LastEvaluatedKey as Record<string, any> | undefined;
+  } while (lastKey);
+  return items;
 }
 
 export async function getCalendarEventsByCreator(creatorId: string): Promise<CalendarEvent[]> {
@@ -1029,11 +1066,13 @@ export async function getAllVisibleCalendarEvents(
   } while (lastKey);
   const isAdmin = requestorRole === 'ADMIN' || requestorRole === 'SUPER_ADMIN';
   return items.filter((ev) => {
-    if (ev.creatorId === requestorId) return true;              // own events always visible
-    if (isAdmin) return true;                                   // admins see everything
-    if (ev.visibility === 'evaluators') return true;            // shared with evaluators
-    if (ev.visibility === 'students') return true;              // broadcast to students — evaluators also see these
-    if (ev.visibility === 'community') return true;             // shared with all
+    if (ev.creatorId === requestorId) return true;
+    if (isAdmin) return true;
+    if (ev.visibility === 'evaluators') return true;
+    if (ev.visibility === 'students') return true;
+    if (ev.visibility === 'community') return true;
+    if (ev.visibility === 'course_mine') return true;   // evaluators see all course-scoped events
+    if (ev.visibility === 'course_all') return true;
     return false;
   });
 }

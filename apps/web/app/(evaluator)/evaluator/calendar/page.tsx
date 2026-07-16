@@ -7,7 +7,7 @@ import { es } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import {
   CalendarDays, Plus, X, Pencil, Trash2, Loader2,
-  Users, User, Globe, Lock, MapPin, BookOpen, ChevronDown,
+  Users, User, Globe, Lock, MapPin, ChevronDown, ChevronRight, RefreshCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -36,13 +36,38 @@ const EVENT_TYPES = [
 type EventType = typeof EVENT_TYPES[number]['value'];
 
 const VISIBILITY_OPTIONS = [
-  { value: 'private',    label: 'Solo yo',            icon: <Lock className="w-3.5 h-3.5" /> },
-  { value: 'evaluators', label: 'Evaluadores',         icon: <User className="w-3.5 h-3.5" /> },
-  { value: 'students',   label: 'Estudiantes',         icon: <Users className="w-3.5 h-3.5" /> },
-  { value: 'community',  label: 'Toda la comunidad',   icon: <Globe className="w-3.5 h-3.5" /> },
+  { value: 'private',     label: 'Solo yo',            icon: <Lock className="w-3.5 h-3.5" />,    advanced: false },
+  { value: 'evaluators',  label: 'Evaluadores',         icon: <User className="w-3.5 h-3.5" />,    advanced: false },
+  { value: 'students',    label: 'Estudiantes',         icon: <Users className="w-3.5 h-3.5" />,   advanced: false },
+  { value: 'community',   label: 'Toda la comunidad',   icon: <Globe className="w-3.5 h-3.5" />,   advanced: false },
+  { value: 'course_mine', label: 'Mis cursos',          icon: <CalendarDays className="w-3.5 h-3.5" />, advanced: true },
+  { value: 'course_all',  label: 'Todos los cursos',    icon: <Globe className="w-3.5 h-3.5" />,   advanced: true },
 ] as const;
 
 type Visibility = typeof VISIBILITY_OPTIONS[number]['value'];
+
+const RECURRENCE_OPTIONS = [
+  { value: 'none',        label: 'Sin recurrencia' },
+  { value: 'weekly',      label: 'Semanal' },
+  { value: 'monthly',     label: 'Mensual' },
+  { value: 'weekdays',    label: 'Lunes a viernes' },
+  { value: 'custom_days', label: 'Días específicos' },
+] as const;
+
+type Recurrence = typeof RECURRENCE_OPTIONS[number]['value'];
+
+const WEEKDAYS = [
+  { label: 'D', value: 0 }, { label: 'L', value: 1 }, { label: 'M', value: 2 },
+  { label: 'X', value: 3 }, { label: 'J', value: 4 }, { label: 'V', value: 5 },
+  { label: 'S', value: 6 },
+];
+
+const DURATIONS = [
+  { label: '30 min', minutes: 30 },
+  { label: '1 hora', minutes: 60 },
+  { label: '2 horas', minutes: 120 },
+  { label: '3 horas', minutes: 180 },
+];
 
 interface CalEvent {
   creatorId: string;
@@ -59,6 +84,10 @@ interface CalEvent {
   targetCourseId?: string;
   creatorRole?: string;
   createdAt: string;
+  recurrence?: Recurrence;
+  recurrenceDays?: number[];
+  recurrenceEndDate?: string;
+  recurrenceGroupId?: string;
 }
 
 interface BigCalEvent {
@@ -81,6 +110,9 @@ const EMPTY_FORM = {
   allDay: false,
   visibility: 'evaluators' as Visibility,
   location: '',
+  recurrence: 'none' as Recurrence,
+  recurrenceDays: [] as number[],
+  recurrenceEndDate: '',
 };
 
 const calMessages = {
@@ -98,7 +130,11 @@ function typeLabel(type: string) {
   return EVENT_TYPES.find((t) => t.value === type)?.label ?? type;
 }
 function visLabel(vis: string) {
-  return VISIBILITY_OPTIONS.find((v) => v.value === vis)?.label ?? vis;
+  const labels: Record<string, string> = {
+    private: 'Solo yo', evaluators: 'Evaluadores', students: 'Estudiantes',
+    community: 'Toda la comunidad', course_mine: 'Mis cursos', course_all: 'Todos los cursos',
+  };
+  return labels[vis] ?? vis;
 }
 
 function toLocalDatetimeInput(iso: string) {
@@ -134,10 +170,20 @@ export default function EvaluatorCalendarPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [durationMinutes, setDurationMinutes] = useState(60);
+  const [showAdvancedVisibility, setShowAdvancedVisibility] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   const savingRef = useRef(false);
+
+  const addMinutes = (datetimeLocal: string, minutes: number): string => {
+    if (!datetimeLocal) return '';
+    const d = new Date(datetimeLocal);
+    d.setMinutes(d.getMinutes() + minutes);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   const load = async () => {
     try {
@@ -198,12 +244,19 @@ export default function EvaluatorCalendarPage() {
   // Click on a slot → pre-fill form
   const handleSelectSlot = (slot: SlotInfo) => {
     const start = slot.start instanceof Date ? slot.start : new Date(slot.start);
-    const end = slot.end instanceof Date ? slot.end : new Date(slot.end);
+    const end   = slot.end   instanceof Date ? slot.end   : new Date(slot.end);
     const pad = (n: number) => String(n).padStart(2, '0');
     const toInput = (d: Date) =>
       `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const startStr = toInput(start);
+    // Month-view click lands on midnight → treat as all-day; time-grid click → 1h event
+    const isMidnightClick = start.getHours() === 0 && start.getMinutes() === 0 && slot.action === 'click';
+    const isAllDay = slot.action === 'select' || isMidnightClick;
+    const endStr = isAllDay ? toInput(end) : addMinutes(startStr, 60);
     setEditingEvent(null);
-    setForm({ ...EMPTY_FORM, startDate: toInput(start), endDate: toInput(end), allDay: slot.action === 'select' });
+    setDurationMinutes(60);
+    setShowAdvancedVisibility(false);
+    setForm({ ...EMPTY_FORM, startDate: startStr, endDate: endStr, allDay: isAllDay });
     setError('');
     setModalOpen(true);
   };
@@ -211,6 +264,8 @@ export default function EvaluatorCalendarPage() {
   const openCreate = () => {
     setEditingEvent(null);
     setForm(EMPTY_FORM);
+    setDurationMinutes(60);
+    setShowAdvancedVisibility(false);
     setError('');
     setModalOpen(true);
   };
@@ -227,7 +282,14 @@ export default function EvaluatorCalendarPage() {
       allDay: ev.allDay,
       visibility: ev.visibility,
       location: ev.location ?? '',
+      recurrence: ev.recurrence ?? 'none',
+      recurrenceDays: ev.recurrenceDays ?? [],
+      recurrenceEndDate: ev.recurrenceEndDate ?? '',
     });
+    setDurationMinutes(60);
+    setShowAdvancedVisibility(
+      ev.visibility === 'course_mine' || ev.visibility === 'course_all'
+    );
     setError('');
     setModalOpen(true);
   };
@@ -237,6 +299,14 @@ export default function EvaluatorCalendarPage() {
     if (savingRef.current) return;
     if (!form.title || !form.startDate || !form.endDate) {
       setError('Título, fecha de inicio y fin son requeridos');
+      return;
+    }
+    if (!form.allDay && new Date(form.endDate) <= new Date(form.startDate)) {
+      setError('La fecha de fin debe ser posterior a la de inicio');
+      return;
+    }
+    if (form.recurrence === 'custom_days' && form.recurrenceDays.length === 0) {
+      setError('Selecciona al menos un día para la recurrencia personalizada');
       return;
     }
     savingRef.current = true;
@@ -252,6 +322,11 @@ export default function EvaluatorCalendarPage() {
         allDay: form.allDay,
         visibility: form.visibility,
         location: form.location || undefined,
+        ...(form.recurrence !== 'none' ? {
+          recurrence: form.recurrence,
+          recurrenceDays: form.recurrenceDays.length > 0 ? form.recurrenceDays : undefined,
+          recurrenceEndDate: form.recurrenceEndDate || undefined,
+        } : {}),
       };
       if (editingEvent) {
         await api.evaluator.calendar.update(editingEvent.eventId, {
@@ -452,28 +527,65 @@ export default function EvaluatorCalendarPage() {
             </div>
           </div>
 
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Inicio</label>
-              <input
-                type="datetime-local"
-                value={form.startDate}
-                onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
-                className="input-field"
-                required
-              />
+          {/* Dates + duration */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-charcoal">Inicio</label>
+                <input
+                  type="datetime-local"
+                  value={form.startDate}
+                  onChange={(e) => {
+                    const start = e.target.value;
+                    setForm((f) => ({
+                      ...f,
+                      startDate: start,
+                      endDate: (!f.endDate || new Date(f.endDate) <= new Date(start))
+                        ? addMinutes(start, durationMinutes)
+                        : f.endDate,
+                    }));
+                  }}
+                  className="input-field"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-charcoal">Fin</label>
+                <input
+                  type="datetime-local"
+                  value={form.endDate}
+                  onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
+                  className="input-field"
+                  required
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">Fin</label>
-              <input
-                type="datetime-local"
-                value={form.endDate}
-                onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
-                className="input-field"
-                required
-              />
-            </div>
+            {/* Duration chips */}
+            {!form.allDay && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400">Duración:</span>
+                {DURATIONS.map((d) => (
+                  <button
+                    key={d.minutes}
+                    type="button"
+                    onClick={() => {
+                      setDurationMinutes(d.minutes);
+                      if (form.startDate) {
+                        setForm((f) => ({ ...f, endDate: addMinutes(f.startDate, d.minutes) }));
+                      }
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
+                      durationMinutes === d.minutes && form.endDate === addMinutes(form.startDate, d.minutes)
+                        ? 'bg-[#17527E] border-[#17527E] text-white'
+                        : 'border-border text-gray-500 hover:border-gray-300'
+                    )}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* All day */}
@@ -486,6 +598,65 @@ export default function EvaluatorCalendarPage() {
             />
             <span className="text-sm text-charcoal">Todo el día</span>
           </label>
+
+          {/* Recurrence */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-charcoal flex items-center gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5" /> Recurrencia
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {RECURRENCE_OPTIONS.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, recurrence: r.value }))}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full text-xs font-medium border transition-all',
+                    form.recurrence === r.value
+                      ? 'bg-[#17527E] border-[#17527E] text-white'
+                      : 'border-border text-gray-500 hover:border-gray-300'
+                  )}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {form.recurrence === 'custom_days' && (
+              <div className="flex gap-1.5 mt-2">
+                {WEEKDAYS.map((wd) => (
+                  <button
+                    key={wd.value}
+                    type="button"
+                    onClick={() => setForm((f) => ({
+                      ...f,
+                      recurrenceDays: f.recurrenceDays.includes(wd.value)
+                        ? f.recurrenceDays.filter((d) => d !== wd.value)
+                        : [...f.recurrenceDays, wd.value],
+                    }))}
+                    className={cn(
+                      'w-8 h-8 rounded-full text-xs font-bold border transition-all',
+                      form.recurrenceDays.includes(wd.value)
+                        ? 'bg-[#17527E] border-[#17527E] text-white'
+                        : 'border-border text-gray-500 hover:border-gray-300'
+                    )}
+                  >
+                    {wd.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {form.recurrence !== 'none' && (
+              <div className="space-y-1 mt-2">
+                <label className="text-xs text-gray-500">Repetir hasta (opcional)</label>
+                <input
+                  type="date"
+                  value={form.recurrenceEndDate}
+                  onChange={(e) => setForm((f) => ({ ...f, recurrenceEndDate: e.target.value }))}
+                  className="input-field text-sm"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Location */}
           <Input
@@ -510,9 +681,7 @@ export default function EvaluatorCalendarPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium text-charcoal">Visibilidad</label>
             <div className="grid grid-cols-2 gap-2">
-              {VISIBILITY_OPTIONS.filter((v) =>
-                isAdmin ? true : v.value !== 'students' || true // evaluadores también pueden compartir con estudiantes
-              ).map((v) => (
+              {VISIBILITY_OPTIONS.filter((v) => !v.advanced).map((v) => (
                 <button
                   key={v.value}
                   type="button"
@@ -529,6 +698,35 @@ export default function EvaluatorCalendarPage() {
                 </button>
               ))}
             </div>
+            {/* Advanced visibility */}
+            <button
+              type="button"
+              onClick={() => setShowAdvancedVisibility((v) => !v)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mt-1 transition-colors"
+            >
+              {showAdvancedVisibility ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              Opciones avanzadas por curso
+            </button>
+            {showAdvancedVisibility && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {VISIBILITY_OPTIONS.filter((v) => v.advanced).map((v) => (
+                  <button
+                    key={v.value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, visibility: v.value }))}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
+                      form.visibility === v.value
+                        ? 'border-cta-from bg-blue-50 text-[#17527E]'
+                        : 'border-border text-gray-500 hover:border-gray-300'
+                    )}
+                  >
+                    {v.icon}
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {error && (

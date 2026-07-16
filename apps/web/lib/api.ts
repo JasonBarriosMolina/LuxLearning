@@ -120,7 +120,7 @@ export const api = {
     },
     calendar: {
       list: () => request<any>('/evaluator/calendar/events'),
-      create: (body: { title: string; description?: string; type?: string; startDate: string; endDate: string; allDay?: boolean; visibility?: string; color?: string; location?: string; targetCourseId?: string }) =>
+      create: (body: { title: string; description?: string; type?: string; startDate: string; endDate: string; allDay?: boolean; visibility?: string; color?: string; location?: string; targetCourseId?: string; recurrence?: string; recurrenceDays?: number[]; recurrenceEndDate?: string }) =>
         request<any>('/evaluator/calendar/events', { method: 'POST', body: JSON.stringify(body) }),
       update: (eventId: string, body: Record<string, any>) =>
         request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'PUT', body: JSON.stringify(body) }),
