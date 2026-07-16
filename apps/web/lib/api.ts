@@ -95,6 +95,7 @@ export const api = {
       return request(`/evaluator/students${qs}`);
     },
     studentCertificates: (userId: string) => request<any>(`/evaluator/students/${userId}/certificates`),
+    getReminderHistory: (userId: string) => request<any>(`/evaluator/students/${userId}/reminders`),
     sendReminder: (body: { userId: string; studentEmail: string; studentName?: string; hoursInactive?: number; courseTitle?: string }) =>
       request<any>('/evaluator/reminder', { method: 'POST', body: JSON.stringify(body) }),
     aiFeedback: (text: string, moduleTitle?: string) =>

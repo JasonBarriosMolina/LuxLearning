@@ -13,7 +13,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
@@ -747,8 +747,21 @@ export const handler = async (event: Event) => {
         }
       }
 
+      // Fetch last reminder info for all students in parallel
+      const reminderData = await Promise.all(
+        studentsOnly.map((s) => Promise.all([
+          getLastManualReminder(s.userId).catch(() => null),
+          getInactivityReminder(s.userId).catch(() => ({ count: 0, lastSent: null })),
+        ]))
+      );
+
       return ok({
-        students: studentsOnly.map((s) => ({ ...s, taskCounts: tasksByCourse[s.userId] ?? null })),
+        students: studentsOnly.map((s, i) => ({
+          ...s,
+          taskCounts: tasksByCourse[s.userId] ?? null,
+          lastManualReminder: reminderData[i]![0],
+          lastAutoReminder: reminderData[i]![1]?.lastSent ? reminderData[i]![1] : null,
+        })),
         courses: courses.map((c) => ({ id: c.id, title: c.title })),
       });
     }
@@ -805,7 +818,25 @@ export const handler = async (event: Event) => {
         return ok({ sent: false, reason: sesErr?.message ?? 'SES error' });
       }
 
+      // Persist so the badge survives page refresh
+      await setManualReminder(userId, auth?.email ?? userId, courseTitle).catch(() => {});
+
       return ok({ sent: true });
+    }
+
+    // GET /evaluator/students/:userId/reminders — full reminder history (manual + auto)
+    const remindersMatch = path.match(/^\/evaluator\/students\/([^/]+)\/reminders$/);
+    if (method === 'GET' && remindersMatch) {
+      const targetUserId = decodeURIComponent(remindersMatch[1]);
+      const [manualEntries, autoReminder] = await Promise.all([
+        getManualReminderHistory(targetUserId),
+        getInactivityReminder(targetUserId),
+      ]);
+      const combined = [
+        ...manualEntries,
+        ...(autoReminder.lastSent ? [{ sentAt: autoReminder.lastSent, sentBy: 'SISTEMA', type: 'auto' as const, count: autoReminder.count }] : []),
+      ].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+      return ok(combined);
     }
 
     // POST /evaluator/reflections/reconsider — override AI rejection, approve with reason

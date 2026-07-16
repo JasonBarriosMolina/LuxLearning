@@ -826,6 +826,65 @@ export async function setInactivityReminder(userId: string, count: number, lastS
   }));
 }
 
+// ─── Manual Reminder Tracking ─────────────────────────────────────────────────
+// Stored in PROGRESS table with two SK patterns per user:
+//   'LAST_MANUAL_REMINDER'         — summary record (fast read for student list)
+//   'MANUAL_REMINDER#<isoTs>'      — one record per send (history log)
+
+export interface ManualReminderSummary {
+  lastSent: string;
+  sentBy: string;
+  count: number;
+}
+
+export interface ManualReminderEntry {
+  sentAt: string;
+  sentBy: string;
+  type: 'manual' | 'auto';
+  courseTitle?: string;
+}
+
+export async function getLastManualReminder(userId: string): Promise<ManualReminderSummary | null> {
+  const res = await ddb.send(new GetCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: 'LAST_MANUAL_REMINDER' },
+  }));
+  if (!res.Item) return null;
+  return { lastSent: res.Item['lastSent'], sentBy: res.Item['sentBy'], count: Number(res.Item['count'] ?? 1) };
+}
+
+export async function setManualReminder(userId: string, sentBy: string, courseTitle?: string): Promise<void> {
+  const now = new Date().toISOString();
+  // Update summary record
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.PROGRESS,
+    Key: { userId, sk: 'LAST_MANUAL_REMINDER' },
+    UpdateExpression: 'SET lastSent = :ts, sentBy = :by, #cnt = if_not_exists(#cnt, :zero) + :one',
+    ExpressionAttributeNames: { '#cnt': 'count' },
+    ExpressionAttributeValues: { ':ts': now, ':by': sentBy, ':zero': 0, ':one': 1 },
+  }));
+  // Append history entry
+  await ddb.send(new PutCommand({
+    TableName: TABLES.PROGRESS,
+    Item: { userId, sk: `MANUAL_REMINDER#${now}`, sentAt: now, sentBy, type: 'manual', ...(courseTitle ? { courseTitle } : {}) },
+  }));
+}
+
+export async function getManualReminderHistory(userId: string): Promise<ManualReminderEntry[]> {
+  const res = await ddb.send(new QueryCommand({
+    TableName: TABLES.PROGRESS,
+    KeyConditionExpression: 'userId = :uid AND begins_with(sk, :prefix)',
+    ExpressionAttributeValues: { ':uid': userId, ':prefix': 'MANUAL_REMINDER#' },
+    ScanIndexForward: false, // newest first
+  }));
+  return (res.Items ?? []).map((item) => ({
+    sentAt: item['sentAt'],
+    sentBy: item['sentBy'],
+    type: 'manual' as const,
+    courseTitle: item['courseTitle'],
+  }));
+}
+
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 // Stored in PROGRESS table: userId = userId, sk = 'ONBOARDING#done'
 
