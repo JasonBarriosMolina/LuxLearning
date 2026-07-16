@@ -5,7 +5,7 @@ export function Watermark() {
     <div className="fixed bottom-8 right-8 w-48 md:w-56 opacity-30 z-30 pointer-events-none select-none">
       {/* Light mode */}
       <Image
-        src="/lux-logo-fullcolor.svg"
+        src="/lux-icon-fullcolor.svg"
         alt=""
         width={224}
         height={65}
@@ -15,7 +15,7 @@ export function Watermark() {
       />
       {/* Dark mode */}
       <Image
-        src="/lux-logo-white.svg"
+        src="/lux-icon-white.svg"
         alt=""
         width={224}
         height={65}
