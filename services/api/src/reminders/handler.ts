@@ -6,7 +6,7 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification } from '../shared/db-dynamo';
+import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification, scanCalendarEventsInRange, updateCalendarEvent } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
 import { sendTemplatedEmail } from '../shared/email';
 import { createId } from '@paralleldrive/cuid2';
@@ -294,6 +294,35 @@ Redacta un párrafo de máximo 120 palabras en español. Tono profesional y moti
   return sent;
 }
 
+function calendarReminderHtml(title: string, type: string, startFmt: string, location: string | undefined, label: string): string {
+  const typeLabels: Record<string, string> = {
+    class: 'Clase', meeting: 'Reunión', event: 'Evento',
+    deadline: 'Fecha límite', reminder: 'Recordatorio', other: 'Otro',
+  };
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Recordatorio de evento</p>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">⏰ Faltan ${label}</h2>
+      <div style="background:#F0F7FF;border-left:4px solid #7B2FBE;padding:16px 20px;border-radius:4px;margin:16px 0;">
+        <p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;">${typeLabels[type] ?? type}</p>
+        <p style="margin:0;color:#2C2C2C;font-size:20px;font-weight:700;">${title}</p>
+        <p style="margin:8px 0 0;color:#555;">🕐 ${startFmt}</p>
+        ${location ? `<p style="margin:6px 0 0;color:#555;">📍 ${location}</p>` : ''}
+      </div>
+      <a href="${FRONTEND_URL}/evaluator/calendar" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
+        Ver calendario →
+      </a>
+      <p style="color:#aaa;font-size:12px;margin-top:32px;">Recibes este email como parte de la comunidad Lux Learning.</p>
+    </div>
+  </div>
+</body></html>`;
+}
+
 export const handler = async () => {
   console.log('[Reminders] Starting daily reminder check...');
 
@@ -524,7 +553,107 @@ export const handler = async () => {
       }
     }
 
-    return { sent, skipped, startSent, taskReminderSent, weeklySent };
+    // ── Calendar event reminders (48h and 2h before) ─────────────────────────
+    let calReminderSent = 0;
+    try {
+      const nowDate = new Date();
+      // Scan window: events starting in the next 73h (covers 48h window with daily cron drift)
+      const windowEnd = new Date(nowDate.getTime() + 73 * 60 * 60 * 1000);
+      const upcomingEvents = await scanCalendarEventsInRange(nowDate.toISOString(), windowEnd.toISOString());
+
+      for (const calEv of upcomingEvents) {
+        const msUntilStart = new Date(calEv.startDate).getTime() - nowDate.getTime();
+        const hoursUntil = msUntilStart / 3600000;
+
+        // 48h window is wide (24-72h) so a daily cron catches all events regardless of time-of-day
+        const needs48h = hoursUntil >= 24 && hoursUntil <= 72 && !calEv.reminder48hSent;
+        // 2h window requires near-hourly cron to be reliable; best-effort with daily cron
+        const needs2h  = hoursUntil >= 1.5 && hoursUntil <= 3 && !calEv.reminder2hSent;
+        if (!needs48h && !needs2h) continue;
+
+        const label = needs48h ? '48 horas' : '2 horas';
+        const subject = `⏰ Recordatorio: "${calEv.title}" en ${label}`;
+        const startFmt = new Date(calEv.startDate).toLocaleString('es-ES', {
+          weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+        });
+        const html = calendarReminderHtml(calEv.title, calEv.type, startFmt, calEv.location, label);
+
+        // Resolve recipients
+        const listGroup = async (groupName: string) => {
+          const emails: string[] = [];
+          let nextToken: string | undefined;
+          do {
+            const res = await cognito.send(new ListUsersInGroupCommand({
+              UserPoolId: USER_POOL_ID, GroupName: groupName, Limit: 60,
+              ...(nextToken ? { NextToken: nextToken } : {}),
+            }));
+            for (const u of res.Users ?? []) {
+              const email = u.Attributes?.find((a: any) => a.Name === 'email')?.Value;
+              if (email) emails.push(email);
+            }
+            nextToken = res.NextToken;
+          } while (nextToken);
+          return emails;
+        };
+
+        const recipientEmails: string[] = [];
+        if (calEv.visibility === 'evaluators' || calEv.visibility === 'community') {
+          recipientEmails.push(...await listGroup('EVALUATOR').catch(() => []));
+        }
+        if (calEv.visibility === 'students' || calEv.visibility === 'community' || calEv.visibility === 'course_all') {
+          recipientEmails.push(...await listGroup('STUDENT').catch(() => []));
+        }
+        if (calEv.visibility === 'course_mine') {
+          // Students of creator's courses — load from Prisma
+          try {
+            const prisma = await getPrismaClient();
+            const courses = await prisma.course.findMany({
+              where: { evaluatorId: calEv.creatorId },
+              select: { id: true },
+            });
+            const courseIds = courses.map((c) => c.id);
+            const enrollments = allEnrollments.filter((e) => courseIds.includes(e.courseId));
+            for (const enrollment of enrollments) {
+              try {
+                const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: enrollment.userId }));
+                const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+                if (email) recipientEmails.push(email);
+              } catch {}
+            }
+          } catch {}
+        }
+
+        const unique = [...new Set(recipientEmails)];
+        let eventSent = 0;
+        for (const email of unique) {
+          try {
+            await ses.send(new SendEmailCommand({
+              Source: FROM_EMAIL,
+              Destination: { ToAddresses: [email] },
+              Message: {
+                Subject: { Data: subject, Charset: 'UTF-8' },
+                Body: { Html: { Data: html, Charset: 'UTF-8' } },
+              },
+            }));
+            eventSent++;
+          } catch {}
+        }
+
+        // Mark reminder as sent
+        try {
+          const flagUpdate = needs48h ? { reminder48hSent: true } : { reminder2hSent: true };
+          await updateCalendarEvent(calEv.creatorId, calEv.eventId, flagUpdate);
+        } catch {}
+
+        calReminderSent += eventSent;
+        console.log(`[Reminders] Calendar ${label} reminder for "${calEv.title}" → ${eventSent} emails`);
+      }
+      console.log(`[Reminders] Calendar reminders total: ${calReminderSent}`);
+    } catch (e) {
+      console.warn('[Reminders] Calendar reminder block failed:', e);
+    }
+
+    return { sent, skipped, startSent, taskReminderSent, weeklySent, calReminderSent };
   } catch (err) {
     console.error('[Reminders] Fatal error:', err);
     throw err;

@@ -13,7 +13,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
@@ -208,6 +208,101 @@ function reconsideredEmailHtml(studentName: string, moduleTitle: string, reason:
   ${certLink}
   <p style="margin-top:24px;color:#888;font-size:12px;">— Lux Learning Team | <a href="${frontendUrl}">Lux Learning</a></p>
 </body></html>`;
+}
+
+// ─── Calendar email helper ────────────────────────────────────────────────────
+async function sendCalendarEventEmails(
+  calEv: { title: string; type: string; startDate: string; endDate: string; location?: string; description?: string; visibility: string },
+  action: 'created' | 'updated',
+  cognitoClient: typeof cognito,
+  sesClient: typeof ses,
+  userPoolId: string,
+  fromEmail: string,
+): Promise<void> {
+  const { title, type, startDate, endDate, location, description, visibility } = calEv;
+  const frontendUrl = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
+
+  const typeLabels: Record<string, string> = {
+    class: 'Clase', meeting: 'Reunión', event: 'Evento',
+    deadline: 'Fecha límite', reminder: 'Recordatorio', other: 'Otro',
+  };
+  const typeLabel = typeLabels[type] ?? type;
+  const startFmt = new Date(startDate).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const endFmt = new Date(endDate).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const subject = action === 'created'
+    ? `📅 Nuevo evento: ${title}`
+    : `📅 Evento actualizado: ${title}`;
+  const actionText = action === 'created' ? 'Se ha creado un nuevo evento' : 'Se ha actualizado un evento';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
+      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Claridad que transforma.</p>
+    </div>
+    <div style="padding:40px;">
+      <p style="color:#555;margin-top:0;">${actionText} en tu calendario:</p>
+      <div style="background:#F0F7FF;border-left:4px solid #7B2FBE;padding:16px 20px;border-radius:4px;margin:16px 0;">
+        <p style="margin:0 0 8px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">${typeLabel}</p>
+        <p style="margin:0;color:#2C2C2C;font-size:20px;font-weight:700;">${title}</p>
+        <p style="margin:8px 0 0;color:#555;">🕐 ${startFmt} — ${endFmt}</p>
+        ${location ? `<p style="margin:6px 0 0;color:#555;">📍 ${location}</p>` : ''}
+        ${description ? `<p style="margin:8px 0 0;color:#666;font-size:14px;">${description}</p>` : ''}
+      </div>
+      <a href="${frontendUrl}/evaluator/calendar" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
+        Ver calendario →
+      </a>
+      <p style="color:#aaa;font-size:12px;margin-top:32px;">Recibes este email como parte de la comunidad Lux Learning.</p>
+    </div>
+  </div>
+</body></html>`;
+
+  // Collect recipient emails based on visibility
+  const listGroup = async (groupName: string) => {
+    const users: string[] = [];
+    let nextToken: string | undefined;
+    do {
+      const res = await cognitoClient.send(new ListUsersInGroupCommand({
+        UserPoolId: userPoolId, GroupName: groupName, Limit: 60,
+        ...(nextToken ? { NextToken: nextToken } : {}),
+      }));
+      for (const u of res.Users ?? []) {
+        const email = u.Attributes?.find((a) => a.Name === 'email')?.Value;
+        if (email) users.push(email);
+      }
+      nextToken = res.NextToken;
+    } while (nextToken);
+    return users;
+  };
+
+  const emails: string[] = [];
+  if (visibility === 'evaluators' || visibility === 'community') {
+    const evEmails = await listGroup('EVALUATOR').catch(() => [] as string[]);
+    emails.push(...evEmails);
+  }
+  if (visibility === 'students' || visibility === 'community' || visibility === 'course_all') {
+    const stEmails = await listGroup('STUDENT').catch(() => [] as string[]);
+    emails.push(...stEmails);
+  }
+  if (visibility === 'course_mine') {
+    // Only students of the creator's courses — handled by reminders lambda for now
+    // Here we send to evaluators as a fallback notification
+    const evEmails = await listGroup('EVALUATOR').catch(() => [] as string[]);
+    emails.push(...evEmails);
+  }
+
+  const unique = [...new Set(emails)];
+  for (const email of unique) {
+    await sesClient.send(new SendEmailCommand({
+      Source: fromEmail,
+      Destination: { ToAddresses: [email] },
+      Message: {
+        Subject: { Data: subject, Charset: 'UTF-8' },
+        Body: { Html: { Data: html, Charset: 'UTF-8' } },
+      },
+    })).catch(() => {});
+  }
 }
 
 export const handler = async (event: Event) => {
@@ -1213,40 +1308,115 @@ ${text.trim()}`;
 
     // GET /evaluator/calendar/events
     if (method === 'GET' && path === '/evaluator/calendar/events') {
-      const events = await getAllVisibleCalendarEvents(userId, role);
-      return ok(events);
+      const calEvents = await getAllVisibleCalendarEvents(userId, role);
+      return ok(calEvents);
     }
 
     // POST /evaluator/calendar/events
     if (method === 'POST' && path === '/evaluator/calendar/events') {
       const body = JSON.parse(event.body ?? '{}');
-      const { title, description, type, startDate, endDate, allDay, visibility, color, location, targetCourseId } = body as {
+      const {
+        title, description, type, startDate, endDate, allDay,
+        visibility, color, location, targetCourseId,
+        recurrence, recurrenceDays, recurrenceEndDate,
+      } = body as {
         title?: string; description?: string;
         type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
         startDate?: string; endDate?: string; allDay?: boolean;
-        visibility?: 'private' | 'evaluators' | 'students' | 'community';
+        visibility?: 'private' | 'evaluators' | 'students' | 'community' | 'course_mine' | 'course_all';
         color?: string; location?: string; targetCourseId?: string;
+        recurrence?: 'none' | 'weekly' | 'monthly' | 'weekdays' | 'custom_days';
+        recurrenceDays?: number[];
+        recurrenceEndDate?: string;
       };
       if (!title || !startDate || !endDate) return badRequest('title, startDate y endDate son requeridos');
-      const eventId = createId();
-      const event = {
+
+      const effectiveRecurrence = recurrence ?? 'none';
+      const baseId = createId();
+      const recurrenceGroupId = effectiveRecurrence !== 'none' ? baseId : undefined;
+
+      const buildCalEvent = (start: string, end: string, eid: string) => ({
         creatorId: userId,
-        eventId,
+        eventId: eid,
         title: title.trim(),
-        description: description?.trim(),
+        ...(description ? { description: description.trim() } : {}),
         type: type ?? 'event',
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
         allDay: allDay ?? false,
         visibility: visibility ?? 'private',
-        color,
-        location: location?.trim(),
-        targetCourseId,
+        ...(color ? { color } : {}),
+        ...(location ? { location: location.trim() } : {}),
+        ...(targetCourseId ? { targetCourseId } : {}),
         creatorRole: role,
         createdAt: new Date().toISOString(),
-      };
-      await createCalendarEvent(event);
-      return ok(event);
+        ...(effectiveRecurrence !== 'none' ? { recurrence: effectiveRecurrence } : {}),
+        ...(recurrenceDays ? { recurrenceDays } : {}),
+        ...(recurrenceEndDate ? { recurrenceEndDate } : {}),
+        ...(recurrenceGroupId ? { recurrenceGroupId } : {}),
+      });
+
+      // Generate occurrences for recurring events
+      const calEvents: ReturnType<typeof buildCalEvent>[] = [];
+      if (effectiveRecurrence === 'none') {
+        calEvents.push(buildCalEvent(startDate, endDate, baseId));
+      } else {
+        const startMs = new Date(startDate).getTime();
+        const durationMs = new Date(endDate).getTime() - startMs;
+        // Add 23h59m so events on the recurrenceEndDate day are included
+        const limitDate = recurrenceEndDate
+          ? new Date(recurrenceEndDate).getTime() + 23 * 60 * 60 * 1000 + 59 * 60 * 1000
+          : startMs + 180 * 24 * 60 * 60 * 1000; // default 6 months
+        const MAX_OCCURRENCES = 52;
+        let cursor = new Date(startDate);
+        let count = 0;
+
+        if (effectiveRecurrence === 'weekly') {
+          while (cursor.getTime() <= limitDate && count < MAX_OCCURRENCES) {
+            const ocStart = cursor.toISOString();
+            const ocEnd = new Date(cursor.getTime() + durationMs).toISOString();
+            calEvents.push(buildCalEvent(ocStart, ocEnd, count === 0 ? baseId : createId()));
+            count++;
+            cursor.setDate(cursor.getDate() + 7);
+          }
+        } else if (effectiveRecurrence === 'monthly') {
+          while (cursor.getTime() <= limitDate && count < MAX_OCCURRENCES) {
+            const ocStart = cursor.toISOString();
+            const ocEnd = new Date(cursor.getTime() + durationMs).toISOString();
+            calEvents.push(buildCalEvent(ocStart, ocEnd, count === 0 ? baseId : createId()));
+            count++;
+            cursor.setMonth(cursor.getMonth() + 1);
+          }
+        } else {
+          // weekdays or custom_days — advance daily, filter by day-of-week
+          while (cursor.getTime() <= limitDate && count < MAX_OCCURRENCES) {
+            const day = cursor.getDay();
+            const include = effectiveRecurrence === 'weekdays'
+              ? day >= 1 && day <= 5
+              : (recurrenceDays ?? []).includes(day);
+            if (include) {
+              const ocStart = cursor.toISOString();
+              const ocEnd = new Date(cursor.getTime() + durationMs).toISOString();
+              calEvents.push(buildCalEvent(ocStart, ocEnd, count === 0 ? baseId : createId()));
+              count++;
+            }
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        }
+      }
+
+      if (calEvents.length === 1) {
+        await createCalendarEvent(calEvents[0] as any);
+      } else {
+        await batchCreateCalendarEvents(calEvents as any);
+      }
+
+      // Send notification emails fire-and-forget (non-blocking)
+      if (visibility && visibility !== 'private') {
+        sendCalendarEventEmails(calEvents[0] as any, 'created', cognito, ses, USER_POOL_ID, FROM_EMAIL).catch(() => {});
+      }
+
+      return ok({ events: calEvents, count: calEvents.length });
     }
 
     // PUT /evaluator/calendar/events/:eventId
@@ -1255,22 +1425,25 @@ ${text.trim()}`;
       const body = JSON.parse(event.body ?? '{}');
       const eventId = calEditMatch[1]!;
       const existing = await getCalendarEventById(userId, eventId);
-      // Admins can update any event; evaluators only their own
       const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
       if (!existing) {
-        // Try to find by scanning if admin (event may belong to another creator)
         if (!isAdmin) return notFound('Evento no encontrado');
-        // For admin, get creatorId from body
         const { creatorId: bodyCreatorId } = body as { creatorId?: string };
         if (!bodyCreatorId) return badRequest('creatorId requerido para admin');
         const adminExisting = await getCalendarEventById(bodyCreatorId, eventId);
         if (!adminExisting) return notFound('Evento no encontrado');
         const { creatorId: _c, eventId: _e, createdAt: _t, ...rest } = body as any;
         await updateCalendarEvent(bodyCreatorId, eventId, rest);
+        if (rest.visibility && rest.visibility !== 'private') {
+          sendCalendarEventEmails({ ...adminExisting, ...rest }, 'updated', cognito, ses, USER_POOL_ID, FROM_EMAIL).catch(() => {});
+        }
         return ok({ updated: true });
       }
       const { creatorId: _c, eventId: _e, createdAt: _t, ...updates } = body as any;
       await updateCalendarEvent(userId, eventId, updates);
+      if (updates.visibility && updates.visibility !== 'private') {
+        sendCalendarEventEmails({ ...existing, ...updates }, 'updated', cognito, ses, USER_POOL_ID, FROM_EMAIL).catch(() => {});
+      }
       return ok({ updated: true });
     }
 
