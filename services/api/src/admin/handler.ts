@@ -2220,7 +2220,6 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
 
     // ── GET /user/profile ───────────────────────────────────────────────────────
     if (path === '/user/profile' && method === 'GET') {
-      if (!isAuthorized(event)) return forbidden('No autorizado');
       const userId = event.requestContext.authorizer?.lambda?.userId;
       if (!userId) return badRequest('userId no disponible');
       const [cognitoRes, extProfile] = await Promise.all([
@@ -2248,7 +2247,6 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
 
     // ── PUT /user/profile ───────────────────────────────────────────────────────
     if (path === '/user/profile' && method === 'PUT') {
-      if (!isAuthorized(event)) return forbidden('No autorizado');
       const userId = event.requestContext.authorizer?.lambda?.userId;
       if (!userId) return badRequest('userId no disponible');
       const { name, picture, phone, bio, university, career, semester, title, specialty, experience, socialLinks } =
@@ -2323,8 +2321,10 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
     }
 
     // POST /admin/files/presign — generate S3 presigned upload URL (tasks + resources)
+    // Students are allowed when folder === 'photos' (own profile photo upload)
     if (method === 'POST' && path === '/admin/files/presign') {
-      if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+      const { folder: presignFolder } = JSON.parse(event.body ?? '{}') as { folder?: string };
+      if (!isAuthorized(event) && presignFolder !== 'photos') return forbidden('Se requiere rol de administrador o evaluador');
       const { fileName, fileType, folder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
       if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
       const safeFolder = ['tasks', 'resources', 'uploads', 'photos', 'covers', 'editor'].includes(folder) ? folder : 'uploads';
