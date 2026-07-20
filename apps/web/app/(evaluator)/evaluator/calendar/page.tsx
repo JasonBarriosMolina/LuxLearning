@@ -113,6 +113,7 @@ const EMPTY_FORM = {
   recurrence: 'none' as Recurrence,
   recurrenceDays: [] as number[],
   recurrenceEndDate: '',
+  targetCourseId: '',
 };
 
 const calMessages = {
@@ -165,6 +166,16 @@ export default function EvaluatorCalendarPage() {
 
   // Selected event (detail panel)
   const [selected, setSelected] = useState<CalEvent | null>(null);
+
+  // My courses (for course_mine visibility selector)
+  const [myCourses, setMyCourses] = useState<{ id: string; title: string }[]>([]);
+
+  useEffect(() => {
+    api.evaluator.myCourses().then((res: any) => {
+      const list = Array.isArray(res) ? res : (res?.data ?? res?.courses ?? []);
+      setMyCourses(list.map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
+    }).catch(() => {});
+  }, []);
 
   // Create / edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -285,6 +296,7 @@ export default function EvaluatorCalendarPage() {
       recurrence: ev.recurrence ?? 'none',
       recurrenceDays: ev.recurrenceDays ?? [],
       recurrenceEndDate: ev.recurrenceEndDate ?? '',
+      targetCourseId: ev.targetCourseId ?? '',
     });
     setDurationMinutes(60);
     setShowAdvancedVisibility(
@@ -322,6 +334,7 @@ export default function EvaluatorCalendarPage() {
         allDay: form.allDay,
         visibility: form.visibility,
         location: form.location || undefined,
+        ...(form.visibility === 'course_mine' && form.targetCourseId ? { targetCourseId: form.targetCourseId } : {}),
         ...(form.recurrence !== 'none' ? {
           recurrence: form.recurrence,
           recurrenceDays: form.recurrenceDays.length > 0 ? form.recurrenceDays : undefined,
@@ -708,23 +721,37 @@ export default function EvaluatorCalendarPage() {
               Opciones avanzadas por curso
             </button>
             {showAdvancedVisibility && (
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {VISIBILITY_OPTIONS.filter((v) => v.advanced).map((v) => (
-                  <button
-                    key={v.value}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, visibility: v.value }))}
-                    className={cn(
-                      'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
-                      form.visibility === v.value
-                        ? 'border-cta-from bg-blue-50 text-[#17527E]'
-                        : 'border-border text-gray-500 hover:border-gray-300'
-                    )}
+              <div className="space-y-2 pt-1">
+                <div className="grid grid-cols-2 gap-2">
+                  {VISIBILITY_OPTIONS.filter((v) => v.advanced).map((v) => (
+                    <button
+                      key={v.value}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '' }))}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
+                        form.visibility === v.value
+                          ? 'border-cta-from bg-blue-50 text-[#17527E]'
+                          : 'border-border text-gray-500 hover:border-gray-300'
+                      )}
+                    >
+                      {v.icon}
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+                {form.visibility === 'course_mine' && myCourses.length > 0 && (
+                  <select
+                    value={form.targetCourseId}
+                    onChange={(e) => setForm((f) => ({ ...f, targetCourseId: e.target.value }))}
+                    className="w-full rounded-xl border-2 border-border px-3 py-2.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-cta-from transition-colors"
                   >
-                    {v.icon}
-                    {v.label}
-                  </button>
-                ))}
+                    <option value="">— Todos mis cursos —</option>
+                    {myCourses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
           </div>

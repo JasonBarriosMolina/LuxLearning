@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
 
@@ -38,6 +38,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CacheEntry { value: string; expiresAt: number }
 const emailCache = new Map<string, CacheEntry>();
 const nameCache = new Map<string, CacheEntry>();
+const enabledCache = new Map<string, CacheEntry>(); // 'true' | 'false'
 
 function cacheGet(map: Map<string, CacheEntry>, key: string): string | undefined {
   const entry = map.get(key);
@@ -50,23 +51,49 @@ function cacheSet(map: Map<string, CacheEntry>, key: string, value: string): voi
   map.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function getCognitoUser(userId: string): Promise<{ email: string; name: string } | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+async function getCognitoUser(userId: string): Promise<{ email: string; name: string; enabled: boolean } | null> {
+  if (!userId) return null;
   const cachedEmail = cacheGet(emailCache, userId);
-  if (cachedEmail !== undefined) return { email: cachedEmail, name: cacheGet(nameCache, userId) ?? cachedEmail };
-  try {
-    const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
-    const attrs = res.UserAttributes ?? [];
-    const email = attrs.find((a) => a.Name === 'email')?.Value ?? userId;
+  if (cachedEmail !== undefined) {
+    const cachedEnabled = cacheGet(enabledCache, userId);
+    return { email: cachedEmail, name: cacheGet(nameCache, userId) ?? cachedEmail, enabled: cachedEnabled !== 'false' };
+  }
+
+  const extractAttrs = (attrs: { Name?: string; Value?: string }[], enabled: boolean) => {
+    const email = attrs.find((a) => a.Name === 'email')?.Value ?? '';
     const name = attrs.find((a) => a.Name === 'name')?.Value
       ?? attrs.find((a) => a.Name === 'given_name')?.Value
       ?? email;
-    cacheSet(emailCache, userId, email);
-    cacheSet(nameCache, userId, name);
-    return { email, name };
-  } catch {
-    return null;
+    if (email) {
+      cacheSet(emailCache, userId, email);
+      cacheSet(nameCache, userId, name);
+      cacheSet(enabledCache, userId, enabled ? 'true' : 'false');
+    }
+    return { email, name, enabled };
+  };
+
+  // Try by username first (fastest path — works when userId === Cognito username)
+  if (/^[0-9a-f-]{36}$/i.test(userId) || !userId.includes('@')) {
+    try {
+      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
+      return extractAttrs(res.UserAttributes ?? [], res.Enabled ?? true);
+    } catch { /* fall through to sub lookup */ }
   }
+
+  // Fallback: look up by sub attribute (handles UUID subs stored in enrollments)
+  if (/^[0-9a-f-]{36}$/i.test(userId)) {
+    try {
+      const res = await cognito.send(new ListUsersCommand({
+        UserPoolId: USER_POOL_ID,
+        Filter: `sub = "${userId}"`,
+        Limit: 1,
+      }));
+      const u = res.Users?.[0];
+      if (u) return extractAttrs(u.Attributes ?? [], u.Enabled ?? true);
+    } catch { /* user not found */ }
+  }
+
+  return null;
 }
 
 async function resolveStudentName(userId: string, storedEmail?: string): Promise<string> {
@@ -612,9 +639,9 @@ export const handler = async (event: Event) => {
         if (!prev || ls.lastSeen > prev) lastSeenMap.set(ls.userId, ls.lastSeen);
       }
       const now = Date.now();
-      const getPresenceStatus = (userId: string): 'online' | 'active' | 'inactive' => {
-        const ls = lastSeenMap.get(userId);
-        if (!ls) return 'inactive';
+      const getPresenceStatus = (uid: string): 'online' | 'active' | 'inactive' | 'never_active' => {
+        const ls = lastSeenMap.get(uid);
+        if (!ls) return 'never_active'; // enrolled but zero recorded activity
         const diffMs = now - new Date(ls).getTime();
         if (diffMs < 5 * 60 * 1000) return 'online';       // < 5 min = online
         if (diffMs < 72 * 60 * 60 * 1000) return 'active'; // < 72h = active
@@ -668,8 +695,9 @@ export const handler = async (event: Event) => {
 
       const students = await Promise.all(Array.from(byStudent.values()).map(async (s) => {
         const cognitoUser = await getCognitoUser(s.userId);
-        const studentName = cognitoUser?.name ?? s.userId;
+        const studentName = cognitoUser?.name || 'Sin nombre';
         const studentEmail = cognitoUser?.email ?? null;
+        const enabled = cognitoUser?.enabled ?? true;
         const enrolledCourseIds = enrollmentMap.get(s.userId) ?? new Set<string>();
         const visibleCourses = enrolledCourseIds.size > 0
           ? courses.filter((c) => enrolledCourseIds.has(c.id))
@@ -702,8 +730,8 @@ export const handler = async (event: Event) => {
         });
 
         const lastSeen = lastSeenMap.get(s.userId) ?? null;
-        const presenceStatus = getPresenceStatus(s.userId);
-        return { userId: s.userId, studentName, studentEmail, courses: courseStats, lastSeen, presenceStatus };
+        const presenceStatus = enabled === false ? 'disabled' : getPresenceStatus(s.userId);
+        return { userId: s.userId, studentName, studentEmail, courses: courseStats, lastSeen, presenceStatus, enabled };
       }));
 
       // Filter out non-STUDENT users (evaluators, admins who may have enrollments/heartbeats) —
@@ -725,8 +753,8 @@ export const handler = async (event: Event) => {
       const nonStudentUsernames = new Set([...evaluatorUsers, ...adminUsers].map((u) => u.Username));
       const studentsOnly = students.filter((s) => !nonStudentUsernames.has(s.userId));
 
-      // Sort: online first, then active, then inactive, then by progress
-      const statusOrder = { online: 0, active: 1, inactive: 2 };
+      // Sort: online → active → inactive → never_active → disabled
+      const statusOrder = { online: 0, active: 1, inactive: 2, never_active: 3, disabled: 4 };
       studentsOnly.sort((a, b) => {
         const sA = statusOrder[a.presenceStatus as keyof typeof statusOrder] ?? 2;
         const sB = statusOrder[b.presenceStatus as keyof typeof statusOrder] ?? 2;

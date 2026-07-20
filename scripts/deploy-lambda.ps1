@@ -75,7 +75,8 @@ function Deploy-Lambda([string]$name) {
     "--external:@aws-sdk/client-secrets-manager",
     "--outfile=$outDir\index.js", "--minify"
   )
-  & npx esbuild @esbuildArgs
+  $esbuildOut = cmd /c "node `"$ROOT\node_modules\esbuild\bin\esbuild`" $($esbuildArgs -join ' ') 2>&1"
+  Write-Host $esbuildOut
   if ($LASTEXITCODE -ne 0) { throw "esbuild failed for $name" }
 
   # 2. Stage

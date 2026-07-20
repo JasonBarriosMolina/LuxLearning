@@ -2323,9 +2323,10 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
     // POST /admin/files/presign — generate S3 presigned upload URL (tasks + resources)
     // Students are allowed when folder === 'photos' (own profile photo upload)
     if (method === 'POST' && path === '/admin/files/presign') {
-      const { folder: presignFolder } = JSON.parse(event.body ?? '{}') as { folder?: string };
-      if (!isAuthorized(event) && presignFolder !== 'photos') return forbidden('Se requiere rol de administrador o evaluador');
-      const { fileName, fileType, folder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
+      const { fileName, fileType, folder: requestedFolder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
+      const adminCaller = isAuthorized(event);
+      if (!adminCaller && requestedFolder !== 'photos') return forbidden('Se requiere rol de administrador o evaluador');
+      const folder = adminCaller ? requestedFolder : 'photos';
       if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
       const safeFolder = ['tasks', 'resources', 'uploads', 'photos', 'covers', 'editor'].includes(folder) ? folder : 'uploads';
       const ext = fileName.split('.').pop() ?? 'bin';
