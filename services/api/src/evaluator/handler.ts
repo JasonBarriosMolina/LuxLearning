@@ -1379,14 +1379,14 @@ ${text.trim()}`;
       const body = JSON.parse(event.body ?? '{}');
       const {
         title, description, type, startDate, endDate, allDay,
-        visibility, color, location, targetCourseId,
+        visibility, color, location, targetCourseId, targetStudentIds,
         recurrence, recurrenceDays, recurrenceEndDate,
       } = body as {
         title?: string; description?: string;
         type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
         startDate?: string; endDate?: string; allDay?: boolean;
         visibility?: 'private' | 'evaluators' | 'students' | 'community' | 'course_mine' | 'course_all';
-        color?: string; location?: string; targetCourseId?: string;
+        color?: string; location?: string; targetCourseId?: string; targetStudentIds?: string[];
         recurrence?: 'none' | 'weekly' | 'monthly' | 'weekdays' | 'custom_days';
         recurrenceDays?: number[];
         recurrenceEndDate?: string;
@@ -1410,6 +1410,7 @@ ${text.trim()}`;
         ...(color ? { color } : {}),
         ...(location ? { location: location.trim() } : {}),
         ...(targetCourseId ? { targetCourseId } : {}),
+        ...(targetStudentIds && targetStudentIds.length > 0 ? { targetStudentIds } : {}),
         creatorRole: role,
         createdAt: new Date().toISOString(),
         ...(effectiveRecurrence !== 'none' ? { recurrence: effectiveRecurrence } : {}),
