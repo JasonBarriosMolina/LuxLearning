@@ -114,6 +114,7 @@ const EMPTY_FORM = {
   recurrenceDays: [] as number[],
   recurrenceEndDate: '',
   targetCourseId: '',
+  targetStudentIds: [] as string[],
 };
 
 const calMessages = {
@@ -169,12 +170,18 @@ export default function EvaluatorCalendarPage() {
 
   // My courses (for course_mine visibility selector)
   const [myCourses, setMyCourses] = useState<{ id: string; title: string }[]>([]);
+  // My students (for students visibility selector)
+  const [myStudents, setMyStudents] = useState<{ userId: string; name: string; email: string }[]>([]);
 
   useEffect(() => {
     if (!currentUserId) return; // wait for auth to be ready
     api.evaluator.myCourses().then((res: any) => {
       const list = Array.isArray(res) ? res : (res?.data ?? res?.courses ?? []);
       setMyCourses(list.map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
+    }).catch(() => {});
+    (api.evaluator.students as any)().then((res: any) => {
+      const list = Array.isArray(res) ? res : (res?.data ?? res?.students ?? []);
+      setMyStudents(list.map((s: any) => ({ userId: s.userId ?? s.id, name: s.name ?? s.email, email: s.email })));
     }).catch(() => {});
   }, [currentUserId]);
 
@@ -299,6 +306,7 @@ export default function EvaluatorCalendarPage() {
       recurrenceDays: ev.recurrenceDays ?? [],
       recurrenceEndDate: ev.recurrenceEndDate ?? '',
       targetCourseId: ev.targetCourseId ?? '',
+      targetStudentIds: (ev as any).targetStudentIds ?? [],
     });
     setDurationMinutes(60);
     setShowAdvancedVisibility(
@@ -337,6 +345,7 @@ export default function EvaluatorCalendarPage() {
         visibility: form.visibility,
         location: form.location || undefined,
         ...(form.visibility === 'course_mine' && form.targetCourseId ? { targetCourseId: form.targetCourseId } : {}),
+        ...(form.visibility === 'students' && form.targetStudentIds.length > 0 ? { targetStudentIds: form.targetStudentIds } : {}),
         ...(form.recurrence !== 'none' ? {
           recurrence: form.recurrence,
           recurrenceDays: form.recurrenceDays.length > 0 ? form.recurrenceDays : undefined,
@@ -700,7 +709,7 @@ export default function EvaluatorCalendarPage() {
                 <button
                   key={v.value}
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, visibility: v.value }))}
+                  onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [] }))}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
                     form.visibility === v.value
@@ -729,7 +738,7 @@ export default function EvaluatorCalendarPage() {
                     <button
                       key={v.value}
                       type="button"
-                      onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '' }))}
+                      onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [] }))}
                       className={cn(
                         'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
                         form.visibility === v.value
@@ -753,6 +762,60 @@ export default function EvaluatorCalendarPage() {
                       <option key={c.id} value={c.id}>{c.title}</option>
                     ))}
                   </select>
+                )}
+              </div>
+            )}
+
+            {/* Students sub-selector */}
+            {form.visibility === 'students' && myStudents.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-gray-500 font-medium">¿A quiénes va dirigido?</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, targetStudentIds: [] }))}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg border-2 text-xs font-medium transition-all',
+                      form.targetStudentIds.length === 0
+                        ? 'border-cta-from bg-blue-50 text-[#17527E]'
+                        : 'border-border text-gray-500 hover:border-gray-300'
+                    )}
+                  >
+                    Todos los estudiantes
+                  </button>
+                </div>
+                <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
+                  {myStudents.map((s) => {
+                    const selected = form.targetStudentIds.includes(s.userId);
+                    return (
+                      <label
+                        key={s.userId}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm',
+                          selected ? 'bg-blue-50' : 'hover:bg-surface'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => setForm((f) => ({
+                            ...f,
+                            targetStudentIds: selected
+                              ? f.targetStudentIds.filter((id) => id !== s.userId)
+                              : [...f.targetStudentIds, s.userId],
+                          }))}
+                          className="rounded accent-[#17527E]"
+                        />
+                        <span className="flex-1 truncate font-medium text-charcoal">{s.name}</span>
+                        <span className="text-xs text-gray-400 truncate">{s.email}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {form.targetStudentIds.length > 0 && (
+                  <p className="text-xs text-[#17527E] font-medium">
+                    {form.targetStudentIds.length} estudiante{form.targetStudentIds.length > 1 ? 's' : ''} seleccionado{form.targetStudentIds.length > 1 ? 's' : ''}
+                  </p>
                 )}
               </div>
             )}

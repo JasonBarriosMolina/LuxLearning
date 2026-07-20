@@ -1050,6 +1050,7 @@ export interface CalendarEvent {
   color?: string;
   location?: string;
   targetCourseId?: string;
+  targetStudentIds?: string[];  // when set and visibility='students', only these users see it
   creatorName?: string;
   creatorRole?: string;
   createdAt: string;
@@ -1128,7 +1129,12 @@ export async function getAllVisibleCalendarEvents(
     if (ev.creatorId === requestorId) return true;
     if (isAdmin) return true;
     if (ev.visibility === 'evaluators') return true;
-    if (ev.visibility === 'students') return true;
+    if (ev.visibility === 'students') {
+      if (ev.targetStudentIds && ev.targetStudentIds.length > 0) {
+        return ev.targetStudentIds.includes(requestorId);
+      }
+      return true;
+    }
     if (ev.visibility === 'community') return true;
     if (ev.visibility === 'course_mine') return true;   // evaluators see all course-scoped events
     if (ev.visibility === 'course_all') return true;
