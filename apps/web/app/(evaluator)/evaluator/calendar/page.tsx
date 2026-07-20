@@ -171,11 +171,12 @@ export default function EvaluatorCalendarPage() {
   const [myCourses, setMyCourses] = useState<{ id: string; title: string }[]>([]);
 
   useEffect(() => {
+    if (!currentUserId) return; // wait for auth to be ready
     api.evaluator.myCourses().then((res: any) => {
       const list = Array.isArray(res) ? res : (res?.data ?? res?.courses ?? []);
       setMyCourses(list.map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
     }).catch(() => {});
-  }, []);
+  }, [currentUserId]);
 
   // Create / edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -260,8 +261,9 @@ export default function EvaluatorCalendarPage() {
     const toInput = (d: Date) =>
       `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const startStr = toInput(start);
-    // Month-view click lands on midnight → treat as all-day; time-grid click → 1h event
-    const isMidnightClick = start.getHours() === 0 && start.getMinutes() === 0 && slot.action === 'click';
+    // Month-view click lands on midnight → treat as all-day; week/day time-grid clicks should never be all-day
+    const inMonthView = view === Views.MONTH;
+    const isMidnightClick = inMonthView && start.getHours() === 0 && start.getMinutes() === 0 && slot.action === 'click';
     const isAllDay = slot.action === 'select' || isMidnightClick;
     const endStr = isAllDay ? toInput(end) : addMinutes(startStr, 60);
     setEditingEvent(null);

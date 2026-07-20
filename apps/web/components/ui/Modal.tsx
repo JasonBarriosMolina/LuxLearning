@@ -53,10 +53,10 @@ export function Modal({ open, onClose, title, children, size = 'md', closeOnOver
         onClick={closeOnOverlay ? onClose : undefined}
       />
       {/* Modal */}
-      <div className={cn('relative bg-white rounded-2xl shadow-card-hover w-full animate-slide-up', sizeClasses[size])}>
+      <div className={cn('relative bg-white rounded-2xl shadow-card-hover w-full animate-slide-up flex flex-col max-h-[90vh]', sizeClasses[size])}>
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between p-6 border-b border-border">
+          <div className="flex items-center justify-between p-6 border-b border-border shrink-0">
             <h2 className="font-heading font-bold text-lg text-charcoal">{title}</h2>
             <button
               onClick={onClose}
@@ -68,7 +68,7 @@ export function Modal({ open, onClose, title, children, size = 'md', closeOnOver
           </div>
         )}
         {/* Body */}
-        <div className="p-6">{children}</div>
+        <div className="p-6 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

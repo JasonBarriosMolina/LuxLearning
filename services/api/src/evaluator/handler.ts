@@ -831,6 +831,7 @@ export const handler = async (event: Event) => {
 </body>
 </html>`;
 
+      let emailSent = true;
       try {
         await ses.send(new SendEmailCommand({
           Source: FROM_EMAIL,
@@ -841,15 +842,17 @@ export const handler = async (event: Event) => {
           },
         }));
       } catch (sesErr: any) {
-        // SES sandbox: unverified destination — log but don't fail (chat message still sent by frontend)
+        // SES sandbox: unverified destination — non-fatal, still persist the reminder
         console.warn('[Reminder] SES send failed (non-fatal):', sesErr?.message ?? sesErr);
-        return ok({ sent: false, reason: sesErr?.message ?? 'SES error' });
+        emailSent = false;
       }
 
-      // Persist so the badge survives page refresh
-      await setManualReminder(userId, auth?.email ?? userId, courseTitle).catch(() => {});
+      // Always persist — the reminder was sent regardless of SES sandbox limitations
+      await setManualReminder(userId, auth?.email ?? userId, courseTitle).catch((err: any) => {
+        console.error('[Reminder] setManualReminder failed:', err?.message ?? err);
+      });
 
-      return ok({ sent: true });
+      return ok({ sent: emailSent });
     }
 
     // GET /evaluator/students/:userId/reminders — full reminder history (manual + auto)
