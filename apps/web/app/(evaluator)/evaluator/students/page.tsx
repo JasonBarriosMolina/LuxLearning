@@ -25,7 +25,7 @@ type CourseStat = {
 
 type ReminderSummary = { lastSent: string; sentBy: string; count: number };
 type ReminderEntry = { sentAt: string; sentBy: string; type: 'manual' | 'auto'; courseTitle?: string; count?: number };
-type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive'; taskCounts?: { pending: number; overdue: number; completed: number } | null; lastManualReminder?: ReminderSummary | null; lastAutoReminder?: { lastSent: string; count: number } | null };
+type Student = { userId: string; studentName?: string; studentEmail?: string | null; courses: CourseStat[]; lastSeen?: string | null; presenceStatus?: 'online' | 'active' | 'inactive' | 'never_active' | 'disabled'; enabled?: boolean; taskCounts?: { pending: number; overdue: number; completed: number } | null; lastManualReminder?: ReminderSummary | null; lastAutoReminder?: { lastSent: string; count: number } | null };
 
 function formatReminderAge(sentAt: string | Date): string {
   const ms = typeof sentAt === 'string' ? new Date(sentAt).getTime() : sentAt.getTime();
@@ -50,7 +50,9 @@ function getCurrentModule(modules: ModuleStat[]): ModuleStat | null {
 type SP = Translations['studentsPage'];
 
 function riskLevel(presenceStatus?: string, overallPct?: number): 'critical' | 'high' | 'medium' | 'low' {
-  const inactive = presenceStatus === 'inactive';
+  // Disabled students: no risk classification (managed separately)
+  if (presenceStatus === 'disabled') return 'low';
+  const inactive = presenceStatus === 'inactive' || presenceStatus === 'never_active';
   const pct = overallPct ?? 0;
   if (inactive && pct < 20) return 'critical';
   if (inactive || pct < 25) return 'high';
@@ -72,20 +74,30 @@ function RiskBadge({ level }: { level: 'critical' | 'high' | 'medium' | 'low' })
   );
 }
 
-function PresenceBadge({ status, ts }: { status?: string; ts: SP }) {
+function PresenceBadge({ status }: { status?: string; ts?: SP }) {
   if (status === 'online') return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />{ts.presenceOnline}
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />En línea
     </span>
   );
   if (status === 'active') return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{ts.presenceActive}
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Activo
+    </span>
+  );
+  if (status === 'never_active') return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Sin actividad
+    </span>
+  );
+  if (status === 'disabled') return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Desactivado
     </span>
   );
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />{ts.presenceInactive}
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />Inactivo
     </span>
   );
 }
@@ -173,12 +185,12 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
         className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left cursor-pointer"
       >
         <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
-          {(student.studentName ?? student.userId)[0]?.toUpperCase()}
+          {(student.studentName ?? 'Sin nombre')[0]?.toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? student.userId}</p>
-            <PresenceBadge status={student.presenceStatus} ts={ts} />
+            <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? 'Sin nombre'}</p>
+            <PresenceBadge status={student.presenceStatus} />
             <RiskBadge level={riskLevel(student.presenceStatus, overallPct)} />
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{formatLastSeen(student.lastSeen, ts)}</p>
@@ -189,7 +201,7 @@ function StudentCard({ student, courses, ts, onSendReminder, sendingReminderId, 
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0">
           <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-            {student.presenceStatus === 'inactive' && onSendReminder && (() => {
+            {(student.presenceStatus === 'inactive' || student.presenceStatus === 'never_active') && student.presenceStatus !== 'disabled' && onSendReminder && (() => {
               // Optimistic update takes precedence; server data persists across refresh
               const optimistic = reminderSentIds?.get(student.userId);
               const serverSent = student.lastManualReminder?.lastSent;
@@ -641,7 +653,7 @@ function AdminStudentList({ courses, initialPresenceFilter }: { courses: { id: s
                     {/* Presencia */}
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <PresenceBadge status={presenceMap[u.sub ?? u.username]?.presenceStatus} ts={ts} />
+                        <PresenceBadge status={presenceMap[u.sub ?? u.username]?.presenceStatus} />
                         <span className="text-xs text-gray-400">{formatLastSeen(presenceMap[u.sub ?? u.username]?.lastSeen, ts)}</span>
                       </div>
                     </td>
@@ -1036,12 +1048,12 @@ function StudentsPageInner() {
                       className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left"
                     >
                       <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
-                        {(student.studentName ?? student.userId)[0]?.toUpperCase()}
+                        {(student.studentName ?? 'Sin nombre')[0]?.toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-charcoal text-sm">{student.studentName ?? student.userId}</p>
-                          <PresenceBadge status={student.presenceStatus} ts={ts} />
+                          <p className="font-semibold text-charcoal text-sm">{student.studentName ?? 'Sin nombre'}</p>
+                          <PresenceBadge status={student.presenceStatus} />
                         </div>
                         <p className="text-xs text-gray-400">{formatLastSeen(student.lastSeen, ts)}</p>
                       </div>
