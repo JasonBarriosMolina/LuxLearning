@@ -38,6 +38,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CacheEntry { value: string; expiresAt: number }
 const emailCache = new Map<string, CacheEntry>();
 const nameCache = new Map<string, CacheEntry>();
+const enabledCache = new Map<string, CacheEntry>(); // 'true' | 'false'
 
 function cacheGet(map: Map<string, CacheEntry>, key: string): string | undefined {
   const entry = map.get(key);
@@ -53,14 +54,21 @@ function cacheSet(map: Map<string, CacheEntry>, key: string, value: string): voi
 async function getCognitoUser(userId: string): Promise<{ email: string; name: string; enabled: boolean } | null> {
   if (!userId) return null;
   const cachedEmail = cacheGet(emailCache, userId);
-  if (cachedEmail !== undefined) return { email: cachedEmail, name: cacheGet(nameCache, userId) ?? cachedEmail, enabled: true };
+  if (cachedEmail !== undefined) {
+    const cachedEnabled = cacheGet(enabledCache, userId);
+    return { email: cachedEmail, name: cacheGet(nameCache, userId) ?? cachedEmail, enabled: cachedEnabled !== 'false' };
+  }
 
   const extractAttrs = (attrs: { Name?: string; Value?: string }[], enabled: boolean) => {
     const email = attrs.find((a) => a.Name === 'email')?.Value ?? '';
     const name = attrs.find((a) => a.Name === 'name')?.Value
       ?? attrs.find((a) => a.Name === 'given_name')?.Value
       ?? email;
-    if (email) { cacheSet(emailCache, userId, email); cacheSet(nameCache, userId, name); }
+    if (email) {
+      cacheSet(emailCache, userId, email);
+      cacheSet(nameCache, userId, name);
+      cacheSet(enabledCache, userId, enabled ? 'true' : 'false');
+    }
     return { email, name, enabled };
   };
 
