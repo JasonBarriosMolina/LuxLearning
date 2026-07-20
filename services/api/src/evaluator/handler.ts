@@ -1618,11 +1618,16 @@ ${text.trim()}`;
           }));
         } catch { /* non-fatal */ }
 
-        // 5. Track enrollment in StudentGroupMember
-        await prisma.studentGroupMember.update({
+        // 5. Track enrollment in StudentGroupMember (deduplicate)
+        const member = await prisma.studentGroupMember.findUnique({
           where: { groupId_userId: { groupId, userId: uid } },
-          data: { enrolledCourseIds: { push: courseId } },
-        }).catch(() => { /* member might not exist yet — ignore */ });
+        }).catch(() => null);
+        if (member && !member.enrolledCourseIds.includes(courseId)) {
+          await prisma.studentGroupMember.update({
+            where: { groupId_userId: { groupId, userId: uid } },
+            data: { enrolledCourseIds: { push: courseId } },
+          }).catch(() => {});
+        }
       }));
 
       return ok({ enrolled: userIds.length, courseId });

@@ -78,8 +78,7 @@ export default function AdminGroupDetailPage() {
   const openAddMembers = async () => {
     if (allUsers.length === 0) {
       const data = await api.admin.users.list();
-      const users: CognitoUser[] = (data.users ?? data).filter((u: any) => u.role === 'STUDENT' || u.groups?.includes('STUDENT'));
-      setAllUsers(users);
+      setAllUsers(data.users ?? data);
     }
     setSelectedUserIds([]);
     setMemberSearch('');

@@ -2447,12 +2447,13 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
     if (groupMembersMatch && method === 'GET') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const groupId = groupMembersMatch[1]!;
+      const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
       const members = await prisma.studentGroupMember.findMany({ where: { groupId }, orderBy: { addedAt: 'asc' } });
       const enriched = await Promise.all(members.map(async (m) => {
         const cog = await getCognitoUser(m.userId).catch(() => ({ email: m.userId, name: m.userId, enabled: true }));
         return { ...m, email: cog.email, name: cog.name, enabled: cog.enabled };
       }));
-      return ok(enriched);
+      return ok({ groupName: group?.name ?? '', members: enriched });
     }
 
     // POST /admin/groups/:id/members
