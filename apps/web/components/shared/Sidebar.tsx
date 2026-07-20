@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Mail,
   FolderOpen,
+  FolderKanban,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useInstallPrompt } from '@/lib/hooks/useInstallPrompt';
@@ -39,7 +40,7 @@ type NavKey =
   | 'dashboard' | 'myCourses' | 'myProgress' | 'myTasks' | 'calendar'
   | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
-  | 'communications' | 'myResources' | 'adminCerts';
+  | 'communications' | 'myResources' | 'adminCerts' | 'groups';
 
 type AllRole = 'STUDENT' | 'EVALUATOR' | 'ADMIN' | 'SUPER_ADMIN';
 
@@ -69,6 +70,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/users', labelKey: 'users', icon: <UserCog className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
   { href: '/admin/email-templates', labelKey: 'emailTemplates', icon: <Mail className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
   { href: '/admin/certificates', labelKey: 'adminCerts', icon: <Download className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin/groups', labelKey: 'groups', icon: <FolderKanban className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/groups', labelKey: 'groups', icon: <FolderKanban className="w-5 h-5" />, roles: ['EVALUATOR'] },
   { href: '/activity', labelKey: 'myActivity', icon: <TrendingUp className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/profile', labelKey: 'myProfile', icon: <UserCircle className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" />, roles: ['STUDENT'] },

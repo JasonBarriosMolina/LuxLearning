@@ -144,6 +144,12 @@ export const api = {
         request<any>(`/evaluator/resources/${resourceId}/restore`, { method: 'POST' }),
       byCourse: (courseId: string) => request<any>(`/evaluator/courses/${courseId}/resources`),
     },
+    groups: {
+      list: () => request<any>('/evaluator/groups'),
+      members: (id: string) => request<any>(`/evaluator/groups/${id}/members`),
+      enroll: (id: string, body: { userIds: string[]; courseId: string }) =>
+        request<any>(`/evaluator/groups/${id}/enroll`, { method: 'POST', body: JSON.stringify(body) }),
+    },
   },
 
   tasks: {
@@ -327,6 +333,24 @@ export const api = {
       request<any>('/admin/generate-image', { method: 'POST', body: JSON.stringify(body) }),
     stockPhotos: (q: string, page = 1) =>
       request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}`),
+    groups: {
+      list: () => request<any>('/admin/groups'),
+      create: (body: { name: string; description?: string }) =>
+        request<any>('/admin/groups', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: { name?: string; description?: string }) =>
+        request<any>(`/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/admin/groups/${id}`, { method: 'DELETE' }),
+      members: (id: string) => request<any>(`/admin/groups/${id}/members`),
+      addMembers: (id: string, body: { userIds: string[] }) =>
+        request<any>(`/admin/groups/${id}/members`, { method: 'POST', body: JSON.stringify(body) }),
+      removeMember: (id: string, userId: string, body?: { unenrollCourseIds?: string[] }) =>
+        request<any>(`/admin/groups/${id}/members/${userId}`, { method: 'DELETE', body: JSON.stringify(body ?? {}) }),
+      evaluators: (id: string) => request<any>(`/admin/groups/${id}/evaluators`),
+      addEvaluator: (id: string, body: { evaluatorId: string }) =>
+        request<any>(`/admin/groups/${id}/evaluators`, { method: 'POST', body: JSON.stringify(body) }),
+      removeEvaluator: (id: string, evaluatorId: string) =>
+        request<any>(`/admin/groups/${id}/evaluators/${evaluatorId}`, { method: 'DELETE' }),
+    },
   },
   profile: {
     get: () => request<any>('/user/profile'),

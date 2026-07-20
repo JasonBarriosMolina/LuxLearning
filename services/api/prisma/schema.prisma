@@ -75,3 +75,31 @@ model Question {
 
   @@unique([moduleId, order])
 }
+
+model StudentGroup {
+  id          String                  @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime                @default(now())
+  members     StudentGroupMember[]
+  evaluators  StudentGroupEvaluator[]
+}
+
+model StudentGroupMember {
+  groupId           String
+  userId            String    // Cognito username
+  addedAt           DateTime  @default(now())
+  enrolledCourseIds String[]  @default([])
+  group             StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+model StudentGroupEvaluator {
+  groupId     String
+  evaluatorId String    // Cognito sub (UUID)
+  assignedAt  DateTime  @default(now())
+  group       StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, evaluatorId])
+}

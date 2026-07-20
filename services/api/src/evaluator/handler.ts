@@ -13,13 +13,14 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, createEnrollment, getEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { jsonrepair } from 'jsonrepair';
+import { upsertChat, upsertMembership } from '../shared/db-messages';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -1526,6 +1527,110 @@ ${text.trim()}`;
       }
       await deleteCalendarEvent(userId, eventId);
       return ok({ deleted: true });
+    }
+
+    // ── Student Groups (evaluator view) ────────────────────────────────────────
+    // GET /evaluator/groups — grupos asignados a este evaluador
+    if (method === 'GET' && path === '/evaluator/groups') {
+      const groupAssignments = await prisma.studentGroupEvaluator.findMany({
+        where: { evaluatorId: userId },
+        include: { group: { include: { _count: { select: { members: true } } } } },
+        orderBy: { assignedAt: 'asc' },
+      });
+      return ok(groupAssignments.map((a) => ({ ...a.group, memberCount: a.group._count.members })));
+    }
+
+    // GET /evaluator/groups/:id/members — estudiantes de un grupo asignado
+    const evalGroupMembersMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/members$/);
+    if (evalGroupMembersMatch && method === 'GET') {
+      const groupId = evalGroupMembersMatch[1]!;
+      // Verify evaluator has access to this group
+      const access = await prisma.studentGroupEvaluator.findUnique({
+        where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
+      });
+      if (!access && !isAdminRole) return forbidden('No tienes acceso a este grupo');
+      const members = await prisma.studentGroupMember.findMany({ where: { groupId }, orderBy: { addedAt: 'asc' } });
+      const enriched = await Promise.all(members.map(async (m) => {
+        const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: m.userId })).catch(() => null);
+        const attrs = cogUser?.UserAttributes ?? [];
+        const getAttr = (n: string) => attrs.find((a) => a.Name === n)?.Value ?? '';
+        const enrolledCourseIds = await getEnrollments(m.userId).catch(() => [] as string[]);
+        return { ...m, email: getAttr('email'), name: getAttr('name') || getAttr('email'), enrolledCourseIds };
+      }));
+      return ok(enriched);
+    }
+
+    // POST /evaluator/groups/:id/enroll — inscribir estudiantes del grupo a un curso
+    const evalGroupEnrollMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/enroll$/);
+    if (evalGroupEnrollMatch && method === 'POST') {
+      const groupId = evalGroupEnrollMatch[1]!;
+      const access = await prisma.studentGroupEvaluator.findUnique({
+        where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
+      });
+      if (!access && !isAdminRole) return forbidden('No tienes acceso a este grupo');
+      const { userIds, courseId } = JSON.parse(event.body ?? '{}') as { userIds?: string[]; courseId?: string };
+      if (!userIds?.length || !courseId) return badRequest('userIds y courseId son requeridos');
+
+      const course = await prisma.course.findUnique({ where: { id: courseId }, include: { modules: { include: { lessons: true } } } });
+      if (!course) return notFound('Curso no encontrado');
+
+      await Promise.allSettled(userIds.map(async (uid) => {
+        // 1. Create DynamoDB enrollment
+        await createEnrollment(uid, courseId);
+
+        // 2. Email welcome (best-effort)
+        try {
+          const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid }));
+          const attrs = cogUser.UserAttributes ?? [];
+          const studentEmail = attrs.find((a) => a.Name === 'email')?.Value;
+          const studentName  = attrs.find((a) => a.Name === 'name')?.Value ?? studentEmail ?? uid;
+          if (studentEmail) {
+            await sendTemplatedEmail(studentEmail, 'ENROLLMENT', { studentName, courseTitle: course.title });
+          }
+        } catch { /* non-fatal */ }
+
+        // 3. Group chat membership
+        try {
+          const chatId = `group_${courseId}`;
+          await upsertChat(chatId, { type: 'group', name: course.title, participants: [uid] });
+          await upsertMembership(uid, chatId, { role: 'member', name: uid });
+        } catch { /* non-fatal */ }
+
+        // 4. Auto-tasks per module
+        try {
+          const enrollDate = new Date();
+          await Promise.all(course.modules.map((mod) => {
+            const due = new Date(enrollDate);
+            due.setDate(due.getDate() + 7 * mod.order);
+            return createTask({
+              userId: uid,
+              taskId: `${uid}-${mod.id}-complete`,
+              title: `Completar módulo: ${mod.title}`,
+              description: `Completa las lecciones, quiz y reflexión del módulo "${mod.title}" del curso "${course.title}".`,
+              dueDate: due.toISOString(),
+              type: 'complete_module',
+              courseId,
+              moduleId: mod.id,
+              assignedBy: 'system',
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            });
+          }));
+        } catch { /* non-fatal */ }
+
+        // 5. Track enrollment in StudentGroupMember (deduplicate)
+        const member = await prisma.studentGroupMember.findUnique({
+          where: { groupId_userId: { groupId, userId: uid } },
+        }).catch(() => null);
+        if (member && !member.enrolledCourseIds.includes(courseId)) {
+          await prisma.studentGroupMember.update({
+            where: { groupId_userId: { groupId, userId: uid } },
+            data: { enrolledCourseIds: { push: courseId } },
+          }).catch(() => {});
+        }
+      }));
+
+      return ok({ enrolled: userIds.length, courseId });
     }
 
     return badRequest('Unknown route');

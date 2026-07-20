@@ -22,6 +22,7 @@ export const es = {
     installApp: 'Instalar app',
     signOut: 'Cerrar sesión',
     adminCerts: 'Certificados',
+    groups: 'Grupos Base',
   },
   roles: {
     superAdmin: 'Super Admin',
@@ -1246,6 +1247,7 @@ export const en: typeof es = {
     installApp: 'Install app',
     signOut: 'Sign out',
     adminCerts: 'Certificates',
+    groups: 'Base Groups',
   },
   roles: {
     superAdmin: 'Super Admin',

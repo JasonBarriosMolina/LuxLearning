@@ -767,7 +767,7 @@ export default function EvaluatorCalendarPage() {
             )}
 
             {/* Students sub-selector */}
-            {form.visibility === 'students' && myStudents.length > 0 && (
+            {form.visibility === 'students' && (
               <div className="space-y-2 pt-1">
                 <p className="text-xs text-gray-500 font-medium">¿A quiénes va dirigido?</p>
                 <div className="flex flex-wrap gap-2">
@@ -784,34 +784,36 @@ export default function EvaluatorCalendarPage() {
                     Todos los estudiantes
                   </button>
                 </div>
-                <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
-                  {myStudents.map((s) => {
-                    const selected = form.targetStudentIds.includes(s.userId);
-                    return (
-                      <label
-                        key={s.userId}
-                        className={cn(
-                          'flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm',
-                          selected ? 'bg-blue-50' : 'hover:bg-surface'
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => setForm((f) => ({
-                            ...f,
-                            targetStudentIds: selected
-                              ? f.targetStudentIds.filter((id) => id !== s.userId)
-                              : [...f.targetStudentIds, s.userId],
-                          }))}
-                          className="rounded accent-[#17527E]"
-                        />
-                        <span className="flex-1 truncate font-medium text-charcoal">{s.name}</span>
-                        <span className="text-xs text-gray-400 truncate">{s.email}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                {myStudents.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
+                    {myStudents.map((s) => {
+                      const selected = form.targetStudentIds.includes(s.userId);
+                      return (
+                        <label
+                          key={s.userId}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm',
+                            selected ? 'bg-blue-50' : 'hover:bg-surface'
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => setForm((f) => ({
+                              ...f,
+                              targetStudentIds: selected
+                                ? f.targetStudentIds.filter((id) => id !== s.userId)
+                                : [...f.targetStudentIds, s.userId],
+                            }))}
+                            className="rounded accent-[#17527E]"
+                          />
+                          <span className="flex-1 truncate font-medium text-charcoal">{s.name}</span>
+                          <span className="text-xs text-gray-400 truncate">{s.email}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 {form.targetStudentIds.length > 0 && (
                   <p className="text-xs text-[#17527E] font-medium">
                     {form.targetStudentIds.length} estudiante{form.targetStudentIds.length > 1 ? 's' : ''} seleccionado{form.targetStudentIds.length > 1 ? 's' : ''}
