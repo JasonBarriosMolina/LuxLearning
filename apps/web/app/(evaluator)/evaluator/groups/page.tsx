@@ -145,8 +145,7 @@ export default function EvaluatorGroupsPage() {
   };
 
   const openAddMembers = (groupId: string) => {
-    const existing = new Set((membersMap[groupId] ?? []).map((m) => m.userId));
-    setSelectedPool(pool.filter((s) => !existing.has(s.userId)).map((s) => s.userId));
+    setSelectedPool([]);
     setMemberSearch('');
     setAddMembersGroup(groupId);
   };
