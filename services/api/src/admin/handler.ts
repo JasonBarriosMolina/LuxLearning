@@ -328,7 +328,8 @@ function isAuthorized(event: Event): boolean {
 }
 
 function isAdmin(event: Event): boolean {
-  return event.requestContext.authorizer?.lambda?.role === 'ADMIN';
+  const role = event.requestContext.authorizer?.lambda?.role;
+  return role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
 async function getCallerName(event: Event): Promise<string | null> {

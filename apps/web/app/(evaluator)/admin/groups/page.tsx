@@ -42,6 +42,8 @@ export default function AdminGroupsPage() {
       setShowModal(false);
       setForm({ name: '', description: '' });
       load();
+    } catch (e: any) {
+      alert(e.message ?? 'Error al crear el grupo');
     } finally {
       setSaving(false);
     }
