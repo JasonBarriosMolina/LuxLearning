@@ -115,6 +115,7 @@ const EMPTY_FORM = {
   recurrenceEndDate: '',
   targetCourseId: '',
   targetStudentIds: [] as string[],
+  targetEvaluatorIds: [] as string[],
 };
 
 const calMessages = {
@@ -170,18 +171,23 @@ export default function EvaluatorCalendarPage() {
 
   // My courses (for course_mine visibility selector)
   const [myCourses, setMyCourses] = useState<{ id: string; title: string }[]>([]);
-  // My students (for students visibility selector)
-  const [myStudents, setMyStudents] = useState<{ userId: string; name: string; email: string }[]>([]);
+  // Students + evaluators for visibility sub-selectors
+  const [allStudents, setAllStudents] = useState<{ userId: string; name: string; email: string }[]>([]);
+  const [allEvaluators, setAllEvaluators] = useState<{ userId: string; name: string; email: string }[]>([]);
 
   useEffect(() => {
-    if (!currentUserId) return; // wait for auth to be ready
+    if (!currentUserId) return;
     api.evaluator.myCourses().then((res: any) => {
       const list = Array.isArray(res) ? res : (res?.data ?? res?.courses ?? []);
       setMyCourses(list.map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
     }).catch(() => {});
-    (api.evaluator.students as any)().then((res: any) => {
-      const list = Array.isArray(res) ? res : (res?.data ?? res?.students ?? []);
-      setMyStudents(list.map((s: any) => ({ userId: s.userId ?? s.id, name: s.name ?? s.email, email: s.email })));
+    api.evaluator.groups.studentPool().then((res: any) => {
+      const list = Array.isArray(res) ? res : (res?.students ?? []);
+      setAllStudents(list);
+    }).catch(() => {});
+    api.evaluator.evaluatorsList().then((res: any) => {
+      const list = Array.isArray(res) ? res : (res?.evaluators ?? []);
+      setAllEvaluators(list);
     }).catch(() => {});
   }, [currentUserId]);
 
@@ -307,11 +313,10 @@ export default function EvaluatorCalendarPage() {
       recurrenceEndDate: ev.recurrenceEndDate ?? '',
       targetCourseId: ev.targetCourseId ?? '',
       targetStudentIds: (ev as any).targetStudentIds ?? [],
+      targetEvaluatorIds: (ev as any).targetEvaluatorIds ?? [],
     });
     setDurationMinutes(60);
-    setShowAdvancedVisibility(
-      ev.visibility === 'course_mine' || ev.visibility === 'course_all'
-    );
+    setShowAdvancedVisibility(ev.visibility === 'course_mine' || ev.visibility === 'course_all');
     setError('');
     setModalOpen(true);
   };
@@ -346,6 +351,7 @@ export default function EvaluatorCalendarPage() {
         location: form.location || undefined,
         ...(form.visibility === 'course_mine' && form.targetCourseId ? { targetCourseId: form.targetCourseId } : {}),
         ...(form.visibility === 'students' && form.targetStudentIds.length > 0 ? { targetStudentIds: form.targetStudentIds } : {}),
+        ...(form.visibility === 'evaluators' && form.targetEvaluatorIds.length > 0 ? { targetEvaluatorIds: form.targetEvaluatorIds } : {}),
         ...(form.recurrence !== 'none' ? {
           recurrence: form.recurrence,
           recurrenceDays: form.recurrenceDays.length > 0 ? form.recurrenceDays : undefined,
@@ -709,7 +715,7 @@ export default function EvaluatorCalendarPage() {
                 <button
                   key={v.value}
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [] }))}
+                  onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [], targetEvaluatorIds: [] }))}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
                     form.visibility === v.value
@@ -738,7 +744,7 @@ export default function EvaluatorCalendarPage() {
                     <button
                       key={v.value}
                       type="button"
-                      onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [] }))}
+                      onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [], targetEvaluatorIds: [] }))}
                       className={cn(
                         'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
                         form.visibility === v.value
@@ -770,38 +776,33 @@ export default function EvaluatorCalendarPage() {
             {form.visibility === 'students' && (
               <div className="space-y-2 pt-1">
                 <p className="text-xs text-gray-500 font-medium">¿A quiénes va dirigido?</p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, targetStudentIds: [] }))}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg border-2 text-xs font-medium transition-all',
-                      form.targetStudentIds.length === 0
-                        ? 'border-cta-from bg-blue-50 text-[#17527E]'
-                        : 'border-border text-gray-500 hover:border-gray-300'
-                    )}
-                  >
-                    Todos los estudiantes
-                  </button>
-                </div>
-                {myStudents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, targetStudentIds: [] }))}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg border-2 text-xs font-medium transition-all',
+                    form.targetStudentIds.length === 0
+                      ? 'border-cta-from bg-blue-50 text-[#17527E]'
+                      : 'border-border text-gray-500 hover:border-gray-300'
+                  )}
+                >
+                  Todos los estudiantes
+                </button>
+                {allStudents.length > 0 && (
                   <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
-                    {myStudents.map((s) => {
-                      const selected = form.targetStudentIds.includes(s.userId);
+                    {allStudents.map((s) => {
+                      const checked = form.targetStudentIds.includes(s.userId);
                       return (
                         <label
                           key={s.userId}
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm',
-                            selected ? 'bg-blue-50' : 'hover:bg-surface'
-                          )}
+                          className={cn('flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm', checked ? 'bg-blue-50' : 'hover:bg-surface')}
                         >
                           <input
                             type="checkbox"
-                            checked={selected}
+                            checked={checked}
                             onChange={() => setForm((f) => ({
                               ...f,
-                              targetStudentIds: selected
+                              targetStudentIds: checked
                                 ? f.targetStudentIds.filter((id) => id !== s.userId)
                                 : [...f.targetStudentIds, s.userId],
                             }))}
@@ -817,6 +818,57 @@ export default function EvaluatorCalendarPage() {
                 {form.targetStudentIds.length > 0 && (
                   <p className="text-xs text-[#17527E] font-medium">
                     {form.targetStudentIds.length} estudiante{form.targetStudentIds.length > 1 ? 's' : ''} seleccionado{form.targetStudentIds.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Evaluators sub-selector */}
+            {form.visibility === 'evaluators' && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-gray-500 font-medium">¿A quiénes va dirigido?</p>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, targetEvaluatorIds: [] }))}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg border-2 text-xs font-medium transition-all',
+                    form.targetEvaluatorIds.length === 0
+                      ? 'border-cta-from bg-blue-50 text-[#17527E]'
+                      : 'border-border text-gray-500 hover:border-gray-300'
+                  )}
+                >
+                  Todos los evaluadores
+                </button>
+                {allEvaluators.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
+                    {allEvaluators.map((e) => {
+                      const checked = form.targetEvaluatorIds.includes(e.userId);
+                      return (
+                        <label
+                          key={e.userId}
+                          className={cn('flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors text-sm', checked ? 'bg-blue-50' : 'hover:bg-surface')}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setForm((f) => ({
+                              ...f,
+                              targetEvaluatorIds: checked
+                                ? f.targetEvaluatorIds.filter((id) => id !== e.userId)
+                                : [...f.targetEvaluatorIds, e.userId],
+                            }))}
+                            className="rounded accent-[#17527E]"
+                          />
+                          <span className="flex-1 truncate font-medium text-charcoal">{e.name}</span>
+                          <span className="text-xs text-gray-400 truncate">{e.email}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.targetEvaluatorIds.length > 0 && (
+                  <p className="text-xs text-[#17527E] font-medium">
+                    {form.targetEvaluatorIds.length} evaluador{form.targetEvaluatorIds.length > 1 ? 'es' : ''} seleccionado{form.targetEvaluatorIds.length > 1 ? 's' : ''}
                   </p>
                 )}
               </div>
