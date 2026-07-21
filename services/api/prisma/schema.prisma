@@ -27,7 +27,39 @@ model Course {
   createdByName  String?
   evaluatorName  String?
   evaluatorId    String?
-  modules        Module[]
+
+  // Wizard fields
+  courseType         String?   // TEORICO | TEORICO_PRACTICO | PROYECTOS | CURSO_CORTO | PROGRAMA_ESPECIAL
+  academicPeriod     String?
+  classDays          String[]  @default([])
+  classSchedule      String?
+  modality           String?   // PRESENCIAL | SINCRONICA | ASINCRONICA | HIBRIDA
+  totalWeeks         Int?
+  planLanguage       String?   @default("ES")  // ES | EN
+  cardColor          String?
+  cardBorderColor    String?
+  cardLabels         String[]  @default([])
+  calendarExceptions Json?     // [{date, type:'day'|'week', label}]
+  evaluationConfig   Json?     // [{type, name, weight, count, dueDate?}]
+  planDocumentS3Key  String?   // Word generado
+
+  modules            Module[]
+  evaluationEvents   EvaluationEvent[]
+}
+
+model EvaluationEvent {
+  id           String   @id @default(cuid())
+  courseId     String
+  type         String   // QUIZ | EVIDENCE | INTERVIEW
+  name         String
+  dueDate      DateTime?
+  weight       Float    // porcentaje (ej. 20.0)
+  instructions String?
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
 }
 
 model Module {

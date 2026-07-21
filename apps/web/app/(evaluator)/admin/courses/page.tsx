@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle, FolderOpen, ClipboardList, Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, BookOpen, CheckCircle, XCircle, Pencil, Trash2, ArrowRight, Tag, X, Sparkles, Loader2, RefreshCw, UserCircle, FolderOpen, ClipboardList, Users, Wand2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -33,6 +34,7 @@ function slugify(text: string) {
 }
 
 export default function AdminCoursesPage() {
+  const router = useRouter();
   const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -556,7 +558,25 @@ export default function AdminCoursesPage() {
         title={t.admin.choiceModalTitle}
         size="md"
       >
-        <div className="grid grid-cols-2 gap-3 pb-2">
+        <div className="space-y-3 pb-2">
+          {/* Wizard completo */}
+          <button
+            type="button"
+            onClick={() => { setChoiceModalOpen(false); router.push('/admin/courses/wizard'); }}
+            className="w-full text-left p-4 rounded-xl border-2 border-amber-400 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center shrink-0">
+                <Wand2 className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-charcoal text-sm">Wizard de Planeamiento Completo</p>
+                <p className="text-xs text-gray-500 mt-0.5">Calendario, tipo de evaluación, Copilot IA y generación del plan de estudios oficial (Word)</p>
+              </div>
+            </div>
+          </button>
+
+          <div className="grid grid-cols-2 gap-3">
           {/* Manual */}
           <button
             type="button"
@@ -596,6 +616,7 @@ export default function AdminCoursesPage() {
             <p className="font-semibold text-charcoal text-sm">{t.admin.choicePdfTitle}</p>
             <p className="text-xs text-gray-400 mt-0.5">{t.admin.choicePdfDesc}</p>
           </div>
+          </div>{/* end inner grid */}
         </div>
       </Modal>
 
