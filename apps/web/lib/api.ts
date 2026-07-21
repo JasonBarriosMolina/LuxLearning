@@ -146,9 +146,19 @@ export const api = {
     },
     groups: {
       list: () => request<any>('/evaluator/groups'),
+      create: (body: { name: string; description?: string; color?: string }) =>
+        request<any>('/evaluator/groups', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: { name: string; description?: string; color?: string }) =>
+        request<any>(`/evaluator/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/evaluator/groups/${id}`, { method: 'DELETE' }),
       members: (id: string) => request<any>(`/evaluator/groups/${id}/members`),
+      addMembers: (id: string, body: { userIds: string[] }) =>
+        request<any>(`/evaluator/groups/${id}/members`, { method: 'POST', body: JSON.stringify(body) }),
+      removeMember: (id: string, userId: string) =>
+        request<any>(`/evaluator/groups/${id}/members/${userId}`, { method: 'DELETE' }),
       enroll: (id: string, body: { userIds: string[]; courseId: string }) =>
         request<any>(`/evaluator/groups/${id}/enroll`, { method: 'POST', body: JSON.stringify(body) }),
+      studentPool: () => request<any>('/evaluator/students/pool'),
     },
   },
 

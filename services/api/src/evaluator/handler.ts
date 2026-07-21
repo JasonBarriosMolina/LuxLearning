@@ -1530,14 +1530,52 @@ ${text.trim()}`;
     }
 
     // ── Student Groups (evaluator view) ────────────────────────────────────────
-    // GET /evaluator/groups — grupos asignados a este evaluador
+    // GET /evaluator/groups — grupos asignados + propios del evaluador
     if (method === 'GET' && path === '/evaluator/groups') {
-      const groupAssignments = await prisma.studentGroupEvaluator.findMany({
-        where: { evaluatorId: userId },
-        include: { group: { include: { _count: { select: { members: true } } } } },
-        orderBy: { assignedAt: 'asc' },
+      const [assigned, own] = await Promise.all([
+        prisma.studentGroupEvaluator.findMany({
+          where: { evaluatorId: userId },
+          include: { group: { include: { _count: { select: { members: true } } } } },
+          orderBy: { assignedAt: 'asc' },
+        }),
+        prisma.studentGroup.findMany({
+          where: { createdByEvaluatorId: userId },
+          include: { _count: { select: { members: true } } },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+      const assignedIds = new Set(assigned.map((a) => a.groupId));
+      const assignedGroups = assigned.map((a) => ({ ...a.group, memberCount: a.group._count.members, source: 'admin' }));
+      const ownGroups = own.filter((g) => !assignedIds.has(g.id)).map((g) => ({ ...g, memberCount: g._count.members, source: 'own' }));
+      return ok([...assignedGroups, ...ownGroups]);
+    }
+
+    // POST /evaluator/groups — crear grupo propio
+    if (method === 'POST' && path === '/evaluator/groups') {
+      const { name, description, color } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string; color?: string };
+      if (!name?.trim()) return badRequest('name es requerido');
+      const group = await prisma.studentGroup.create({
+        data: { name: name.trim(), description: description?.trim(), color: color ?? '#17527E', createdByEvaluatorId: userId },
       });
-      return ok(groupAssignments.map((a) => ({ ...a.group, memberCount: a.group._count.members })));
+      return ok(group);
+    }
+
+    // GET /evaluator/students/pool — estudiantes de los cursos del evaluador (para agregar al grupo)
+    if (method === 'GET' && path === '/evaluator/students/pool') {
+      const myCourses = await prisma.course.findMany({ where: { evaluatorId: userId }, select: { id: true } });
+      const courseIds = myCourses.map((c) => c.id);
+      if (courseIds.length === 0) return ok([]);
+      const enrollments = await getAllEnrollments().catch(() => [] as any[]);
+      const studentIds = [...new Set(
+        enrollments.filter((e: any) => courseIds.includes(e.courseId)).map((e: any) => e.userId)
+      )];
+      const enriched = await Promise.all(studentIds.map(async (uid) => {
+        const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid })).catch(() => null);
+        const attrs = cogUser?.UserAttributes ?? [];
+        const getAttr = (n: string) => attrs.find((a: any) => a.Name === n)?.Value ?? '';
+        return { userId: uid, name: getAttr('name') || getAttr('email'), email: getAttr('email') };
+      }));
+      return ok(enriched);
     }
 
     // GET /evaluator/groups/:id/members — estudiantes de un grupo asignado
@@ -1631,6 +1669,59 @@ ${text.trim()}`;
       }));
 
       return ok({ enrolled: userIds.length, courseId });
+    }
+
+    // PUT /evaluator/groups/:id — editar grupo propio
+    const evalGroupBaseMatch = path.match(/^\/evaluator\/groups\/([^/]+)$/);
+    if (evalGroupBaseMatch && method === 'PUT') {
+      const groupId = evalGroupBaseMatch[1]!;
+      const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
+      if (!group) return notFound('Grupo no encontrado');
+      if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes editar tus propios grupos');
+      const { name, description, color } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string; color?: string };
+      if (!name?.trim()) return badRequest('name es requerido');
+      const updated = await prisma.studentGroup.update({
+        where: { id: groupId },
+        data: { name: name.trim(), description: description?.trim() ?? null, ...(color ? { color } : {}) },
+      });
+      return ok(updated);
+    }
+
+    // DELETE /evaluator/groups/:id — eliminar grupo propio
+    if (evalGroupBaseMatch && method === 'DELETE') {
+      const groupId = evalGroupBaseMatch[1]!;
+      const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
+      if (!group) return notFound('Grupo no encontrado');
+      if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes eliminar tus propios grupos');
+      await prisma.studentGroup.delete({ where: { id: groupId } });
+      return ok({ deleted: true });
+    }
+
+    // POST /evaluator/groups/:id/members — agregar miembros al grupo propio
+    const evalGroupMembersWriteMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/members$/);
+    if (evalGroupMembersWriteMatch && method === 'POST') {
+      const groupId = evalGroupMembersWriteMatch[1]!;
+      const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
+      if (!group) return notFound('Grupo no encontrado');
+      if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes modificar tus propios grupos');
+      const { userIds } = JSON.parse(event.body ?? '{}') as { userIds?: string[] };
+      if (!userIds?.length) return badRequest('userIds es requerido');
+      await prisma.studentGroupMember.createMany({
+        data: userIds.map((uid) => ({ groupId, userId: uid })),
+        skipDuplicates: true,
+      });
+      return ok({ added: userIds.length });
+    }
+
+    // DELETE /evaluator/groups/:id/members/:userId — quitar miembro del grupo propio
+    const evalGroupMemberDeleteMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/members\/([^/]+)$/);
+    if (evalGroupMemberDeleteMatch && method === 'DELETE') {
+      const [, groupId, memberId] = evalGroupMemberDeleteMatch;
+      const group = await prisma.studentGroup.findUnique({ where: { id: groupId! } });
+      if (!group) return notFound('Grupo no encontrado');
+      if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes modificar tus propios grupos');
+      await prisma.studentGroupMember.delete({ where: { groupId_userId: { groupId: groupId!, userId: memberId! } } });
+      return ok({ removed: true });
     }
 
     return badRequest('Unknown route');

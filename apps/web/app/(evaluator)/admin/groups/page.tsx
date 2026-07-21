@@ -5,10 +5,16 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Plus, Trash2, Users, UserCheck, ChevronRight, Loader2 } from 'lucide-react';
 
+const COLOR_PALETTE = [
+  '#17527E', '#7C3AED', '#059669', '#DC2626',
+  '#D97706', '#0891B2', '#BE185D', '#374151',
+];
+
 interface Group {
   id: string;
   name: string;
   description?: string;
+  color?: string;
   createdAt: string;
   _count?: { members: number; evaluators: number };
 }
@@ -18,7 +24,7 @@ export default function AdminGroupsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '' });
+  const [form, setForm] = useState({ name: '', description: '', color: COLOR_PALETTE[0] });
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -38,9 +44,9 @@ export default function AdminGroupsPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await api.admin.groups.create({ name: form.name.trim(), description: form.description.trim() || undefined });
+      await api.admin.groups.create({ name: form.name.trim(), description: form.description.trim() || undefined, color: form.color });
       setShowModal(false);
-      setForm({ name: '', description: '' });
+      setForm({ name: '', description: '', color: COLOR_PALETTE[0] });
       load();
     } catch (e: any) {
       alert(e.message ?? 'Error al crear el grupo');
@@ -88,6 +94,7 @@ export default function AdminGroupsPage() {
               key={g.id}
               className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex items-center gap-4 hover:shadow-sm transition-shadow"
             >
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: g.color ?? '#17527E' }} />
               <div
                 className="flex-1 cursor-pointer"
                 onClick={() => router.push(`/admin/groups/${g.id}`)}
@@ -139,16 +146,30 @@ export default function AdminGroupsPage() {
                 <label className="block text-sm font-medium mb-1">Descripción (opcional)</label>
                 <textarea
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  rows={3}
+                  rows={2}
                   placeholder="Descripción del grupo..."
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Color del grupo</label>
+                <div className="flex gap-2 flex-wrap">
+                  {COLOR_PALETTE.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setForm({ ...form, color: c })}
+                      className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
+                      style={{ backgroundColor: c, borderColor: form.color === c ? '#000' : 'transparent' }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="flex gap-2 mt-5">
               <button
-                onClick={() => { setShowModal(false); setForm({ name: '', description: '' }); }}
+                onClick={() => { setShowModal(false); setForm({ name: '', description: '', color: COLOR_PALETTE[0] }); }}
                 className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Cancelar
