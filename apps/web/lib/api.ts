@@ -160,6 +160,7 @@ export const api = {
         request<any>(`/evaluator/groups/${id}/enroll`, { method: 'POST', body: JSON.stringify(body) }),
       studentPool: () => request<any>('/evaluator/students/pool'),
     },
+    evaluatorsList: () => request<any>('/evaluator/evaluators'),
   },
 
   tasks: {

@@ -1380,14 +1380,14 @@ ${text.trim()}`;
       const body = JSON.parse(event.body ?? '{}');
       const {
         title, description, type, startDate, endDate, allDay,
-        visibility, color, location, targetCourseId, targetStudentIds,
+        visibility, color, location, targetCourseId, targetStudentIds, targetEvaluatorIds,
         recurrence, recurrenceDays, recurrenceEndDate,
       } = body as {
         title?: string; description?: string;
         type?: 'class' | 'meeting' | 'event' | 'deadline' | 'reminder' | 'other';
         startDate?: string; endDate?: string; allDay?: boolean;
         visibility?: 'private' | 'evaluators' | 'students' | 'community' | 'course_mine' | 'course_all';
-        color?: string; location?: string; targetCourseId?: string; targetStudentIds?: string[];
+        color?: string; location?: string; targetCourseId?: string; targetStudentIds?: string[]; targetEvaluatorIds?: string[];
         recurrence?: 'none' | 'weekly' | 'monthly' | 'weekdays' | 'custom_days';
         recurrenceDays?: number[];
         recurrenceEndDate?: string;
@@ -1412,6 +1412,7 @@ ${text.trim()}`;
         ...(location ? { location: location.trim() } : {}),
         ...(targetCourseId ? { targetCourseId } : {}),
         ...(targetStudentIds && targetStudentIds.length > 0 ? { targetStudentIds } : {}),
+        ...(targetEvaluatorIds && targetEvaluatorIds.length > 0 ? { targetEvaluatorIds } : {}),
         creatorRole: role,
         createdAt: new Date().toISOString(),
         ...(effectiveRecurrence !== 'none' ? { recurrence: effectiveRecurrence } : {}),
@@ -1562,13 +1563,20 @@ ${text.trim()}`;
 
     // GET /evaluator/students/pool — estudiantes de los cursos del evaluador (para agregar al grupo)
     if (method === 'GET' && path === '/evaluator/students/pool') {
-      const myCourses = await prisma.course.findMany({ where: { evaluatorId: userId }, select: { id: true } });
-      const courseIds = myCourses.map((c) => c.id);
-      if (courseIds.length === 0) return ok([]);
-      const enrollments = await getAllEnrollments().catch(() => [] as any[]);
-      const studentIds = [...new Set(
-        enrollments.filter((e: any) => courseIds.includes(e.courseId)).map((e: any) => e.userId)
-      )];
+      let studentIds: string[];
+      if (isAdminRole) {
+        // Admin: all enrolled students
+        const enrollments = await getAllEnrollments().catch(() => [] as any[]);
+        studentIds = [...new Set(enrollments.map((e: any) => e.userId as string))];
+      } else {
+        const myCourses = await prisma.course.findMany({ where: { evaluatorId: userId }, select: { id: true } });
+        const courseIds = myCourses.map((c) => c.id);
+        if (courseIds.length === 0) return ok([]);
+        const enrollments = await getAllEnrollments().catch(() => [] as any[]);
+        studentIds = [...new Set(
+          enrollments.filter((e: any) => courseIds.includes(e.courseId)).map((e: any) => e.userId as string)
+        )];
+      }
       const enriched = await Promise.all(studentIds.map(async (uid) => {
         const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid })).catch(() => null);
         const attrs = cogUser?.UserAttributes ?? [];
@@ -1576,6 +1584,28 @@ ${text.trim()}`;
         return { userId: uid, name: getAttr('name') || getAttr('email'), email: getAttr('email') };
       }));
       return ok(enriched);
+    }
+
+    // GET /evaluator/evaluators — lista de evaluadores (para selector de destinatarios en calendario)
+    if (method === 'GET' && path === '/evaluator/evaluators') {
+      const listGroup = async (groupName: string): Promise<{ userId: string; name: string; email: string }[]> => {
+        const users: { userId: string; name: string; email: string }[] = [];
+        let nextToken: string | undefined;
+        do {
+          const res = await cognito.send(new ListUsersInGroupCommand({
+            UserPoolId: USER_POOL_ID, GroupName: groupName, Limit: 60,
+            ...(nextToken ? { NextToken: nextToken } : {}),
+          }));
+          for (const u of res.Users ?? []) {
+            const getAttr = (n: string) => u.Attributes?.find((a) => a.Name === n)?.Value ?? '';
+            users.push({ userId: u.Username!, name: getAttr('name') || getAttr('email'), email: getAttr('email') });
+          }
+          nextToken = res.NextToken;
+        } while (nextToken);
+        return users;
+      };
+      const evaluators = await listGroup('EVALUATOR').catch(() => [] as { userId: string; name: string; email: string }[]);
+      return ok(evaluators.filter((e) => e.userId !== userId));
     }
 
     // GET /evaluator/groups/:id/members — estudiantes de un grupo asignado
