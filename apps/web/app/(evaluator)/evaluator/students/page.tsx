@@ -1037,8 +1037,8 @@ function StudentsPageInner() {
                     {reminded.map((student) => {
                       const tag = reminderTypeLabel(student);
                       return (
-                        <div key={student.userId} className="relative">
-                          <div className="absolute top-3 right-3 z-10">
+                        <div key={student.userId}>
+                          <div className="px-4 pt-2 pb-0">
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tag.cls}`}>{tag.label}</span>
                           </div>
                           <StudentCard
