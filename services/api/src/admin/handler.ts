@@ -328,7 +328,8 @@ function isAuthorized(event: Event): boolean {
 }
 
 function isAdmin(event: Event): boolean {
-  return event.requestContext.authorizer?.lambda?.role === 'ADMIN';
+  const role = event.requestContext.authorizer?.lambda?.role;
+  return role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
 async function getCallerName(event: Event): Promise<string | null> {
@@ -2417,9 +2418,9 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
     // POST /admin/groups
     if (method === 'POST' && path === '/admin/groups') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-      const { name, description } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string };
+      const { name, description, color } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string; color?: string };
       if (!name?.trim()) return badRequest('name es requerido');
-      const group = await prisma.studentGroup.create({ data: { name: name.trim(), description: description?.trim() } });
+      const group = await prisma.studentGroup.create({ data: { name: name.trim(), description: description?.trim(), color: color ?? '#17527E' } });
       return ok(group);
     }
 
@@ -2428,9 +2429,9 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
     if (groupBaseMatch && method === 'PUT') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const groupId = groupBaseMatch[1]!;
-      const { name, description } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string };
+      const { name, description, color } = JSON.parse(event.body ?? '{}') as { name?: string; description?: string; color?: string };
       if (!name?.trim()) return badRequest('name es requerido');
-      const group = await prisma.studentGroup.update({ where: { id: groupId }, data: { name: name.trim(), description: description?.trim() ?? null } });
+      const group = await prisma.studentGroup.update({ where: { id: groupId }, data: { name: name.trim(), description: description?.trim() ?? null, ...(color ? { color } : {}) } });
       return ok(group);
     }
 

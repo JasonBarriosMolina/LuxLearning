@@ -8,12 +8,15 @@ import { api } from '@/lib/api';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 type Student = { username: string; email: string; name: string; role: string; enabled: boolean };
 type Course  = { id: string; title: string; isActive: boolean; modules?: any[] };
 
 export default function AssignCoursesPage() {
   const { t } = useLanguage();
+  const { role } = useAuth();
+  const isEvaluator = role === 'EVALUATOR';
   const [mode, setMode] = useState<'by-course' | 'by-student'>('by-course');
 
   // Data
@@ -21,6 +24,11 @@ export default function AssignCoursesPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading]   = useState(true);
   const [loadError, setLoadError] = useState('');
+
+  // Group filter (evaluator only)
+  const [myGroups, setMyGroups] = useState<{ id: string; name: string; color?: string }[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
+  const [groupMemberIds, setGroupMemberIds] = useState<Set<string> | null>(null);
 
   // By-course mode
   const [selectedCourseId, setSelectedCourseId]     = useState('');
@@ -65,6 +73,22 @@ export default function AssignCoursesPage() {
       })
       .catch((err: any) => { setLoadError(err.message ?? t.admin.loadError); setLoading(false); });
   }, []);
+
+  useEffect(() => {
+    if (!isEvaluator) return;
+    api.evaluator.groups.list().then((res: any) => {
+      const list: any[] = Array.isArray(res) ? res : (res?.groups ?? []);
+      setMyGroups(list.map((g: any) => ({ id: g.id, name: g.name, color: g.color })));
+    }).catch(() => {});
+  }, [isEvaluator]);
+
+  useEffect(() => {
+    if (!isEvaluator || selectedGroupId === 'all') { setGroupMemberIds(null); return; }
+    api.evaluator.groups.members(selectedGroupId).then((res: any) => {
+      const members: any[] = res.members ?? res ?? [];
+      setGroupMemberIds(new Set(members.map((m: any) => m.userId)));
+    }).catch(() => setGroupMemberIds(null));
+  }, [isEvaluator, selectedGroupId]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -192,10 +216,14 @@ export default function AssignCoursesPage() {
 
   const matchesSearch = (text: string, q: string) => !q || text.toLowerCase().includes(q.toLowerCase());
 
-  const availableStudents = students.filter((s) =>
+  const visibleStudents = isEvaluator && groupMemberIds !== null
+    ? students.filter((s) => groupMemberIds.has(s.username))
+    : students;
+
+  const availableStudents = visibleStudents.filter((s) =>
     !pendingCourse.has(s.username) && matchesSearch(s.name || s.email, searchLeft),
   );
-  const assignedStudents = students.filter((s) =>
+  const assignedStudents = visibleStudents.filter((s) =>
     pendingCourse.has(s.username) && matchesSearch(s.name || s.email, searchRight),
   );
   const availableCourses = courses.filter((c) =>
@@ -281,6 +309,31 @@ export default function AssignCoursesPage() {
       {loadError && (
         <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {t.admin.loadError}: {loadError}
+        </div>
+      )}
+
+      {/* Group filter — evaluator only, by-course mode */}
+      {isEvaluator && mode === 'by-course' && myGroups.length > 0 && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">Filtrar por grupo:</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedGroupId('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${selectedGroupId === 'all' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
+            >
+              Todos
+            </button>
+            {myGroups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setSelectedGroupId(g.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${selectedGroupId === g.id ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
+              >
+                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: g.color ?? '#17527E' }} />
+                {g.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

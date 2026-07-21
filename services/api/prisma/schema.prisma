@@ -77,12 +77,14 @@ model Question {
 }
 
 model StudentGroup {
-  id          String                  @id @default(cuid())
-  name        String
-  description String?
-  createdAt   DateTime                @default(now())
-  members     StudentGroupMember[]
-  evaluators  StudentGroupEvaluator[]
+  id                    String                  @id @default(cuid())
+  name                  String
+  description           String?
+  color                 String                  @default("#17527E")
+  createdByEvaluatorId  String?                 // null = created by admin
+  createdAt             DateTime                @default(now())
+  members               StudentGroupMember[]
+  evaluators            StudentGroupEvaluator[]
 }
 
 model StudentGroupMember {
