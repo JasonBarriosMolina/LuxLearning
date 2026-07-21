@@ -1003,16 +1003,78 @@ function StudentsPageInner() {
           />
           {filtered.length === 0 ? (
             <p className="text-center text-gray-400 py-8">{ts.noStudentFound}</p>
-          ) : (
-            filtered.map((student) => (
-              <StudentCard
-                key={student.userId} student={student} courses={data.courses} ts={ts}
-                onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
-                onOpenChat={handleOpenChat} openingChatId={openingChat}
-                selectedCourseId={selectedCourseId || undefined}
-              />
-            ))
-          )}
+          ) : (() => {
+            const RECENT_MS = 7 * 24 * 60 * 60 * 1000;
+            const isRecent = (iso: string | null | undefined) =>
+              !!iso && Date.now() - new Date(iso).getTime() < RECENT_MS;
+            const reminded = filtered.filter((s) =>
+              reminderSent.has(s.userId) ||
+              isRecent(s.lastManualReminder?.lastSent) ||
+              isRecent(s.lastAutoReminder?.lastSent)
+            );
+            const pending = filtered.filter((s) => !reminded.includes(s));
+
+            const reminderTypeLabel = (s: Student) => {
+              const sessionSent = reminderSent.has(s.userId);
+              const manual = sessionSent || isRecent(s.lastManualReminder?.lastSent);
+              const auto = isRecent(s.lastAutoReminder?.lastSent);
+              if (manual && auto) return { label: 'Manual + Sistema', cls: 'bg-violet-100 text-violet-700' };
+              if (manual) return { label: sessionSent ? 'Enviado ahora' : 'Manual', cls: 'bg-emerald-100 text-emerald-700' };
+              return { label: 'Sistema automático', cls: 'bg-blue-100 text-blue-700' };
+            };
+
+            return (
+              <>
+                {reminded.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wide whitespace-nowrap">
+                        Recordatorio enviado recientemente
+                      </span>
+                      <div className="flex-1 h-px bg-emerald-200" />
+                      <span className="text-xs text-gray-400 whitespace-nowrap">{reminded.length} estudiante{reminded.length > 1 ? 's' : ''}</span>
+                    </div>
+                    {reminded.map((student) => {
+                      const tag = reminderTypeLabel(student);
+                      return (
+                        <div key={student.userId} className="relative">
+                          <div className="absolute top-3 right-3 z-10">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tag.cls}`}>{tag.label}</span>
+                          </div>
+                          <StudentCard
+                            student={student} courses={data.courses} ts={ts}
+                            onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                            onOpenChat={handleOpenChat} openingChatId={openingChat}
+                            selectedCourseId={selectedCourseId || undefined}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {pending.length > 0 && (
+                  <div className="space-y-2">
+                    {reminded.length > 0 && (
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Pendiente</span>
+                        <div className="flex-1 h-px bg-gray-200" />
+                        <span className="text-xs text-gray-400 whitespace-nowrap">{pending.length} estudiante{pending.length > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
+                    {pending.map((student) => (
+                      <StudentCard
+                        key={student.userId} student={student} courses={data.courses} ts={ts}
+                        onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
+                        onOpenChat={handleOpenChat} openingChatId={openingChat}
+                        selectedCourseId={selectedCourseId || undefined}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       ) : (
         <div className="space-y-4">
