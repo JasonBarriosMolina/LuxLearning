@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, ArrowRight, BookOpen, FlaskConical, FolderKanban,
@@ -68,7 +68,7 @@ interface Step5Data {
 
 const STEPS = [
   { n: 1, label: 'Identidad' }, { n: 2, label: 'Calendario' },
-  { n: 3, label: 'Evaluación' }, { n: 4, label: 'Copilot IA' },
+  { n: 3, label: 'Evaluación' }, { n: 4, label: 'Lux Planner' },
   { n: 5, label: 'Planeamiento' },
 ];
 
@@ -95,6 +95,21 @@ const DAY_ABBR_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const COLOR_PALETTE = ['#17527E','#7C3AED','#059669','#DC2626','#D97706','#0891B2','#BE185D','#374151','#1D4ED8','#065F46','#92400E','#4C1D95'];
 const BORDER_PALETTE = ['#17527E','#7C3AED','#059669','#DC2626','#D97706','#0891B2','#1D4ED8','#374151'];
+
+// Time slots 6:00 AM – 11:00 PM in 30-min steps
+const TIME_SLOTS: string[] = (() => {
+  const slots: string[] = [];
+  for (let h = 6; h <= 23; h++) {
+    for (const m of [0, 30]) {
+      if (h === 23 && m === 30) break;
+      const hour12 = h % 12 === 0 ? 12 : h % 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const mm = m === 0 ? '00' : '30';
+      slots.push(`${hour12}:${mm} ${ampm}`);
+    }
+  }
+  return slots;
+})();
 
 const EVAL_TYPE_META: Record<EvalType, { icon: React.ReactNode; label: string; labelEN: string; color: string }> = {
   QUIZ:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Quiz',          labelEN: 'Quiz',        color: 'bg-blue-100 text-blue-700' },
@@ -181,12 +196,31 @@ export default function CourseWizardPage() {
   const [labelInput, setLabelInput] = useState('');
   const [imageGenerating, setImageGenerating] = useState(false);
   const [imageError, setImageError] = useState('');
+  const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
+  const [newPeriodInput, setNewPeriodInput] = useState('');
+  const [showNewPeriod, setShowNewPeriod] = useState(false);
+  const [scheduleStart, setScheduleStart] = useState('');
+  const [scheduleEnd, setScheduleEnd] = useState('');
   const [exLabelInput, setExLabelInput] = useState('');
   const [pendingEx, setPendingEx] = useState<{ type: 'week' | 'day'; weekIndex: number; date?: string } | null>(null);
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set());
 
+  useEffect(() => {
+    api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? res ?? [])).catch(() => {});
+  }, []);
+
+  // Keep classSchedule in sync with the two time selectors
+  useEffect(() => {
+    if (scheduleStart && scheduleEnd) {
+      setStep1((p) => ({ ...p, classSchedule: `${scheduleStart} – ${scheduleEnd}` }));
+    } else if (scheduleStart) {
+      setStep1((p) => ({ ...p, classSchedule: scheduleStart }));
+    }
+  }, [scheduleStart, scheduleEnd]);
+
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
+  const isAsync = step1.modality === 'ASINCRONICA';
   const activeDays = step1.classDays.length > 0 ? step1.classDays : ['Lunes', 'Miércoles', 'Viernes'];
 
   // ── Calendar weeks ─────────────────────────────────────────────────────────
@@ -258,7 +292,7 @@ export default function CourseWizardPage() {
     setStep(3);
   };
 
-  // ── Step 4 — AI Copilot ────────────────────────────────────────────────────
+  // ── Step 4 — Lux Planner ───────────────────────────────────────────────────
   const exceptionWeekIndices = step2.exceptions.filter((e) => e.type === 'week').map((e) => e.weekIndex + 1);
   const effectiveWeeks = step2.totalWeeks - exceptionWeekIndices.length;
 
@@ -374,7 +408,36 @@ export default function CourseWizardPage() {
         <div className="space-y-4">
           <Input label={s('Nombre del curso *', 'Course name *')} value={step1.title} onChange={(e) => setStep1((p) => ({ ...p, title: e.target.value }))} placeholder={s('Ej. Fundamentos de Programación', 'E.g. Programming Fundamentals')} />
           <div className="grid grid-cols-2 gap-3">
-            <Input label={s('Período académico', 'Academic period')} value={step1.academicPeriod} onChange={(e) => setStep1((p) => ({ ...p, academicPeriod: e.target.value }))} placeholder={s('Ej. I Cuatrimestre 2026', 'E.g. Spring 2026')} />
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-charcoal">{s('Período académico', 'Academic period')}</label>
+              {showNewPeriod ? (
+                <div className="flex gap-1.5">
+                  <input autoFocus type="text" value={newPeriodInput} onChange={(e) => setNewPeriodInput(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (!newPeriodInput.trim()) return;
+                        const res = await api.admin.periods.create(newPeriodInput.trim()) as any;
+                        const created = res?.data ?? res;
+                        setPeriods((p) => [created, ...p]);
+                        setStep1((prev) => ({ ...prev, academicPeriod: created.name }));
+                        setNewPeriodInput(''); setShowNewPeriod(false);
+                      } else if (e.key === 'Escape') { setShowNewPeriod(false); setNewPeriodInput(''); }
+                    }}
+                    placeholder={s('Ej. I Cuatrimestre 2026', 'E.g. Spring 2026')}
+                    className="input-field flex-1 text-sm py-2" />
+                  <button onClick={() => { setShowNewPeriod(false); setNewPeriodInput(''); }} className="px-2 text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <div className="flex gap-1.5">
+                  <select value={step1.academicPeriod} onChange={(e) => setStep1((p) => ({ ...p, academicPeriod: e.target.value }))} className="input-field flex-1 text-sm py-2">
+                    <option value="">{s('— Seleccionar —', '— Select —')}</option>
+                    {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                  <button onClick={() => setShowNewPeriod(true)} title={s('Crear nuevo', 'Create new')} className="px-2 text-cta-from hover:text-cta-to"><Plus className="w-4 h-4" /></button>
+                </div>
+              )}
+            </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-charcoal">{s('Fecha de inicio *', 'Start date *')}</label>
               <input type="date" value={step1.startDate} onChange={(e) => setStep1((p) => ({ ...p, startDate: e.target.value }))} className="input-field w-full" />
@@ -390,35 +453,50 @@ export default function CourseWizardPage() {
       <div>
         <SectionLabel>{s('Logística', 'Logistics')}</SectionLabel>
         <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-charcoal">{s('Días de clase', 'Class days')}</label>
-            <div className="flex flex-wrap gap-2">
-              {DAYS_ES.map((day, i) => {
-                const label = planEN ? DAYS_EN[i] : day;
-                const active = step1.classDays.includes(day);
-                return (
-                  <button key={day} onClick={() => setStep1((p) => ({ ...p, classDays: active ? p.classDays.filter((d) => d !== day) : [...p.classDays, day] }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${active ? 'border-cta-from bg-cta-from text-white' : 'border-border text-gray-500 hover:border-gray-300'}`}>
-                    {(label ?? day).slice(0, 3)}
-                  </button>
-                );
-              })}
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-charcoal">{s('Modalidad *', 'Modality *')}</label>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {MODALITIES.map((m) => (
+                <button key={m.id} onClick={() => setStep1((p) => ({ ...p, modality: m.id }))}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-medium border-2 transition-all ${step1.modality === m.id ? 'border-cta-from bg-blue-50 text-cta-from dark:bg-blue-900/20' : 'border-border text-gray-500 hover:border-gray-300'}`}>
+                  {planEN ? m.labelEN : m.label}
+                </button>
+              ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label={s('Horario', 'Schedule')} value={step1.classSchedule} onChange={(e) => setStep1((p) => ({ ...p, classSchedule: e.target.value }))} placeholder="6:00 PM – 8:00 PM" />
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-charcoal">{s('Modalidad *', 'Modality *')}</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {MODALITIES.map((m) => (
-                  <button key={m.id} onClick={() => setStep1((p) => ({ ...p, modality: m.id }))}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border-2 transition-all ${step1.modality === m.id ? 'border-cta-from bg-blue-50 text-cta-from dark:bg-blue-900/20' : 'border-border text-gray-500 hover:border-gray-300'}`}>
-                    {planEN ? m.labelEN : m.label}
-                  </button>
-                ))}
+          {!isAsync && (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-charcoal">{s('Días de clase', 'Class days')}</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAYS_ES.map((day, i) => {
+                    const label = planEN ? DAYS_EN[i] : day;
+                    const active = step1.classDays.includes(day);
+                    return (
+                      <button key={day} onClick={() => setStep1((p) => ({ ...p, classDays: active ? p.classDays.filter((d) => d !== day) : [...p.classDays, day] }))}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${active ? 'border-cta-from bg-cta-from text-white' : 'border-border text-gray-500 hover:border-gray-300'}`}>
+                        {(label ?? day).slice(0, 3)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-charcoal">{s('Horario de clase', 'Class schedule')}</label>
+                <div className="flex items-center gap-2">
+                  <select value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} className="input-field flex-1 text-sm py-2">
+                    <option value="">{s('Inicio', 'Start')}</option>
+                    {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <span className="text-gray-400 text-sm shrink-0">–</span>
+                  <select value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)} className="input-field flex-1 text-sm py-2">
+                    <option value="">{s('Fin', 'End')}</option>
+                    {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -709,10 +787,10 @@ export default function CourseWizardPage() {
       <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-xl border border-purple-100 flex gap-3">
         <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-purple-800 dark:text-purple-200">{s('Copilot IA — Chrono-Planning', 'AI Copilot — Chrono-Planning')}</p>
+          <p className="text-sm font-semibold text-purple-800 dark:text-purple-200">{s('Lux Planner — Chrono-Planning', 'Lux Planner — Chrono-Planning')}</p>
           <p className="text-xs text-purple-600 dark:text-purple-300 mt-0.5">
-            {s(`${effectiveWeeks} semanas lectivas (${step2.totalWeeks} - ${exceptionWeekIndices.length} excepciones). Pega el temario y el Copilot distribuirá el contenido semana a semana.`,
-              `${effectiveWeeks} teaching weeks (${step2.totalWeeks} - ${exceptionWeekIndices.length} exceptions). Paste the syllabus and Copilot will distribute content week by week.`)}
+            {s(`${effectiveWeeks} semanas lectivas (${step2.totalWeeks} - ${exceptionWeekIndices.length} excepciones). Pega el temario y Lux Planner distribuirá el contenido semana a semana.`,
+              `${effectiveWeeks} teaching weeks (${step2.totalWeeks} - ${exceptionWeekIndices.length} exceptions). Paste the syllabus and Lux Planner will distribute content week by week.`)}
           </p>
         </div>
       </div>
@@ -741,7 +819,7 @@ export default function CourseWizardPage() {
             ? s('Generando plan...', 'Generating plan...')
             : step4.status === 'done'
             ? s('Regenerar', 'Regenerate')
-            : s('Generar Plan con Copilot', 'Generate Plan with Copilot')}
+            : s('Generar Plan con Lux Planner', 'Generate Plan with Lux Planner')}
         </Button>
         {step4.status === 'done' && (
           <button onClick={runCopilot} disabled={step4.status === 'loading'} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-charcoal transition-colors">

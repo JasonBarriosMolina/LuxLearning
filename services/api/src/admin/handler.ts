@@ -2679,7 +2679,9 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       const courseId = generateCoverMatch[1]!;
       const { promptText, style } = body as { promptText?: string; style?: string };
       if (!promptText?.trim()) return badRequest('promptText es requerido');
-      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+      const course = courseId === 'wizard-temp'
+        ? { title: '' }
+        : await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
       if (!course) return notFound('Curso no encontrado');
       const imageUrl = await generateLessonImage(course.title, '', 0, {
         promptText: promptText.trim(), style, aspectRatio: '16:9', s3Prefix: 'covers',
@@ -2846,6 +2848,26 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       const [, groupId, evaluatorId] = groupEvaluatorIdMatch;
       await prisma.studentGroupEvaluator.delete({ where: { groupId_evaluatorId: { groupId: groupId!, evaluatorId: evaluatorId! } } });
       return ok({ removed: true });
+    }
+
+    // ── GET /admin/periods ──────────────────────────────────────────────────
+    if (path === '/admin/periods' && method === 'GET') {
+      if (!isAuthorized(event)) return forbidden('Se requiere autenticación');
+      const periods = await prisma.academicPeriod.findMany({ orderBy: { createdAt: 'desc' } });
+      return ok(periods);
+    }
+
+    // ── POST /admin/periods ─────────────────────────────────────────────────
+    if (path === '/admin/periods' && method === 'POST') {
+      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const { name } = JSON.parse(event.body ?? '{}');
+      if (!name?.trim()) return badRequest('name requerido');
+      const period = await prisma.academicPeriod.upsert({
+        where: { name: name.trim() },
+        update: { active: true },
+        create: { name: name.trim() },
+      });
+      return ok(period);
     }
 
     return notFound('Ruta no encontrada');

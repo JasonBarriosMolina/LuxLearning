@@ -246,6 +246,10 @@ export const api = {
   },
 
   admin: {
+    periods: {
+      list: () => request<any>('/admin/periods'),
+      create: (name: string) => request<any>('/admin/periods', { method: 'POST', body: JSON.stringify({ name }) }),
+    },
     // Courses
     courses: {
       list: () => request<any>(`/admin/courses?lang=${getLang()}`),

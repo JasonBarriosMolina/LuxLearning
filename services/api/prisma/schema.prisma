@@ -47,6 +47,13 @@ model Course {
   evaluationEvents   EvaluationEvent[]
 }
 
+model AcademicPeriod {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
 model EvaluationEvent {
   id           String   @id @default(cuid())
   courseId     String
