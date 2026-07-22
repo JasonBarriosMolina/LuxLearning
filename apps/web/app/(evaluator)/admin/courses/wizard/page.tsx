@@ -345,7 +345,19 @@ export default function CourseWizardPage() {
   };
 
   // ── Image ──────────────────────────────────────────────────────────────────
-  const handleImageFile = (file: File) => setStep1((p) => ({ ...p, imageUrl: URL.createObjectURL(file) }));
+  const handleImageFile = async (file: File) => {
+    setImageGenerating(true); setImageError('');
+    try {
+      const res = await api.admin.files.presign({ fileName: file.name, fileType: file.type, folder: 'covers' }) as any;
+      const { uploadUrl, publicUrl } = res?.data ?? res;
+      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      setStep1((p) => ({ ...p, imageUrl: publicUrl }));
+    } catch {
+      setImageError(s('Error al subir la imagen', 'Error uploading image'));
+    } finally {
+      setImageGenerating(false);
+    }
+  };
 
   const handleGenerateImage = async () => {
     if (!step1.title) return;
@@ -363,7 +375,7 @@ export default function CourseWizardPage() {
   const step1Valid = step1.title.trim().length > 0 && step1.courseType !== '' && step1.modality !== '' && step1.startDate !== '';
   const step2Valid = step2.totalWeeks >= 1;
   const step3Valid = step3.items.length > 0 && weightOk;
-  const step4Valid = step4.status === 'done' && step4.weeklyPlan.length > 0;
+  const step4Valid = step4.status !== 'loading';
 
   const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step3Valid : step === 4 ? step4Valid : false;
 
@@ -795,8 +807,10 @@ export default function CourseWizardPage() {
         </div>
       </div>
 
+      <p className="text-xs text-gray-400">{s('Este paso es opcional. Puedes ir directo a Planeamiento sin generar el plan IA.', 'This step is optional. You can go straight to Planning without generating an AI plan.')}</p>
+
       <div className="space-y-2">
-        <label className="text-sm font-medium text-charcoal">{s('Temario / Syllabus *', 'Syllabus *')}</label>
+        <label className="text-sm font-medium text-charcoal">{s('Temario / Syllabus', 'Syllabus')}</label>
         <textarea
           value={step4.syllabusInput}
           onChange={(e) => setStep4((p) => ({ ...p, syllabusInput: e.target.value }))}

@@ -108,6 +108,9 @@ function Deploy-Lambda([string]$name) {
   if ($LASTEXITCODE -ne 0) { throw "Deploy failed for $targetName" }
   Write-Host "   Deployed: $([math]::Round([int]$codeSize / 1MB, 1)) MB" -ForegroundColor Green
 
+  # 4b. Wait for function to be Active before touching config
+  aws lambda wait function-updated --function-name $targetName | Out-Null
+
   # 5. Ensure PRISMA_QUERY_ENGINE_LIBRARY is set (merge, never wipe other vars)
   #    DATABASE_URL persists automatically — update-function-code never touches env vars
   if ($usesPrisma) {

@@ -182,11 +182,11 @@ export default function EvaluatorCalendarPage() {
       setMyCourses(list.map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
     }).catch(() => {});
     api.evaluator.groups.studentPool().then((res: any) => {
-      const list = Array.isArray(res) ? res : (res?.students ?? []);
+      const list = Array.isArray(res) ? res : (res?.data ?? res?.students ?? []);
       setAllStudents(list);
     }).catch(() => {});
     api.evaluator.evaluatorsList().then((res: any) => {
-      const list = Array.isArray(res) ? res : (res?.evaluators ?? []);
+      const list = Array.isArray(res) ? res : (res?.data ?? res?.evaluators ?? []);
       setAllEvaluators(list);
     }).catch(() => {});
   }, [currentUserId]);
