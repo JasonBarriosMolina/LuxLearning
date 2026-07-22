@@ -85,6 +85,15 @@ export const api = {
       request<any>('/reflection/ai-preview', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
   },
 
+  submissions: {
+    list: (moduleId: string) =>
+      request<any>(`/my-submissions?moduleId=${moduleId}`),
+    presign: (body: { courseId: string; moduleId: string; fileName: string; fileType: string }) =>
+      request<any>('/my-submissions/presign', { method: 'POST', body: JSON.stringify(body) }),
+    register: (body: { submissionId: string; courseId: string; moduleId: string; fileName: string; fileSize: number; fileType: string; s3Key: string }) =>
+      request<any>('/my-submissions', { method: 'POST', body: JSON.stringify(body) }),
+  },
+
   evaluator: {
     myCourses: () => request<any>(`/evaluator/my-courses?lang=${getLang()}`),
     reflections: () => request('/evaluator/reflections'),

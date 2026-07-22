@@ -1,9 +1,15 @@
+import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse } from '../shared/db-dynamo';
-import { ok, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions } from '../shared/db-dynamo';
+import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
+
+const s3 = new S3Client({ region: 'us-east-1' });
+const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
 
 /** Applies cached/fresh translations over a list of {id, ...fields} entities, mutating nothing — returns new objects. */
 function applyTranslations<T extends { id: string }>(
@@ -200,6 +206,54 @@ export const handler = async (event: Event) => {
         console.error('[Resources] Failed to fetch resources for course', courseId, err);
         return ok([]); // degrade gracefully — never block module view
       }
+    }
+
+    // GET /my-submissions?moduleId=X — list this student's submissions for a module
+    if (path === '/my-submissions' && method === 'GET') {
+      if (!userId) return forbidden('Login required');
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const subs = await listMySubmissions(userId, moduleId);
+      return ok(subs);
+    }
+
+    // POST /my-submissions/presign — get presigned S3 PUT URL
+    if (path === '/my-submissions/presign' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      const body = JSON.parse(event.body ?? '{}');
+      const { courseId, moduleId, fileName, fileType } = body;
+      if (!courseId || !moduleId || !fileName || !fileType) return badRequest('courseId, moduleId, fileName, fileType required');
+      const submissionId = randomUUID();
+      const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+      const s3Key = `submissions/${courseId}/${moduleId}/${userId}/${submissionId}.${ext}`;
+      const cmd = new PutObjectCommand({
+        Bucket: SUBMISSIONS_BUCKET,
+        Key: s3Key,
+        ContentType: fileType,
+      });
+      const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 3600 });
+      return ok({ submissionId, uploadUrl, s3Key });
+    }
+
+    // POST /my-submissions — register submission after S3 upload
+    if (path === '/my-submissions' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      const body = JSON.parse(event.body ?? '{}');
+      const { submissionId, courseId, moduleId, fileName, fileSize, fileType, s3Key } = body;
+      if (!submissionId || !courseId || !moduleId || !fileName || !s3Key) return badRequest('Missing required fields');
+      await createSubmission({
+        userId,
+        submissionId,
+        courseId,
+        moduleId,
+        fileName,
+        fileSize: Number(fileSize ?? 0),
+        fileType: fileType ?? 'application/octet-stream',
+        s3Key,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+      return ok({ submissionId });
     }
 
     return notFound();

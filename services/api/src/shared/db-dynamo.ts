@@ -31,6 +31,7 @@ const BASE_TABLES = {
   TRANSLATIONS: process.env.DYNAMO_TABLE_TRANSLATIONS ?? 'LuxTranslations',
   CALENDAR: process.env.DYNAMO_TABLE_CALENDAR ?? 'LuxCalendarEvents',
   USER_PROFILES: process.env.DYNAMO_TABLE_USER_PROFILES ?? 'LuxUserProfiles',
+  SUBMISSIONS: process.env.DYNAMO_TABLE_SUBMISSIONS ?? 'LuxSubmissions',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
@@ -1232,5 +1233,77 @@ export async function saveUserProfile(userId: string, data: Omit<UserProfileExte
     UpdateExpression: `SET ${sets.join(', ')}`,
     ExpressionAttributeNames: names,
     ExpressionAttributeValues: vals,
+  }));
+}
+
+// ─── Evidence Submissions ─────────────────────────────────────────────────────
+// Table: LuxSubmissions, PK: userId, SK: submissionId (UUID)
+// GSI: moduleId-index (PK=moduleId, SK=createdAt) — evaluator queries
+
+export interface Submission {
+  userId: string;
+  submissionId: string;
+  courseId: string;
+  moduleId: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  s3Key: string;
+  status: 'pending' | 'graded';
+  grade?: number;
+  feedback?: string;
+  gradedBy?: string;
+  gradedAt?: string;
+  createdAt: string;
+}
+
+export async function createSubmission(sub: Submission): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.SUBMISSIONS,
+    Item: sub,
+  }));
+}
+
+export async function listMySubmissions(userId: string, moduleId: string): Promise<Submission[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.SUBMISSIONS,
+    KeyConditionExpression: 'userId = :uid',
+    FilterExpression: 'moduleId = :mid',
+    ExpressionAttributeValues: { ':uid': userId, ':mid': moduleId },
+    ScanIndexForward: false,
+  }));
+  return (result.Items ?? []) as Submission[];
+}
+
+export async function listSubmissionsForModule(moduleId: string): Promise<Submission[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.SUBMISSIONS,
+    IndexName: 'moduleId-index',
+    KeyConditionExpression: 'moduleId = :mid',
+    ExpressionAttributeValues: { ':mid': moduleId },
+    ScanIndexForward: false,
+  }));
+  return (result.Items ?? []) as Submission[];
+}
+
+export async function updateSubmissionGrade(
+  userId: string,
+  submissionId: string,
+  grade: number,
+  feedback: string,
+  gradedBy: string,
+): Promise<void> {
+  await ddb.send(new UpdateCommand({
+    TableName: TABLES.SUBMISSIONS,
+    Key: { userId, submissionId },
+    UpdateExpression: 'SET #st = :st, grade = :gr, feedback = :fb, gradedBy = :gb, gradedAt = :ga',
+    ExpressionAttributeNames: { '#st': 'status' },
+    ExpressionAttributeValues: {
+      ':st': 'graded',
+      ':gr': grade,
+      ':fb': feedback,
+      ':gb': gradedBy,
+      ':ga': new Date().toISOString(),
+    },
   }));
 }
