@@ -237,6 +237,10 @@ export const api = {
       create: (body: any) => request<any>('/admin/courses', { method: 'POST', body: JSON.stringify(body) }),
       update: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
+      wizardCopilot: (body: any) =>
+        request<any>('/admin/courses/wizard/copilot', { method: 'POST', body: JSON.stringify(body) }),
+      wizardSave: (body: any) =>
+        request<any>('/admin/courses/wizard/save', { method: 'POST', body: JSON.stringify(body) }),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
         request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
       aiGenerateModule: (body: { topic: string; courseTitle?: string }) =>
