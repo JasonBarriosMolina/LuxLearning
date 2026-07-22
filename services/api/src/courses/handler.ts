@@ -3,7 +3,7 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions } from '../shared/db-dynamo';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule } from '../shared/db-dynamo';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
@@ -138,6 +138,7 @@ export const handler = async (event: Event) => {
               questions: { orderBy: { order: 'asc' } },
             },
           },
+          evaluationEvents: { orderBy: { order: 'asc' } },
         },
       });
 
@@ -162,6 +163,9 @@ export const handler = async (event: Event) => {
             const reflection = await getReflection(userId, mod.id);
             const mt = translations?.get(`module#${mod.id}`);
 
+            const moduleSubs = await listSubmissionsForModule(mod.id);
+            const mySubmissions = moduleSubs.filter((s) => s.userId === userId);
+
             return {
               ...mod,
               ...(mt ?? {}),
@@ -169,6 +173,15 @@ export const handler = async (event: Event) => {
               quizPassed,
               reflectionStatus: reflection?.status ?? null,
               qualityScore: (reflection as any)?.qualityScore ?? null,
+              submissions: mySubmissions.map((s) => ({
+                submissionId: s.submissionId,
+                fileName: s.fileName,
+                fileSize: s.fileSize,
+                status: s.status,
+                grade: s.grade ?? null,
+                feedback: s.feedback ?? null,
+                createdAt: s.createdAt,
+              })),
               lessons: applyTranslations(mod.lessons, 'lesson', translations ?? new Map()).map((l) => ({
                 ...l,
                 completed: completedLessonIds.has(l.id),

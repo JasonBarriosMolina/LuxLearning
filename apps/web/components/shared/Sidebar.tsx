@@ -23,6 +23,7 @@ import {
   Mail,
   FolderOpen,
   FolderKanban,
+  FileCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useInstallPrompt } from '@/lib/hooks/useInstallPrompt';
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['STUDENT'] },
   { href: '/evaluator/calendar', labelKey: 'calendar', icon: <CalendarDays className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/submissions', labelKey: 'submissions', icon: <FileCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/my-courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },

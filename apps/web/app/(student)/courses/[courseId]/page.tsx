@@ -300,6 +300,55 @@ export default function CoursePage() {
         </div>
       )}
 
+      {/* Evaluation events / grades section */}
+      {(course.evaluationEvents?.length ?? 0) > 0 && (
+        <div className="card space-y-3">
+          <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
+            <Star className="w-4 h-4 text-amber-500" /> {t.courseGrades.title}
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <th className="text-left pb-2 font-semibold">{t.evaluatorSubmissions.student.replace('Estudiante', 'Evaluación').replace('Student', 'Evaluation')}</th>
+                  <th className="text-center pb-2 font-semibold">{t.courseGrades.weight(0).replace('0%', '%')}</th>
+                  <th className="text-center pb-2 font-semibold">{t.courseDetail.startDate('').replace(': ', '').trim() || 'Entrega'}</th>
+                  <th className="text-right pb-2 font-semibold">{t.courseGrades.gradeValue(0).replace('0%', 'Nota')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {course.evaluationEvents?.map((ev: any) => {
+                  const allSubs = course.modules?.flatMap((m: any) => m.submissions ?? []) ?? [];
+                  const graded = allSubs.filter((s: any) => s.status === 'graded');
+                  const avgGrade = graded.length > 0
+                    ? Math.round(graded.reduce((sum: number, s: any) => sum + (s.grade ?? 0), 0) / graded.length)
+                    : null;
+                  const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', INTERVIEW: 'bg-purple-100 text-purple-700', ATTENDANCE: 'bg-blue-100 text-blue-700' };
+                  return (
+                    <tr key={ev.id} className="py-2">
+                      <td className="py-2.5 pr-3">
+                        <p className="font-medium text-charcoal">{ev.name}</p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${typeColor[ev.type] ?? 'bg-gray-100 text-gray-600'}`}>{ev.type}</span>
+                      </td>
+                      <td className="py-2.5 text-center text-gray-600">{ev.weight}%</td>
+                      <td className="py-2.5 text-center text-gray-500 text-xs">
+                        {ev.dueDate ? new Date(ev.dueDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-ES', { day: '2-digit', month: 'short' }) : '—'}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        {ev.type === 'EVIDENCE' && avgGrade !== null
+                          ? <Badge variant="success">{t.courseGrades.gradeValue(avgGrade)}</Badge>
+                          : <span className="text-xs text-gray-400">{t.courseGrades.pending}</span>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Modules */}
       <div className="space-y-3">
         <h2 className="font-heading font-bold text-xl text-charcoal">{t.courseDetail.modulesTitle}</h2>

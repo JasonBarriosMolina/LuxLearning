@@ -46,18 +46,28 @@ export default function CoursesPage() {
               (acc: number, m: any) => acc + parseInt(m.duration ?? '0', 10), 0
             ) ?? 0;
             return (
-              <Link key={course.id} href={`/courses/${course.id}`} className="card-hover flex flex-col gap-4">
+              <Link key={course.id} href={`/courses/${course.id}`} className="card-hover flex flex-col gap-4" style={course.cardBorderColor ? { borderColor: course.cardBorderColor } : undefined}>
                 {course.imageUrl ? (
                   <div className="rounded-xl overflow-hidden h-40">
                     <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <div className="rounded-xl h-40 bg-cta-gradient flex items-center justify-center">
+                  <div
+                    className="rounded-xl h-40 flex items-center justify-center"
+                    style={{ background: course.cardColor ?? 'linear-gradient(135deg, #1a6fa0 0%, #2d9de8 100%)' }}
+                  >
                     <BookOpen className="w-10 h-10 text-white opacity-80" />
                   </div>
                 )}
                 <div className="flex-1">
                   <h2 className="font-heading font-bold text-lg text-charcoal mb-1">{course.title}</h2>
+                  {(course.cardLabels?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {course.cardLabels.map((label: string) => (
+                        <span key={label} className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-gray-500 font-medium">{label}</span>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-sm text-gray-500 line-clamp-2 mb-3">{course.description}</p>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="flex items-center gap-1 text-xs text-gray-400">

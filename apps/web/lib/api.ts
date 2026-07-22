@@ -170,6 +170,13 @@ export const api = {
       studentPool: () => request<any>('/evaluator/students/pool'),
     },
     evaluatorsList: () => request<any>('/evaluator/evaluators'),
+    submissions: {
+      list: (moduleId: string) => request<any>(`/evaluator/submissions?moduleId=${moduleId}`),
+      grade: (submissionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/submissions/${submissionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+      downloadUrl: (submissionId: string, s3Key: string) =>
+        request<any>(`/evaluator/submissions/${submissionId}/download?s3Key=${encodeURIComponent(s3Key)}`),
+    },
   },
 
   tasks: {

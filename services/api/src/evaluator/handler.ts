@@ -1,5 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
@@ -13,7 +15,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, createEnrollment, getEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, createEnrollment, getEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder, listSubmissionsForModule, updateSubmissionGrade } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
@@ -23,6 +25,8 @@ import { jsonrepair } from 'jsonrepair';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const s3Ev = new S3Client({ region: 'us-east-1' });
+const SUBMISSIONS_BUCKET_EV = 'lux-learning-submissions';
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -1752,6 +1756,36 @@ ${text.trim()}`;
       if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes modificar tus propios grupos');
       await prisma.studentGroupMember.delete({ where: { groupId_userId: { groupId: groupId!, userId: memberId! } } });
       return ok({ removed: true });
+    }
+
+    // GET /evaluator/submissions?moduleId=X — list all student submissions for a module
+    if (method === 'GET' && path === '/evaluator/submissions') {
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const subs = await listSubmissionsForModule(moduleId);
+      return ok(subs);
+    }
+
+    // PUT /evaluator/submissions/:submissionId/grade — grade a submission
+    const gradeMatch = path.match(/^\/evaluator\/submissions\/([^/]+)\/grade$/);
+    if (gradeMatch && method === 'PUT') {
+      const submissionId = gradeMatch[1]!;
+      const body = JSON.parse(event.body ?? '{}');
+      const { studentUserId, grade, feedback } = body;
+      if (!studentUserId || grade === undefined) return badRequest('studentUserId and grade required');
+      if (grade < 0 || grade > 100) return badRequest('grade must be 0-100');
+      await updateSubmissionGrade(studentUserId, submissionId, Number(grade), String(feedback ?? ''), userId!);
+      return ok({ graded: true });
+    }
+
+    // GET /evaluator/submissions/:submissionId/download?userId=X&s3Key=Y — presigned GET URL
+    const downloadMatch = path.match(/^\/evaluator\/submissions\/([^/]+)\/download$/);
+    if (downloadMatch && method === 'GET') {
+      const s3Key = event.queryStringParameters?.s3Key;
+      if (!s3Key) return badRequest('s3Key required');
+      const cmd = new GetObjectCommand({ Bucket: SUBMISSIONS_BUCKET_EV, Key: s3Key });
+      const url = await getSignedUrl(s3Ev, cmd, { expiresIn: 300 });
+      return ok({ url });
     }
 
     return badRequest('Unknown route');
