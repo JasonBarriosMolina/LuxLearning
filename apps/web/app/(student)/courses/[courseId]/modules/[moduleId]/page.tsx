@@ -41,7 +41,7 @@ export default function ModulePage() {
     Promise.all([
       api.courses.get(courseId),
       api.lessons.favorites(),
-      api.submissions.list(moduleId),
+      api.submissions.list(moduleId).catch(() => ({ data: [] })),
     ]).then(([courseRes, favRes, subsRes]) => {
       setCourse((courseRes as any).data);
       const favs: any[] = (favRes as any).data ?? [];
@@ -66,7 +66,7 @@ export default function ModulePage() {
         fileName: file.name,
         fileType: file.type || 'application/octet-stream',
       });
-      const { submissionId, uploadUrl, s3Key } = (presignRes as any).data;
+      const { submissionId, uploadUrl } = (presignRes as any).data;
       await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
@@ -79,7 +79,6 @@ export default function ModulePage() {
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type || 'application/octet-stream',
-        s3Key,
       });
       setUploadState('done');
       await loadSubmissions();

@@ -317,14 +317,15 @@ export default function CoursePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {course.evaluationEvents?.map((ev: any) => {
+                {(() => {
                   const allSubs = course.modules?.flatMap((m: any) => m.submissions ?? []) ?? [];
-                  const graded = allSubs.filter((s: any) => s.status === 'graded');
-                  const avgGrade = graded.length > 0
-                    ? Math.round(graded.reduce((sum: number, s: any) => sum + (s.grade ?? 0), 0) / graded.length)
+                  const gradedSubs = allSubs.filter((s: any) => s.status === 'graded');
+                  const evidenceEventCount = course.evaluationEvents?.filter((e: any) => e.type === 'EVIDENCE').length ?? 0;
+                  const avgGrade = evidenceEventCount === 1 && gradedSubs.length > 0
+                    ? Math.round(gradedSubs.reduce((sum: number, s: any) => sum + (s.grade ?? 0), 0) / gradedSubs.length)
                     : null;
                   const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', INTERVIEW: 'bg-purple-100 text-purple-700', ATTENDANCE: 'bg-blue-100 text-blue-700' };
-                  return (
+                  return course.evaluationEvents?.map((ev: any) => (
                     <tr key={ev.id} className="py-2">
                       <td className="py-2.5 pr-3">
                         <p className="font-medium text-charcoal">{ev.name}</p>
@@ -341,8 +342,8 @@ export default function CoursePage() {
                         }
                       </td>
                     </tr>
-                  );
-                })}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>

@@ -41,6 +41,7 @@ export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
+  const method = event.requestContext.http.method;
   const path = event.rawPath;
   const rawLang = event.queryStringParameters?.lang ?? 'es';
   const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
@@ -154,17 +155,16 @@ export const handler = async (event: Event) => {
       if (userId) {
         // Enrich with unlock status
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+        const lessonProgress = await getLessonProgress(userId, courseId);
+        const completedLessonIds = new Set(lessonProgress.map((p) => p.lessonId));
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
-            const progress = await getLessonProgress(userId, courseId);
-            const completedLessonIds = new Set(progress.map((p) => p.lessonId));
             const quizPassed = await hasPassedQuiz(userId, mod.id);
             const reflection = await getReflection(userId, mod.id);
             const mt = translations?.get(`module#${mod.id}`);
 
-            const moduleSubs = await listSubmissionsForModule(mod.id);
-            const mySubmissions = moduleSubs.filter((s) => s.userId === userId);
+            const mySubmissions = await listMySubmissions(userId, mod.id);
 
             return {
               ...mod,
@@ -252,8 +252,10 @@ export const handler = async (event: Event) => {
     if (path === '/my-submissions' && method === 'POST') {
       if (!userId) return forbidden('Login required');
       const body = JSON.parse(event.body ?? '{}');
-      const { submissionId, courseId, moduleId, fileName, fileSize, fileType, s3Key } = body;
-      if (!submissionId || !courseId || !moduleId || !fileName || !s3Key) return badRequest('Missing required fields');
+      const { submissionId, courseId, moduleId, fileName, fileSize, fileType } = body;
+      if (!submissionId || !courseId || !moduleId || !fileName) return badRequest('Missing required fields');
+      const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+      const s3Key = `submissions/${courseId}/${moduleId}/${userId}/${submissionId}.${ext}`;
       await createSubmission({
         userId,
         submissionId,

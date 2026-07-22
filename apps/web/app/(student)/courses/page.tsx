@@ -53,8 +53,8 @@ export default function CoursesPage() {
                   </div>
                 ) : (
                   <div
-                    className="rounded-xl h-40 flex items-center justify-center"
-                    style={{ background: course.cardColor ?? 'linear-gradient(135deg, #1a6fa0 0%, #2d9de8 100%)' }}
+                    className={`rounded-xl h-40 flex items-center justify-center ${!course.cardColor ? 'bg-cta-gradient' : ''}`}
+                    style={course.cardColor ? { background: course.cardColor } : undefined}
                   >
                     <BookOpen className="w-10 h-10 text-white opacity-80" />
                   </div>

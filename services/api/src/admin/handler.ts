@@ -2164,7 +2164,7 @@ Descripción: "${(description ?? '').slice(0, 300)}"
 Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comunicación","gestión"]`;
 
         const tagRes = await bedrock.send(new InvokeModelCommand({
-          modelId: 'us.anthropic.claude-3-haiku-20240307-v1:0',
+          modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
           contentType: 'application/json',
           accept: 'application/json',
           body: JSON.stringify({

@@ -1772,17 +1772,19 @@ ${text.trim()}`;
       const submissionId = gradeMatch[1]!;
       const body = JSON.parse(event.body ?? '{}');
       const { studentUserId, grade, feedback } = body;
-      if (!studentUserId || grade === undefined) return badRequest('studentUserId and grade required');
-      if (grade < 0 || grade > 100) return badRequest('grade must be 0-100');
-      await updateSubmissionGrade(studentUserId, submissionId, Number(grade), String(feedback ?? ''), userId!);
+      const gradeNum = Number(grade);
+      if (!studentUserId || grade == null) return badRequest('studentUserId and grade required');
+      if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
+      await updateSubmissionGrade(studentUserId, submissionId, gradeNum, String(feedback ?? ''), userId!);
       return ok({ graded: true });
     }
 
-    // GET /evaluator/submissions/:submissionId/download?userId=X&s3Key=Y — presigned GET URL
+    // GET /evaluator/submissions/:submissionId/download?s3Key=Y — presigned GET URL
     const downloadMatch = path.match(/^\/evaluator\/submissions\/([^/]+)\/download$/);
     if (downloadMatch && method === 'GET') {
       const s3Key = event.queryStringParameters?.s3Key;
       if (!s3Key) return badRequest('s3Key required');
+      if (!s3Key.startsWith('submissions/')) return badRequest('Invalid s3Key');
       const cmd = new GetObjectCommand({ Bucket: SUBMISSIONS_BUCKET_EV, Key: s3Key });
       const url = await getSignedUrl(s3Ev, cmd, { expiresIn: 300 });
       return ok({ url });

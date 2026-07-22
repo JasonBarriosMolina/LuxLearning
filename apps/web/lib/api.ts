@@ -90,7 +90,7 @@ export const api = {
       request<any>(`/my-submissions?moduleId=${moduleId}`),
     presign: (body: { courseId: string; moduleId: string; fileName: string; fileType: string }) =>
       request<any>('/my-submissions/presign', { method: 'POST', body: JSON.stringify(body) }),
-    register: (body: { submissionId: string; courseId: string; moduleId: string; fileName: string; fileSize: number; fileType: string; s3Key: string }) =>
+    register: (body: { submissionId: string; courseId: string; moduleId: string; fileName: string; fileSize: number; fileType: string }) =>
       request<any>('/my-submissions', { method: 'POST', body: JSON.stringify(body) }),
   },
 
