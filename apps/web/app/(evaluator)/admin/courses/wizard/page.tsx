@@ -204,6 +204,7 @@ export default function CourseWizardPage() {
   const [exLabelInput, setExLabelInput] = useState('');
   const [pendingEx, setPendingEx] = useState<{ type: 'week' | 'day'; weekIndex: number; date?: string } | null>(null);
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set());
+  const [dateWarningDismissed, setDateWarningDismissed] = useState(false);
 
   useEffect(() => {
     api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? res ?? [])).catch(() => {});
@@ -222,6 +223,27 @@ export default function CourseWizardPage() {
   const planEN = step1.planLanguage === 'EN';
   const isAsync = step1.modality === 'ASINCRONICA';
   const activeDays = step1.classDays.length > 0 ? step1.classDays : ['Lunes', 'Miércoles', 'Viernes'];
+
+  // ── Out-of-range date detection ────────────────────────────────────────────
+  const courseEndDate = useMemo(() => {
+    if (!step1.startDate || !step2.totalWeeks) return null;
+    const d = new Date(step1.startDate + 'T12:00:00');
+    d.setDate(d.getDate() + step2.totalWeeks * 7);
+    return d;
+  }, [step1.startDate, step2.totalWeeks]);
+
+  const outOfRangeItems = useMemo(() => {
+    if (!step1.startDate || !courseEndDate) return [];
+    const rangeStart = new Date(step1.startDate + 'T00:00:00');
+    return step3.items.flatMap((item) =>
+      item.dueDates
+        .filter((d) => d && (new Date(d) < rangeStart || new Date(d) > courseEndDate))
+        .map((d) => ({ itemName: item.name || item.nameEN, date: d }))
+    );
+  }, [step3.items, step1.startDate, courseEndDate]);
+
+  // Reset dismiss when dates change
+  useEffect(() => { setDateWarningDismissed(false); }, [outOfRangeItems.length]);
 
   // ── Calendar weeks ─────────────────────────────────────────────────────────
   const weeks = useMemo(() => {
@@ -495,16 +517,23 @@ export default function CourseWizardPage() {
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium text-charcoal">{s('Horario de clase', 'Class schedule')}</label>
+                <datalist id="wiz-time-slots">
+                  {TIME_SLOTS.map((t) => <option key={t} value={t} />)}
+                </datalist>
                 <div className="flex items-center gap-2">
-                  <select value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} className="input-field flex-1 text-sm py-2">
-                    <option value="">{s('Inicio', 'Start')}</option>
-                    {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input
+                    type="text" list="wiz-time-slots"
+                    value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)}
+                    placeholder={s('Inicio (ej. 8:00 AM)', 'Start (e.g. 8:00 AM)')}
+                    className="input-field flex-1 text-sm py-2"
+                  />
                   <span className="text-gray-400 text-sm shrink-0">–</span>
-                  <select value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)} className="input-field flex-1 text-sm py-2">
-                    <option value="">{s('Fin', 'End')}</option>
-                    {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input
+                    type="text" list="wiz-time-slots"
+                    value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)}
+                    placeholder={s('Fin (ej. 10:00 AM)', 'End (e.g. 10:00 AM)')}
+                    className="input-field flex-1 text-sm py-2"
+                  />
                 </div>
               </div>
             </>
@@ -559,7 +588,7 @@ export default function CourseWizardPage() {
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-charcoal flex items-center gap-1.5"><Tag className="w-3.5 h-3.5 text-indigo-500" />{s('Etiquetas de tarjeta', 'Card labels')}</label>
+            <label className="text-sm font-medium text-charcoal flex items-center gap-1.5"><Tag className="w-3.5 h-3.5 text-indigo-500" />{s('Etiquetas de Curso', 'Course Labels')}</label>
             <div className="flex gap-2">
               <input type="text" value={labelInput} onChange={(e) => setLabelInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = labelInput.trim(); if (v && !step1.cardLabels.includes(v)) { setStep1((p) => ({ ...p, cardLabels: [...p.cardLabels, v] })); setLabelInput(''); } } }}
@@ -783,6 +812,32 @@ export default function CourseWizardPage() {
         <button onClick={addEvalItem} className="flex items-center gap-2 w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-cta-from hover:text-cta-from transition-colors">
           <Plus className="w-4 h-4" />{s('Agregar evaluación personalizada', 'Add custom evaluation')}
         </button>
+
+        {outOfRangeItems.length > 0 && !dateWarningDismissed && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-800">{s('Fechas fuera del rango del curso', 'Dates outside course range')}</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  {s(`El curso va del ${fmtDisplay(step1.startDate)} y tiene ${step2.totalWeeks} semanas. Las siguientes fechas están fuera de ese rango:`,
+                     `The course starts ${fmtDisplay(step1.startDate)} and runs ${step2.totalWeeks} weeks. These dates fall outside that range:`)}
+                </p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {outOfRangeItems.map((it, i) => (
+                    <li key={i} className="text-xs text-amber-700 font-medium">· {it.itemName} — {fmtDisplay(it.date)}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <button
+              onClick={() => setDateWarningDismissed(true)}
+              className="text-xs font-semibold text-amber-700 underline hover:text-amber-900 transition-colors"
+            >
+              {s('Continuar de todas maneras', 'Continue anyway')}
+            </button>
+          </div>
+        )}
 
         {!weightOk && step3.items.length > 0 && (
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 flex gap-2">

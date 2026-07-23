@@ -21,7 +21,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification, getUserProfile, saveUserProfile } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification, getUserProfile, saveUserProfile, batchCreateCalendarEvents, type CalendarEvent } from '../shared/db-dynamo';
 import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
@@ -545,6 +545,8 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
     // ── POST /admin/courses/wizard/save ─────────────────────────────────────
     if (path === '/admin/courses/wizard/save' && method === 'POST') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      const userId = event.requestContext.authorizer?.lambda?.userId ?? 'system';
+      const role   = event.requestContext.authorizer?.lambda?.role   ?? 'ADMIN';
       const {
         title, description = '', imageUrl: rawImageUrl, courseType, academicPeriod, classDays = [],
         classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
@@ -604,6 +606,33 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
             order: i,
           },
         });
+      }
+
+      // Sync evaluation due dates to calendar (visible to evaluators + students)
+      const calendarEventsToCreate: CalendarEvent[] = [];
+      const now = new Date().toISOString();
+      for (const item of (evaluationItems as any[])) {
+        const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
+        for (const dueDate of dueDates) {
+          const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
+          const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
+          calendarEventsToCreate.push({
+            creatorId: userId,
+            eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
+            title: `${item.name || item.nameEN} — ${title}`,
+            description: item.instructions || undefined,
+            type: 'deadline',
+            startDate: dayStart,
+            endDate: dayEnd,
+            allDay: true,
+            visibility: 'community',
+            creatorRole: role,
+            createdAt: now,
+          });
+        }
+      }
+      if (calendarEventsToCreate.length > 0) {
+        await batchCreateCalendarEvents(calendarEventsToCreate).catch((e) => console.error('[wizard] calendar sync error:', e));
       }
 
       // Generate and upload Word document
