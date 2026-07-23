@@ -7,7 +7,7 @@ import { es } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import {
   CalendarDays, Plus, X, Pencil, Trash2, Loader2,
-  Users, User, Globe, Lock, MapPin, ChevronDown, ChevronRight, RefreshCw,
+  Users, User, Globe, Lock, MapPin, ChevronDown, ChevronRight, RefreshCw, Search,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -197,6 +197,8 @@ export default function EvaluatorCalendarPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [showAdvancedVisibility, setShowAdvancedVisibility] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [evaluatorSearch, setEvaluatorSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
@@ -715,7 +717,7 @@ export default function EvaluatorCalendarPage() {
                 <button
                   key={v.value}
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [], targetEvaluatorIds: [] }))}
+                  onClick={() => { setForm((f) => ({ ...f, visibility: v.value, targetCourseId: '', targetStudentIds: [], targetEvaluatorIds: [] })); setStudentSearch(''); setEvaluatorSearch(''); }}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all text-left',
                     form.visibility === v.value
@@ -789,8 +791,20 @@ export default function EvaluatorCalendarPage() {
                   Todos los estudiantes
                 </button>
                 {allStudents.length > 0 && (
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                      placeholder="Buscar estudiante..."
+                      className="input-field w-full pl-8 py-1.5 text-xs"
+                    />
+                  </div>
+                )}
+                {allStudents.length > 0 && (
                   <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
-                    {allStudents.map((s) => {
+                    {allStudents.filter((s) => !studentSearch || s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.email.toLowerCase().includes(studentSearch.toLowerCase())).map((s) => {
                       const checked = form.targetStudentIds.includes(s.userId);
                       return (
                         <label
@@ -840,8 +854,20 @@ export default function EvaluatorCalendarPage() {
                   Todos los evaluadores
                 </button>
                 {allEvaluators.length > 0 && (
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={evaluatorSearch}
+                      onChange={(e) => setEvaluatorSearch(e.target.value)}
+                      placeholder="Buscar evaluador..."
+                      className="input-field w-full pl-8 py-1.5 text-xs"
+                    />
+                  </div>
+                )}
+                {allEvaluators.length > 0 && (
                   <div className="max-h-40 overflow-y-auto border-2 border-border rounded-xl divide-y divide-border">
-                    {allEvaluators.map((e) => {
+                    {allEvaluators.filter((e) => !evaluatorSearch || e.name.toLowerCase().includes(evaluatorSearch.toLowerCase()) || e.email.toLowerCase().includes(evaluatorSearch.toLowerCase())).map((e) => {
                       const checked = form.targetEvaluatorIds.includes(e.userId);
                       return (
                         <label
