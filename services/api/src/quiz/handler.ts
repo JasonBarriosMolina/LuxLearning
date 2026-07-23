@@ -41,6 +41,7 @@ export const handler = async (event: Event) => {
       if (!answers || !Array.isArray(answers)) {
         return badRequest('answers array is required');
       }
+      if (!courseId) return badRequest('courseId is required');
 
       // Load module with questions
       const module = await prisma.module.findUnique({
@@ -98,7 +99,7 @@ export const handler = async (event: Event) => {
         autoCompleteTasks(userId, 'pass_quiz', moduleId).catch(() => {});
         if (email) {
           sendTemplatedEmail(email, 'QUIZ_PASSED', {
-            studentName: userId,
+            studentName: email.split('@')[0],
             moduleTitle: module.title,
             score: String(score),
             actionUrl: `${frontendUrl}/courses/${courseId}/modules/${moduleId}/quiz`,

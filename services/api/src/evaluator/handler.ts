@@ -351,9 +351,9 @@ export const handler = async (event: Event) => {
   const isAdminRole = role === 'ADMIN' || role === 'SUPER_ADMIN';
   const method = event.requestContext.http.method;
   const path = event.rawPath;
-  const prisma = await getPrismaClient();
 
   try {
+    const prisma = await getPrismaClient();
     // GET /evaluator/reflections — list reflections assigned to this evaluator
     if (method === 'GET' && path === '/evaluator/reflections') {
       const all = await getAllReflections();

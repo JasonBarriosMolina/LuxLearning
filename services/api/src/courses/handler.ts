@@ -286,6 +286,17 @@ export const handler = async (event: Event) => {
 
     // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
     if (path === '/vapi/webhook' && method === 'POST') {
+      // Verify Vapi webhook signature if secret is configured
+      if (VAPI_WEBHOOK_SECRET) {
+        const { createHmac } = await import('crypto');
+        const rawBody = event.body ?? '';
+        const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
+        const expectedSignature = createHmac('sha256', VAPI_WEBHOOK_SECRET).update(rawBody).digest('hex');
+        if (incomingSignature !== expectedSignature) {
+          return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
+        }
+      }
+
       let body: any = {};
       try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
 

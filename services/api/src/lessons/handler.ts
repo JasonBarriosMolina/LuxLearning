@@ -73,7 +73,7 @@ export const handler = async (event: Event) => {
             // Send email notification (non-fatal)
             if (email) {
               sendTemplatedEmail(email, 'MODULE_COMPLETED', {
-                studentName: userId,
+                studentName: email.split('@')[0],
                 moduleTitle: module.title,
                 courseTitle,
                 actionUrl: `${frontendUrl}/courses/${courseId}/modules/${moduleId}`,
@@ -213,11 +213,10 @@ export const handler = async (event: Event) => {
       }
 
       const prisma = await getPrismaClient();
-      const [myEnrollments, quizAttempts] = await Promise.all([
+      const [courseIds, quizAttempts] = await Promise.all([
         getEnrollments(userId),
         getAllQuizAttemptsForUser(userId),
       ]);
-      const courseIds = myEnrollments.map((e) => e.courseId);
       if (courseIds.length === 0) return ok({ plan: null });
 
       const courses = await prisma.course.findMany({

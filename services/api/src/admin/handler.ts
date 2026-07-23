@@ -329,7 +329,7 @@ const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 
 function isAuthorized(event: Event): boolean {
   const role = event.requestContext.authorizer?.lambda?.role;
-  return role === 'ADMIN' || role === 'EVALUATOR';
+  return role === 'ADMIN' || role === 'EVALUATOR' || role === 'SUPER_ADMIN';
 }
 
 function isAdmin(event: Event): boolean {
@@ -844,20 +844,25 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
           spacer(),
         ];
 
+        let sec = 2;
+
         if (excTable) {
-          docChildren.push(h2(L('3. Calendario de Excepciones', '3. Exception Calendar')));
+          sec++;
+          docChildren.push(h2(L(`${sec}. Calendario de Excepciones`, `${sec}. Exception Calendar`)));
           docChildren.push(excTable);
           docChildren.push(spacer());
         }
 
         if (planTable) {
-          docChildren.push(h2(L('4. Cronograma Mensual de Habilidades', '4. Monthly Skills Schedule')));
+          sec++;
+          docChildren.push(h2(L(`${sec}. Cronograma Mensual de Habilidades`, `${sec}. Monthly Skills Schedule`)));
           docChildren.push(planTable);
           docChildren.push(spacer());
         }
 
         if ((suggestedModules as any[]).length > 0) {
-          docChildren.push(h2(L('5. Módulos del Curso', '5. Course Modules')));
+          sec++;
+          docChildren.push(h2(L(`${sec}. Módulos del Curso`, `${sec}. Course Modules`)));
           for (const mod of suggestedModules as any[]) {
             docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })] }));
             docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })] }));
@@ -869,7 +874,8 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         }
 
         if (bibliography.length > 0) {
-          docChildren.push(h2(L('6. Bibliografía utilizada', '6. Bibliography')));
+          sec++;
+          docChildren.push(h2(L(`${sec}. Bibliografía utilizada`, `${sec}. Bibliography`)));
           for (const ref of bibliography) {
             docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${ref}`, size: 18 })] }));
           }
@@ -877,7 +883,8 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         }
 
         if (guidelines.length > 0) {
-          docChildren.push(h2(L('7. Indicaciones Generales para recibir el curso', '7. General Course Guidelines')));
+          sec++;
+          docChildren.push(h2(L(`${sec}. Indicaciones Generales para recibir el curso`, `${sec}. General Course Guidelines`)));
           for (const rule of guidelines) {
             docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${rule}`, size: 18 })] }));
           }
