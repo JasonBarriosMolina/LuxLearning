@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { VoiceInterview } from '@/components/ui/VoiceInterview';
 import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
@@ -24,6 +25,7 @@ export default function ModulePage() {
   const [loading, setLoading] = useState(true);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [submissions, setSubmissions] = useState<any[]>([]);
+  const [interviews, setInterviews] = useState<any[]>([]);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [uploadError, setUploadError] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -36,17 +38,26 @@ export default function ModulePage() {
     } catch {}
   }, [moduleId]);
 
+  const loadInterviews = useCallback(async () => {
+    try {
+      const res = await api.interviews.list(moduleId);
+      setInterviews((res as any).data ?? []);
+    } catch {}
+  }, [moduleId]);
+
   useEffect(() => {
     setLoading(true);
     Promise.all([
       api.courses.get(courseId),
       api.lessons.favorites(),
       api.submissions.list(moduleId).catch(() => ({ data: [] })),
-    ]).then(([courseRes, favRes, subsRes]) => {
+      api.interviews.list(moduleId).catch(() => ({ data: [] })),
+    ]).then(([courseRes, favRes, subsRes, intRes]) => {
       setCourse((courseRes as any).data);
       const favs: any[] = (favRes as any).data ?? [];
       setFavIds(new Set(favs.filter((f: any) => f?.type === 'lesson').map((f: any) => f?.id)));
       setSubmissions((subsRes as any).data ?? []);
+      setInterviews((intRes as any).data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [courseId, moduleId, lang]);
@@ -410,6 +421,16 @@ export default function ModulePage() {
           </div>
         )}
       </div>
+
+      {/* Voice Interview — shown when course has INTERVIEW evaluation events */}
+      {course?.evaluationEvents?.some((e: any) => e.type === 'INTERVIEW') && (
+        <VoiceInterview
+          courseId={courseId}
+          moduleId={moduleId}
+          interviews={interviews}
+          onCompleted={loadInterviews}
+        />
+      )}
     </div>
   );
 }

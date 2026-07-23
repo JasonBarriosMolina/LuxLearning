@@ -15,7 +15,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 import { getPrismaClient } from '../shared/db-neon';
 import { batchTranslate } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
-import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, createEnrollment, getEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder, listSubmissionsForModule, updateSubmissionGrade } from '../shared/db-dynamo';
+import { getAllReflections, getAllLessonProgress, getAllQuizAttempts, getReflection, updateReflectionStatus, setReflectionPriority, createNotification, getAllEnrollments, createEnrollment, getEnrollments, getCertificateByUserAndCourse, getCertificatesByUser, saveCertificate, getQuizAttempts, getPushSubscriptionsByUserId, createTask, getTasksForUser, getTasksByCourse, updateTask, deleteTask, autoCompleteTasks, getLastSeenAll, getSignature, saveSignature, getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse, getUserLang, TABLES, ddb, createCalendarEvent, batchCreateCalendarEvents, getAllVisibleCalendarEvents, updateCalendarEvent, deleteCalendarEvent, getCalendarEventById, setManualReminder, getLastManualReminder, getManualReminderHistory, getInactivityReminder, listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
 import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { detectAI } from '../reflection/detect-ai';
@@ -1788,6 +1788,41 @@ ${text.trim()}`;
       const cmd = new GetObjectCommand({ Bucket: SUBMISSIONS_BUCKET_EV, Key: s3Key });
       const url = await getSignedUrl(s3Ev, cmd, { expiresIn: 300 });
       return ok({ url });
+    }
+
+    // GET /evaluator/interviews?moduleId=X — list all student interviews for a module
+    if (method === 'GET' && path === '/evaluator/interviews') {
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const interviews = await listInterviewsForModule(moduleId);
+      return ok(interviews);
+    }
+
+    // PUT /evaluator/interviews/:interviewId/grade — grade an interview
+    const interviewGradeMatch = path.match(/^\/evaluator\/interviews\/([^/]+)\/grade$/);
+    if (interviewGradeMatch && method === 'PUT') {
+      const interviewId = interviewGradeMatch[1]!;
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+      const { studentUserId, grade, feedback } = body as { studentUserId?: string; grade?: number; feedback?: string };
+      if (!studentUserId || grade == null) return badRequest('studentUserId and grade required');
+      const gradeNum = Number(grade);
+      if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
+      await updateInterviewGrade(studentUserId, interviewId, gradeNum, String(feedback ?? ''), userId!);
+
+      // Push notification to student
+      if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
+        void (async () => {
+          try {
+            const subs = await getPushSubscriptionsByUserId(studentUserId);
+            const payload = JSON.stringify({ title: 'Entrevista calificada', body: `Tu entrevista oral fue calificada: ${gradeNum}%` });
+            await Promise.allSettled(subs.map((sub: any) =>
+              webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+            ));
+          } catch {}
+        })();
+      }
+      return ok({ graded: true });
     }
 
     return badRequest('Unknown route');

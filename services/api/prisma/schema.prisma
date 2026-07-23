@@ -55,18 +55,22 @@ model AcademicPeriod {
 }
 
 model EvaluationEvent {
-  id           String   @id @default(cuid())
-  courseId     String
-  type         String   // QUIZ | EVIDENCE | INTERVIEW
-  name         String
-  dueDate      DateTime?
-  weight       Float    // porcentaje (ej. 20.0)
-  instructions String?
-  order        Int      @default(0)
-  createdAt    DateTime @default(now())
-  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  courseId       String
+  moduleId       String?  // null = course-level; set to link to a specific module
+  type           String   // QUIZ | EVIDENCE | INTERVIEW
+  name           String
+  dueDate        DateTime?
+  weight         Float    // porcentaje (ej. 20.0)
+  instructions   String?
+  vapiPrompt     String?  // System prompt for Vapi AI interviewer
+  vapiObjectives String?  // JSON array of 3 question objectives
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId])
+  @@index([moduleId])
 }
 
 model Module {

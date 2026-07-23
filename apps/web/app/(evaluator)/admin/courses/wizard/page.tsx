@@ -6,7 +6,7 @@ import {
   ArrowLeft, ArrowRight, BookOpen, FlaskConical, FolderKanban,
   Clock, AlignLeft, Sparkles, Loader2, X, Image as ImageIcon,
   Tag, CheckCircle, Plus, Trash2, CalendarX, Info, GripVertical,
-  ClipboardList, FileUp, Download, Save, RefreshCw,
+  ClipboardList, FileUp, Download, Save, RefreshCw, Mic,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -16,7 +16,7 @@ import { useLanguage } from '@/lib/i18n';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CourseTypeId = 'TEORICO' | 'TEORICO_PRACTICO' | 'PROYECTOS' | 'PROGRAMA_ESPECIAL' | 'CURSO_CORTO' | 'LIBRE';
-type EvalType = 'QUIZ' | 'EVIDENCE' | 'EXAM' | 'ATTENDANCE';
+type EvalType = 'QUIZ' | 'EVIDENCE' | 'EXAM' | 'ATTENDANCE' | 'INTERVIEW';
 type PlanLang = 'ES' | 'EN';
 
 interface Step1Data {
@@ -36,6 +36,7 @@ interface Step2Data { totalWeeks: number; exceptions: ExceptionItem[]; }
 interface EvalItem {
   id: string; type: EvalType; name: string; nameEN: string;
   weight: number; count: number; dueDates: string[]; instructions: string; locked?: boolean;
+  vapiPrompt?: string; vapiObjectives?: string;
 }
 
 interface Step3Data { items: EvalItem[]; }
@@ -112,10 +113,11 @@ const TIME_SLOTS: string[] = (() => {
 })();
 
 const EVAL_TYPE_META: Record<EvalType, { icon: React.ReactNode; label: string; labelEN: string; color: string }> = {
-  QUIZ:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Quiz',          labelEN: 'Quiz',        color: 'bg-blue-100 text-blue-700' },
-  EVIDENCE:   { icon: <FileUp className="w-3.5 h-3.5" />,       label: 'Entrega',        labelEN: 'Submission',  color: 'bg-purple-100 text-purple-700' },
-  EXAM:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Examen/Prueba', labelEN: 'Exam/Test',   color: 'bg-amber-100 text-amber-700' },
-  ATTENDANCE: { icon: <CheckCircle className="w-3.5 h-3.5" />,  label: 'Asistencia',     labelEN: 'Attendance',  color: 'bg-emerald-100 text-emerald-700' },
+  QUIZ:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Quiz',             labelEN: 'Quiz',            color: 'bg-blue-100 text-blue-700' },
+  EVIDENCE:   { icon: <FileUp className="w-3.5 h-3.5" />,       label: 'Entrega',           labelEN: 'Submission',      color: 'bg-purple-100 text-purple-700' },
+  EXAM:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Examen/Prueba',    labelEN: 'Exam/Test',       color: 'bg-amber-100 text-amber-700' },
+  ATTENDANCE: { icon: <CheckCircle className="w-3.5 h-3.5" />,  label: 'Asistencia',        labelEN: 'Attendance',      color: 'bg-emerald-100 text-emerald-700' },
+  INTERVIEW:  { icon: <Mic className="w-3.5 h-3.5" />,          label: 'Entrevista Oral',   labelEN: 'Oral Interview',  color: 'bg-rose-100 text-rose-700' },
 };
 
 function defaultEvalItems(type: CourseTypeId): EvalItem[] {
@@ -799,6 +801,34 @@ export default function CourseWizardPage() {
                       <summary className="cursor-pointer text-gray-400 hover:text-charcoal">{s('Instrucciones (opcional)', 'Instructions (optional)')}</summary>
                       <textarea value={item.instructions} onChange={(e) => updateItem(item.id, { instructions: e.target.value })} className="input-field w-full mt-2 min-h-[60px] text-xs resize-y" />
                     </details>
+                  )}
+                  {item.type === 'INTERVIEW' && (
+                    <div className="space-y-2 text-xs border-t border-border pt-3 mt-1">
+                      <div className="flex items-center gap-1.5 mb-1 text-rose-600">
+                        <Mic className="w-3 h-3" />
+                        <span className="font-semibold">{s('Configuración de IA (Vapi)', 'AI Configuration (Vapi)')}</span>
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1">{s('Instrucciones del entrevistador IA', 'AI interviewer instructions')}</label>
+                        <textarea
+                          value={item.vapiPrompt ?? ''}
+                          onChange={(e) => updateItem(item.id, { vapiPrompt: e.target.value })}
+                          placeholder={s('Eres un evaluador oral. Evalúa al estudiante con exactamente 3 preguntas sobre el tema del módulo. Sé conciso y profesional.', 'You are an oral evaluator. Assess the student with exactly 3 questions about the module topic. Be concise and professional.')}
+                          className="input-field w-full min-h-[70px] text-xs resize-y"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1">{s('Objetivos de las 3 preguntas (uno por línea)', 'Objectives for the 3 questions (one per line)')}</label>
+                        <textarea
+                          value={item.vapiObjectives ?? ''}
+                          onChange={(e) => updateItem(item.id, { vapiObjectives: e.target.value })}
+                          placeholder={s('Comprender el concepto principal\nAplicar el conocimiento a un caso\nEvaluar la comprensión crítica', 'Understand the main concept\nApply knowledge to a case\nAssess critical understanding')}
+                          className="input-field w-full min-h-[60px] text-xs resize-y"
+                          rows={3}
+                        />
+                        <p className="text-gray-400 mt-1">{s('La IA generará exactamente 3 preguntas basadas en estos objetivos.', 'The AI will generate exactly 3 questions based on these objectives.')}</p>
+                      </div>
+                    </div>
                   )}
                   {item.locked && item.type === 'ATTENDANCE' && (
                     <p className="text-[10px] text-gray-400 flex items-center gap-1"><Info className="w-3 h-3" />{s('Módulo de asistencia próximamente.', 'Attendance module coming soon.')}</p>

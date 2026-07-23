@@ -2,14 +2,27 @@ import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule } from '../shared/db-dynamo';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+
+const VAPID_PUBLIC_CO = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE_CO = process.env.VAPID_PRIVATE_KEY ?? '';
+if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+  webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_CO, VAPID_PRIVATE_CO);
+}
+
+const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
+const VAPI_WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET ?? '';
 
 /** Applies cached/fresh translations over a list of {id, ...fields} entities, mutating nothing — returns new objects. */
 function applyTranslations<T extends { id: string }>(
@@ -269,6 +282,151 @@ export const handler = async (event: Event) => {
         createdAt: new Date().toISOString(),
       });
       return ok({ submissionId });
+    }
+
+    // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
+    if (path === '/vapi/webhook' && method === 'POST') {
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+
+      const { message } = body as { message?: any };
+      if (!message) return ok({ received: true });
+
+      const msgType: string = message.type ?? '';
+      const callId: string = message.call?.id ?? message.callId ?? '';
+
+      if (msgType === 'end-of-call-report' && callId) {
+        const transcript: string = message.artifact?.transcript ?? message.transcript ?? '';
+        const messages: any[] = message.artifact?.messages ?? message.messages ?? [];
+        const durationSec: number = message.durationSeconds ?? message.call?.endedAt
+          ? Math.round((new Date(message.call.endedAt).getTime() - new Date(message.call.startedAt ?? message.call.createdAt).getTime()) / 1000)
+          : 0;
+
+        void (async () => {
+          try {
+            const interview = await getInterviewByCallId(callId);
+            if (!interview) { console.warn('[vapi] no interview record for callId=%s', callId); return; }
+
+            // Run Bedrock analysis
+            let aiAnalysis = '';
+            let aiScore = 0;
+            if (transcript) {
+              const analysisPrompt = `Analiza la siguiente transcripción de una entrevista oral de evaluación.
+Proporciona:
+1. Un puntaje formativo del 0 al 100 basado en: claridad de ideas, dominio del tema, fluidez y profundidad de respuestas.
+2. Un análisis formativo breve (máx. 3 párrafos) con fortalezas y áreas de mejora.
+3. Responde en el mismo idioma de la transcripción.
+
+Transcripción:
+${transcript.slice(0, 4000)}
+
+Responde ÚNICAMENTE con este JSON (sin markdown):
+{"score": <número>, "analysis": "<texto análisis>"}`;
+
+              const resp = await bedrock.send(new InvokeModelCommand({
+                modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+                contentType: 'application/json',
+                accept: 'application/json',
+                body: JSON.stringify({
+                  anthropic_version: 'bedrock-2023-05-31',
+                  max_tokens: 1024,
+                  messages: [{ role: 'user', content: analysisPrompt }],
+                }),
+              }));
+              const raw = JSON.parse(Buffer.from(resp.body).toString());
+              const text: string = raw.content?.[0]?.text ?? '';
+              try {
+                const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
+                aiScore = Math.min(100, Math.max(0, Number(parsed.score ?? 0)));
+                aiAnalysis = String(parsed.analysis ?? '');
+              } catch {
+                aiAnalysis = text;
+              }
+            }
+
+            await updateInterview(interview.userId, interview.interviewId, {
+              status: 'completed',
+              transcript,
+              messages,
+              aiAnalysis,
+              aiScore,
+              durationSeconds: durationSec,
+              questionsAsked: messages.filter((m: any) => m.role === 'assistant').length,
+              completedAt: new Date().toISOString(),
+            });
+
+            // Push notification to student
+            if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+              const subs = await getPushSubscriptionsByUserId(interview.userId);
+              const payload = JSON.stringify({ title: 'Entrevista completada', body: 'Tu entrevista oral ha sido procesada. El evaluador revisará tu resultado pronto.' });
+              await Promise.allSettled(subs.map((sub: any) =>
+                webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+              ));
+            }
+          } catch (e) {
+            console.error('[vapi] webhook processing error', e);
+          }
+        })();
+      }
+
+      return ok({ received: true });
+    }
+
+    // ── GET /my-interviews?moduleId=X ─────────────────────────────────────────
+    if (path === '/my-interviews' && method === 'GET') {
+      if (!userId) return forbidden('Login required');
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const interviews = await listMyInterviews(userId, moduleId);
+      return ok(interviews);
+    }
+
+    // ── POST /my-interviews/start — register a new interview and return Vapi config ──
+    if (path === '/my-interviews/start' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+      const { courseId, moduleId } = body as { courseId?: string; moduleId?: string };
+      if (!courseId || !moduleId) return badRequest('courseId and moduleId required');
+
+      // Find INTERVIEW type EvaluationEvent for this course
+      const evalEvent = await prisma.evaluationEvent.findFirst({
+        where: { courseId, type: 'INTERVIEW' },
+        orderBy: { order: 'asc' },
+      });
+
+      const interviewId = randomUUID();
+      await createInterview({
+        userId,
+        interviewId,
+        courseId,
+        moduleId,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+
+      return ok({
+        interviewId,
+        vapiPublicKey: process.env.VAPI_PUBLIC_KEY ?? '',
+        vapiAssistantId: process.env.VAPI_ASSISTANT_ID ?? '',
+        vapiPrompt: evalEvent?.vapiPrompt ?? null,
+        vapiObjectives: evalEvent?.vapiObjectives ?? null,
+      });
+    }
+
+    // ── PATCH /my-interviews/:interviewId — update call status/callId ─────────
+    const interviewUpdateMatch = path.match(/^\/my-interviews\/([^/]+)$/);
+    if (interviewUpdateMatch && method === 'PATCH') {
+      if (!userId) return forbidden('Login required');
+      const interviewId = interviewUpdateMatch[1]!;
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+      const { vapiCallId, status } = body as { vapiCallId?: string; status?: string };
+      const patch: Record<string, any> = {};
+      if (vapiCallId) patch.vapiCallId = vapiCallId;
+      if (status) patch.status = status;
+      if (Object.keys(patch).length) await updateInterview(userId, interviewId, patch as any);
+      return ok({ updated: true });
     }
 
     return notFound();

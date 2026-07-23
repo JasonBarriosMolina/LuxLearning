@@ -94,6 +94,15 @@ export const api = {
       request<any>('/my-submissions', { method: 'POST', body: JSON.stringify(body) }),
   },
 
+  interviews: {
+    list: (moduleId: string) =>
+      request<any>(`/my-interviews?moduleId=${moduleId}`),
+    start: (body: { courseId: string; moduleId: string }) =>
+      request<any>('/my-interviews/start', { method: 'POST', body: JSON.stringify(body) }),
+    update: (interviewId: string, patch: { vapiCallId?: string; status?: string }) =>
+      request<any>(`/my-interviews/${interviewId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  },
+
   evaluator: {
     myCourses: () => request<any>(`/evaluator/my-courses?lang=${getLang()}`),
     reflections: () => request('/evaluator/reflections'),
@@ -176,6 +185,11 @@ export const api = {
         request<any>(`/evaluator/submissions/${submissionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
       downloadUrl: (submissionId: string, s3Key: string) =>
         request<any>(`/evaluator/submissions/${submissionId}/download?s3Key=${encodeURIComponent(s3Key)}`),
+    },
+    interviews: {
+      list: (moduleId: string) => request<any>(`/evaluator/interviews?moduleId=${moduleId}`),
+      grade: (interviewId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/interviews/${interviewId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
     },
   },
 

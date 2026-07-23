@@ -603,6 +603,8 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
             dueDate: firstDate,
             weight: parseFloat(String(item.weight ?? 0)),
             instructions: item.instructions || null,
+            vapiPrompt: item.vapiPrompt || null,
+            vapiObjectives: item.vapiObjectives || null,
             order: i,
           },
         });

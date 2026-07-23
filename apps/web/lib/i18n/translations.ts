@@ -24,6 +24,7 @@ export const es = {
     adminCerts: 'Certificados',
     groups: 'Grupos Base',
     submissions: 'Entregas',
+    interviews: 'Entrevistas',
   },
   evaluatorSubmissions: {
     title: 'Entregas de Evidencias',
@@ -1294,6 +1295,7 @@ export const en: typeof es = {
     adminCerts: 'Certificates',
     groups: 'Base Groups',
     submissions: 'Submissions',
+    interviews: 'Interviews',
   },
   evaluatorSubmissions: {
     title: 'Evidence Submissions',
