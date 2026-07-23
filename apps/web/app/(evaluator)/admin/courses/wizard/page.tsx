@@ -43,6 +43,7 @@ interface Step3Data { items: EvalItem[]; }
 
 interface WeekPlanItem {
   weekNum: number; topics: string[]; module: string;
+  procedure?: string; notes?: string;
   evalEvent: { name: string; type: string } | null;
 }
 
@@ -319,9 +320,11 @@ export default function CourseWizardPage() {
   // ── Step 4 — Lux Planner ───────────────────────────────────────────────────
   const exceptionWeekIndices = step2.exceptions.filter((e) => e.type === 'week').map((e) => e.weekIndex + 1);
   const effectiveWeeks = step2.totalWeeks - exceptionWeekIndices.length;
+  const copilotPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const runCopilot = async () => {
     if (!step4.syllabusInput.trim()) return;
+    if (copilotPollRef.current) clearInterval(copilotPollRef.current);
     setStep4((p) => ({ ...p, status: 'loading', error: '' }));
     try {
       const resp = await api.admin.courses.wizardCopilot({
@@ -333,9 +336,26 @@ export default function CourseWizardPage() {
         syllabusInput: step4.syllabusInput,
         exceptionWeeks: exceptionWeekIndices,
       }) as any;
-      const data = resp?.data ?? resp;
-      if (!data?.weeklyPlan) throw new Error('Respuesta inválida del servidor');
-      setStep4((p) => ({ ...p, status: 'done', weeklyPlan: data.weeklyPlan, modules: data.modules ?? [] }));
+      const init = resp?.data ?? resp;
+      if (!init?.jobId) throw new Error('No se recibió jobId del servidor');
+      // Poll until done
+      const poll = () => {
+        copilotPollRef.current = setInterval(async () => {
+          try {
+            const jobResp = await api.admin.courses.aiJob(init.jobId) as any;
+            const job = jobResp?.data ?? jobResp;
+            if (job?.status === 'done') {
+              clearInterval(copilotPollRef.current!);
+              if (!job.weeklyPlan) { setStep4((p) => ({ ...p, status: 'error', error: 'Respuesta inválida del servidor' })); return; }
+              setStep4((p) => ({ ...p, status: 'done', weeklyPlan: job.weeklyPlan, modules: job.modules ?? [] }));
+            } else if (job?.status === 'error') {
+              clearInterval(copilotPollRef.current!);
+              setStep4((p) => ({ ...p, status: 'error', error: job.error ?? 'Error desconocido' }));
+            }
+          } catch { /* keep polling */ }
+        }, 3000);
+      };
+      poll();
     } catch (err: any) {
       setStep4((p) => ({ ...p, status: 'error', error: err?.message ?? 'Error desconocido' }));
     }
@@ -1069,7 +1089,7 @@ export default function CourseWizardPage() {
           <div className="p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 rounded-xl flex items-center gap-3">
             <Sparkles className="w-4 h-4 text-purple-500 shrink-0" />
             <p className="text-xs text-purple-700 dark:text-purple-300">
-              {s(`Plan de ${step4.weeklyPlan.length} semanas con Copilot IA listo para incluir en el Word.`, `${step4.weeklyPlan.length}-week AI Copilot plan ready to include in Word.`)}
+              {s(`Plan de ${step4.weeklyPlan.length} semanas con Lux Planner listo para incluir en el Word.`, `${step4.weeklyPlan.length}-week Lux Planner plan ready to include in Word.`)}
             </p>
           </div>
         )}
@@ -1105,7 +1125,7 @@ export default function CourseWizardPage() {
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-gray-950/95 backdrop-blur border-b border-border px-6 py-3 flex items-center gap-4">
         <button onClick={goBack} className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"><ArrowLeft className="w-4 h-4" /></button>
         <div>
-          <p className="font-heading font-bold text-charcoal text-sm">{s('Wizard de Creación de Curso', 'Course Creation Wizard')}</p>
+          <p className="font-heading font-bold text-charcoal text-sm">{s('Lux Planner — Creación de Curso', 'Lux Planner — Course Creation')}</p>
           {step1.title && <p className="text-xs text-gray-400">{step1.title}</p>}
         </div>
       </div>

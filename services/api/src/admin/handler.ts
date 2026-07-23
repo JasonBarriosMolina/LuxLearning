@@ -135,7 +135,8 @@ async function generateLessonImage(
   }
   try {
     // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
-    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+    // Race against a 25s timeout to stay under API GW's 29s hard limit
+    const stabilityCall = bedrockImageClient.send(new InvokeModelCommand({
       modelId: 'stability.stable-image-core-v1:1',
       contentType: 'application/json',
       accept: 'application/json',
@@ -147,6 +148,10 @@ async function generateLessonImage(
         output_format: 'jpeg',
       }),
     }));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Stability AI timeout — inténtalo de nuevo')), 25000),
+    );
+    const resp = await Promise.race([stabilityCall, timeoutPromise]);
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
     if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
@@ -384,6 +389,85 @@ export const handler = async (event: Event) => {
       return ok({ generated: 1 });
     }
 
+    // ── Async worker: Lux Planner copilot ────────────────────────────────────
+    if (action === 'wizard-copilot') {
+      const {
+        _jobId, title, courseType, description = '', planLanguage = 'ES', modality = '',
+        totalWeeks = 16, startDate = '', classDays = [], classSchedule = '',
+        academicPeriod = '', evaluationItems = [], syllabusInput = '', exceptionWeeks = [],
+      } = body as any;
+      try {
+        const isEN = planLanguage === 'EN';
+        const effectiveWeeks = (totalWeeks as number) - (exceptionWeeks as number[]).length;
+        const evalSummary = (evaluationItems as any[])
+          .map((it: any) => {
+            const label = isEN ? (it.nameEN || it.name) : it.name;
+            const countNote = it.count > 1 ? ` (${it.count})` : '';
+            return `- ${label}${countNote}: ${it.weight}%, ${it.count} entrega(s)`;
+          })
+          .join('\n');
+        const exceptionNote = (exceptionWeeks as number[]).length > 0
+          ? `\n${isEN ? 'Non-teaching weeks' : 'Semanas con excepciones (NO lectivas)'}: ${(exceptionWeeks as number[]).map((n) => `S${n}`).join(', ')}`
+          : '';
+        const jsonFormat = isEN
+          ? `{"modules":[{"name":"Module","nameEN":"Module","description":"2-3 sentences","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Specific topic"],"module":"Module","procedure":"Suggested class activity","notes":"Important observation or upcoming deadline","evalEvent":null}]}`
+          : `{"modules":[{"name":"Módulo","nameEN":"Module","description":"2-3 oraciones","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Tema específico"],"module":"Módulo","procedure":"Actividad sugerida en clase","notes":"Observación importante o entrega próxima","evalEvent":null}]}`;
+        const prompt = isEN
+          ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.
+
+COURSE: ${title}
+TYPE: ${courseType}
+DESCRIPTION: ${description}
+PERIOD: ${academicPeriod}
+MODALITY: ${modality}
+SCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}
+TOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)
+START DATE: ${startDate}${exceptionNote}
+
+CONFIGURED EVALUATIONS:
+${evalSummary}
+
+SYLLABUS:
+${(syllabusInput as string).slice(0, 2500)}
+
+Distribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. Group topics into logical modules (3-6 modules). For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).
+
+Respond ONLY with valid JSON (no markdown):
+${jsonFormat}`
+          : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.
+
+CURSO: ${title}
+TIPO: ${courseType}
+DESCRIPCIÓN: ${description}
+PERÍODO: ${academicPeriod}
+MODALIDAD: ${modality}
+HORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}
+SEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)
+FECHA INICIO: ${startDate}${exceptionNote}
+
+EVALUACIONES CONFIGURADAS:
+${evalSummary}
+
+CONTENIDO / TEMARIO:
+${(syllabusInput as string).slice(0, 2500)}
+
+Distribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Organiza los temas en módulos lógicos (3-6 módulos). Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).
+
+Responde ÚNICAMENTE con JSON válido (sin markdown):
+${jsonFormat}`;
+
+        const result = await invokeBedrockForJson(prompt, 4000);
+        if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
+          await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
+        } else {
+          await saveAiJob(_jobId, { status: 'done', weeklyPlan: result.weeklyPlan, modules: result.modules ?? [] });
+        }
+      } catch (err: any) {
+        await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando plan' });
+      }
+      return ok({});
+    }
+
     // ── GET /admin/courses ──────────────────────────────────────────────────
     if (path === '/admin/courses' && method === 'GET') {
       const statusFilter = event.queryStringParameters?.status;
@@ -470,76 +554,19 @@ export const handler = async (event: Event) => {
       return ok(job);
     }
 
-    // ── POST /admin/courses/wizard/copilot ─────────────────────────────────
+    // ── POST /admin/courses/wizard/copilot — dispatch async job ───────────────
     if (path === '/admin/courses/wizard/copilot' && method === 'POST') {
       if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-      const {
-        title, courseType, description = '', planLanguage = 'ES', modality = '',
-        totalWeeks = 16, startDate = '', classDays = [], classSchedule = '',
-        academicPeriod = '', evaluationItems = [], syllabusInput = '', exceptionWeeks = [],
-      } = body as any;
-      if (!title || !syllabusInput?.trim()) return badRequest('title y syllabusInput son requeridos');
-
-      const isEN = planLanguage === 'EN';
-      const effectiveWeeks = totalWeeks - exceptionWeeks.length;
-
-      const evalSummary = (evaluationItems as any[])
-        .map((it: any) => `- ${it.name || it.nameEN}: ${it.weight}%, ${it.count} entrega(s)`)
-        .join('\n');
-
-      const exceptionNote = exceptionWeeks.length > 0
-        ? `\nSemanas con excepciones (NO lectivas): ${exceptionWeeks.map((n: number) => `S${n}`).join(', ')}`
-        : '';
-
-      const prompt = isEN
-        ? `You are an expert instructional designer. Based on the following course information, generate a detailed week-by-week curriculum plan.
-
-COURSE: ${title}
-TYPE: ${courseType}
-DESCRIPTION: ${description}
-PERIOD: ${academicPeriod}
-MODALITY: ${modality}
-SCHEDULE: ${classSchedule} | Days: ${classDays.join(', ')}
-TOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)
-START DATE: ${startDate}${exceptionNote}
-
-CONFIGURED EVALUATIONS:
-${evalSummary}
-
-SYLLABUS / TOPICS TO COVER:
-${syllabusInput.slice(0, 2500)}
-
-Generate a week-by-week plan distributing the syllabus progressively. For weeks with evaluations, indicate the evaluation event. Organize topics into logical modules (3-6 modules for ${effectiveWeeks} weeks).
-
-Respond ONLY with valid JSON (no markdown, no extra text):
-{"modules":[{"name":"Module name","nameEN":"Module name","description":"2-3 sentence description","descriptionEN":"2-3 sentence description","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Specific topic"],"module":"Module name","evalEvent":null}]}`
-        : `Eres un experto en diseño curricular. Basado en la siguiente información del curso, genera un plan de estudios detallado semana por semana.
-
-CURSO: ${title}
-TIPO: ${courseType}
-DESCRIPCIÓN: ${description}
-PERÍODO: ${academicPeriod}
-MODALIDAD: ${modality}
-HORARIO: ${classSchedule} | Días: ${classDays.join(', ')}
-SEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)
-FECHA INICIO: ${startDate}${exceptionNote}
-
-EVALUACIONES CONFIGURADAS:
-${evalSummary}
-
-CONTENIDO / TEMARIO:
-${syllabusInput.slice(0, 2500)}
-
-Genera un plan semanal distribuyendo el temario de forma progresiva. Para semanas con evaluaciones, indica el evento evaluativo. Organiza los temas en módulos lógicos (3-6 módulos para ${effectiveWeeks} semanas).
-
-Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
-{"modules":[{"name":"Nombre módulo","nameEN":"Module name","description":"Descripción 2-3 oraciones","descriptionEN":"2-3 sentence description","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Tema específico"],"module":"Nombre módulo","evalEvent":null}]}`;
-
-      const result = await invokeBedrockForJson(prompt, 3000);
-      if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
-        return serverError('El modelo no pudo generar el plan. Intenta de nuevo.');
-      }
-      return ok({ weeklyPlan: result.weeklyPlan, modules: result.modules ?? [] });
+      const { title, syllabusInput } = body as any;
+      if (!title || !(syllabusInput as string)?.trim()) return badRequest('title y syllabusInput son requeridos');
+      const jobId = `wiz-cop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAiJob(jobId, { status: 'processing' });
+      await lambdaClient.send(new LambdaInvokeCommand({
+        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+        InvocationType: 'Event',
+        Payload: Buffer.from(JSON.stringify({ _action: 'wizard-copilot', _jobId: jobId, ...body })),
+      }));
+      return ok({ jobId });
     }
 
     // ── POST /admin/courses/wizard/save ─────────────────────────────────────
@@ -703,37 +730,70 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
           })),
         });
 
-        // Section 2: Evaluation table
+        // Helper: calculate class dates for a given week (0-indexed)
+        const DAY_TO_JS: Record<string, number> = { 'Lunes':1,'Martes':2,'Miércoles':3,'Jueves':4,'Viernes':5,'Sábado':6,'Domingo':0 };
+        const getClassDates = (weekIdx: number): string => {
+          if (!startDate || !(classDays as string[]).length) return '';
+          const base = new Date(startDate + 'T12:00:00');
+          const dow = base.getDay();
+          const mondayOffset = dow === 0 ? -6 : 1 - dow;
+          const weekMonday = new Date(base);
+          weekMonday.setDate(base.getDate() + mondayOffset + weekIdx * 7);
+          return (classDays as string[]).map((day: string) => {
+            const offset = (( DAY_TO_JS[day] ?? 1) - 1 + 7) % 7;
+            const d = new Date(weekMonday);
+            d.setDate(weekMonday.getDate() + offset);
+            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+          }).join(', ');
+        };
+
+        // Generate bibliography + indicaciones via Bedrock (non-blocking on error)
+        let bibliography: string[] = [];
+        let guidelines: string[] = [];
+        try {
+          const moduleNames = (suggestedModules as any[]).map((m: any) => isEN ? (m.nameEN || m.name) : m.name).slice(0, 5);
+          const extraPrompt = isEN
+            ? `For a course titled "${title}" (${COURSE_TYPE_LABELS[courseType] ?? courseType}) with modules: ${moduleNames.join(', ')}.
+Generate: 1) 4 academic bibliography references in APA format. 2) 4 general course guidelines for students.
+Respond ONLY with JSON: {"bibliography":["APA ref 1","APA ref 2","APA ref 3","APA ref 4"],"guidelines":["Rule 1.","Rule 2.","Rule 3.","Rule 4."]}`
+            : `Para el curso "${title}" (${COURSE_TYPE_LABELS[courseType] ?? courseType}) con módulos: ${moduleNames.join(', ')}.
+Genera: 1) 4 referencias bibliográficas académicas en formato APA. 2) 4 indicaciones generales para los estudiantes.
+Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia APA 2","Referencia APA 3","Referencia APA 4"],"guidelines":["Indicación 1.","Indicación 2.","Indicación 3.","Indicación 4."]}`;
+          const extra = await invokeBedrockForJson(extraPrompt, 1000);
+          if (Array.isArray(extra?.bibliography)) bibliography = extra.bibliography;
+          if (Array.isArray(extra?.guidelines)) guidelines = extra.guidelines;
+        } catch { /* non-fatal */ }
+
+        // Section 2: Evaluation table — name includes "(N)" if count > 1
         const evalRows = [
-          new TableRow({ children: [hCell(L('Evaluación','Evaluation')), hCell(L('Tipo','Type')), hCell(L('Cant.','Count')), hCell(L('Porcentaje','Percentage'))] }),
-          ...(evaluationItems as any[]).map((it: any) => new TableRow({
-            children: [
-              dCell(isEN ? (it.nameEN || it.name) : it.name),
-              dCell(EVAL_TYPE_LABELS[it.type] ?? it.type),
-              dCell(String(it.count ?? 1)),
-              dCell(`${it.weight ?? 0}%`),
-            ],
-          })),
+          new TableRow({ children: [hCell(L('Evaluación','Evaluation')), hCell(L('Tipo','Type')), hCell(L('Porcentaje','Percentage')), hCell(L('Habilidades por evaluar','Skills to Evaluate'))] }),
+          ...(evaluationItems as any[]).map((it: any) => {
+            const nameFmt = `${isEN ? (it.nameEN || it.name) : it.name}${(it.count ?? 1) > 1 ? ` (${it.count})` : ''}`;
+            return new TableRow({
+              children: [
+                dCell(nameFmt),
+                dCell(EVAL_TYPE_LABELS[it.type] ?? it.type),
+                dCell(`${it.weight ?? 0}%`),
+                dCell(it.instructions || ''),
+              ],
+            });
+          }),
           new TableRow({
             children: [
-              hCell(L('TOTAL', 'TOTAL'), 'FEF9C3'), dCell(''), dCell(''),
+              hCell(L('TOTAL', 'TOTAL'), 'FEF9C3'), dCell(''),
               hCell(`${(evaluationItems as any[]).reduce((s: number, i: any) => s + (parseFloat(i.weight) || 0), 0)}%`, 'FEF9C3'),
+              dCell(''),
             ],
           }),
         ];
-        const evalTable = new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: evalRows,
-        });
+        const evalTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: evalRows });
 
         // Section 3: Exceptions calendar
         const exRows = [
           new TableRow({ children: [hCell(L('Semana','Week')), hCell(L('Motivo','Reason'))] }),
           ...(calendarExceptions as any[]).map((ex: any) => new TableRow({
             children: [
-              dCell(ex.type === 'week'
-                ? `${L('Semana','Week')} ${(ex.weekIndex ?? 0) + 1}`
-                : ex.date ?? ''),
+              dCell(ex.type === 'week' ? `${L('Semana','Week')} ${(ex.weekIndex ?? 0) + 1}` : ex.date ?? ''),
               dCell(ex.label || '—'),
             ],
           })),
@@ -742,17 +802,27 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
           ? new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: exRows })
           : null;
 
-        // Section 4: Weekly plan (from AI copilot)
+        // Section 4: Weekly plan — 6 columns per machote oficial
         const planRows = [
-          new TableRow({ children: [hCell(L('Semana','Wk')), hCell(L('Contenido','Content')), hCell(L('Módulo','Module')), hCell(L('Evaluación','Evaluation'))] }),
-          ...(weeklyPlan as any[]).map((wk: any) => new TableRow({
-            children: [
+          new TableRow({ children: [
+            hCell(L('Nº Semana','Wk#')), hCell(L('Fecha de clases','Class dates')),
+            hCell(L('Habilidades (tópicos y subtópicos)','Skills (topics & subtopics)')),
+            hCell(L('Módulo','Module')),
+            hCell(L('Procedimiento','Procedure')),
+            hCell(L('Observaciones','Notes')),
+          ]}),
+          ...(weeklyPlan as any[]).map((wk: any) => {
+            const classDatesStr = getClassDates(wk.weekNum - 1);
+            const obsText = wk.evalEvent ? `${L('Entrega','Delivery')}: ${wk.evalEvent.name}` : (wk.notes || '');
+            return new TableRow({ children: [
               dCell(`${L('S','W')}${wk.weekNum}`),
+              dCell(classDatesStr),
               dCell((wk.topics as string[]).join('; ')),
               dCell(wk.module || '—'),
-              dCell(wk.evalEvent ? `${wk.evalEvent.name}` : ''),
-            ],
-          })),
+              dCell(wk.procedure || ''),
+              dCell(obsText),
+            ]});
+          }),
         ];
         const planTable = weeklyPlan.length > 0
           ? new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: planRows })
@@ -781,7 +851,7 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
         }
 
         if (planTable) {
-          docChildren.push(h2(L('4. Plan Semanal', '4. Weekly Plan')));
+          docChildren.push(h2(L('4. Cronograma Mensual de Habilidades', '4. Monthly Skills Schedule')));
           docChildren.push(planTable);
           docChildren.push(spacer());
         }
@@ -789,20 +859,36 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
         if ((suggestedModules as any[]).length > 0) {
           docChildren.push(h2(L('5. Módulos del Curso', '5. Course Modules')));
           for (const mod of suggestedModules as any[]) {
-            docChildren.push(new Paragraph({
-              children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })],
-            }));
-            docChildren.push(new Paragraph({
-              children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })],
-            }));
+            docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })] }));
+            docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })] }));
             if (mod.weeks?.length) {
-              docChildren.push(new Paragraph({
-                children: [new TextRun({ text: `${L('Semanas','Weeks')}: ${(mod.weeks as number[]).join(', ')}`, size: 18, italics: true })],
-              }));
+              docChildren.push(new Paragraph({ children: [new TextRun({ text: `${L('Semanas','Weeks')}: ${(mod.weeks as number[]).join(', ')}`, size: 18, italics: true })] }));
             }
             docChildren.push(spacer());
           }
         }
+
+        if (bibliography.length > 0) {
+          docChildren.push(h2(L('6. Bibliografía utilizada', '6. Bibliography')));
+          for (const ref of bibliography) {
+            docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${ref}`, size: 18 })] }));
+          }
+          docChildren.push(spacer());
+        }
+
+        if (guidelines.length > 0) {
+          docChildren.push(h2(L('7. Indicaciones Generales para recibir el curso', '7. General Course Guidelines')));
+          for (const rule of guidelines) {
+            docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${rule}`, size: 18 })] }));
+          }
+          docChildren.push(spacer());
+        }
+
+        docChildren.push(h2(L('Revisado y Aprobado:', 'Reviewed and Approved:')));
+        docChildren.push(spacer());
+        docChildren.push(new Paragraph({ children: [new TextRun({ text: '_____________________      _____________________', size: 18 })] }));
+        docChildren.push(new Paragraph({ children: [new TextRun({ text: L('Docente                                  Director Académico', 'Instructor                         Academic Director'), size: 18 })] }));
+        docChildren.push(spacer());
 
         const doc = new Document({ sections: [{ children: docChildren }] });
         const buffer = await Packer.toBuffer(doc);
@@ -824,6 +910,22 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
         // Non-fatal — course was created, doc generation failed
       }
 
+      // Create module stubs from suggestedModules (isDraft course — no lessons yet)
+      const isEN_save = planLanguage === 'EN';
+      for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
+        const mod = (suggestedModules as any[])[mi];
+        await prisma.module.create({
+          data: {
+            courseId: course.id,
+            title: isEN_save ? (mod.nameEN || mod.name) : mod.name,
+            description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
+            duration: '80 min',
+            passingScore: 70,
+            order: mi + 1,
+          },
+        }).catch((e: any) => console.error('[wizard] module create error:', e));
+      }
+
       // Auto-create group chat
       await upsertChat(`group_${course.id}`, {
         type: 'GROUP',
@@ -831,7 +933,7 @@ Responde ÚNICAMENTE con JSON válido (sin markdown, sin texto extra):
         participants: [],
       }).catch(() => {});
 
-      return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl });
+      return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true });
     }
 
     // ── GET /admin/courses/:courseId/validate-videos ────────────────────────

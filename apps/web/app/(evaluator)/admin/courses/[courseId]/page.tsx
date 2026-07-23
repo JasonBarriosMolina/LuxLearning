@@ -1306,6 +1306,14 @@ export default function AdminCourseDetailPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 pl-11">
           <Button
             variant="secondary"
+            leftIcon={<Sparkles className="w-4 h-4 text-indigo-500" />}
+            onClick={() => router.push(`/admin/courses/wizard?courseId=${courseId}`)}
+            className="shrink-0"
+          >
+            Editar con Lux Planner
+          </Button>
+          <Button
+            variant="secondary"
             leftIcon={<GraduationCap className="w-4 h-4" />}
             onClick={() => router.push(`/admin/courses/${courseId}/preview`)}
             className="shrink-0"
