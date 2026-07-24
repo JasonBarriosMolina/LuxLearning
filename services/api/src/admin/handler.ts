@@ -644,11 +644,17 @@ ${jsonFormat}`;
       if (!title || !(syllabusInput as string)?.trim()) return badRequest('title y syllabusInput son requeridos');
       const jobId = `wiz-cop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await saveAiJob(jobId, { status: 'processing' });
-      await lambdaClient.send(new LambdaInvokeCommand({
-        FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
-        InvocationType: 'Event',
-        Payload: Buffer.from(JSON.stringify({ _action: 'wizard-copilot', _jobId: jobId, ...body })),
-      }));
+      try {
+        await lambdaClient.send(new LambdaInvokeCommand({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+          InvocationType: 'Event',
+          Payload: Buffer.from(JSON.stringify({ _action: 'wizard-copilot', _jobId: jobId, ...body })),
+        }));
+      } catch (invokeErr: any) {
+        await saveAiJob(jobId, { status: 'error', error: 'No se pudo iniciar el generador. Intenta de nuevo.' });
+        console.error('[wizard-copilot] Lambda invoke failed:', invokeErr?.message);
+        return serverError('No se pudo iniciar el generador de plan');
+      }
       return ok({ jobId });
     }
 
