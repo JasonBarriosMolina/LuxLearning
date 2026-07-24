@@ -662,89 +662,104 @@ ${jsonFormat}`;
         classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
         cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
         evaluationItems = [], weeklyPlan = [], suggestedModules = [],
+        editingCourseId,
       } = body as any;
 
       if (!title) return badRequest('title es requerido');
 
-      // Generate slug from title
-      const slugBase = title.toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-      const slugRand = Math.random().toString(36).slice(2, 6);
-      const slug = `${slugBase}-${slugRand}`;
+      // Auto-include academicPeriod as a card label
+      const finalLabels: string[] = Array.isArray(cardLabels) ? [...cardLabels] : [];
+      if (academicPeriod && !finalLabels.includes(academicPeriod)) finalLabels.unshift(academicPeriod);
 
       const callerName = await getCallerName(event);
 
-      // Create course
-      const course = await prisma.course.create({
-        data: {
-          title,
-          slug,
-          description: description || title,
-          imageUrl: rawImageUrl || null,
-          isDraft: true,
-          tags: [],
-          startDate: startDate ? new Date(startDate) : null,
-          createdByName: callerName,
-          courseType: courseType || null,
-          academicPeriod: academicPeriod || null,
-          classDays: Array.isArray(classDays) ? classDays : [],
-          classSchedule: classSchedule || null,
-          modality: modality || null,
-          totalWeeks: totalWeeks ? parseInt(String(totalWeeks), 10) : null,
-          planLanguage: planLanguage || 'ES',
-          cardColor: cardColor || null,
-          cardBorderColor: cardBorderColor || null,
-          cardLabels: Array.isArray(cardLabels) ? cardLabels : [],
-          calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
-          evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
-        },
-      });
+      const wizardCourseData = {
+        title,
+        description: description || title,
+        imageUrl: rawImageUrl || null,
+        courseType: courseType || null,
+        academicPeriod: academicPeriod || null,
+        classDays: Array.isArray(classDays) ? classDays : [],
+        classSchedule: classSchedule || null,
+        modality: modality || null,
+        startDate: startDate ? new Date(startDate) : null,
+        totalWeeks: totalWeeks ? parseInt(String(totalWeeks), 10) : null,
+        planLanguage: planLanguage || 'ES',
+        cardColor: cardColor || null,
+        cardBorderColor: cardBorderColor || null,
+        cardLabels: finalLabels,
+        calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
+        evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
+      };
 
-      // Create EvaluationEvents from evaluationItems
-      for (let i = 0; i < evaluationItems.length; i++) {
-        const item = evaluationItems[i];
-        const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
-        await prisma.evaluationEvent.create({
-          data: {
-            courseId: course.id,
-            type: item.type ?? 'EXAM',
-            name: item.name ?? item.nameEN ?? 'Evaluación',
-            dueDate: firstDate,
-            weight: parseFloat(String(item.weight ?? 0)),
-            instructions: item.instructions || null,
-            vapiPrompt: item.vapiPrompt || null,
-            vapiObjectives: item.vapiObjectives || null,
-            order: i,
-          },
+      let course: { id: string; slug: string; planDocumentS3Key?: string | null };
+
+      if (editingCourseId) {
+        // UPDATE existing course — skip module/event/calendar recreation
+        course = await prisma.course.update({
+          where: { id: editingCourseId },
+          data: wizardCourseData,
+          select: { id: true, slug: true, planDocumentS3Key: true },
+        });
+      } else {
+        // CREATE new course
+        const slugBase = title.toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+        const slugRand = Math.random().toString(36).slice(2, 6);
+        const slug = `${slugBase}-${slugRand}`;
+        course = await prisma.course.create({
+          data: { ...wizardCourseData, slug, isDraft: true, tags: [], createdByName: callerName },
+          select: { id: true, slug: true, planDocumentS3Key: true },
         });
       }
 
-      // Sync evaluation due dates to calendar (visible to evaluators + students)
-      const calendarEventsToCreate: CalendarEvent[] = [];
-      const now = new Date().toISOString();
-      for (const item of (evaluationItems as any[])) {
-        const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
-        for (const dueDate of dueDates) {
-          const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
-          const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
-          calendarEventsToCreate.push({
-            creatorId: userId,
-            eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
-            title: `${item.name || item.nameEN} — ${title}`,
-            description: item.instructions || undefined,
-            type: 'deadline',
-            startDate: dayStart,
-            endDate: dayEnd,
-            allDay: true,
-            visibility: 'community',
-            creatorRole: role,
-            createdAt: now,
+      if (!editingCourseId) {
+        // Create EvaluationEvents from evaluationItems
+        for (let i = 0; i < evaluationItems.length; i++) {
+          const item = evaluationItems[i];
+          const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
+          await prisma.evaluationEvent.create({
+            data: {
+              courseId: course.id,
+              type: item.type ?? 'EXAM',
+              name: item.name ?? item.nameEN ?? 'Evaluación',
+              dueDate: firstDate,
+              weight: parseFloat(String(item.weight ?? 0)),
+              instructions: item.instructions || null,
+              vapiPrompt: item.vapiPrompt || null,
+              vapiObjectives: item.vapiObjectives || null,
+              order: i,
+            },
           });
         }
-      }
-      if (calendarEventsToCreate.length > 0) {
-        await batchCreateCalendarEvents(calendarEventsToCreate).catch((e) => console.error('[wizard] calendar sync error:', e));
+
+        // Sync evaluation due dates to calendar (visible to evaluators + students)
+        const calendarEventsToCreate: CalendarEvent[] = [];
+        const now = new Date().toISOString();
+        for (const item of (evaluationItems as any[])) {
+          const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
+          for (const dueDate of dueDates) {
+            const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
+            const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
+            calendarEventsToCreate.push({
+              creatorId: userId,
+              eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
+              title: `${item.name || item.nameEN} — ${title}`,
+              description: item.instructions || undefined,
+              type: 'deadline',
+              startDate: dayStart,
+              endDate: dayEnd,
+              allDay: true,
+              visibility: 'community',
+              creatorRole: role,
+              createdAt: now,
+            });
+          }
+        }
+        if (calendarEventsToCreate.length > 0) {
+          await batchCreateCalendarEvents(calendarEventsToCreate).catch((e) => console.error('[wizard] calendar sync error:', e));
+        }
       }
 
       // Generate and upload Word document
@@ -1000,56 +1015,58 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         // Non-fatal — course was created, doc generation failed
       }
 
-      // Create module stubs from suggestedModules — collect IDs for bulk lesson generation
-      const isEN_save = planLanguage === 'EN';
-      const createdModuleIds: string[] = [];
-      for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
-        const mod = (suggestedModules as any[])[mi];
-        try {
-          const createdMod = await prisma.module.create({
-            data: {
-              courseId: course.id,
-              title: isEN_save ? (mod.nameEN || mod.name) : mod.name,
-              description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
-              duration: '80 min',
-              passingScore: 70,
-              order: mi + 1,
-            },
-          });
-          createdModuleIds.push(createdMod.id);
-        } catch (e: any) {
-          console.error('[wizard] module create error:', e);
-        }
-      }
-
-      // Dispatch background job to generate ~10 lessons per module via AI
       let lessonJobId: string | null = null;
-      if (createdModuleIds.length > 0) {
-        lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        await saveAiJob(lessonJobId, { status: 'processing', modules: createdModuleIds.length });
-        await lambdaClient.send(new LambdaInvokeCommand({
-          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
-          InvocationType: 'Event',
-          Payload: Buffer.from(JSON.stringify({
-            _action: 'wizard-lessons-bulk',
-            _jobId: lessonJobId,
-            courseId: course.id,
-            moduleIds: createdModuleIds,
-            courseTitle: title,
-            language: planLanguage,
-          })),
-        }));
+      if (!editingCourseId) {
+        // Create module stubs from suggestedModules — collect IDs for bulk lesson generation
+        const isEN_save = planLanguage === 'EN';
+        const createdModuleIds: string[] = [];
+        for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
+          const mod = (suggestedModules as any[])[mi];
+          try {
+            const createdMod = await prisma.module.create({
+              data: {
+                courseId: course.id,
+                title: isEN_save ? (mod.nameEN || mod.name) : mod.name,
+                description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
+                duration: '80 min',
+                passingScore: 70,
+                order: mi + 1,
+              },
+            });
+            createdModuleIds.push(createdMod.id);
+          } catch (e: any) {
+            console.error('[wizard] module create error:', e);
+          }
+        }
+
+        // Dispatch background job to generate ~10 lessons per module via AI
+        if (createdModuleIds.length > 0) {
+          lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          await saveAiJob(lessonJobId, { status: 'processing', modules: createdModuleIds.length });
+          await lambdaClient.send(new LambdaInvokeCommand({
+            FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              _action: 'wizard-lessons-bulk',
+              _jobId: lessonJobId,
+              courseId: course.id,
+              moduleIds: createdModuleIds,
+              courseTitle: title,
+              language: planLanguage,
+            })),
+          }));
+        }
+
+        // Auto-create group chat for new courses
+        await upsertChat(`group_${course.id}`, {
+          type: 'GROUP',
+          name: `Curso: ${course.title}`,
+          participants: [],
+        }).catch(() => {});
       }
 
-      // Auto-create group chat
-      await upsertChat(`group_${course.id}`, {
-        type: 'GROUP',
-        name: `Curso: ${course.title}`,
-        participants: [],
-      }).catch(() => {});
-
-      // Generate CourseSession records from schedule
-      if (startDate && Array.isArray(classDays) && classDays.length > 0 && totalWeeks) {
+      // Generate CourseSession records from schedule (new courses only)
+      if (!editingCourseId && startDate && Array.isArray(classDays) && classDays.length > 0 && totalWeeks) {
         try {
           const dayNameToIndex: Record<string, number> = {
             Domingo: 0, Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5, Sábado: 6,

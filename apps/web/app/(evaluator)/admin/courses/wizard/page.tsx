@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, ArrowRight, BookOpen, FlaskConical, FolderKanban,
   Clock, AlignLeft, Sparkles, Loader2, X, Image as ImageIcon,
@@ -186,6 +186,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function CourseWizardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { lang } = useLanguage();
   const isEN = lang === 'en';
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -196,6 +197,8 @@ export default function CourseWizardPage() {
   const [step3, setStep3] = useState<Step3Data>(EMPTY_STEP3);
   const [step4, setStep4] = useState<Step4Data>(EMPTY_STEP4);
   const [step5, setStep5] = useState<Step5Data>(EMPTY_STEP5);
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [loadingCourse, setLoadingCourse] = useState(false);
 
   const [labelInput, setLabelInput] = useState('');
   const [imageGenerating, setImageGenerating] = useState(false);
@@ -213,6 +216,71 @@ export default function CourseWizardPage() {
   useEffect(() => {
     api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? res ?? [])).catch(() => {});
   }, []);
+
+  // Preload existing course when editing
+  const preloadCourse = useCallback(async (courseId: string) => {
+    setLoadingCourse(true);
+    try {
+      const res = await api.admin.courses.get(courseId) as any;
+      const c = res?.data ?? res;
+      if (!c) return;
+      setEditingCourseId(courseId);
+
+      // Parse schedule into start/end
+      const [schStart, schEnd] = (c.classSchedule ?? '').split(' – ');
+      setScheduleStart(schStart ?? '');
+      setScheduleEnd(schEnd ?? '');
+
+      setStep1({
+        title: c.title ?? '',
+        academicPeriod: c.academicPeriod ?? '',
+        classDays: Array.isArray(c.classDays) ? c.classDays : [],
+        classSchedule: c.classSchedule ?? '',
+        modality: c.modality ?? '',
+        startDate: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
+        planLanguage: (c.planLanguage ?? 'ES') as PlanLang,
+        courseType: (c.courseType ?? '') as CourseTypeId | '',
+        description: c.description ?? '',
+        imageUrl: c.imageUrl ?? '',
+        cardColor: c.cardColor ?? '',
+        cardBorderColor: c.cardBorderColor ?? '',
+        cardLabels: Array.isArray(c.cardLabels) ? c.cardLabels : [],
+      });
+
+      setStep2({
+        totalWeeks: c.totalWeeks ?? 16,
+        exceptions: Array.isArray(c.calendarExceptions) ? c.calendarExceptions.map((ex: any) => ({ ...ex, id: ex.id ?? uid() })) : [],
+      });
+
+      const evalConfig = Array.isArray(c.evaluationConfig) ? c.evaluationConfig : [];
+      if (evalConfig.length > 0) {
+        setStep3({
+          items: evalConfig.map((it: any, i: number) => ({
+            id: it.id ?? String(i),
+            type: it.type ?? 'EXAM',
+            name: it.name ?? '',
+            nameEN: it.nameEN ?? it.name ?? '',
+            weight: it.weight ?? 0,
+            count: it.count ?? (Array.isArray(it.dueDates) ? it.dueDates.length : 1),
+            dueDates: Array.isArray(it.dueDates) ? it.dueDates : [''],
+            instructions: it.instructions ?? '',
+            locked: it.locked ?? false,
+            vapiPrompt: it.vapiPrompt ?? '',
+            vapiObjectives: it.vapiObjectives ?? '',
+          })),
+        });
+      }
+    } catch {
+      // Ignore — wizard will start blank
+    } finally {
+      setLoadingCourse(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const courseId = searchParams.get('courseId');
+    if (courseId) preloadCourse(courseId);
+  }, [searchParams, preloadCourse]);
 
   // Keep classSchedule in sync with the two time selectors
   useEffect(() => {
@@ -380,6 +448,7 @@ export default function CourseWizardPage() {
         cardLabels: step1.cardLabels, calendarExceptions: step2.exceptions,
         evaluationItems: step3.items, weeklyPlan: step4.weeklyPlan,
         suggestedModules: step4.modules,
+        ...(editingCourseId ? { editingCourseId } : {}),
       }) as any;
       const data = resp?.data ?? resp;
       if (!data?.courseId) throw new Error('No se recibió courseId');
@@ -480,7 +549,13 @@ export default function CourseWizardPage() {
                         const res = await api.admin.periods.create(newPeriodInput.trim()) as any;
                         const created = res?.data ?? res;
                         setPeriods((p) => [created, ...p]);
-                        setStep1((prev) => ({ ...prev, academicPeriod: created.name }));
+                        setStep1((prev) => {
+                          const labelsWithoutOld = prev.cardLabels.filter((l) => l !== prev.academicPeriod);
+                          const newLabels = created.name && !labelsWithoutOld.includes(created.name)
+                            ? [created.name, ...labelsWithoutOld]
+                            : labelsWithoutOld;
+                          return { ...prev, academicPeriod: created.name, cardLabels: newLabels };
+                        });
                         setNewPeriodInput(''); setShowNewPeriod(false);
                       } else if (e.key === 'Escape') { setShowNewPeriod(false); setNewPeriodInput(''); }
                     }}
@@ -490,7 +565,17 @@ export default function CourseWizardPage() {
                 </div>
               ) : (
                 <div className="flex gap-1.5">
-                  <select value={step1.academicPeriod} onChange={(e) => setStep1((p) => ({ ...p, academicPeriod: e.target.value }))} className="input-field flex-1 text-sm py-2">
+                  <select value={step1.academicPeriod} onChange={(e) => {
+                    const newPeriod = e.target.value;
+                    setStep1((p) => {
+                      // Replace old period label with new one in cardLabels
+                      const labelsWithoutOld = p.cardLabels.filter((l) => l !== p.academicPeriod);
+                      const newLabels = newPeriod && !labelsWithoutOld.includes(newPeriod)
+                        ? [newPeriod, ...labelsWithoutOld]
+                        : labelsWithoutOld;
+                      return { ...p, academicPeriod: newPeriod, cardLabels: newLabels };
+                    });
+                  }} className="input-field flex-1 text-sm py-2">
                     <option value="">{s('— Seleccionar —', '— Select —')}</option>
                     {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
@@ -1034,7 +1119,7 @@ export default function CourseWizardPage() {
             <CheckCircle className="w-10 h-10 text-emerald-500" />
           </div>
           <div>
-            <p className="font-heading font-bold text-charcoal text-xl">{s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
+            <p className="font-heading font-bold text-charcoal text-xl">{editingCourseId ? s('¡Curso actualizado exitosamente!', 'Course updated successfully!') : s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
             <p className="text-sm text-gray-400 mt-1">{step1.title}</p>
           </div>
           {step5.lessonJobId && (
@@ -1125,7 +1210,7 @@ export default function CourseWizardPage() {
         <Button onClick={saveCourse} disabled={step5.status === 'saving'}
           leftIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           className="w-full justify-center">
-          {step5.status === 'saving' ? s('Guardando y generando documento...', 'Saving and generating document...') : s('Guardar Curso y Generar Plan Word', 'Save Course & Generate Word Plan')}
+          {step5.status === 'saving' ? s('Guardando...', 'Saving...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Guardar Curso y Generar Plan Word', 'Save Course & Generate Word Plan')}
         </Button>
       </div>
     );
@@ -1138,12 +1223,18 @@ export default function CourseWizardPage() {
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-gray-950/95 backdrop-blur border-b border-border px-6 py-3 flex items-center gap-4">
         <button onClick={goBack} className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"><ArrowLeft className="w-4 h-4" /></button>
         <div>
-          <p className="font-heading font-bold text-charcoal text-sm">{s('Lux Planner — Creación de Curso', 'Lux Planner — Course Creation')}</p>
+          <p className="font-heading font-bold text-charcoal text-sm">{editingCourseId ? s('Lux Planner — Editar Curso', 'Lux Planner — Edit Course') : s('Lux Planner — Creación de Curso', 'Lux Planner — Course Creation')}</p>
           {step1.title && <p className="text-xs text-gray-400">{step1.title}</p>}
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-8">
+        {loadingCourse && (
+          <div className="flex items-center gap-3 mb-6 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100">
+            <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
+            <p className="text-sm text-blue-700 dark:text-blue-300">{s('Cargando datos del curso...', 'Loading course data...')}</p>
+          </div>
+        )}
         <StepBar current={step} />
 
         <div>
