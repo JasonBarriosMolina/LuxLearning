@@ -1616,11 +1616,14 @@ ${text.trim()}`;
     const evalGroupMembersMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/members$/);
     if (evalGroupMembersMatch && method === 'GET') {
       const groupId = evalGroupMembersMatch[1]!;
-      // Verify evaluator has access to this group
-      const access = await prisma.studentGroupEvaluator.findUnique({
-        where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
-      });
-      if (!access && !isAdminRole) return forbidden('No tienes acceso a este grupo');
+      const [access, groupOwner] = await Promise.all([
+        prisma.studentGroupEvaluator.findUnique({
+          where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
+        }),
+        prisma.studentGroup.findUnique({ where: { id: groupId }, select: { createdByEvaluatorId: true } }),
+      ]);
+      if (!groupOwner) return notFound('Grupo no encontrado');
+      if (!access && groupOwner.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('No tienes acceso a este grupo');
       const members = await prisma.studentGroupMember.findMany({ where: { groupId }, orderBy: { addedAt: 'asc' } });
       const enriched = await Promise.all(members.map(async (m) => {
         const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: m.userId })).catch(() => null);
@@ -1636,10 +1639,14 @@ ${text.trim()}`;
     const evalGroupEnrollMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/enroll$/);
     if (evalGroupEnrollMatch && method === 'POST') {
       const groupId = evalGroupEnrollMatch[1]!;
-      const access = await prisma.studentGroupEvaluator.findUnique({
-        where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
-      });
-      if (!access && !isAdminRole) return forbidden('No tienes acceso a este grupo');
+      const [access, enrollGroupOwner] = await Promise.all([
+        prisma.studentGroupEvaluator.findUnique({
+          where: { groupId_evaluatorId: { groupId, evaluatorId: userId } },
+        }),
+        prisma.studentGroup.findUnique({ where: { id: groupId }, select: { createdByEvaluatorId: true } }),
+      ]);
+      if (!enrollGroupOwner) return notFound('Grupo no encontrado');
+      if (!access && enrollGroupOwner.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('No tienes acceso a este grupo');
       const { userIds, courseId } = JSON.parse(event.body ?? '{}') as { userIds?: string[]; courseId?: string };
       if (!userIds?.length || !courseId) return badRequest('userIds y courseId son requeridos');
 

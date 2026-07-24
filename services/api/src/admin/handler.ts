@@ -3106,8 +3106,10 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
       const members = await prisma.studentGroupMember.findMany({ where: { groupId }, orderBy: { addedAt: 'asc' } });
       const enriched = await Promise.all(members.map(async (m) => {
-        const cog = await getCognitoUser(m.userId).catch(() => ({ email: m.userId, name: m.userId, enabled: true }));
-        return { ...m, email: cog.email, name: cog.name, enabled: cog.enabled };
+        const cog = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: m.userId })).catch(() => null);
+        const attrs = cog?.UserAttributes ?? [];
+        const getAttr = (n: string) => attrs.find((a) => a.Name === n)?.Value ?? '';
+        return { ...m, email: getAttr('email'), name: getAttr('name') || getAttr('email') || m.userId };
       }));
       return ok({ groupName: group?.name ?? '', members: enriched });
     }
@@ -3144,7 +3146,13 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const groupId = groupEvaluatorsMatch[1]!;
       const evaluators = await prisma.studentGroupEvaluator.findMany({ where: { groupId }, orderBy: { assignedAt: 'asc' } });
-      return ok(evaluators);
+      const enrichedEvals = await Promise.all(evaluators.map(async (ev) => {
+        const cog = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: ev.evaluatorId })).catch(() => null);
+        const attrs = cog?.UserAttributes ?? [];
+        const getAttr = (n: string) => attrs.find((a: any) => a.Name === n)?.Value ?? '';
+        return { ...ev, name: getAttr('name') || getAttr('email') || ev.evaluatorId, email: getAttr('email') };
+      }));
+      return ok(enrichedEvals);
     }
 
     // POST /admin/groups/:id/evaluators
