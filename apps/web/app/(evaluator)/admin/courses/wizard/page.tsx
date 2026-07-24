@@ -63,6 +63,7 @@ interface Step5Data {
   status: 'idle' | 'saving' | 'done' | 'error';
   courseId?: string;
   docUrl?: string;
+  lessonJobId?: string;
   error: string;
 }
 
@@ -382,7 +383,7 @@ export default function CourseWizardPage() {
       }) as any;
       const data = resp?.data ?? resp;
       if (!data?.courseId) throw new Error('No se recibió courseId');
-      setStep5({ status: 'done', courseId: data.courseId, docUrl: data.docUrl ?? null, error: '' });
+      setStep5({ status: 'done', courseId: data.courseId, docUrl: data.docUrl ?? null, lessonJobId: data.lessonJobId ?? null, error: '' });
     } catch (err: any) {
       setStep5({ status: 'error', error: err?.message ?? 'Error al guardar' });
     }
@@ -411,7 +412,10 @@ export default function CourseWizardPage() {
       const resp = await api.admin.courses.generateCover('wizard-temp', { promptText });
       const url = (resp as any)?.data?.imageUrl ?? (resp as any)?.imageUrl;
       if (url) setStep1((p) => ({ ...p, imageUrl: url }));
-    } catch { setImageError(s('Error al generar la imagen', 'Error generating image')); }
+      else setImageError(s('No se recibió imagen. Intenta de nuevo.', 'No image received. Try again.'));
+    } catch (err: any) {
+      setImageError(err?.message ?? s('Stability AI tardó demasiado. Inténtalo de nuevo.', 'Stability AI timed out. Try again.'));
+    }
     finally { setImageGenerating(false); }
   };
 
@@ -1033,6 +1037,15 @@ export default function CourseWizardPage() {
             <p className="font-heading font-bold text-charcoal text-xl">{s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
             <p className="text-sm text-gray-400 mt-1">{step1.title}</p>
           </div>
+          {step5.lessonJobId && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 rounded-xl flex items-center gap-3 text-left">
+              <Loader2 className="w-4 h-4 text-blue-500 shrink-0 animate-spin" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                {s('Lux Planner está generando las lecciones de cada módulo en segundo plano. Estarán listas en unos minutos al abrir el curso.',
+                   'Lux Planner is generating lessons for each module in the background. They will be ready in a few minutes when you open the course.')}
+              </p>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button onClick={() => router.push(`/admin/courses/${step5.courseId}`)} leftIcon={<BookOpen className="w-4 h-4" />}>
               {s('Ir al curso', 'Go to course')}

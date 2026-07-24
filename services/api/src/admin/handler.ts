@@ -389,6 +389,89 @@ export const handler = async (event: Event) => {
       return ok({ generated: 1 });
     }
 
+    // ── Async worker: Lux Planner bulk lesson generation ─────────────────────
+    if (action === 'wizard-lessons-bulk') {
+      const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES' } = body as any;
+      const isBlEN = blLang === 'EN';
+      const failed: string[] = [];
+      try {
+        for (const moduleId of moduleIds as string[]) {
+          try {
+            const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
+            if (!mod) continue;
+
+            const lessonPrompt = isBlEN
+              ? `You are an expert instructional designer. Generate exactly 10 lessons for module "${mod.title}" in course "${blTitle}".
+Return ONLY a JSON array (10 elements):
+[{"title":"Introduction to ${mod.title}","order":1,"type":"video","content":"<p>Introductory paragraph.</p>","duration":"5 min","points":["Point 1","Point 2","Point 3"],"tip":"Helpful tip."},
+{"title":"Topic A","order":2,"type":"text","content":"<h3>Heading</h3><p>Paragraph.</p><ul><li>Item A</li><li>Item B</li></ul>","duration":"8 min","points":["Key 1","Key 2","Key 3"],"tip":"Tip."},
+{"title":"Summary — ${mod.title}","order":10,"type":"video","content":"<p>Summary.</p>","duration":"5 min","points":["Summary 1","Summary 2","Next steps"],"tip":"Complete the quiz."}]
+Lessons 2-9 must be type text with rich HTML: <h3>, <ul><li>, <blockquote>. No markdown.`
+              : `Eres experto en diseño instruccional. Genera exactamente 10 lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+Devuelve ÚNICAMENTE un array JSON (10 elementos):
+[{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"<p>Párrafo introductorio.</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo útil."},
+{"title":"Subtema A","order":2,"type":"text","content":"<h3>Encabezado</h3><p>Párrafo.</p><ul><li>Punto A</li><li>Punto B</li></ul>","duration":"8 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"Tip."},
+{"title":"Resumen — ${mod.title}","order":10,"type":"video","content":"<p>Resumen.</p>","duration":"5 min","points":["Resumen 1","Resumen 2","Próximos pasos"],"tip":"Completa el quiz."}]
+Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`;
+
+            const rawLessons = await invokeBedrockForJson(lessonPrompt, 5000);
+            const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
+            if (lessons.length === 0) { failed.push(moduleId); continue; }
+
+            // Validate array is non-empty before any deletes
+            await prisma.lesson.createMany({
+              data: lessons.map((l: any, i: number) => ({
+                moduleId,
+                title: l.title || `Lección ${i + 1}`,
+                type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
+                content: l.content || null,
+                youtubeId: '',
+                imageUrl: null,
+                duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '8 min'),
+                points: Array.isArray(l.points) ? l.points : [],
+                tip: l.tip || '',
+                order: l.order || i + 1,
+              })),
+            });
+
+            // Generate quiz questions for the module
+            const qPrompt = isBlEN
+              ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
+              : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
+            const rawQ = await invokeBedrockForJson(qPrompt, 2000);
+            const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
+            if (questions.length > 0) {
+              await prisma.question.createMany({
+                data: questions.map((q: any, i: number) => ({
+                  moduleId,
+                  text: q.text,
+                  options: q.options,
+                  correctIndex: Number(q.correctIndex),
+                  order: i + 1,
+                })),
+              });
+            }
+
+            await prisma.module.update({
+              where: { id: moduleId },
+              data: { duration: `${lessons.length * 8} min` },
+            });
+          } catch (modErr: any) {
+            console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
+            failed.push(moduleId);
+          }
+        }
+        await saveAiJob(_jobId, {
+          status: 'done',
+          modulesProcessed: (moduleIds as string[]).length,
+          failed: failed.length,
+        });
+      } catch (err: any) {
+        await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando lecciones' });
+      }
+      return ok({});
+    }
+
     // ── Async worker: Lux Planner copilot ────────────────────────────────────
     if (action === 'wizard-copilot') {
       const {
@@ -917,20 +1000,45 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         // Non-fatal — course was created, doc generation failed
       }
 
-      // Create module stubs from suggestedModules (isDraft course — no lessons yet)
+      // Create module stubs from suggestedModules — collect IDs for bulk lesson generation
       const isEN_save = planLanguage === 'EN';
+      const createdModuleIds: string[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
         const mod = (suggestedModules as any[])[mi];
-        await prisma.module.create({
-          data: {
+        try {
+          const createdMod = await prisma.module.create({
+            data: {
+              courseId: course.id,
+              title: isEN_save ? (mod.nameEN || mod.name) : mod.name,
+              description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
+              duration: '80 min',
+              passingScore: 70,
+              order: mi + 1,
+            },
+          });
+          createdModuleIds.push(createdMod.id);
+        } catch (e: any) {
+          console.error('[wizard] module create error:', e);
+        }
+      }
+
+      // Dispatch background job to generate ~10 lessons per module via AI
+      let lessonJobId: string | null = null;
+      if (createdModuleIds.length > 0) {
+        lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await saveAiJob(lessonJobId, { status: 'processing', modules: createdModuleIds.length });
+        await lambdaClient.send(new LambdaInvokeCommand({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+          InvocationType: 'Event',
+          Payload: Buffer.from(JSON.stringify({
+            _action: 'wizard-lessons-bulk',
+            _jobId: lessonJobId,
             courseId: course.id,
-            title: isEN_save ? (mod.nameEN || mod.name) : mod.name,
-            description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
-            duration: '80 min',
-            passingScore: 70,
-            order: mi + 1,
-          },
-        }).catch((e: any) => console.error('[wizard] module create error:', e));
+            moduleIds: createdModuleIds,
+            courseTitle: title,
+            language: planLanguage,
+          })),
+        }));
       }
 
       // Auto-create group chat
@@ -981,7 +1089,7 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         }
       }
 
-      return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true });
+      return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true, lessonJobId });
     }
 
     // ── GET /admin/courses/:courseId/validate-videos ────────────────────────

@@ -7,7 +7,7 @@ import {
   ArrowLeft, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   BookOpen, ClipboardCheck, PlayCircle, GripVertical, X, RefreshCw, Loader2, Volume2,
   ShieldCheck, CheckCircle2, AlertCircle, ExternalLink, Eye, GraduationCap, Sparkles, RotateCcw,
-  Wand2, Check,
+  Wand2, Check, Download,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -1312,6 +1312,19 @@ export default function AdminCourseDetailPage() {
           >
             Editar con Lux Planner
           </Button>
+          {(course as any).planDocumentS3Key && (
+            <a
+              href={`https://lux-learning-images.s3.amazonaws.com/${(course as any).planDocumentS3Key}`}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0"
+            >
+              <Button variant="secondary" leftIcon={<Download className="w-4 h-4 text-emerald-600" />}>
+                Descargar Plan
+              </Button>
+            </a>
+          )}
           <Button
             variant="secondary"
             leftIcon={<GraduationCap className="w-4 h-4" />}
