@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   User, Lock, Check, AlertTriangle, Eye, EyeOff, Upload,
-  GraduationCap, Link2, Plus, Trash2, Edit2, Save, X, Phone, FileText,
+  GraduationCap, Link2, Plus, Trash2, Edit2, Save, X, Phone, FileText, QrCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { changePassword } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
+import QRCodeLib from 'qrcode';
 
 interface ProfileData {
   username: string;
@@ -409,6 +410,9 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {/* ── Mi código QR de asistencia ── */}
+      <QrAttendanceCard />
+
       {/* ── Cambiar contraseña ── */}
       <div className="card">
         <div className="flex items-center justify-between">
@@ -455,6 +459,45 @@ export default function ProfilePage() {
           <Check className="w-4 h-4" /> {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function QrAttendanceCard() {
+  const { userId } = useAuth();
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    if (!userId) return;
+    QRCodeLib.toDataURL(userId, {
+      width: 200, margin: 2,
+      color: { dark: '#1e293b', light: '#ffffff' },
+    }).then(setQrDataUrl).catch(() => {});
+  }, [userId]);
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+          <QrCode className="w-4 h-4 text-blue-600" />
+        </div>
+        <div>
+          <h2 className="font-heading font-semibold text-charcoal">Código QR de Asistencia</h2>
+          <p className="text-xs text-gray-500">Tu evaluador lo escanea para registrar tu asistencia</p>
+        </div>
+      </div>
+      <div className="flex flex-col items-center gap-3">
+        {qrDataUrl ? (
+          <img src={qrDataUrl} alt="QR de asistencia" className="w-44 h-44 rounded-xl shadow-sm border border-gray-100" />
+        ) : (
+          <div className="w-44 h-44 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400">
+            <QrCode size={40} />
+          </div>
+        )}
+        <p className="text-xs text-gray-400 text-center max-w-xs">
+          Muestra este código al inicio de cada clase para que el evaluador registre tu presencia.
+        </p>
+      </div>
     </div>
   );
 }

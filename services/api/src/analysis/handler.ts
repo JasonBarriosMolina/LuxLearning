@@ -4,11 +4,19 @@
  * Stores results in ReportAnalysis + CurriculumRecommendations tables
  */
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getPrismaClient } from '../shared/db-neon';
 import {
-  getAllReflections, getAllQuizAttempts,
+  getAllReflections, getAllQuizAttempts, getAllEnrollments,
   saveReportAnalysis, saveRecommendations,
+  getAttendanceMatrix, saveRiskScores, type RiskScore,
 } from '../shared/db-dynamo';
+
+const ses = new SESClient({ region: 'us-east-1' });
+const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1' });
+const SES_FROM = process.env.SES_FROM_EMAIL ?? 'jason.rbm@gmail.com';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 import { createId } from '@paralleldrive/cuid2';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -177,6 +185,134 @@ Responde ÚNICAMENTE con JSON válido:
     }
 
     console.log(`[Analysis] Done — analyzed: ${analyzed}, skipped: ${skipped}`);
+
+    // ── Risk Score per course ──────────────────────────────────────────────
+    try {
+      const courses = await prisma.course.findMany({
+        where: { isDraft: false, isArchived: false },
+        select: { id: true, title: true, evaluatorId: true, totalWeeks: true },
+      });
+      const allEnrollments = await getAllEnrollments();
+
+      for (const course of courses) {
+        try {
+          const [attendanceRecords, sessions] = await Promise.all([
+            getAttendanceMatrix(course.id),
+            prisma.courseSession.findMany({ where: { courseId: course.id }, select: { id: true } }),
+          ]);
+          const totalSessions = sessions.length;
+          if (totalSessions === 0) continue;
+
+          const enrolledUserIds = allEnrollments
+            .filter((e: any) => e.courseId === course.id)
+            .map((e: any) => e.userId);
+          if (enrolledUserIds.length === 0) continue;
+
+          // Count per-student metrics
+          const courseReflections = allReflections.filter((r: any) => r.courseId === course.id || allAttempts.some(() => false));
+          const courseAttempts = allAttempts.filter((a: any) => a.courseId === course.id);
+
+          const riskScores: RiskScore[] = [];
+          for (const uid of enrolledUserIds) {
+            const myAttendance = attendanceRecords.filter((r: any) => r.userId === uid && r.sk !== 'RISK_SCORES');
+            const absences = myAttendance.filter((r: any) => r.status === 'ABSENT' || r.status === 'REJECTED').length;
+            const absenceRate = totalSessions > 0 ? absences / totalSessions : 0;
+
+            const myReflections = allReflections.filter((r: any) => r.userId === uid);
+            const rejectedReflections = myReflections.filter((r: any) => r.status === 'REJECTED').length;
+            const reflectionRejectRate = myReflections.length > 0 ? rejectedReflections / myReflections.length : 0;
+
+            const myAttempts = allAttempts.filter((a: any) => a.userId === uid);
+            const failedAttempts = myAttempts.filter((a: any) => !a.passed).length;
+            const quizFailRate = myAttempts.length > 0 ? failedAttempts / myAttempts.length : 0;
+
+            const score = (absenceRate * 0.4) + (quizFailRate * 0.3) + (reflectionRejectRate * 0.3);
+            const riskLevel: 'LOW' | 'MODERATE' | 'HIGH' = score > 0.6 ? 'HIGH' : score > 0.3 ? 'MODERATE' : 'LOW';
+
+            const reasons: string[] = [];
+            if (absenceRate > 0.2) reasons.push(`${Math.round(absenceRate * 100)}% de ausencias`);
+            if (quizFailRate > 0.3) reasons.push(`${Math.round(quizFailRate * 100)}% de quizzes fallidos`);
+            if (reflectionRejectRate > 0.2) reasons.push(`${Math.round(reflectionRejectRate * 100)}% de reflexiones rechazadas`);
+
+            riskScores.push({
+              userId: uid,
+              name: uid,
+              riskLevel,
+              riskScore: Math.round(score * 100),
+              absenceRate: Math.round(absenceRate * 100),
+              reason: reasons.join(', ') || 'Sin indicadores de riesgo',
+              suggestedAction: riskLevel === 'HIGH'
+                ? 'Enviar mensaje de apoyo y programar tutoría de nivelación'
+                : riskLevel === 'MODERATE'
+                ? 'Enviar recordatorio motivador'
+                : 'Sin acción requerida',
+            });
+          }
+
+          // AI cohort insight with Bedrock Sonnet
+          let cohortInsight = '';
+          const atRisk = riskScores.filter((r) => r.riskLevel !== 'LOW');
+          if (atRisk.length > 0) {
+            const insightPrompt = `Eres un analista pedagógico de Lux Learning. Analiza estos datos de riesgo de abandono para el curso "${course.title}":
+
+Estudiantes en riesgo:
+${atRisk.map((r) => `- UserId ${r.userId}: ${r.riskLevel} (score: ${r.riskScore}%) — ${r.reason}`).join('\n')}
+
+Genera UN párrafo conciso (máximo 3 oraciones) con el patrón general de riesgo del grupo y una recomendación para el evaluador.
+Responde solo con el párrafo, sin JSON ni formato extra.`;
+            try {
+              cohortInsight = await callBedrock(insightPrompt, 300);
+            } catch { /* non-fatal */ }
+          }
+
+          await saveRiskScores(course.id, riskScores, cohortInsight);
+
+          // Email morning summary to evaluator if there are critical cases
+          const criticalCases = riskScores.filter((r) => r.riskLevel === 'HIGH');
+          if (criticalCases.length > 0 && course.evaluatorId) {
+            try {
+              const evUser = await cognito.send(new AdminGetUserCommand({
+                UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+                Username: course.evaluatorId,
+              })).catch(() => null);
+              const evEmail = evUser?.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+              const evName = evUser?.UserAttributes?.find((a) => a.Name === 'name')?.Value ?? 'Evaluador';
+              if (evEmail) {
+                const criticalList = criticalCases
+                  .map((r) => `<li><strong>${r.userId}</strong> — ${r.reason} (Score: ${r.riskScore}%)<br><em>Acción sugerida:</em> ${r.suggestedAction}</li>`)
+                  .join('');
+                await ses.send(new SendEmailCommand({
+                  Source: SES_FROM,
+                  Destination: { ToAddresses: [evEmail] },
+                  Message: {
+                    Subject: { Data: `🚨 Resumen de Riesgo — ${course.title}`, Charset: 'UTF-8' },
+                    Body: {
+                      Html: {
+                        Data: `<p>Hola ${evName},</p>
+<p>El análisis nocturno de Lux Learning detectó <strong>${criticalCases.length} estudiante(s) en estado CRÍTICO</strong> en el curso <strong>${course.title}</strong>:</p>
+<ul>${criticalList}</ul>
+${cohortInsight ? `<p><em>Insight del grupo:</em> ${cohortInsight}</p>` : ''}
+<p><a href="${FRONTEND_URL}/admin/attendance/${course.id}">Ver panel de asistencia →</a></p>`,
+                        Charset: 'UTF-8',
+                      },
+                    },
+                  },
+                }));
+              }
+            } catch (emailErr) {
+              console.warn('[Analysis] Risk email error:', emailErr);
+            }
+          }
+
+          console.log(`[Analysis] Risk scores for ${course.title}: ${riskScores.length} students, ${criticalCases.length} critical`);
+        } catch (courseErr) {
+          console.warn(`[Analysis] Risk score failed for course ${course.id}:`, courseErr);
+        }
+      }
+    } catch (riskErr) {
+      console.warn('[Analysis] Risk score block failed:', riskErr);
+    }
+
     return { analyzed, skipped };
 
   } catch (err) {

@@ -940,6 +940,47 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         participants: [],
       }).catch(() => {});
 
+      // Generate CourseSession records from schedule
+      if (startDate && Array.isArray(classDays) && classDays.length > 0 && totalWeeks) {
+        try {
+          const dayNameToIndex: Record<string, number> = {
+            Domingo: 0, Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5, Sábado: 6,
+            Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
+          };
+          const classDayIndices = (classDays as string[]).map((d: string) => dayNameToIndex[d]).filter((n) => n !== undefined) as number[];
+          const exceptionDates = new Set(
+            (calendarExceptions as any[])
+              .filter((ex: any) => ex.type === 'day' && ex.date)
+              .map((ex: any) => ex.date.split('T')[0])
+          );
+          const exceptionWeekIdxs = new Set(
+            (calendarExceptions as any[])
+              .filter((ex: any) => ex.type === 'week' && ex.weekIndex != null)
+              .map((ex: any) => ex.weekIndex as number)
+          );
+          const sessions: Array<{ courseId: string; sessionDate: Date; weekIndex: number; order: number }> = [];
+          let order = 1;
+          for (let w = 0; w < (totalWeeks as number); w++) {
+            if (exceptionWeekIdxs.has(w)) continue;
+            for (const dayIdx of classDayIndices) {
+              const weekStart = new Date(startDate);
+              weekStart.setDate(weekStart.getDate() + w * 7);
+              const diff = (dayIdx - weekStart.getDay() + 7) % 7;
+              const sessionDate = new Date(weekStart);
+              sessionDate.setDate(weekStart.getDate() + diff);
+              const isoDate = sessionDate.toISOString().split('T')[0]!;
+              if (exceptionDates.has(isoDate)) continue;
+              sessions.push({ courseId: course.id, sessionDate, weekIndex: w, order: order++ });
+            }
+          }
+          if (sessions.length > 0) {
+            await prisma.courseSession.createMany({ data: sessions });
+          }
+        } catch (sessErr) {
+          console.error('[wizard] courseSession create error:', sessErr);
+        }
+      }
+
       return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true });
     }
 

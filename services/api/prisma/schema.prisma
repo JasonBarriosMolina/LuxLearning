@@ -45,6 +45,20 @@ model Course {
 
   modules            Module[]
   evaluationEvents   EvaluationEvent[]
+  sessions           CourseSession[]
+}
+
+model CourseSession {
+  id          String   @id @default(cuid())
+  courseId    String
+  sessionDate DateTime
+  weekIndex   Int?
+  order       Int
+  createdAt   DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
 }
 
 model AcademicPeriod {

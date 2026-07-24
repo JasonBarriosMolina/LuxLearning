@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle, FolderOpen, Link2, FileText } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle, FolderOpen, Link2, FileText, CalendarCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -190,6 +190,15 @@ export default function CoursePage() {
             {t.courseDetail.continueBtn}
           </Link>
         )}
+
+        {/* Mi Asistencia */}
+        <Link
+          href={`/courses/${courseId}/attendance`}
+          className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors"
+        >
+          <CalendarCheck className="w-4 h-4 text-blue-500" />
+          Mi Asistencia
+        </Link>
 
         {/* Chat del Curso */}
         <Link

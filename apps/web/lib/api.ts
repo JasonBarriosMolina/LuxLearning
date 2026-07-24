@@ -401,6 +401,26 @@ export const api = {
         request<any>(`/admin/groups/${id}/evaluators/${evaluatorId}`, { method: 'DELETE' }),
     },
   },
+  attendance: {
+    // Evaluator/Admin
+    sessions: (courseId: string) => request<any>(`/attendance/sessions/${courseId}`),
+    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' }[] }) =>
+      request<any>('/attendance/record', { method: 'POST', body: JSON.stringify(body) }),
+    matrix: (courseId: string) => request<any>(`/attendance/matrix/${courseId}`),
+    pending: (courseId: string) => request<any>(`/attendance/pending/${courseId}`),
+    review: (body: { courseId: string; sk: string; status: 'JUSTIFIED' | 'REJECTED'; evaluatorFeedback?: string }) =>
+      request<any>('/attendance/review', { method: 'PUT', body: JSON.stringify(body) }),
+    override: (body: { courseId: string; sk: string; overrideReason: string }) =>
+      request<any>('/attendance/override', { method: 'PUT', body: JSON.stringify(body) }),
+    risk: (courseId: string) => request<any>(`/attendance/risk/${courseId}`),
+    // Student
+    my: (courseId: string) => request<any>(`/attendance/my/${courseId}`),
+    presignJustify: (body: { courseId: string; sk: string; fileName: string; fileType: string }) =>
+      request<any>('/attendance/justify', { method: 'POST', body: JSON.stringify(body) }),
+    submitJustify: (body: { courseId: string; sk: string; documentKey: string }) =>
+      request<any>('/attendance/justify/submit', { method: 'PUT', body: JSON.stringify(body) }),
+  },
+
   profile: {
     get: () => request<any>('/user/profile'),
     update: (body: {

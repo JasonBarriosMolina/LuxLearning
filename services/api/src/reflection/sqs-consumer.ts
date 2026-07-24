@@ -2,10 +2,17 @@ import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import webpush from 'web-push';
 import { createId } from '@paralleldrive/cuid2';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang } from '../shared/db-dynamo';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang, updateAttendanceRecord } from '../shared/db-dynamo';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from './detect-ai';
+
+const s3 = new S3Client({ region: 'us-east-1' });
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const S3_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
@@ -23,8 +30,98 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
 const AI_REJECT_THRESHOLD = 85;
 const AI_SUSPECT_THRESHOLD = 70;
 
+// ── Attendance OCR via Bedrock Vision ────────────────────────────────────────
+async function processAttendanceOcr(payload: {
+  courseId: string; sk: string; userId: string; sessionId: string;
+  sessionDate: string; documentKey: string; studentEmail: string;
+}): Promise<void> {
+  const { courseId, sk, userId, sessionDate, documentKey, studentEmail } = payload;
+  console.log(`[AttendanceOCR] Processing ${documentKey} for user ${userId}`);
+
+  // Download document from S3
+  const s3Obj = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: documentKey }));
+  const bytes = await s3Obj.Body?.transformToByteArray();
+  if (!bytes) throw new Error('Empty S3 object');
+
+  const ext = documentKey.split('.').pop()?.toLowerCase() ?? 'pdf';
+  const mediaType = ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : 'image/jpeg';
+  const base64Doc = Buffer.from(bytes).toString('base64');
+
+  const studentName = studentEmail.split('@')[0] ?? userId;
+  const absenceDateFmt = new Date(sessionDate).toLocaleDateString('es-CR', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const systemPrompt = `Eres el Agente de Control de Asistencia de Lux Learning. Tu tarea es analizar comprobantes de justificación de ausencias y extraer información clave.
+
+REGLAS ESTRICTAS:
+1. Tu única salida debe ser un objeto JSON válido, sin texto adicional.
+2. Verifica si existe sello oficial, firma médica o membrete institucional (CCSS, INS, clínicas privadas, empresas son válidos).
+3. Calcula un nivel de confianza (0-100) sobre la legibilidad y autenticidad visual del documento.
+4. Asigna una recomendación:
+   - "VALID_MATCH": Nombres coinciden, fechas cubren la ausencia, sello presente.
+   - "NEEDS_REVIEW": Fechas dudosas, borroso, o falta de sellos claros.
+   - "REJECTED_AUTO": Documento irrelevante, alterado visiblemente, o fecha que no corresponde.
+
+INFORMACIÓN DEL CONTEXTO:
+- Nombre del estudiante esperado: ${studentName}
+- Fecha de la ausencia a justificar: ${absenceDateFmt}
+
+FORMATO DE SALIDA (JSON):
+{"extractedName":null,"extractedDate":null,"hasMedicalStamp":false,"issuer":null,"aiConfidenceScore":0,"aiRecommendation":"NEEDS_REVIEW","reasoning":""}`;
+
+  const bedrockBody = mediaType === 'application/pdf'
+    ? {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: mediaType, data: base64Doc } },
+            { type: 'text', text: 'Analiza este comprobante y devuelve el JSON requerido.' },
+          ],
+        }],
+        system: systemPrompt,
+      }
+    : {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Doc } },
+            { type: 'text', text: 'Analiza este comprobante y devuelve el JSON requerido.' },
+          ],
+        }],
+        system: systemPrompt,
+      };
+
+  const res = await bedrock.send(new InvokeModelCommand({
+    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify(bedrockBody),
+  }));
+
+  const rawText = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text ?? '{}';
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  let aiOcrData: any = {};
+  try { aiOcrData = JSON.parse(jsonMatch?.[0] ?? '{}'); } catch { /* ignore */ }
+
+  await updateAttendanceRecord(courseId, sk, { aiOcrData, status: 'JUSTIFICATION_PENDING' });
+  console.log(`[AttendanceOCR] Done — recommendation: ${aiOcrData.aiRecommendation}`);
+}
+
+// ── SQS router ────────────────────────────────────────────────────────────────
 async function processRecord(record: SQSRecord) {
-  const { userId, moduleId, env } = JSON.parse(record.body) as { userId: string; moduleId: string; env?: string };
+  const parsed = JSON.parse(record.body);
+  const msgType = parsed.type as string | undefined;
+
+  // Route by type field; legacy messages without type are REFLECTION_AI
+  if (msgType === 'ATTENDANCE_OCR') {
+    return processAttendanceOcr(parsed);
+  }
+
+  // REFLECTION_AI (default)
+  const { userId, moduleId, env } = parsed as { userId: string; moduleId: string; env?: string };
 
   const originByEnv: Record<string, string> = {
     staging: 'https://lux-learning-staging.vercel.app',

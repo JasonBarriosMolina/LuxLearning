@@ -29,6 +29,7 @@ $PRISMA_ENGINE = "$PRISMA_GEN\libquery_engine-linux-arm64-openssl-3.0.x.so.node"
 # Map: lambda-name -> [ entrypoint, usesPrisma ]
 $LAMBDAS = [ordered]@{
   "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true)
+  "lux-attendance"  = @("$API_SRC\attendance\handler.ts",   $true)
   "lux-reflection"  = @("$API_SRC\reflection\handler.ts",   $true)
   "lux-evaluator"   = @("$API_SRC\evaluator\handler.ts",    $true)
   "lux-courses"     = @("$API_SRC\courses\handler.ts",      $true)
