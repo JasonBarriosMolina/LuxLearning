@@ -21,7 +21,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { getPrismaClient } from '../shared/db-neon';
-import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification, getUserProfile, saveUserProfile, batchCreateCalendarEvents, type CalendarEvent } from '../shared/db-dynamo';
+import { createEnrollment, getEnrollments, deleteEnrollment, getAllReflections, getAllLessonProgress, getAllEnrollments, saveAiJob, getAiJob, createTask, createNotification, getUserProfile, saveUserProfile, batchCreateCalendarEvents, deleteWizardCalendarEvents, type CalendarEvent } from '../shared/db-dynamo';
 import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { getAllEmailTemplates, saveEmailTemplate, sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
@@ -717,27 +717,36 @@ ${jsonFormat}`;
       // `title` from body is used for display strings — course.title not in select
       const courseTitle = title as string;
 
-      if (!editingCourseId) {
-        // Create EvaluationEvents from evaluationItems
-        for (let i = 0; i < evaluationItems.length; i++) {
-          const item = evaluationItems[i];
-          const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
-          await prisma.evaluationEvent.create({
-            data: {
-              courseId: course.id,
-              type: item.type ?? 'EXAM',
-              name: item.name ?? item.nameEN ?? 'Evaluación',
-              dueDate: firstDate,
-              weight: parseFloat(String(item.weight ?? 0)),
-              instructions: item.instructions || null,
-              vapiPrompt: item.vapiPrompt || null,
-              vapiObjectives: item.vapiObjectives || null,
-              order: i,
-            },
-          });
-        }
+      if (editingCourseId) {
+        // EDIT: delete existing EvaluationEvents then recreate from updated items
+        await prisma.evaluationEvent.deleteMany({ where: { courseId: course.id } });
+      }
 
-        // Sync evaluation due dates to calendar (visible to evaluators + students)
+      // Create EvaluationEvents (always — both create and edit paths)
+      for (let i = 0; i < evaluationItems.length; i++) {
+        const item = evaluationItems[i];
+        const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
+        await prisma.evaluationEvent.create({
+          data: {
+            courseId: course.id,
+            type: item.type ?? 'EXAM',
+            name: item.name ?? item.nameEN ?? 'Evaluación',
+            dueDate: firstDate,
+            weight: parseFloat(String(item.weight ?? 0)),
+            instructions: item.instructions || null,
+            vapiPrompt: item.vapiPrompt || null,
+            vapiObjectives: item.vapiObjectives || null,
+            order: i,
+          },
+        });
+      }
+
+      // Sync evaluation due dates to calendar
+      {
+        // On edit, remove old wizard-generated calendar events for this course first
+        if (editingCourseId) {
+          await deleteWizardCalendarEvents(course.id, userId).catch((e) => console.error('[wizard] calendar delete error:', e));
+        }
         const calendarEventsToCreate: CalendarEvent[] = [];
         const now = new Date().toISOString();
         for (const item of (evaluationItems as any[])) {
@@ -1007,7 +1016,7 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
           Key: s3Key,
           Body: buffer,
           ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          ContentDisposition: `attachment; filename="plan-${slug}.docx"`,
+          ContentDisposition: `attachment; filename="plan-${course.slug}.docx"`,
         }));
         planDocumentS3Key = s3Key;
         docPublicUrl = `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${s3Key}`;
@@ -1109,7 +1118,9 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         }
       }
 
-      return created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true, lessonJobId });
+      return editingCourseId
+        ? ok({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: false, lessonJobId })
+        : created({ courseId: course.id, slug: course.slug, docUrl: docPublicUrl, isDraft: true, lessonJobId });
     }
 
     // ── GET /admin/courses/:courseId/validate-videos ────────────────────────

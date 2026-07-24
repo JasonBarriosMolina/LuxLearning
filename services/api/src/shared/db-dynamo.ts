@@ -1174,6 +1174,13 @@ export async function deleteCalendarEvent(creatorId: string, eventId: string): P
   }));
 }
 
+export async function deleteWizardCalendarEvents(courseId: string, creatorId: string): Promise<void> {
+  const events = await getCalendarEventsByCreator(creatorId);
+  const prefix = `wiz-${courseId}-`;
+  const toDelete = events.filter((e) => e.eventId.startsWith(prefix));
+  await Promise.all(toDelete.map((e) => deleteCalendarEvent(creatorId, e.eventId)));
+}
+
 export async function getCalendarEventById(creatorId: string, eventId: string): Promise<CalendarEvent | null> {
   const result = await ddb.send(new GetCommand({
     TableName: TABLES.CALENDAR,

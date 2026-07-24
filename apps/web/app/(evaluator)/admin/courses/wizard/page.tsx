@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, ArrowRight, BookOpen, FlaskConical, FolderKanban,
@@ -184,7 +184,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function CourseWizardPage() {
+function CourseWizardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { lang } = useLanguage();
@@ -546,17 +546,21 @@ export default function CourseWizardPage() {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         if (!newPeriodInput.trim()) return;
-                        const res = await api.admin.periods.create(newPeriodInput.trim()) as any;
-                        const created = res?.data ?? res;
-                        setPeriods((p) => [created, ...p]);
-                        setStep1((prev) => {
-                          const labelsWithoutOld = prev.cardLabels.filter((l) => l !== prev.academicPeriod);
-                          const newLabels = created.name && !labelsWithoutOld.includes(created.name)
-                            ? [created.name, ...labelsWithoutOld]
-                            : labelsWithoutOld;
-                          return { ...prev, academicPeriod: created.name, cardLabels: newLabels };
-                        });
-                        setNewPeriodInput(''); setShowNewPeriod(false);
+                        try {
+                          const res = await api.admin.periods.create(newPeriodInput.trim()) as any;
+                          const created = res?.data ?? res;
+                          setPeriods((p) => [created, ...p]);
+                          setStep1((prev) => {
+                            const labelsWithoutOld = prev.cardLabels.filter((l) => l !== prev.academicPeriod);
+                            const newLabels = created.name && !labelsWithoutOld.includes(created.name)
+                              ? [created.name, ...labelsWithoutOld]
+                              : labelsWithoutOld;
+                            return { ...prev, academicPeriod: created.name, cardLabels: newLabels };
+                          });
+                          setNewPeriodInput(''); setShowNewPeriod(false);
+                        } catch {
+                          setImageError('No se pudo crear el período. Intenta de nuevo.');
+                        }
                       } else if (e.key === 'Escape') { setShowNewPeriod(false); setNewPeriodInput(''); }
                     }}
                     placeholder={s('Ej. I Cuatrimestre 2026', 'E.g. Spring 2026')}
@@ -1254,4 +1258,8 @@ export default function CourseWizardPage() {
       </div>
     </div>
   );
+}
+
+export default function CourseWizardPage() {
+  return <Suspense fallback={null}><CourseWizardInner /></Suspense>;
 }
