@@ -714,6 +714,9 @@ ${jsonFormat}`;
         });
       }
 
+      // `title` from body is used for display strings — course.title not in select
+      const courseTitle = title as string;
+
       if (!editingCourseId) {
         // Create EvaluationEvents from evaluationItems
         for (let i = 0; i < evaluationItems.length; i++) {
@@ -1060,7 +1063,7 @@ Responde ÚNICAMENTE con JSON: {"bibliography":["Referencia APA 1","Referencia A
         // Auto-create group chat for new courses
         await upsertChat(`group_${course.id}`, {
           type: 'GROUP',
-          name: `Curso: ${course.title}`,
+          name: `Curso: ${courseTitle}`,
           participants: [],
         }).catch(() => {});
       }
