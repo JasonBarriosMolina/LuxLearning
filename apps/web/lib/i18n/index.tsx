@@ -34,7 +34,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     api.user.setLang(l).catch(() => {});
   };
 
-  const t = lang === 'en' ? en : es;
+  const t = (lang === 'en' ? en : es) as Translations;
 
   return (
     <LangContext.Provider value={{ lang, setLang, t }}>
