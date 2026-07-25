@@ -282,6 +282,11 @@ function CourseWizardInner() {
     if (courseId) preloadCourse(courseId);
   }, [searchParams, preloadCourse]);
 
+  // Clean up copilot poll on unmount to avoid state updates on unmounted component
+  useEffect(() => {
+    return () => { if (copilotPollRef.current) clearInterval(copilotPollRef.current); };
+  }, []);
+
   // Keep classSchedule in sync with the two time selectors
   useEffect(() => {
     if (scheduleStart && scheduleEnd) {

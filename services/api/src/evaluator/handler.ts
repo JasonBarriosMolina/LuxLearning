@@ -1691,7 +1691,7 @@ ${text.trim()}`;
               courseId,
               moduleId: mod.id,
               assignedBy: 'system',
-              status: 'pending',
+              status: 'PENDING',
               createdAt: new Date().toISOString(),
             });
           }));

@@ -351,20 +351,28 @@ async function getCallerName(event: Event): Promise<string | null> {
 }
 
 export const handler = async (event: Event) => {
+  // ── Self-invoked async workers have no requestContext or event.body ─────────
+  // Payload fields land directly on `event`, not event.body, for direct Lambda invocations.
+  const _selfAction = (event as any)._action as string | undefined;
+
   const origin = event.headers?.origin ?? event.headers?.Origin;
   setRequestOrigin(origin);
   setEnvironmentFromOrigin(origin);
-  if (event.requestContext.http.method === 'OPTIONS') return cors();
-  if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
-  const method = event.requestContext.http.method;
-  const path = event.rawPath;
+  if (!_selfAction) {
+    if (event.requestContext.http.method === 'OPTIONS') return cors();
+    if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
+  }
+
+  const method = _selfAction ? 'WORKER' : event.requestContext.http.method;
+  const path = _selfAction ? '' : event.rawPath;
 
   try {
     // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
     const prisma = await getPrismaClient();
-    const body = event.body ? JSON.parse(event.body) : {};
-    const action = (body as any)._action as string | undefined;
+    // For HTTP: body is a JSON string in event.body. For self-invoked workers: payload is on event directly.
+    const body = _selfAction ? (event as any) : (event.body ? JSON.parse(event.body) : {});
+    const action = _selfAction ?? ((body as any)._action as string | undefined);
 
     // ── Async audio generation workers (self-invoked via Lambda Event) ──────
     if (action === 'bulk-audio') {
@@ -751,17 +759,19 @@ ${jsonFormat}`;
       {
         // On edit, remove old wizard-generated calendar events for this course first
         if (editingCourseId) {
-          await deleteWizardCalendarEvents(course.id, userId).catch((e) => console.error('[wizard] calendar delete error:', e));
+          await deleteWizardCalendarEvents(course.id).catch((e) => console.error('[wizard] calendar delete error:', e));
         }
         const calendarEventsToCreate: CalendarEvent[] = [];
         const now = new Date().toISOString();
+        // Use synthetic creatorId so delete-on-edit always finds them regardless of who edited
+        const wizCreatorId = `wiz-${course.id}`;
         for (const item of (evaluationItems as any[])) {
           const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
           for (const dueDate of dueDates) {
             const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
             const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
             calendarEventsToCreate.push({
-              creatorId: userId,
+              creatorId: wizCreatorId,
               eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
               title: `${item.name || item.nameEN} — ${title}`,
               description: item.instructions || undefined,
