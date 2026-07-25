@@ -186,7 +186,11 @@
       "Bash(aws s3 *)",
       "Bash(aws sqs *)",
       "PowerShell(aws logs describe-log-streams --log-group-name /aws/lambda/lux-admin --order-by LastEventTime --descending --limit 3 --output json 2>&1)",
-      "PowerShell(aws logs get-log-events --log-group-name /aws/lambda/lux-admin --log-stream-name \"2026/05/29/[$LATEST]36e62378bad147fa9784199c52af11a5\" --output text 2>&1 | Select-Object -Last 50)"
+      "PowerShell(aws logs get-log-events --log-group-name /aws/lambda/lux-admin --log-stream-name \"2026/05/29/[$LATEST]36e62378bad147fa9784199c52af11a5\" --output text 2>&1 | Select-Object -Last 50)",
+      "Bash(git commit -m 'feat: reflexiones y estudiantes filtrados por curso en admin, modulo actual y tareas en vista estudiantes *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "mcp__claude-in-chrome__navigate"
     ]
   }
 }

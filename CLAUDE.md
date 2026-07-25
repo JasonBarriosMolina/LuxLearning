@@ -38,10 +38,23 @@ apps/web/                  Next.js frontend
   lib/api.ts               All API calls
   lib/auth.ts              Cognito / getIdToken
 services/api/src/
-  admin/handler.ts         lux-admin
+  admin/handler.ts         lux-admin — thin router (delegates to domain modules below)
+  admin/ctx.ts             Shared context, AWS clients, helpers for lux-admin
+  admin/courses.ts         Course/module/lesson/question CRUD + AI generation
+  admin/users.ts           User management + enrollments
+  admin/reports.ts         GET /admin/reports analytics
+  admin/ai.ts              AI generation workers (ai-generate, ai-publish, regenerate)
+  admin/profile.ts         GET/PUT /user/profile
+  admin/files.ts           Email templates + S3 presign
+  evaluator/handler.ts     lux-evaluator — thin router (delegates to domain modules below)
+  evaluator/ctx.ts         Shared context, AWS clients, cache, helpers for lux-evaluator
+  evaluator/reflections.ts Reflection review, reconsider, priority, ai-feedback, ai-check
+  evaluator/courses.ts     GET /evaluator/my-courses, GET /evaluator/students
+  evaluator/tasks.ts       Task CRUD (POST/GET/PUT/DELETE /evaluator/tasks)
+  evaluator/resources.ts   Resources, signature, student certificates
+  evaluator/misc.ts        Reminder email, quiz-audit, translate
   reflection/handler.ts    lux-reflection
   reflection/sqs-consumer.ts  lux-sqsconsumer
-  evaluator/handler.ts     lux-evaluator
   courses/handler.ts       lux-courses
   quiz/handler.ts          lux-quiz
   certificates/handler.ts  lux-certs
@@ -242,6 +255,42 @@ Allowed origins are in `shared/response.ts` `ALLOWED_ORIGINS[]`. Add new Vercel 
 | Push notification silent | VAPID keys not set or subscription stale | Check `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` env vars |
 | `Application error: client-side exception` on page load | React hook (e.g. `useRef`, `useCallback`) used in component but not imported | Check the import line — add all used hooks to `import { ... } from 'react'` |
 | `Failed to fetch` on new API call | New backend route exists in handler but was never registered in API Gateway | See "API Gateway — adding new routes" section below |
+
+---
+
+## Module architecture rules (lux-admin and lux-evaluator)
+
+Both `lux-admin` and `lux-evaluator` use a **thin-router + domain-module** pattern:
+
+- `handler.ts` — entry point only: parses body, builds ctx, chains domain handlers with `??`
+- `ctx.ts` — shared AWS clients, constants, types (`AdminCtx` / `EvalCtx`), helper functions
+- Domain modules (`courses.ts`, `users.ts`, etc.) — each exports ONE `handleX(ctx)` that returns `Promise<any | null>`; `null` means "not handled"
+
+### Rules when adding a new route to lux-admin or lux-evaluator
+
+1. **Find the correct domain file** (e.g. a new course-related route goes in `admin/courses.ts`). Create a new domain file if none fits.
+2. **Add the if-block** inside the domain's `handleX` function — always `return null` at the bottom.
+3. **Register the route in API Gateway** — see "API Gateway — adding new routes" section below.
+4. **NEVER put business logic in handler.ts** — it must stay a thin router (imports + ctx build + chain only).
+
+### EvalCtx / AdminCtx shape
+
+```typescript
+// AdminCtx (admin/ctx.ts)
+{ event, method, path, prisma, body, action, userId }
+
+// EvalCtx (evaluator/ctx.ts)
+{ event, method, path, prisma, body, userId, isAdminRole }
+```
+
+### Domain module contract
+
+```typescript
+export async function handleX(ctx: AdminCtx | EvalCtx): Promise<any | null> {
+  // handle routes; return ok(...) / badRequest(...) / etc. on match
+  return null; // required at the bottom — tells router to try the next domain
+}
+```
 
 ---
 
