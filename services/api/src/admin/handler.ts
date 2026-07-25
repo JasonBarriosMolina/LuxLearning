@@ -2075,6 +2075,11 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
       if (method === 'POST') {
         const { courseId } = body;
         if (!courseId) return badRequest('courseId es requerido');
+
+        // Check if already enrolled to avoid re-sending email/tasks (idempotent)
+        const existingEnrollments = await getEnrollments(username).catch(() => [] as string[]);
+        const alreadyEnrolled = existingEnrollments.includes(courseId);
+
         await createEnrollment(username, courseId);
 
         // Send enrollment notification email + add to group chat
@@ -2085,14 +2090,14 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
           ]);
           const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
           const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value;
-          if (emailAttr && course) {
+          if (!alreadyEnrolled && emailAttr && course) {
             await sendTemplatedEmail(emailAttr, 'ENROLLMENT', {
               studentName: nameAttr || emailAttr.split('@')[0],
               courseTitle: course.title,
             });
           }
-          // Notify evaluator when a student is enrolled in their course
-          if (course?.evaluatorId) {
+          // Notify evaluator (first enroll only)
+          if (!alreadyEnrolled && course?.evaluatorId) {
             createNotification({
               userId: course.evaluatorId,
               notifId: `enroll-${username}-${courseId}-${Date.now()}`,
@@ -2103,7 +2108,7 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
               actionUrl: '/evaluator/my-courses',
             }).catch(() => { /* non-fatal */ });
           }
-          // Add student to group chat for this course (ensure META + membership both exist)
+          // Group chat — always idempotent (upsert is safe to repeat)
           if (course) {
             await upsertChat(`group_${courseId}`, {
               type: 'GROUP',
@@ -2117,36 +2122,38 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
           }
         } catch (e) { console.warn('Enrollment email/chat failed:', e); }
 
-        // M-7: Auto-create tasks for each module (one per module, due in 7×order days)
-        try {
-          const courseModules = await prisma.module.findMany({
-            where: { courseId },
-            orderBy: { order: 'asc' },
-            select: { id: true, title: true, order: true },
-          });
-          const courseForTasks = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
-          const enrollDate = new Date();
-          await Promise.all(courseModules.map((mod) => {
-            const due = new Date(enrollDate);
-            due.setDate(due.getDate() + 7 * mod.order);
-            const dueDate = due.toISOString().slice(0, 10);
-            return createTask({
-              userId: username,
-              taskId: `auto-${courseId}-${mod.id}`,
-              title: `Completar módulo: ${mod.title}`,
-              description: `Completa todas las lecciones y el quiz del módulo ${mod.order}.`,
-              type: 'complete_module',
-              dueDate,
-              courseId,
-              moduleId: mod.id,
-              courseTitle: courseForTasks?.title ?? '',
-              moduleTitle: mod.title,
-              assignedBy: 'system',
-              status: 'PENDING',
-              createdAt: new Date().toISOString(),
+        // Auto-create tasks per module (first enroll only)
+        if (!alreadyEnrolled) {
+          try {
+            const courseModules = await prisma.module.findMany({
+              where: { courseId },
+              orderBy: { order: 'asc' },
+              select: { id: true, title: true, order: true },
             });
-          }));
-        } catch (e) { console.warn('Auto-task creation failed:', e); }
+            const courseForTasks = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+            const enrollDate = new Date();
+            await Promise.all(courseModules.map((mod) => {
+              const due = new Date(enrollDate);
+              due.setDate(due.getDate() + 7 * mod.order);
+              const dueDate = due.toISOString().slice(0, 10);
+              return createTask({
+                userId: username,
+                taskId: `auto-${courseId}-${mod.id}`,
+                title: `Completar módulo: ${mod.title}`,
+                description: `Completa todas las lecciones y el quiz del módulo ${mod.order}.`,
+                type: 'complete_module',
+                dueDate,
+                courseId,
+                moduleId: mod.id,
+                courseTitle: courseForTasks?.title ?? '',
+                moduleTitle: mod.title,
+                assignedBy: 'system',
+                status: 'PENDING',
+                createdAt: new Date().toISOString(),
+              });
+            }));
+          } catch (e) { console.warn('Auto-task creation failed:', e); }
+        }
 
         return ok({ enrolled: true });
       }

@@ -1623,6 +1623,7 @@ ${text.trim()}`;
         prisma.studentGroup.findUnique({ where: { id: groupId }, select: { createdByEvaluatorId: true } }),
       ]);
       if (!groupOwner) return notFound('Grupo no encontrado');
+      console.log('[groups/members GET] groupId=%s userId=%s createdByEvaluatorId=%s access=%s isAdminRole=%s', groupId, userId, groupOwner.createdByEvaluatorId, !!access, isAdminRole);
       if (!access && groupOwner.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('No tienes acceso a este grupo');
       const members = await prisma.studentGroupMember.findMany({ where: { groupId }, orderBy: { addedAt: 'asc' } });
       const enriched = await Promise.all(members.map(async (m) => {
@@ -1654,47 +1655,53 @@ ${text.trim()}`;
       if (!course) return notFound('Curso no encontrado');
 
       await Promise.allSettled(userIds.map(async (uid) => {
-        // 1. Create DynamoDB enrollment
+        // 1. Check if already enrolled (skip side-effects to stay idempotent)
+        const existingEnrollments = await getEnrollments(uid).catch(() => [] as string[]);
+        const alreadyEnrolled = existingEnrollments.includes(courseId);
+
+        // Always upsert the enrollment record (PutCommand is safe to repeat)
         await createEnrollment(uid, courseId);
 
-        // 2. Email welcome (best-effort)
-        try {
-          const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid }));
-          const attrs = cogUser.UserAttributes ?? [];
-          const studentEmail = attrs.find((a) => a.Name === 'email')?.Value;
-          const studentName  = attrs.find((a) => a.Name === 'name')?.Value ?? studentEmail ?? uid;
-          if (studentEmail) {
-            await sendTemplatedEmail(studentEmail, 'ENROLLMENT', { studentName, courseTitle: course.title });
-          }
-        } catch { /* non-fatal */ }
+        if (!alreadyEnrolled) {
+          // 2. Email welcome (best-effort, first enroll only)
+          try {
+            const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid }));
+            const attrs = cogUser.UserAttributes ?? [];
+            const studentEmail = attrs.find((a) => a.Name === 'email')?.Value;
+            const studentName  = attrs.find((a) => a.Name === 'name')?.Value ?? studentEmail ?? uid;
+            if (studentEmail) {
+              await sendTemplatedEmail(studentEmail, 'ENROLLMENT', { studentName, courseTitle: course.title });
+            }
+          } catch { /* non-fatal */ }
 
-        // 3. Group chat membership
+          // 4. Auto-tasks per module (first enroll only)
+          try {
+            const enrollDate = new Date();
+            await Promise.all(course.modules.map((mod) => {
+              const due = new Date(enrollDate);
+              due.setDate(due.getDate() + 7 * mod.order);
+              return createTask({
+                userId: uid,
+                taskId: `${uid}-${mod.id}-complete`,
+                title: `Completar módulo: ${mod.title}`,
+                description: `Completa las lecciones, quiz y reflexión del módulo "${mod.title}" del curso "${course.title}".`,
+                dueDate: due.toISOString(),
+                type: 'complete_module',
+                courseId,
+                moduleId: mod.id,
+                assignedBy: 'system',
+                status: 'PENDING',
+                createdAt: new Date().toISOString(),
+              });
+            }));
+          } catch { /* non-fatal */ }
+        }
+
+        // 3. Group chat membership (always idempotent — upsert is safe to repeat)
         try {
           const chatId = `group_${courseId}`;
           await upsertChat(chatId, { type: 'group', name: course.title, participants: [uid] });
           await upsertMembership(uid, chatId, { role: 'member', name: uid });
-        } catch { /* non-fatal */ }
-
-        // 4. Auto-tasks per module
-        try {
-          const enrollDate = new Date();
-          await Promise.all(course.modules.map((mod) => {
-            const due = new Date(enrollDate);
-            due.setDate(due.getDate() + 7 * mod.order);
-            return createTask({
-              userId: uid,
-              taskId: `${uid}-${mod.id}-complete`,
-              title: `Completar módulo: ${mod.title}`,
-              description: `Completa las lecciones, quiz y reflexión del módulo "${mod.title}" del curso "${course.title}".`,
-              dueDate: due.toISOString(),
-              type: 'complete_module',
-              courseId,
-              moduleId: mod.id,
-              assignedBy: 'system',
-              status: 'PENDING',
-              createdAt: new Date().toISOString(),
-            });
-          }));
         } catch { /* non-fatal */ }
 
         // 5. Track enrollment in StudentGroupMember (deduplicate)
@@ -1744,6 +1751,7 @@ ${text.trim()}`;
       const groupId = evalGroupMembersWriteMatch[1]!;
       const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
       if (!group) return notFound('Grupo no encontrado');
+      console.log('[groups/members POST] groupId=%s userId=%s createdByEvaluatorId=%s isAdminRole=%s', groupId, userId, group.createdByEvaluatorId, isAdminRole);
       if (group.createdByEvaluatorId !== userId && !isAdminRole) return forbidden('Solo puedes modificar tus propios grupos');
       const { userIds } = JSON.parse(event.body ?? '{}') as { userIds?: string[] };
       if (!userIds?.length) return badRequest('userIds es requerido');
