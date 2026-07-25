@@ -25,6 +25,10 @@ export const navEs = {
     installApp: 'Instalar app',
     signOut: 'Cerrar sesión',
     adminCerts: 'Certificados',
+    groups: 'Grupos Base',
+    submissions: 'Entregas',
+    interviews: 'Entrevistas',
+    attendance: 'Asistencia',
   },
   roles: {
     superAdmin: 'Super Admin',
@@ -118,6 +122,10 @@ export const navEn = {
     installApp: 'Install app',
     signOut: 'Sign out',
     adminCerts: 'Certificates',
+    groups: 'Base Groups',
+    submissions: 'Submissions',
+    interviews: 'Interviews',
+    attendance: 'Attendance',
   },
   roles: {
     superAdmin: 'Super Admin',

@@ -10,15 +10,14 @@ import { getPrismaClient } from '../shared/db-neon';
 import {
   getAllReflections, getAllQuizAttempts, getAllEnrollments,
   saveReportAnalysis, saveRecommendations,
-  getAttendanceMatrix, saveRiskScores, type RiskScore,
+  getAttendanceMatrix, saveRiskScores, createTask, type RiskScore,
 } from '../shared/db-dynamo';
+import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1' });
 const SES_FROM = process.env.SES_FROM_EMAIL ?? 'jason.rbm@gmail.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
-import { createId } from '@paralleldrive/cuid2';
-
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 const MIN_REFLECTIONS = 3; // minimum reflections needed to run AI analysis
@@ -190,7 +189,7 @@ Responde ÚNICAMENTE con JSON válido:
     try {
       const courses = await prisma.course.findMany({
         where: { isDraft: false, isArchived: false },
-        select: { id: true, title: true, evaluatorId: true, totalWeeks: true },
+        select: { id: true, title: true, evaluatorId: true, totalWeeks: true, pilotoAutomatico: true },
       });
       const allEnrollments = await getAllEnrollments();
 
@@ -301,6 +300,62 @@ ${cohortInsight ? `<p><em>Insight del grupo:</em> ${cohortInsight}</p>` : ''}
               }
             } catch (emailErr) {
               console.warn('[Analysis] Risk email error:', emailErr);
+            }
+          }
+
+          // ── Auto leveling tasks for HIGH-risk students ───────────────────
+          for (const r of criticalCases) {
+            try {
+              const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              await createTask({
+                userId: r.userId,
+                taskId: createId(),
+                title: `Tutoría de nivelación — ${course.title}`,
+                description: `El sistema detectó que tienes indicadores de riesgo en este curso (${r.reason}). Se ha programado esta tarea de nivelación. Contacta a tu evaluador para coordinar.`,
+                courseId: course.id,
+                courseTitle: course.title,
+                type: 'theoretical',
+                dueDate,
+                status: 'PENDING',
+                assignedBy: 'system',
+                createdAt: new Date().toISOString(),
+              });
+            } catch { /* non-fatal */ }
+          }
+
+          // ── Re-engagement emails to MODERATE+HIGH risk students (Piloto Automático) ──
+          if (course.pilotoAutomatico) {
+            const atRiskStudents = riskScores.filter((r) => r.riskLevel === 'MODERATE' || r.riskLevel === 'HIGH');
+            for (const r of atRiskStudents) {
+              try {
+                const stuUser = await cognito.send(new AdminGetUserCommand({
+                  UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+                  Username: r.userId,
+                })).catch(() => null);
+                const stuEmail = stuUser?.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+                const stuName = stuUser?.UserAttributes?.find((a) => a.Name === 'name')?.Value ?? 'Estudiante';
+                if (!stuEmail) continue;
+
+                const isHigh = r.riskLevel === 'HIGH';
+                await ses.send(new SendEmailCommand({
+                  Source: SES_FROM,
+                  Destination: { ToAddresses: [stuEmail] },
+                  Message: {
+                    Subject: { Data: isHigh ? `🚨 Te necesitamos de vuelta — ${course.title}` : `💡 No te quedes atrás — ${course.title}`, Charset: 'UTF-8' },
+                    Body: {
+                      Html: {
+                        Data: `<p>Hola ${stuName},</p>
+<p>Notamos que no pudiste acompañarnos en las últimas sesiones de <strong>${course.title}</strong>. Sabemos que organizar el tiempo puede ser un reto, pero no queremos que te quedes atrás.</p>
+${r.absenceRate > 0 ? `<p>Tienes un <strong>${r.absenceRate}% de ausencias</strong> registradas. Recuerda que tienes hasta 72 horas desde cada falta para subir tu comprobante de justificación.</p>` : ''}
+<p>Aún estás a tiempo de ponerte al día. Si tuviste algún inconveniente de fuerza mayor, tu evaluador puede ayudarte.</p>
+<p><a href="${FRONTEND_URL}/courses/${course.id}/attendance" style="background:#17527E;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block">Ver mi asistencia →</a></p>
+<p style="color:#888;font-size:12px;">Este mensaje fue generado automáticamente por el sistema de seguimiento de Lux Learning.</p>`,
+                        Charset: 'UTF-8',
+                      },
+                    },
+                  },
+                }));
+              } catch { /* non-fatal */ }
             }
           }
 

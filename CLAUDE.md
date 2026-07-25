@@ -101,6 +101,7 @@ All lambdas inherit DynamoDB table names from env. Prisma lambdas also need `DAT
 ### Shared across all lambdas
 ```
 COGNITO_USER_POOL_ID      us-east-1_RGVyVRJXx
+DYNAMO_TABLE_ATTENDANCE   LuxAttendance
 COGNITO_CLIENT_ID         63ujfu3mt11s45p9g6m7p0n648
 DYNAMO_TABLE_PROGRESS     LessonProgress
 DYNAMO_TABLE_QUIZ         QuizAttempts

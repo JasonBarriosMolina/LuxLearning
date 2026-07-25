@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, BookOpen, ShieldCheck, GraduationCap, Sparkles,
-  RefreshCw, Loader2, CheckCircle2, AlertCircle, ExternalLink,
+  RefreshCw, Loader2, CheckCircle2, AlertCircle, ExternalLink, CalendarCheck2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -149,6 +149,14 @@ export default function AdminCourseDetailPage() {
         </div>
         {/* Action buttons — scroll horizontally on mobile */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 pl-11">
+          <Button
+            variant="secondary"
+            leftIcon={<CalendarCheck2 className="w-4 h-4 text-blue-600" />}
+            onClick={() => router.push(`/admin/attendance/${courseId}`)}
+            className="shrink-0"
+          >
+            Asistencia
+          </Button>
           <Button
             variant="secondary"
             leftIcon={<GraduationCap className="w-4 h-4" />}

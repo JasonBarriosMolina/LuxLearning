@@ -42,6 +42,7 @@ model Course {
   calendarExceptions Json?     // [{date, type:'day'|'week', label}]
   evaluationConfig   Json?     // [{type, name, weight, count, dueDate?}]
   planDocumentS3Key  String?   // Word generado
+  pilotoAutomatico   Boolean   @default(false)
 
   modules            Module[]
   evaluationEvents   EvaluationEvent[]

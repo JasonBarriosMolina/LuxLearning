@@ -130,6 +130,15 @@ export default function StudentAttendancePage() {
               <p className={`text-sm font-medium mt-1 ${semaphore.color}`}>
                 {semaphore.icon} {semaphore.label}
               </p>
+              {data.riskLevel && data.riskLevel !== 'LOW' && (
+                <span className={`mt-2 inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  data.riskLevel === 'HIGH'
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                }`}>
+                  {data.riskLevel === 'HIGH' ? '🚨 Riesgo de abandono — habla con tu evaluador' : '⚠️ Estás en seguimiento de asistencia'}
+                </span>
+              )}
             </div>
             <div className="text-right text-sm text-gray-600 space-y-1">
               <p>✅ {data.presentCount} sesiones presentes</p>
