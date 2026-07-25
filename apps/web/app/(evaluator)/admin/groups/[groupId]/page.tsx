@@ -168,7 +168,8 @@ export default function AdminGroupDetailPage() {
   const filteredEvaluators = allUsers.filter((u) => {
     const isEval = (u as any).role === 'EVALUATOR' || (u as any).groups?.includes('EVALUATOR');
     if (!isEval) return false;
-    if (currentEvalIds.has(u.username)) return false;
+    const sub = (u as any).sub ?? u.username;
+    if (currentEvalIds.has(sub)) return false;
     if (!evalSearch) return true;
     const q = evalSearch.toLowerCase();
     return (u.name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q);
@@ -393,7 +394,7 @@ export default function AdminGroupDetailPage() {
                 filteredEvaluators.map((u) => (
                   <button
                     key={u.username}
-                    onClick={() => handleAddEvaluator(u.username)}
+                    onClick={() => handleAddEvaluator((u as any).sub ?? u.username)}
                     disabled={addingEval}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left disabled:opacity-50"
                   >

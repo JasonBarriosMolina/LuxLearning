@@ -3163,8 +3163,15 @@ Genera una nueva estructura de módulos. Responde ÚNICAMENTE con JSON: {"module
       const groupId = groupEvaluatorsMatch[1]!;
       const evaluators = await prisma.studentGroupEvaluator.findMany({ where: { groupId }, orderBy: { assignedAt: 'asc' } });
       const enrichedEvals = await Promise.all(evaluators.map(async (ev) => {
-        const cog = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: ev.evaluatorId })).catch(() => null);
-        const attrs = cog?.UserAttributes ?? [];
+        const isUuid = /^[0-9a-f-]{36}$/i.test(ev.evaluatorId);
+        let attrs: { Name?: string; Value?: string }[] = [];
+        if (isUuid) {
+          const res = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Filter: `sub = "${ev.evaluatorId}"`, Limit: 1 })).catch(() => null);
+          attrs = res?.Users?.[0]?.Attributes ?? [];
+        } else {
+          const cog = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: ev.evaluatorId })).catch(() => null);
+          attrs = cog?.UserAttributes ?? [];
+        }
         const getAttr = (n: string) => attrs.find((a: any) => a.Name === n)?.Value ?? '';
         return { ...ev, name: getAttr('name') || getAttr('email') || ev.evaluatorId, email: getAttr('email') };
       }));
