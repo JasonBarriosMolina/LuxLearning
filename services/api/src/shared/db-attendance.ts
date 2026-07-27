@@ -3,7 +3,8 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from './db-core';
 
-export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED';
+// FIX #12: LATE added — late arrivals should not be forced to go through full absence+justification flow
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED';
 
 export interface AttendanceRecord {
   courseId: string;
@@ -39,22 +40,40 @@ export async function recordAttendance(record: AttendanceRecord): Promise<void> 
   }));
 }
 
+// FIX #7: SK is userId#sessionId, NOT sessionId#userId — old begins_with(sk, sessionId+'#') always returned [].
+// Use the gsiSk GSI where gsiSk = sessionId#courseId.
 export async function getAttendanceForSession(courseId: string, sessionId: string): Promise<AttendanceRecord[]> {
-  const result = await ddb.send(new QueryCommand({
-    TableName: TABLES.ATTENDANCE,
-    KeyConditionExpression: 'courseId = :cid AND begins_with(sk, :prefix)',
-    ExpressionAttributeValues: { ':cid': courseId, ':prefix': sessionId + '#' },
-  }));
-  return (result.Items ?? []) as AttendanceRecord[];
+  let items: Record<string, any>[] = [];
+  let lastKey: Record<string, any> | undefined;
+  do {
+    const result = await ddb.send(new QueryCommand({
+      TableName: TABLES.ATTENDANCE,
+      IndexName: 'gsiSk-index',
+      KeyConditionExpression: 'gsiSk = :sk',
+      ExpressionAttributeValues: { ':sk': `${sessionId}#${courseId}` },
+      ExclusiveStartKey: lastKey,
+    }));
+    items.push(...(result.Items ?? []));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items as AttendanceRecord[];
 }
 
+// FIX #4: DynamoDB returns max 1 MB per call — paginate to avoid silent truncation
 export async function getAttendanceMatrix(courseId: string): Promise<AttendanceRecord[]> {
-  const result = await ddb.send(new QueryCommand({
+  const params = {
     TableName: TABLES.ATTENDANCE,
     KeyConditionExpression: 'courseId = :cid',
     ExpressionAttributeValues: { ':cid': courseId },
-  }));
-  return (result.Items ?? []) as AttendanceRecord[];
+  };
+  let items: Record<string, any>[] = [];
+  let lastKey: Record<string, any> | undefined;
+  do {
+    const result = await ddb.send(new QueryCommand({ ...params, ExclusiveStartKey: lastKey }));
+    items.push(...(result.Items ?? []));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items as AttendanceRecord[];
 }
 
 export async function getMyAttendance(userId: string, courseId?: string): Promise<AttendanceRecord[]> {
@@ -69,8 +88,16 @@ export async function getMyAttendance(userId: string, courseId?: string): Promis
     params.FilterExpression = 'courseId = :cid';
     params.ExpressionAttributeValues[':cid'] = courseId;
   }
-  const result = await ddb.send(new QueryCommand(params));
-  return (result.Items ?? []) as AttendanceRecord[];
+  // FIX #4 + #14: Paginate to avoid 1 MB truncation.
+  // TODO: Add courseId to GSI sort key to avoid full-user scan when filtering by courseId.
+  let items: Record<string, any>[] = [];
+  let lastKey: Record<string, any> | undefined;
+  do {
+    const result = await ddb.send(new QueryCommand({ ...params, ExclusiveStartKey: lastKey }));
+    items.push(...(result.Items ?? []));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items as AttendanceRecord[];
 }
 
 export async function updateAttendanceRecord(
@@ -92,7 +119,11 @@ export async function updateAttendanceRecord(
   sets.push('#updatedAt = :updatedAt');
   names['#updatedAt'] = 'updatedAt';
   vals[':updatedAt'] = new Date().toISOString();
-  if (sets.length <= 1) return;
+  // FIX #20: Warn instead of silently returning when caller passes no fields
+  if (sets.length <= 1) {
+    console.warn('[updateAttendanceRecord] No fields to update — skipping');
+    return;
+  }
   await ddb.send(new UpdateCommand({
     TableName: TABLES.ATTENDANCE,
     Key: { courseId, sk },
@@ -102,24 +133,37 @@ export async function updateAttendanceRecord(
   }));
 }
 
+// FIX #4: Paginate both the per-course query and the global scan
 export async function getPendingJustifications(courseId?: string): Promise<AttendanceRecord[]> {
+  let items: Record<string, any>[] = [];
+  let lastKey: Record<string, any> | undefined;
   if (courseId) {
-    const result = await ddb.send(new QueryCommand({
+    const params = {
       TableName: TABLES.ATTENDANCE,
       KeyConditionExpression: 'courseId = :cid',
       FilterExpression: '#st = :s',
       ExpressionAttributeValues: { ':cid': courseId, ':s': 'JUSTIFICATION_PENDING' },
       ExpressionAttributeNames: { '#st': 'status' },
-    }));
-    return (result.Items ?? []) as AttendanceRecord[];
+    };
+    do {
+      const result = await ddb.send(new QueryCommand({ ...params, ExclusiveStartKey: lastKey }));
+      items.push(...(result.Items ?? []));
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+  } else {
+    const params = {
+      TableName: TABLES.ATTENDANCE,
+      FilterExpression: '#st = :s',
+      ExpressionAttributeValues: { ':s': 'JUSTIFICATION_PENDING' },
+      ExpressionAttributeNames: { '#st': 'status' },
+    };
+    do {
+      const result = await ddb.send(new ScanCommand({ ...params, ExclusiveStartKey: lastKey }));
+      items.push(...(result.Items ?? []));
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
   }
-  const result = await ddb.send(new ScanCommand({
-    TableName: TABLES.ATTENDANCE,
-    FilterExpression: '#st = :s',
-    ExpressionAttributeValues: { ':s': 'JUSTIFICATION_PENDING' },
-    ExpressionAttributeNames: { '#st': 'status' },
-  }));
-  return (result.Items ?? []) as AttendanceRecord[];
+  return items as AttendanceRecord[];
 }
 
 export interface RiskScore {

@@ -2,7 +2,6 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
 import {
   recordAttendance, getAttendanceMatrix, getMyAttendance, updateAttendanceRecord,
@@ -15,9 +14,9 @@ import { createId } from '@paralleldrive/cuid2';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const sqs = new SQSClient({ region: 'us-east-1' });
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const S3_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
-const SQS_URL = process.env.SQS_REFLECTION_QUEUE_URL ?? '';
+// FIX #19 (TODO infra): use a dedicated queue to isolate OCR from reflection AI detection
+const SQS_URL = process.env.SQS_ATTENDANCE_OCR_QUEUE_URL ?? process.env.SQS_REFLECTION_QUEUE_URL ?? '';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 
 type AuthContext = { userId: string; email: string; role: string };
@@ -86,7 +85,8 @@ export const handler = async (event: Event) => {
       const { courseId, sessionId, records: toRecord } = body as {
         courseId: string;
         sessionId: string;
-        records: Array<{ userId: string; status: 'PRESENT' | 'ABSENT' }>;
+        // FIX #12: Accept LATE in addition to PRESENT/ABSENT
+        records: Array<{ userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' }>;
       };
       if (!courseId || !sessionId || !Array.isArray(toRecord)) {
         return badRequest('courseId, sessionId y records son requeridos');
@@ -96,9 +96,11 @@ export const handler = async (event: Event) => {
 
       const now = new Date().toISOString();
       for (const r of toRecord) {
+        if (!['PRESENT', 'ABSENT', 'LATE'].includes(r.status)) continue;
         const sk = `${r.userId}#${sessionId}`;
         const gsiSk = `${sessionId}#${courseId}`;
-        const justificationDeadline = r.status === 'ABSENT'
+        // LATE arrivals get the same justification window in case evaluator wants documentation
+        const justificationDeadline = (r.status === 'ABSENT' || r.status === 'LATE')
           ? new Date(session.sessionDate.getTime() + JUSTIFY_TTL_MS).toISOString()
           : undefined;
         await recordAttendance({
@@ -161,30 +163,34 @@ export const handler = async (event: Event) => {
       const emoji = status === 'JUSTIFIED' ? '✅' : '❌';
       await createNotification({
         userId: studentId,
-        notifId: `attendance-review-${Date.now()}`,
+        // FIX #18: createId() avoids timestamp collisions under concurrency
+        notifId: `attendance-review-${createId()}`,
         type: 'GENERAL',
         message: `${emoji} Tu justificación de ausencia fue ${status === 'JUSTIFIED' ? 'aprobada' : 'rechazada'}.${evaluatorFeedback ? ` Comentario: ${evaluatorFeedback}` : ''}`,
         read: false,
         createdAt: new Date().toISOString(),
-        actionUrl: `${FRONTEND_URL}/attendance`,
+        // FIX #3: /attendance doesn't exist — correct route is /courses/{courseId}/attendance
+        actionUrl: `${FRONTEND_URL}/courses/${courseId}/attendance`,
       });
       return ok({ updated: true });
     }
 
     // ── PUT /attendance/override ────────────────────────────────────────────
     // Admin/Eval bypass of 72h TTL — audit logged
+    // FIX #6: Accept optional extraHours (default 168 = 7 days) from override UI modal
     if (path === '/attendance/override' && method === 'PUT') {
       if (!isAdminOrEval(role)) return forbidden('Se requiere rol de evaluador o admin');
-      const { courseId, sk, overrideReason } = body as {
-        courseId: string; sk: string; overrideReason: string;
+      const { courseId, sk, overrideReason, extraHours } = body as {
+        courseId: string; sk: string; overrideReason: string; extraHours?: number;
       };
       if (!courseId || !sk || !overrideReason) return badRequest('courseId, sk y overrideReason son requeridos');
+      const hours = Math.min(Math.max(Number(extraHours) || 168, 1), 720); // clamp 1h–30 days
       await updateAttendanceRecord(courseId, sk, {
-        justificationDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // +7 days
+        justificationDeadline: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
         overriddenBy: userId,
         overrideReason,
       });
-      return ok({ overridden: true });
+      return ok({ overridden: true, extraHours: hours });
     }
 
     // ── GET /attendance/my/:courseId ───────────────────────────────────────
@@ -286,7 +292,7 @@ export const handler = async (event: Event) => {
       if (course?.evaluatorId) {
         await createNotification({
           userId: course.evaluatorId,
-          notifId: `justif-${Date.now()}`,
+          notifId: `justif-${createId()}`,
           type: 'GENERAL',
           message: `📎 Nueva justificación de ausencia pendiente de revisión en "${course.title}"`,
           read: false,

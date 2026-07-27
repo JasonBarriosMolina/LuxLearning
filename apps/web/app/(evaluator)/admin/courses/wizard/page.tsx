@@ -282,6 +282,7 @@ function CourseWizardInner() {
         cardLabels: step1.cardLabels, calendarExceptions: step2.exceptions,
         evaluationItems: step3.items, weeklyPlan: step4.weeklyPlan,
         suggestedModules: step4.modules,
+        pilotoAutomatico: step1.pilotoAutomatico ?? false,
         ...(editingCourseId ? { editingCourseId } : {}),
       }) as any;
       const data = resp?.data ?? resp;
@@ -389,6 +390,7 @@ function CourseWizardInner() {
               updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
               addEvalItem={addEvalItem} removeItem={removeItem}
               isEN={isEN}
+              onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
             />
           )}
           {step === 4 && (

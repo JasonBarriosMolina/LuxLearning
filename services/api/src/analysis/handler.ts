@@ -211,6 +211,22 @@ Responde ÚNICAMENTE con JSON válido:
           const courseReflections = allReflections.filter((r: any) => r.courseId === course.id || allAttempts.some(() => false));
           const courseAttempts = allAttempts.filter((a: any) => a.courseId === course.id);
 
+          // FIX #16: Build name map once before the loop — avoids per-student Cognito call inside push
+          const studentNameMap: Record<string, string> = {};
+          await Promise.allSettled(enrolledUserIds.map(async (uid) => {
+            try {
+              const u = await cognito.send(new AdminGetUserCommand({
+                UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+                Username: uid,
+              }));
+              const attrs = u.UserAttributes ?? [];
+              const get = (n: string) => attrs.find((a) => a.Name === n)?.Value ?? '';
+              studentNameMap[uid] = get('name') || get('email') || uid;
+            } catch {
+              studentNameMap[uid] = uid;
+            }
+          }));
+
           const riskScores: RiskScore[] = [];
           for (const uid of enrolledUserIds) {
             const myAttendance = attendanceRecords.filter((r: any) => r.userId === uid && r.sk !== 'RISK_SCORES');
@@ -235,7 +251,7 @@ Responde ÚNICAMENTE con JSON válido:
 
             riskScores.push({
               userId: uid,
-              name: uid,
+              name: studentNameMap[uid] ?? uid,
               riskLevel,
               riskScore: Math.round(score * 100),
               absenceRate: Math.round(absenceRate * 100),

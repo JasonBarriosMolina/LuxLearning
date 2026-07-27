@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Upload, Clock, CheckCircle, XCircle, AlertCircle, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
-import QRCode from 'qrcode';
 
 const SEMAPHORE_CONFIG = {
   LOW:      { label: 'Asistencia regular',  color: 'text-green-600',  bg: 'bg-green-100',  icon: '🟢' },
@@ -31,7 +30,6 @@ export default function StudentAttendancePage() {
   const [justifyLoading, setJustifyLoading] = useState(false);
   const [justifyError, setJustifyError] = useState('');
   const [justifySuccess, setJustifySuccess] = useState(false);
-  const [qrUrl, setQrUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {

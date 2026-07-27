@@ -23,6 +23,7 @@ interface StepEvaluacionProps {
   addEvalItem: () => void;
   removeItem: (id: string) => void;
   isEN: boolean;
+  onPilotoToggle?: (val: boolean) => void;
 }
 
 export function StepEvaluacion({
@@ -30,7 +31,7 @@ export function StepEvaluacion({
   totalWeight, weightOk,
   outOfRangeItems, dateWarningDismissed, setDateWarningDismissed,
   updateItem, updateDueDate, setCount, addEvalItem, removeItem,
-  isEN,
+  isEN, onPilotoToggle,
 }: StepEvaluacionProps) {
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
@@ -142,7 +143,20 @@ export function StepEvaluacion({
                   </div>
                 )}
                 {item.locked && item.type === 'ATTENDANCE' && (
-                  <p className="text-[10px] text-gray-400 flex items-center gap-1"><Info className="w-3 h-3" />{s('Módulo de asistencia próximamente.', 'Attendance module coming soon.')}</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-charcoal">{s('Piloto automático de asistencia', 'Automatic attendance pilot')}</p>
+                      <p className="text-[10px] text-gray-400">{s('Envía notificaciones y alertas de riesgo automáticamente', 'Sends notifications and risk alerts automatically')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onPilotoToggle?.(!step1.pilotoAutomatico)}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${step1.pilotoAutomatico ? 'bg-blue-500' : 'bg-gray-300'}`}
+                      aria-label="Piloto automático"
+                    >
+                      <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${step1.pilotoAutomatico ? 'translate-x-5' : ''}`} />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
