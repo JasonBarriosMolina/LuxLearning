@@ -9,11 +9,10 @@
 
 param(
   [Parameter(ValueFromRemainingArguments)][string[]]$targets,
-  [ValidateSet('prod','staging','test')][string]$Env = 'prod'
+  [ValidateSet('prod','staging','test')][string]$DeployEnv = 'prod'
 )
 
 Set-StrictMode -Off
-$ErrorActionPreference = "Stop"
 
 $ROOT      = "D:\InHouse\Lux"
 $API_SRC   = "$ROOT\services\api\src"
@@ -49,17 +48,25 @@ $LAMBDAS = [ordered]@{
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-# ── Pre-deploy test gate ──────────────────────────────────────────────────────
+# --- Pre-deploy test gate ---
 Write-Host "`n==> Running unit tests..." -ForegroundColor Cyan
-$testResult = cmd /c "cd /d `"$ROOT\services\api`" && npm test 2>&1"
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "`n[FAIL] Unit tests failed — aborting deploy." -ForegroundColor Red
-  Write-Host $testResult
+$testExit = 0
+try {
+  Push-Location "$ROOT\services\api"
+  & npm test
+  $testExit = $LASTEXITCODE
+  Pop-Location
+} catch {
+  Write-Host "[ERR] Exception in test gate: $_" -ForegroundColor Red
+  Pop-Location -ErrorAction SilentlyContinue
+}
+if ($testExit -ne 0) {
+  Write-Host "`n[FAIL] Unit tests failed - aborting deploy." -ForegroundColor Red
   exit 1
 }
 Write-Host "[OK]  All tests passed." -ForegroundColor Green
 
-$ENV_SUFFIX = if ($Env -eq 'prod') { '' } else { "-$Env" }
+$ENV_SUFFIX = if ($DeployEnv -eq 'prod') { '' } else { "-$DeployEnv" }
 
 function Deploy-Lambda([string]$name) {
   if (-not $LAMBDAS.Contains($name)) {
