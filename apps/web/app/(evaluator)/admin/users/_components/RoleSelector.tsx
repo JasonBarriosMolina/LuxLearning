@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { RoleBadge, UserRole } from './RoleBadge';
+export type { UserRole };
 
 export interface AppUser {
   username: string;
