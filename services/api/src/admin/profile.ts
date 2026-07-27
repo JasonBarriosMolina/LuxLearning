@@ -7,12 +7,11 @@ import { ok, badRequest, forbidden } from '../shared/response';
 import { AdminCtx, isAuthorized, cognito, USER_POOL_ID } from './ctx';
 
 export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
-  const { event, method, path, body } = ctx;
+  const { event, method, path, body, userId } = ctx;
 
   // ── GET /user/profile ────────────────────────────────────────────────────────
   if (path === '/user/profile' && method === 'GET') {
     if (!isAuthorized(event)) return forbidden('No autorizado');
-    const userId = event.requestContext.authorizer?.lambda?.userId;
     if (!userId) return badRequest('userId no disponible');
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
     const attr = (name: string) => res.UserAttributes?.find((a: any) => a.Name === name)?.Value ?? '';
@@ -29,7 +28,6 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
   // ── PUT /user/profile ────────────────────────────────────────────────────────
   if (path === '/user/profile' && method === 'PUT') {
     if (!isAuthorized(event)) return forbidden('No autorizado');
-    const userId = event.requestContext.authorizer?.lambda?.userId;
     if (!userId) return badRequest('userId no disponible');
     const { name, phone, bio, picture } = body as { name?: string; phone?: string; bio?: string; picture?: string };
     const attrs: { Name: string; Value: string }[] = [];

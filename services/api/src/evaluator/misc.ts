@@ -3,11 +3,10 @@ import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EvalCtx, ses, FROM_EMAIL, bedrock } from './ctx';
 import { getQuizAttempts } from '../shared/db-dynamo';
-import { getPrismaClient } from '../shared/db-neon';
 import { ok, badRequest, notFound, serverError } from '../shared/response';
 
 export async function handleMisc(ctx: EvalCtx): Promise<any | null> {
-  const { event, method, path } = ctx;
+  const { event, method, path, prisma } = ctx;
 
   // ── POST /evaluator/reminder — send inactivity reminder email to a student ──
   if (method === 'POST' && path === '/evaluator/reminder') {
@@ -71,10 +70,10 @@ export async function handleMisc(ctx: EvalCtx): Promise<any | null> {
 
     const [attempts, module] = await Promise.all([
       getQuizAttempts(studentId, moduleId),
-      getPrismaClient().then((p: any) => p.module.findUnique({
+      prisma.module.findUnique({
         where: { id: moduleId },
         include: { questions: { orderBy: { order: 'asc' } } },
-      })),
+      }),
     ]);
 
     if (!module) return notFound('Module not found');

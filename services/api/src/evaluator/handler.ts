@@ -1,6 +1,6 @@
 // lux-evaluator Lambda entry point — thin router that delegates to domain modules.
 import { getPrismaClient } from '../shared/db-neon';
-import { cors, forbidden, badRequest, serverError, setRequestOrigin } from '../shared/response';
+import { cors, forbidden, notFound, serverError, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { Event } from './ctx';
 import { handleReflections } from './reflections';
@@ -45,7 +45,7 @@ export const handler = async (event: Event) => {
       await handleGroups(ctx) ??
       await handleSubmissions(ctx) ??
       await handleMisc(ctx) ??
-      badRequest('Unknown route');
+      notFound('Ruta no encontrada');
 
     return result;
   } catch (err) {

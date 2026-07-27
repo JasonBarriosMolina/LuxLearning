@@ -363,6 +363,49 @@ Common hooks to remember: `useRef`, `useCallback`, `useMemo`, `useReducer`, `use
 
 ---
 
+## Límites de tamaño de archivo — regla permanente
+
+Estos límites se aplican SIEMPRE. Si al escribir código nuevo un archivo supera su límite, debes dividirlo antes de terminar.
+
+### Backend — Lambda handlers (`services/api/src/`)
+
+| Tipo de archivo | Límite |
+|---|---|
+| `handler.ts` (router) | ≤ 80 líneas — solo setup + chain de dominios |
+| Módulo de dominio (`courses.ts`, `users.ts`, etc.) | ≤ 600 líneas |
+| Helpers compartidos (`ctx.ts`, `db-*.ts`, etc.) | ≤ 400 líneas |
+
+**Patrón obligatorio cuando se supera el límite:**
+- Crear un nuevo archivo de dominio (ej. `courses-content.ts`, `ai-media.ts`)
+- El archivo original delega con `return handleX(ctx)` al final
+- Nunca poner lógica de negocio en `handler.ts`
+
+### Frontend — páginas Next.js (`apps/web/`)
+
+| Tipo de archivo | Límite |
+|---|---|
+| `page.tsx` | ≤ 500 líneas |
+| Componente de página | ≤ 400 líneas |
+| Archivo de traducción (`sections/*.ts`) | ≤ 500 líneas |
+
+**Patrón obligatorio cuando se supera el límite:**
+- Extraer modals, cards, paneles y steps a `_components/ComponentName.tsx`
+- Cada archivo en `_components/` debe tener `'use client'` si usa hooks
+- Todo el estado (`useState`, callbacks) se queda en el `page.tsx` parent y se pasa como props
+- Las traducciones grandes se dividen en sub-archivos (`admin-courses-page.ts`, etc.) y se re-exportan desde el archivo principal con spread
+
+### Dónde poner código nuevo
+
+| Tipo | Dónde |
+|---|---|
+| Nueva ruta `/admin/*` | `admin/[dominio].ts`, NUNCA en `handler.ts` |
+| Nueva ruta `/evaluator/*` | `evaluator/[dominio].ts`, NUNCA en `handler.ts` |
+| Nueva función DynamoDB | `shared/db-[dominio].ts`, re-exportar desde `db-dynamo.ts` |
+| Nueva clave de traducción | `sections/[seccion].ts`, NUNCA directo en el objeto principal |
+| Nuevo componente grande en una página | `_components/` dentro del directorio de esa página |
+
+---
+
 ## Backlog highlights (not implemented)
 
 See `BACKLOG.md` for full list. Top priorities:

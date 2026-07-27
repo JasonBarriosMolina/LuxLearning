@@ -4,10 +4,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getAllEmailTemplates, saveEmailTemplate } from '../shared/email';
 import { batchTranslate } from '../shared/translate';
 import { ok, badRequest, forbidden } from '../shared/response';
-import { AdminCtx, isAuthorized, s3Client, S3_IMAGES_BUCKET } from './ctx';
+import { AdminCtx, isAdmin, isAuthorized, s3Client, S3_IMAGES_BUCKET } from './ctx';
 
 export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
-  const { event, method, path, userId } = ctx;
+  const { event, method, path, userId, body } = ctx;
 
   // GET /admin/email-templates — list all email templates
   if (method === 'GET' && path === '/admin/email-templates') {
@@ -27,11 +27,11 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     return ok(templates);
   }
 
-  // PUT /admin/email-templates/:type — update a template
+  // PUT /admin/email-templates/:type — update a template (admin only)
   const emailTemplateMatch = path.match(/^\/admin\/email-templates\/([A-Z_]+)$/);
   if (method === 'PUT' && emailTemplateMatch) {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
     const type = emailTemplateMatch[1]!;
-    const body = JSON.parse(event.body ?? '{}');
     const { subject, htmlBody } = body as { subject: string; htmlBody: string };
     if (!subject || !htmlBody) return badRequest('subject and htmlBody required');
     await saveEmailTemplate(type, subject, htmlBody, userId);
@@ -41,7 +41,7 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
   // POST /admin/files/presign — generate S3 presigned upload URL (tasks + resources)
   if (method === 'POST' && path === '/admin/files/presign') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-    const { fileName, fileType, folder = 'uploads' } = JSON.parse(event.body ?? '{}') as { fileName?: string; fileType?: string; folder?: string };
+    const { fileName, fileType, folder = 'uploads' } = body as { fileName?: string; fileType?: string; folder?: string };
     if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
     const safeFolder = ['tasks', 'resources', 'uploads'].includes(folder) ? folder : 'uploads';
     const ext = fileName.split('.').pop() ?? 'bin';

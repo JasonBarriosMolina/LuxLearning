@@ -44,11 +44,12 @@ export type AdminCtx = {
 // ── Auth helpers ─────────────────────────────────────────────────────────────
 export function isAuthorized(event: Event): boolean {
   const role = event.requestContext.authorizer?.lambda?.role;
-  return role === 'ADMIN' || role === 'EVALUATOR';
+  return role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'EVALUATOR';
 }
 
 export function isAdmin(event: Event): boolean {
-  return event.requestContext.authorizer?.lambda?.role === 'ADMIN';
+  const role = event.requestContext.authorizer?.lambda?.role;
+  return role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
 export async function getCallerName(event: Event): Promise<string | null> {

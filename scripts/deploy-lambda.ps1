@@ -49,6 +49,16 @@ $LAMBDAS = [ordered]@{
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# ── Pre-deploy test gate ──────────────────────────────────────────────────────
+Write-Host "`n==> Running unit tests..." -ForegroundColor Cyan
+$testResult = cmd /c "cd /d `"$ROOT\services\api`" && npm test 2>&1"
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "`n[FAIL] Unit tests failed — aborting deploy." -ForegroundColor Red
+  Write-Host $testResult
+  exit 1
+}
+Write-Host "[OK]  All tests passed." -ForegroundColor Green
+
 $ENV_SUFFIX = if ($Env -eq 'prod') { '' } else { "-$Env" }
 
 function Deploy-Lambda([string]$name) {

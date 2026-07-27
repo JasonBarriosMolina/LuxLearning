@@ -155,10 +155,12 @@ export async function handleGroups(ctx: EvalCtx): Promise<any | null> {
               taskId: `${uid}-${mod.id}-complete`,
               title: `Completar módulo: ${mod.title}`,
               description: `Completa las lecciones, quiz y reflexión del módulo "${mod.title}" del curso "${course.title}".`,
-              dueDate: due.toISOString(),
+              dueDate: due.toISOString().slice(0, 10),
               type: 'complete_module',
               courseId,
               moduleId: mod.id,
+              courseTitle: course.title,
+              moduleTitle: mod.title,
               assignedBy: 'system',
               status: 'PENDING',
               createdAt: new Date().toISOString(),
@@ -169,8 +171,8 @@ export async function handleGroups(ctx: EvalCtx): Promise<any | null> {
 
       try {
         const chatId = `group_${courseId}`;
-        await upsertChat(chatId, { type: 'group', name: course.title, participants: [uid] });
-        await upsertMembership(uid, chatId, { role: 'member', name: uid });
+        await upsertChat(chatId, { type: 'GROUP', name: `Curso: ${course.title}`, participants: [uid] });
+        await upsertMembership(uid, chatId, { chatName: `Curso: ${course.title}`, chatType: 'GROUP' });
       } catch { /* non-fatal */ }
 
       const member = await prisma.studentGroupMember.findUnique({
@@ -214,9 +216,8 @@ export async function handleGroups(ctx: EvalCtx): Promise<any | null> {
   }
 
   // ── POST /evaluator/groups/:id/members — agregar miembros al grupo propio ────
-  const evalGroupMembersWriteMatch = path.match(/^\/evaluator\/groups\/([^/]+)\/members$/);
-  if (evalGroupMembersWriteMatch && method === 'POST') {
-    const groupId = evalGroupMembersWriteMatch[1]!;
+  if (evalGroupMembersMatch && method === 'POST') {
+    const groupId = evalGroupMembersMatch[1]!;
     const group = await prisma.studentGroup.findUnique({ where: { id: groupId } });
     if (!group) return notFound('Grupo no encontrado');
     console.log('[groups/members POST] groupId=%s userId=%s createdByEvaluatorId=%s isAdminRole=%s', groupId, userId, (group as any).createdByEvaluatorId, isAdminRole);

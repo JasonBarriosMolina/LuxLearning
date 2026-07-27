@@ -6,14 +6,16 @@ const mockSesSend     = vi.hoisted(() => vi.fn());
 const mockCognitoSend = vi.hoisted(() => vi.fn());
 
 vi.mock('../shared/db-dynamo', () => ({
-  getAllLessonProgress:  vi.fn(),
-  getAllEnrollments:     vi.fn(),
-  getAllReflections:     vi.fn(),
-  getLastSeenAll:        vi.fn(),
-  getAllPendingTasks:    vi.fn(),
-  updateTask:           vi.fn(),
-  getInactivityReminder: vi.fn(),
-  setInactivityReminder: vi.fn(),
+  getAllLessonProgress:     vi.fn(),
+  getAllEnrollments:        vi.fn(),
+  getAllReflections:        vi.fn(),
+  getLastSeenAll:           vi.fn(),
+  getAllPendingTasks:       vi.fn(),
+  updateTask:               vi.fn(),
+  getInactivityReminder:   vi.fn(),
+  setInactivityReminder:   vi.fn(),
+  createNotification:       vi.fn().mockResolvedValue(undefined),
+  scanCalendarEventsInRange: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../shared/db-neon', () => ({
@@ -125,9 +127,9 @@ describe('reminder email sequence (5-email max)', () => {
     expect(vi.mocked(setInactivityReminder)).toHaveBeenCalledWith('user-1', 1, expect.any(String));
   });
 
-  it('email #2: NOT sent when count=1 but < 72h since last', async () => {
+  it('email #2: NOT sent when count=1 but < 48h since last', async () => {
     inactive();
-    vi.mocked(getInactivityReminder).mockResolvedValue({ count: 1, lastSent: hoursAgo(48) });
+    vi.mocked(getInactivityReminder).mockResolvedValue({ count: 1, lastSent: hoursAgo(47) });
     await handler();
     expect(mockSesSend).not.toHaveBeenCalled();
     expect(vi.mocked(setInactivityReminder)).not.toHaveBeenCalled();
@@ -141,9 +143,9 @@ describe('reminder email sequence (5-email max)', () => {
     expect(vi.mocked(setInactivityReminder)).toHaveBeenCalledWith('user-1', 2, expect.any(String));
   });
 
-  it('email #3 (weekly): NOT sent when count=2 but < 7 days since last', async () => {
+  it('email #3 (weekly): NOT sent when count=2 but < 5 days since last', async () => {
     inactive();
-    vi.mocked(getInactivityReminder).mockResolvedValue({ count: 2, lastSent: daysAgo(6) });
+    vi.mocked(getInactivityReminder).mockResolvedValue({ count: 2, lastSent: daysAgo(4) });
     await handler();
     expect(mockSesSend).not.toHaveBeenCalled();
   });

@@ -113,7 +113,7 @@ export async function handleTasks(ctx: EvalCtx): Promise<any | null> {
       allItems.push(...(page.Items ?? []));
       lastKey = page.LastEvaluatedKey;
     } while (lastKey);
-    const tasks = allItems.sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate));
+    const tasks = allItems.sort((a: any, b: any) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
     return ok(tasks);
   }
 
