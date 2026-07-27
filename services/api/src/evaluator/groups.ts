@@ -43,19 +43,9 @@ export async function handleGroups(ctx: EvalCtx): Promise<any | null> {
 
   // ── GET /evaluator/students/pool ─────────────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/students/pool') {
-    let studentIds: string[];
-    if (isAdminRole) {
-      const enrollments = await getAllEnrollments().catch(() => [] as any[]);
-      studentIds = [...new Set(enrollments.map((e: any) => e.userId as string))] as string[];
-    } else {
-      const myCourses = await prisma.course.findMany({ where: { evaluatorId: userId }, select: { id: true } });
-      const courseIds = myCourses.map((c: any) => c.id);
-      if (courseIds.length === 0) return ok([]);
-      const enrollments = await getAllEnrollments().catch(() => [] as any[]);
-      studentIds = [...new Set(
-        enrollments.filter((e: any) => courseIds.includes(e.courseId)).map((e: any) => e.userId as string)
-      )] as string[];
-    }
+    // All evaluators can see all enrolled students — grupos base are organizational tools
+    const enrollments = await getAllEnrollments().catch(() => [] as any[]);
+    const studentIds = [...new Set(enrollments.map((e: any) => e.userId as string))] as string[];
     const enriched = await Promise.all(studentIds.map(async (uid) => {
       const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid })).catch(() => null);
       const attrs = cogUser?.UserAttributes ?? [];
