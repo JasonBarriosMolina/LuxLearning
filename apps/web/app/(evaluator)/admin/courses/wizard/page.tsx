@@ -242,23 +242,28 @@ function CourseWizardInner() {
       }) as any;
       const init = resp?.data ?? resp;
       if (!init?.jobId) throw new Error('No se recibió jobId del servidor');
-      const poll = () => {
-        copilotPollRef.current = setInterval(async () => {
-          try {
-            const jobResp = await api.admin.courses.aiJob(init.jobId) as any;
-            const job = jobResp?.data ?? jobResp;
-            if (job?.status === 'done') {
-              clearInterval(copilotPollRef.current!);
-              if (!job.weeklyPlan) { setStep4((p) => ({ ...p, status: 'error', error: 'Respuesta inválida del servidor' })); return; }
-              setStep4((p) => ({ ...p, status: 'done', weeklyPlan: job.weeklyPlan, modules: job.modules ?? [] }));
-            } else if (job?.status === 'error') {
-              clearInterval(copilotPollRef.current!);
-              setStep4((p) => ({ ...p, status: 'error', error: job.error ?? 'Error desconocido' }));
-            }
-          } catch { /* keep polling */ }
-        }, 3000);
-      };
-      poll();
+      let pollCount = 0;
+      const MAX_POLLS = 60; // 3 minutos máximo
+      copilotPollRef.current = setInterval(async () => {
+        pollCount++;
+        if (pollCount > MAX_POLLS) {
+          clearInterval(copilotPollRef.current!);
+          setStep4((p) => ({ ...p, status: 'error', error: 'La generación tardó demasiado. Intenta de nuevo.' }));
+          return;
+        }
+        try {
+          const jobResp = await api.admin.courses.aiJob(init.jobId) as any;
+          const job = jobResp?.data ?? jobResp;
+          if (job?.status === 'done') {
+            clearInterval(copilotPollRef.current!);
+            if (!job.weeklyPlan) { setStep4((p) => ({ ...p, status: 'error', error: 'Respuesta inválida del servidor. Intenta de nuevo.' })); return; }
+            setStep4((p) => ({ ...p, status: 'done', weeklyPlan: job.weeklyPlan, modules: job.modules ?? [] }));
+          } else if (job?.status === 'error') {
+            clearInterval(copilotPollRef.current!);
+            setStep4((p) => ({ ...p, status: 'error', error: job.error ?? 'Error generando plan. Intenta de nuevo.' }));
+          }
+        } catch { /* network hiccup — keep polling until MAX_POLLS */ }
+      }, 3000);
     } catch (err: any) {
       setStep4((p) => ({ ...p, status: 'error', error: err?.message ?? 'Error desconocido' }));
     }
