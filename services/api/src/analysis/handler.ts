@@ -7,6 +7,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getPrismaClient } from '../shared/db-neon';
+import { initEnvFromFunctionName } from '../shared/env-context';
 import {
   getAllReflections, getAllQuizAttempts, getAllEnrollments,
   saveReportAnalysis, saveRecommendations,
@@ -45,6 +46,7 @@ function parseJSON(raw: string): any {
 }
 
 export const handler = async () => {
+  initEnvFromFunctionName();
   console.log('[Analysis] Starting nightly analysis job...');
   const prisma = await getPrismaClient();
 

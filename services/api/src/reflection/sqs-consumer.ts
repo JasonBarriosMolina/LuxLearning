@@ -5,7 +5,7 @@ import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/cli
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang, updateAttendanceRecord } from '../shared/db-dynamo';
-import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { setCurrentEnv, AppEnv } from '../shared/env-context';
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from './detect-ai';
 
@@ -117,17 +117,13 @@ async function processRecord(record: SQSRecord) {
 
   // Route by type field; legacy messages without type are REFLECTION_AI
   if (msgType === 'ATTENDANCE_OCR') {
+    setCurrentEnv((parsed.env as AppEnv | undefined) ?? 'prod');
     return processAttendanceOcr(parsed);
   }
 
   // REFLECTION_AI (default)
   const { userId, moduleId, env } = parsed as { userId: string; moduleId: string; env?: string };
-
-  const originByEnv: Record<string, string> = {
-    staging: 'https://lux-learning-staging.vercel.app',
-    test: 'https://lux-learning-test.vercel.app',
-  };
-  setEnvironmentFromOrigin(env ? originByEnv[env] : undefined);
+  setCurrentEnv((env as AppEnv | undefined) ?? 'prod');
 
   console.log(`[AI Detection] Processing reflection userId=${userId} moduleId=${moduleId} env=${env ?? 'prod'}`);
 

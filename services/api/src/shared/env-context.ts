@@ -16,6 +16,14 @@ export function setCurrentEnv(env: AppEnv): void {
   _currentEnv = env;
 }
 
+/** For EventBridge/cron handlers with no HTTP origin — infer env from Lambda function name suffix. */
+export function initEnvFromFunctionName(): void {
+  const name = process.env.AWS_LAMBDA_FUNCTION_NAME ?? '';
+  if (name.endsWith('-test')) _currentEnv = 'test';
+  else if (name.endsWith('-staging')) _currentEnv = 'staging';
+  else _currentEnv = 'prod';
+}
+
 /** Returns the DynamoDB table name with the correct env suffix. */
 export function getTableName(baseName: string): string {
   if (_currentEnv === 'staging') return `${baseName}-Staging`;

@@ -9,7 +9,7 @@ import {
 } from '../shared/db-dynamo';
 import { createNotification } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
-import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
 const s3 = new S3Client({ region: 'us-east-1' });
@@ -273,6 +273,7 @@ export const handler = async (event: Event) => {
       if (SQS_URL) {
         const sqsBody = {
           type: 'ATTENDANCE_OCR',
+          env: getCurrentEnv(),
           courseId,
           sk,
           userId,
