@@ -2,6 +2,7 @@
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob } from '../shared/db-dynamo';
+import { getCurrentEnv } from '../shared/env-context';
 import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, serverError } from '../shared/response';
 import { jsonrepair } from 'jsonrepair';
@@ -203,6 +204,7 @@ Responde ÚNICAMENTE con JSON: {"title":"Título real específico","content":"<p
 
     // Fire-and-forget: invoke self async bypassing API GW timeout
     const asyncPayload = {
+      _env: getCurrentEnv(),
       requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
       rawPath: '/admin/courses/ai-generate',
       headers: { 'content-type': 'application/json' },
@@ -345,6 +347,7 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
         FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
         InvocationType: 'Event', // async — returns immediately
         Payload: Buffer.from(JSON.stringify({
+          _env: getCurrentEnv(),
           requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
           rawPath: '/_internal/audio',
           headers: { 'content-type': 'application/json' },

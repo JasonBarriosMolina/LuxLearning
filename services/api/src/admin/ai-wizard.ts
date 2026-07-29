@@ -3,6 +3,7 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob, batchCreateCalendarEvents, deleteWizardCalendarEvents } from '../shared/db-dynamo';
+import { getCurrentEnv } from '../shared/env-context';
 import type { CalendarEvent } from '../shared/db-calendar';
 import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, serverError } from '../shared/response';
@@ -133,7 +134,7 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       await lambdaClient.send(new LambdaInvokeCommand({
         FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
         InvocationType: 'Event',
-        Payload: Buffer.from(JSON.stringify({ _action: 'wizard-copilot', _jobId: jobId, ...body })),
+        Payload: Buffer.from(JSON.stringify({ _action: 'wizard-copilot', _jobId: jobId, _env: getCurrentEnv(), ...body })),
       }));
     } catch (invokeErr: any) {
       await saveAiJob(jobId, { status: 'error', error: 'No se pudo iniciar el generador. Intenta de nuevo.' });
@@ -322,7 +323,7 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
           FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
           InvocationType: 'Event',
           Payload: Buffer.from(JSON.stringify({
-            _action: 'wizard-lessons-bulk', _jobId: lessonJobId,
+            _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
             courseId: course.id, moduleIds: createdModuleIds,
             courseTitle: title, language: planLanguage,
           })),

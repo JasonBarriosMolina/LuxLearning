@@ -3,6 +3,7 @@
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob } from '../shared/db-dynamo';
+import { getCurrentEnv } from '../shared/env-context';
 import { invalidateTranslation } from '../shared/translate';
 import { ok, badRequest, forbidden, notFound, serverError } from '../shared/response';
 import {
@@ -157,6 +158,7 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
     await saveAiJob(jobId, { status: 'processing' });
 
     const asyncPayload = {
+      _env: getCurrentEnv(),
       requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
       rawPath: '/admin/modules/_regen_worker',
       headers: { 'content-type': 'application/json' },

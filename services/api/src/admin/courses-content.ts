@@ -3,6 +3,7 @@
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob } from '../shared/db-dynamo';
+import { getCurrentEnv } from '../shared/env-context';
 import { invalidateTranslation } from '../shared/translate';
 import { ok, created, badRequest, forbidden, notFound, serverError } from '../shared/response';
 import {
@@ -46,6 +47,7 @@ export async function handleCoursesContent(ctx: AdminCtx): Promise<any | null> {
       FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
       InvocationType: 'Event',
       Payload: Buffer.from(JSON.stringify({
+        _env: getCurrentEnv(),
         requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
         rawPath: '/_internal/audio',
         headers: { 'content-type': 'application/json' },
@@ -155,6 +157,7 @@ Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],
     await saveAiJob(jobId, { status: 'processing' });
 
     const asyncPayload = {
+      _env: getCurrentEnv(),
       requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
       rawPath: `/admin/courses/${courseId}/modules/ai-generate`,
       headers: { 'content-type': 'application/json' },
@@ -220,6 +223,7 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
     await saveAiJob(lessonJobId, { status: 'processing' });
 
     const asyncPayload = {
+      _env: getCurrentEnv(),
       requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
       rawPath: `/admin/modules/${moduleId}/lessons/ai-generate`,
       headers: { 'content-type': 'application/json' },

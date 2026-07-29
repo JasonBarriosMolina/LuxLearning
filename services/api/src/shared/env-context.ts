@@ -12,6 +12,10 @@ export function getCurrentEnv(): AppEnv {
   return _currentEnv;
 }
 
+export function setCurrentEnv(env: AppEnv): void {
+  _currentEnv = env;
+}
+
 /** Returns the DynamoDB table name with the correct env suffix. */
 export function getTableName(baseName: string): string {
   if (_currentEnv === 'staging') return `${baseName}-Staging`;

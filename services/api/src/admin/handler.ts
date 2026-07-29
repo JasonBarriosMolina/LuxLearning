@@ -2,7 +2,7 @@
 // lux-admin Lambda entry point — thin router that delegates to domain modules.
 import { getPrismaClient } from '../shared/db-neon';
 import { cors, forbidden, notFound, serverError, setRequestOrigin } from '../shared/response';
-import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { setEnvironmentFromOrigin, setCurrentEnv, AppEnv } from '../shared/env-context';
 import { Event, isAuthorized } from './ctx';
 import { handleCourses } from './courses';
 import { handleUsers } from './users';
@@ -16,9 +16,14 @@ export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
   const _selfAction = (event as any)._action as string | undefined;
 
+  const _env = (event as any)._env as string | undefined;
   const origin = event.headers?.origin ?? event.headers?.Origin;
   setRequestOrigin(origin);
-  setEnvironmentFromOrigin(origin);
+  if (_env === 'test' || _env === 'staging' || _env === 'prod') {
+    setCurrentEnv(_env as AppEnv);
+  } else {
+    setEnvironmentFromOrigin(origin);
+  }
 
   if (!_selfAction) {
     if (event.requestContext.http.method === 'OPTIONS') return cors();
