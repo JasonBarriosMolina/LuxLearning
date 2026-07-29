@@ -8,8 +8,34 @@ on:
       - master
 
 jobs:
-  deploy:
+  sync-routes:
+    name: Sync API Gateway routes
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Resolve target environment
+        id: env
+        run: |
+          if   [ "${{ github.ref_name }}" = "test" ];    then echo "name=test"    >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "staging" ]; then echo "name=staging" >> $GITHUB_OUTPUT
+          else                                                 echo "name=prod"    >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync routes
+        run: python scripts/sync-routes.py --env ${{ steps.env.outputs.name }}
+
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    needs: sync-routes
     steps:
       - uses: actions/checkout@v4
 
@@ -28,11 +54,11 @@ jobs:
         id: env_vars
         run: |
           if [ "${{ github.ref_name }}" = "test" ]; then
-            echo "NEXT_PUBLIC_API_URL=https://42sivnad2b.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_API_URL=https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
             echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
             echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=27nj4pm082sk77l0sssnc0g2gu" >> $GITHUB_ENV
           elif [ "${{ github.ref_name }}" = "staging" ]; then
-            echo "NEXT_PUBLIC_API_URL=https://v4vabtmerb.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
+            echo "NEXT_PUBLIC_API_URL=https://1ohrw48nii.execute-api.us-east-1.amazonaws.com" >> $GITHUB_ENV
             echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_RGVyVRJXx" >> $GITHUB_ENV
             echo "NEXT_PUBLIC_COGNITO_CLIENT_ID=63ujfu3mt11s45p9g6m7p0n648" >> $GITHUB_ENV
           else
@@ -60,18 +86,15 @@ jobs:
         run: |
           vercel alias set ${{ steps.deploy.outputs.deployment_url }} test.luxlearning.academy \
             --token=${{ secrets.VERCEL_TOKEN }}
-          echo "Aliased to test.luxlearning.academy"
 
       - name: Alias to staging.luxlearning.academy
         if: github.ref == 'refs/heads/staging'
         run: |
           vercel alias set ${{ steps.deploy.outputs.deployment_url }} staging.luxlearning.academy \
             --token=${{ secrets.VERCEL_TOKEN }}
-          echo "Aliased to staging.luxlearning.academy"
 
       - name: Alias to luxlearning.academy (prod)
         if: github.ref == 'refs/heads/master'
         run: |
           vercel alias set ${{ steps.deploy.outputs.deployment_url }} luxlearning.academy \
             --token=${{ secrets.VERCEL_TOKEN }}
-          echo "Aliased to luxlearning.academy"
