@@ -118,7 +118,7 @@ export function StepPlaneamiento({
               <tbody>
                 {step3.items.filter((it) => it.type !== 'ATTENDANCE').flatMap((it) =>
                   it.dueDates.map((d, idx) => ({ it, d, idx }))
-                ).filter(({ d }) => d).map(({ it, d, idx }, ri) => {
+                ).filter(({ d }) => /^\d{4}-\d{2}-\d{2}$/.test(d)).map(({ it, d, idx }, ri) => {
                   const label = it.count > 1 ? `${planEN ? it.nameEN : it.name} ${idx + 1}` : (planEN ? it.nameEN : it.name);
                   const [y, m, day] = d.split('-');
                   return (

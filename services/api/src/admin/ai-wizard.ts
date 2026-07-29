@@ -153,6 +153,7 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
       cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
       evaluationItems = [], weeklyPlan = [], suggestedModules = [], editingCourseId,
+      pilotoAutomatico = false,
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
@@ -171,6 +172,7 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       cardBorderColor: cardBorderColor || null, cardLabels: finalLabels,
       calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
       evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
+      pilotoAutomatico: Boolean(pilotoAutomatico),
     };
 
     let course: { id: string; slug: string; planDocumentS3Key?: string | null };

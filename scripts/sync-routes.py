@@ -133,9 +133,11 @@ def main():
         )
 
         if not integ_id:
-            print(f"  [SKIP] {route_key} — no integration found for '{lambda_name}'. "
+            level = "WARN" if args.dry_run else "SKIP"
+            print(f"  [{level}] {route_key} — no integration found for '{lambda_name}'. "
                   f"Create the integration first.")
-            failed += 1
+            if not args.dry_run:
+                failed += 1
             continue
 
         if args.dry_run:

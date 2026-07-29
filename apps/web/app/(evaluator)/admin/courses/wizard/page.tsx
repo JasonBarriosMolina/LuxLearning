@@ -48,7 +48,6 @@ function CourseWizardInner() {
   const [scheduleEnd, setScheduleEnd] = useState('');
   const [exLabelInput, setExLabelInput] = useState('');
   const [pendingEx, setPendingEx] = useState<PendingException | null>(null);
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set());
   const [dateWarningDismissed, setDateWarningDismissed] = useState(false);
 
   useEffect(() => {
@@ -82,6 +81,7 @@ function CourseWizardInner() {
         cardColor: c.cardColor ?? '',
         cardBorderColor: c.cardBorderColor ?? '',
         cardLabels: Array.isArray(c.cardLabels) ? c.cardLabels : [],
+        pilotoAutomatico: Boolean(c.pilotoAutomatico),
       });
 
       setStep2({

@@ -151,7 +151,7 @@ export async function handleGroups(ctx: AdminCtx): Promise<any | null> {
     if (!name?.trim()) return badRequest('name requerido');
     const period = await prisma.academicPeriod.upsert({
       where: { name: name.trim() },
-      update: { active: true },
+      update: {},
       create: { name: name.trim() },
     });
     return ok(period);
