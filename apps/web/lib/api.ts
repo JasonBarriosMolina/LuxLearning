@@ -10,7 +10,18 @@ import type {
   GetNotificationsResponse,
 } from '@lux/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+const ENV_API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function getApiUrl(): string {
+  if (ENV_API_URL) return ENV_API_URL;
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  if (host.startsWith('test.'))    return 'https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com';
+  if (host.startsWith('staging.')) return 'https://v4vabtmerb.execute-api.us-east-1.amazonaws.com'; // staging GW TBD
+  return 'https://v4vabtmerb.execute-api.us-east-1.amazonaws.com'; // prod
+}
+
+const API_URL = getApiUrl();
 
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
