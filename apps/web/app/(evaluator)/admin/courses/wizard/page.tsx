@@ -272,6 +272,18 @@ function CourseWizardInner() {
   const updateWeekTopics = (weekNum: number, text: string) =>
     setStep4((p) => ({ ...p, weeklyPlan: p.weeklyPlan.map((wk) => wk.weekNum === weekNum ? { ...wk, topics: [text] } : wk) }));
 
+  const updateWeekProcedure = (weekNum: number, text: string) =>
+    setStep4((p) => ({ ...p, weeklyPlan: p.weeklyPlan.map((wk) => wk.weekNum === weekNum ? { ...wk, procedure: text } : wk) }));
+
+  const updateWeekNotes = (weekNum: number, text: string) =>
+    setStep4((p) => ({ ...p, weeklyPlan: p.weeklyPlan.map((wk) => wk.weekNum === weekNum ? { ...wk, notes: text } : wk) }));
+
+  const updateModuleQuizWeek = (moduleIdx: number, quizWeek: number | null) =>
+    setStep4((p) => ({ ...p, modules: p.modules.map((m, i) => i === moduleIdx ? { ...m, quizWeek } : m) }));
+
+  const updateModuleReflexWeek = (moduleIdx: number, reflexWeek: number | null) =>
+    setStep4((p) => ({ ...p, modules: p.modules.map((m, i) => i === moduleIdx ? { ...m, reflexWeek } : m) }));
+
   // ── Step 5 — Save ──────────────────────────────────────────────────────────
   const saveCourse = async () => {
     setStep5({ status: 'saving', error: '' });
@@ -286,7 +298,11 @@ function CourseWizardInner() {
         cardColor: step1.cardColor || undefined, cardBorderColor: step1.cardBorderColor || undefined,
         cardLabels: step1.cardLabels, calendarExceptions: step2.exceptions,
         evaluationItems: step3.items, weeklyPlan: step4.weeklyPlan,
-        suggestedModules: step4.modules,
+        suggestedModules: step4.modules.map((m) => ({
+          ...m,
+          quizWeek: m.quizWeek ?? null,
+          reflexWeek: m.reflexWeek ?? null,
+        })),
         pilotoAutomatico: step1.pilotoAutomatico ?? false,
         ...(editingCourseId ? { editingCourseId } : {}),
       }) as any;
@@ -403,9 +419,11 @@ function CourseWizardInner() {
               step4={step4} setStep4={setStep4}
               effectiveWeeks={effectiveWeeks} exceptionWeekIndices={exceptionWeekIndices}
               step2TotalWeeks={step2.totalWeeks}
-              expandedWeeks={expandedWeeks} setExpandedWeeks={setExpandedWeeks}
               planEN={step1.planLanguage === 'EN'}
               runCopilot={runCopilot} updateWeekTopics={updateWeekTopics}
+              updateWeekProcedure={updateWeekProcedure} updateWeekNotes={updateWeekNotes}
+              updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek}
+              weeks={weeks}
               isEN={isEN}
             />
           )}

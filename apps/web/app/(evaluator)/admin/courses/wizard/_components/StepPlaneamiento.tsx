@@ -90,16 +90,50 @@ export function StepPlaneamiento({
         <div className="space-y-2">
           {step3.items.map((it) => {
             const meta = EVAL_TYPE_META[it.type];
+            const displayName = `${planEN ? it.nameEN : it.name}${(it.count ?? 1) > 1 ? ` (${it.count})` : ''}`;
             return (
               <div key={it.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface border border-border">
                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>{meta.icon}{planEN ? meta.labelEN : meta.label}</span>
-                <span className="text-sm text-charcoal flex-1">{planEN ? it.nameEN : it.name}</span>
+                <span className="text-sm text-charcoal flex-1">{displayName}</span>
                 <span className="text-sm font-bold text-cta-from">{it.weight}%</span>
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* ── Resumen de entregables ────────────────────────────────────────────── */}
+      {step3.items.some((it) => it.type !== 'ATTENDANCE' && it.dueDates.some(Boolean)) && (
+        <div>
+          <SectionLabel>{s('Resumen de entregables', 'Deliverables summary')}</SectionLabel>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-surface border-b border-border">
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500">{s('Entregable', 'Deliverable')}</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500 w-24">{s('Fecha', 'Date')}</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-500 w-14">{s('Peso', 'Weight')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {step3.items.filter((it) => it.type !== 'ATTENDANCE').flatMap((it) =>
+                  it.dueDates.map((d, idx) => ({ it, d, idx }))
+                ).filter(({ d }) => d).map(({ it, d, idx }, ri) => {
+                  const label = it.count > 1 ? `${planEN ? it.nameEN : it.name} ${idx + 1}` : (planEN ? it.nameEN : it.name);
+                  const [y, m, day] = d.split('-');
+                  return (
+                    <tr key={ri} className="border-b border-border last:border-0 hover:bg-surface/50">
+                      <td className="px-3 py-1.5 text-charcoal">{label}</td>
+                      <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">{day}/{m}/{y}</td>
+                      <td className="px-3 py-1.5 font-semibold text-cta-from">{it.count > 1 ? `${(it.weight / it.count).toFixed(0)}%` : `${it.weight}%`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {step4.weeklyPlan.length > 0 && (
         <div className="p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 rounded-xl flex items-center gap-3">
