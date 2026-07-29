@@ -17,7 +17,7 @@ export function ChoiceModal({ open, onClose, onWizard, onManual, onTopic, onUrl,
   return (
     <Modal open={open} onClose={onClose} title={t.admin.choiceModalTitle} size="md">
       <div className="space-y-3 pb-2">
-        {/* Wizard completo */}
+        {/* Lux Planner */}
         <button
           type="button"
           onClick={onWizard}
@@ -28,9 +28,9 @@ export function ChoiceModal({ open, onClose, onWizard, onManual, onTopic, onUrl,
               <Wand2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <p className="font-semibold text-charcoal text-sm">Wizard de Planeamiento Completo</p>
+              <p className="font-semibold text-charcoal text-sm">Lux Planner</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                Calendario, tipo de evaluación, Copilot IA y generación del plan de estudios oficial (Word)
+                Calendario, tipo de evaluación, plan IA semanal y generación del plan de estudios oficial (Word)
               </p>
             </div>
           </div>

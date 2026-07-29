@@ -146,7 +146,7 @@ export async function handleGroups(ctx: AdminCtx): Promise<any | null> {
 
   // ── POST /admin/periods ──────────────────────────────────────────────────────
   if (path === '/admin/periods' && method === 'POST') {
-    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    if (!isAuthorized(event)) return forbidden('Se requiere autenticación');
     const { name } = ctx.body as { name?: string };
     if (!name?.trim()) return badRequest('name requerido');
     const period = await prisma.academicPeriod.upsert({
