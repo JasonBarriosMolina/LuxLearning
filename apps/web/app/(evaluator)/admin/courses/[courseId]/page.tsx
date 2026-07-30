@@ -70,6 +70,9 @@ export default function AdminCourseDetailPage() {
   };
 
   // ── Validate videos ──────────────────────────────────────────────────────────
+  const [piloto, setPiloto] = useState(false);
+  const [savingPiloto, setSavingPiloto] = useState(false);
+
   const [validateOpen, setValidateOpen] = useState(false);
   const [validateLoading, setValidateLoading] = useState(false);
   const [validateResult, setValidateResult] = useState<{ videos: any[]; broken: number; total: number } | null>(null);
@@ -92,11 +95,26 @@ export default function AdminCourseDetailPage() {
   const load = useCallback(async () => {
     try {
       const res = await api.admin.courses.get(courseId);
-      setCourse((res as any).data);
+      const data = (res as any).data;
+      setCourse(data);
+      setPiloto(data?.pilotoAutomatico ?? false);
     } finally {
       setLoading(false);
     }
   }, [courseId]);
+
+  async function togglePiloto() {
+    setSavingPiloto(true);
+    try {
+      const next = !piloto;
+      await api.admin.courses.update(courseId, { pilotoAutomatico: next });
+      setPiloto(next);
+    } catch (err: any) {
+      alert('Error: ' + (err?.message ?? 'desconocido'));
+    } finally {
+      setSavingPiloto(false);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { return () => { if (aiModuleIntervalRef.current) clearInterval(aiModuleIntervalRef.current); }; }, []);
@@ -197,6 +215,23 @@ export default function AdminCourseDetailPage() {
             Nuevo módulo
           </Button>
         </div>
+      </div>
+
+      {/* Piloto automático de asistencia */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">Piloto automático de asistencia</p>
+          <p className="text-xs text-gray-500 mt-0.5">Envía notificaciones y alertas de riesgo automáticamente</p>
+        </div>
+        <button
+          type="button"
+          onClick={togglePiloto}
+          disabled={savingPiloto}
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${piloto ? 'bg-blue-500' : 'bg-gray-300'} disabled:opacity-50`}
+          aria-label="Piloto automático"
+        >
+          <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${piloto ? 'translate-x-5' : ''}`} />
+        </button>
       </div>
 
       {/* Modules */}

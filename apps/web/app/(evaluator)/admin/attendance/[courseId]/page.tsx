@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, QrCode, CheckCircle, XCircle, Clock, AlertCircle, Loader2, X, Camera, ShieldAlert, ClipboardList } from 'lucide-react';
+import { ArrowLeft, QrCode, CheckCircle, XCircle, Clock, AlertCircle, Loader2, X, ShieldAlert, ClipboardList, Download } from 'lucide-react';
 import { api } from '@/lib/api';
+import { QrScannerModal } from './_components/QrScannerModal';
 
 const STATUS_CELL: Record<string, { label: string; bg: string; short: string }> = {
   PRESENT:               { label: 'Presente',    bg: 'bg-green-100 text-green-700',    short: '✅' },
@@ -56,9 +57,7 @@ export default function AttendanceMatrixPage() {
 
   // QR scan
   const [showQrScanner, setShowQrScanner] = useState(false);
-  const [scannedUserId, setScannedUserId] = useState('');
-  const qrVideoRef = useRef<HTMLVideoElement>(null);
-  const qrStreamRef = useRef<MediaStream | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   async function loadMatrix() {
     try {
@@ -97,20 +96,22 @@ export default function AttendanceMatrixPage() {
     }).catch(() => {});
   }, [selectedSession]);
 
-  // QR camera
-  useEffect(() => {
-    if (!showQrScanner) {
-      qrStreamRef.current?.getTracks().forEach((t) => t.stop());
-      qrStreamRef.current = null;
-      return;
+  async function handleExportCsv() {
+    setExporting(true);
+    try {
+      const res = await api.attendance.exportCsv(courseId) as any;
+      const { csvContent, filename } = res.data ?? res;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Error al exportar: ' + (err?.message ?? 'desconocido'));
+    } finally {
+      setExporting(false);
     }
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        qrStreamRef.current = stream;
-        if (qrVideoRef.current) { qrVideoRef.current.srcObject = stream; qrVideoRef.current.play(); }
-      })
-      .catch(() => {});
-  }, [showQrScanner]);
+  }
 
   async function saveAttendance() {
     if (!selectedSession) return;
@@ -208,6 +209,13 @@ export default function AttendanceMatrixPage() {
           <h1 className="text-xl font-bold text-gray-900">Control de Asistencia</h1>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleExportCsv}
+            disabled={exporting}
+            className="flex items-center gap-1.5 text-sm bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Exportar CSV
+          </button>
           <button
             onClick={() => setShowQrScanner(true)}
             className="flex items-center gap-1.5 text-sm bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200"
@@ -550,49 +558,14 @@ export default function AttendanceMatrixPage() {
         </div>
       )}
 
-      {/* QR Scanner — with camera stream */}
-      {showQrScanner && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b">
-              <h3 className="font-bold text-gray-900">Escanear QR del estudiante</h3>
-              <button onClick={() => setShowQrScanner(false)}><X size={20} className="text-gray-400" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="bg-gray-100 rounded-xl aspect-square overflow-hidden relative">
-                <video ref={qrVideoRef} className="w-full h-full object-cover" playsInline muted />
-                {!qrStreamRef.current && (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                    <Camera size={40} />
-                  </div>
-                )}
-              </div>
-              <p className="text-sm text-center text-gray-500">Apunta la cámara al código QR del perfil del estudiante</p>
-              <div>
-                <label className="text-xs font-medium text-gray-600">O ingresa el ID manualmente:</label>
-                <div className="flex gap-2 mt-1">
-                  <input value={scannedUserId} onChange={(e) => setScannedUserId(e.target.value)}
-                    placeholder="userId del estudiante"
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
-                  <button
-                    onClick={() => {
-                      if (scannedUserId) {
-                        togglePresent(scannedUserId);
-                        setScannedUserId('');
-                        setShowQrScanner(false);
-                        if (!selectedSession && sessions[0]) setSelectedSession(sessions[0]);
-                      }
-                    }}
-                    className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700"
-                  >
-                    Marcar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <QrScannerModal
+        open={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        sessions={sessions}
+        courseId={courseId}
+        nameMap={nameMap}
+        onRecorded={loadMatrix}
+      />
     </div>
   );
 }

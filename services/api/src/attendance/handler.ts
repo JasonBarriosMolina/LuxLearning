@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { createHmac } from 'crypto';
 import { getPrismaClient } from '../shared/db-neon';
 import {
   recordAttendance, getAttendanceMatrix, getMyAttendance, updateAttendanceRecord,
@@ -18,6 +19,27 @@ const S3_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 // FIX #19 (TODO infra): use a dedicated queue to isolate OCR from reflection AI detection
 const SQS_URL = process.env.SQS_ATTENDANCE_OCR_QUEUE_URL ?? process.env.SQS_REFLECTION_QUEUE_URL ?? '';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
+const JWT_SECRET = process.env.JWT_SECRET ?? 'lux-qr-dev-secret';
+
+// ── QR token helpers (30-second anti-fraud tokens) ────────────────────────────
+function generateQrToken(userId: string, courseId: string): { token: string; expiresAt: string } {
+  const exp = Date.now() + 30_000;
+  const payload = Buffer.from(JSON.stringify({ userId, courseId, exp })).toString('base64url');
+  const sig = createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+  return { token: `${payload}.${sig}`, expiresAt: new Date(exp).toISOString() };
+}
+
+function verifyQrToken(token: string): { userId: string; courseId: string } | null {
+  const dotIdx = token.lastIndexOf('.');
+  if (dotIdx < 0) return null;
+  const payload = token.slice(0, dotIdx);
+  const sig = token.slice(dotIdx + 1);
+  const expected = createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+  if (expected !== sig) return null;
+  const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+  if (data.exp < Date.now()) return null;
+  return { userId: data.userId, courseId: data.courseId };
+}
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -311,6 +333,99 @@ export const handler = async (event: Event) => {
       const courseId = riskMatch[1]!;
       const data = await getRiskScores(courseId);
       return ok(data ?? { scores: [], cohortInsight: null });
+    }
+
+    // ── GET /attendance/qr-token ────────────────────────────────────────────
+    // Student generates a short-lived signed token to show as QR code
+    if (path === '/attendance/qr-token' && method === 'GET') {
+      const courseId = event.queryStringParameters?.courseId ?? '';
+      if (!courseId) return badRequest('courseId es requerido');
+      return ok(generateQrToken(userId, courseId));
+    }
+
+    // ── POST /attendance/qr-record ──────────────────────────────────────────
+    // Evaluator scans student QR → records PRESENT directly
+    if (path === '/attendance/qr-record' && method === 'POST') {
+      if (!isAdminOrEval(role)) return forbidden('Se requiere rol de evaluador o admin');
+      const { token, sessionId, courseId: bodyCourseId } = body as { token: string; sessionId: string; courseId: string };
+      if (!token || !sessionId || !bodyCourseId) return badRequest('token, sessionId y courseId son requeridos');
+      const tokenData = verifyQrToken(token);
+      if (!tokenData) return badRequest('Token QR inválido o expirado');
+      if (tokenData.courseId !== bodyCourseId) return badRequest('El token no corresponde a este curso');
+      const session = await prisma.courseSession.findUnique({ where: { id: sessionId } });
+      if (!session) return notFound('Sesión no encontrada');
+      const sk = `${tokenData.userId}#${sessionId}`;
+      const now = new Date().toISOString();
+      await recordAttendance({
+        courseId: bodyCourseId, sk, userId: tokenData.userId, sessionId,
+        sessionDate: session.sessionDate.toISOString(),
+        status: 'PRESENT',
+        createdAt: now, updatedAt: now,
+      });
+      return ok({ userId: tokenData.userId, recorded: true });
+    }
+
+    // ── GET /attendance/admin/overview ──────────────────────────────────────
+    // Admin-only global attendance metrics across all active courses
+    if (path === '/attendance/admin/overview' && method === 'GET') {
+      if (!isAdmin(role)) return forbidden('Se requiere rol de admin o super_admin');
+      const courses = await prisma.course.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, title: true },
+      });
+      const summaries = await Promise.all(courses.map(async (c) => {
+        const riskData = await getRiskScores(c.id);
+        const scores = riskData?.scores ?? [];
+        const high = scores.filter((s: any) => s.riskLevel === 'HIGH').length;
+        const moderate = scores.filter((s: any) => s.riskLevel === 'MODERATE').length;
+        const rates = scores.map((s: any) => 100 - (s.absenceRate ?? 0));
+        const avgRate = rates.length > 0 ? Math.round(rates.reduce((a: number, b: number) => a + b, 0) / rates.length) : 100;
+        return { courseId: c.id, courseTitle: c.title, attendanceRate: avgRate, studentsHigh: high, studentsModerate: moderate, totalStudents: scores.length };
+      }));
+      const globalRate = summaries.length > 0
+        ? Math.round(summaries.reduce((s, c) => s + c.attendanceRate, 0) / summaries.length)
+        : 100;
+      return ok({
+        totalCourses: courses.length,
+        globalAttendanceRate: globalRate,
+        studentsAtRisk: summaries.reduce((s, c) => s + c.studentsHigh, 0),
+        studentsWarning: summaries.reduce((s, c) => s + c.studentsModerate, 0),
+        coursesSummary: summaries.sort((a, b) => a.attendanceRate - b.attendanceRate),
+      });
+    }
+
+    // ── GET /attendance/export/:courseId ────────────────────────────────────
+    // Returns full attendance matrix as CSV (JSON-wrapped for CORS compatibility)
+    const exportMatch = path.match(/^\/attendance\/export\/([^/]+)$/);
+    if (exportMatch && method === 'GET') {
+      if (!isAdminOrEval(role)) return forbidden('Se requiere rol de evaluador o admin');
+      const courseId = exportMatch[1]!;
+      const [sessions, records] = await Promise.all([
+        prisma.courseSession.findMany({ where: { courseId }, orderBy: { order: 'asc' } }),
+        getAttendanceMatrix(courseId),
+      ]);
+      const sessionMap = Object.fromEntries(sessions.map((s) => [s.id, s]));
+      const escape = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const header = ['Fecha', 'Sesión', 'UserId', 'Estado', 'Actualizado', 'Reemplazado por', 'Motivo override', 'Documento', 'Recomendación IA']
+        .map(escape).join(',');
+      const rows = records
+        .filter((r) => r.sk !== 'RISK_SCORES')
+        .map((r) => {
+          const s = sessionMap[r.sessionId] as any;
+          return [
+            r.sessionDate ? new Date(r.sessionDate).toLocaleDateString('es-CR') : '',
+            s?.order ?? '',
+            r.userId,
+            r.status,
+            r.updatedAt ?? '',
+            r.overriddenBy ?? '',
+            r.overrideReason ?? '',
+            r.documentKey ?? '',
+            (r as any).aiOcrData?.aiRecommendation ?? '',
+          ].map(escape).join(',');
+        });
+      const csvContent = [header, ...rows].join('\n');
+      return ok({ csvContent, filename: `asistencia-${courseId}.csv` });
     }
 
     return badRequest('Ruta no encontrada');

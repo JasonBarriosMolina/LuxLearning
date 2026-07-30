@@ -430,6 +430,11 @@ export const api = {
       request<any>('/attendance/justify', { method: 'POST', body: JSON.stringify(body) }),
     submitJustify: (body: { courseId: string; sk: string; documentKey: string }) =>
       request<any>('/attendance/justify/submit', { method: 'PUT', body: JSON.stringify(body) }),
+    qrToken: (courseId: string) => request<any>(`/attendance/qr-token?courseId=${encodeURIComponent(courseId)}`),
+    qrRecord: (body: { token: string; sessionId: string; courseId: string }) =>
+      request<any>('/attendance/qr-record', { method: 'POST', body: JSON.stringify(body) }),
+    adminOverview: () => request<any>('/attendance/admin/overview'),
+    exportCsv: (courseId: string) => request<any>(`/attendance/export/${courseId}`),
   },
 
   profile: {

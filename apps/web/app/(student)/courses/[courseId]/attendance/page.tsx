@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Upload, Clock, CheckCircle, XCircle, AlertCircle, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Upload, Clock, CheckCircle, XCircle, AlertCircle, Loader2, X, QrCode, RefreshCw } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api';
 
 const SEMAPHORE_CONFIG = {
@@ -32,6 +33,13 @@ export default function StudentAttendancePage() {
   const [justifySuccess, setJustifySuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // QR state
+  const [showQr, setShowQr] = useState(false);
+  const [qrToken, setQrToken] = useState('');
+  const [qrExpiresAt, setQrExpiresAt] = useState<Date | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const qrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     api.attendance.my(courseId).then((res: any) => {
       setData(res.data ?? res);
@@ -39,8 +47,27 @@ export default function StudentAttendancePage() {
     }).catch(() => setLoading(false));
   }, [courseId]);
 
-  // Generate QR for this student (userId is not available here — handled via profile page)
-  // QR is shown in /profile — here we just show attendance data
+  async function refreshQrToken() {
+    setQrLoading(true);
+    try {
+      const res = await api.attendance.qrToken(courseId) as any;
+      const d = res.data ?? res;
+      setQrToken(d.token);
+      setQrExpiresAt(new Date(d.expiresAt));
+    } catch { /* ignore */ } finally {
+      setQrLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!showQr) {
+      if (qrIntervalRef.current) { clearInterval(qrIntervalRef.current); qrIntervalRef.current = null; }
+      return;
+    }
+    refreshQrToken();
+    qrIntervalRef.current = setInterval(refreshQrToken, 28_000);
+    return () => { if (qrIntervalRef.current) clearInterval(qrIntervalRef.current); };
+  }, [showQr, courseId]);
 
   const semaphore = data ? (SEMAPHORE_CONFIG[data.semaphore as keyof typeof SEMAPHORE_CONFIG] ?? SEMAPHORE_CONFIG.LOW) : null;
   const absences = (data?.records ?? []).filter((r: any) => r.status === 'ABSENT');
@@ -112,11 +139,19 @@ export default function StudentAttendancePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-800">
-          <ArrowLeft size={20} />
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-800">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-xl font-bold text-gray-900">Mi Asistencia</h1>
+        </div>
+        <button
+          onClick={() => setShowQr(true)}
+          className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
+        >
+          <QrCode size={15} /> Mi QR
         </button>
-        <h1 className="text-xl font-bold text-gray-900">Mi Asistencia</h1>
       </div>
 
       {/* Summary card */}
@@ -203,6 +238,47 @@ export default function StudentAttendancePage() {
           );
         })}
       </div>
+
+      {/* QR ingreso modal */}
+      {showQr && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-bold text-gray-900">Mi QR de Ingreso</h3>
+              <button onClick={() => setShowQr(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <div className="p-6 flex flex-col items-center gap-4">
+              {qrLoading && !qrToken ? (
+                <Loader2 className="animate-spin text-blue-500" size={48} />
+              ) : qrToken ? (
+                <>
+                  <div className="p-3 bg-white rounded-xl border-2 border-gray-100 shadow-inner">
+                    <QRCodeSVG value={qrToken} size={200} />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500">Muestra este código al evaluador al entrar a clase</p>
+                    {qrExpiresAt && (
+                      <p className="text-xs text-blue-500 mt-1 flex items-center justify-center gap-1">
+                        <RefreshCw size={11} className="animate-spin" />
+                        Se renueva cada 30 segundos
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">Error al generar QR. Intenta de nuevo.</p>
+              )}
+              <button
+                onClick={refreshQrToken}
+                disabled={qrLoading}
+                className="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw size={11} /> Renovar ahora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Justification modal */}
       {justifyRecord && (
