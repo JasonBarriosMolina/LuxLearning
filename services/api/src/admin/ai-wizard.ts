@@ -198,21 +198,23 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
     const courseTitle = title as string;
 
     if (editingCourseId) {
-      await prisma.evaluationEvent.deleteMany({ where: { courseId: course.id } });
+      await prisma.evaluationEvent.deleteMany({ where: { courseId: course.id } }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
     }
 
     for (let i = 0; i < evaluationItems.length; i++) {
       const item = evaluationItems[i];
       const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
-      await prisma.evaluationEvent.create({
-        data: {
-          courseId: course.id, type: item.type ?? 'EXAM',
-          name: item.name ?? item.nameEN ?? 'Evaluación',
-          dueDate: firstDate, weight: parseFloat(String(item.weight ?? 0)),
-          instructions: item.instructions || null, vapiPrompt: item.vapiPrompt || null,
-          vapiObjectives: item.vapiObjectives || null, order: i,
-        },
-      });
+      try {
+        await prisma.evaluationEvent.create({
+          data: {
+            courseId: course.id, type: item.type ?? 'EXAM',
+            name: item.name ?? item.nameEN ?? 'Evaluación',
+            dueDate: firstDate, weight: parseFloat(String(item.weight ?? 0)),
+            instructions: item.instructions || null, vapiPrompt: item.vapiPrompt || null,
+            vapiObjectives: item.vapiObjectives || null, order: i,
+          },
+        });
+      } catch (evalErr: any) { console.error('[wizard/save] evaluationEvent create error:', evalErr?.message); }
     }
 
     // Sync evaluation due dates to calendar
@@ -321,15 +323,21 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       if (createdModuleIds.length > 0) {
         lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         await saveAiJob(lessonJobId, { status: 'processing', modules: createdModuleIds.length });
-        await lambdaClient.send(new LambdaInvokeCommand({
-          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
-          InvocationType: 'Event',
-          Payload: Buffer.from(JSON.stringify({
-            _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
-            courseId: course.id, moduleIds: createdModuleIds,
-            courseTitle: title, language: planLanguage,
-          })),
-        }));
+        try {
+          await lambdaClient.send(new LambdaInvokeCommand({
+            FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
+              courseId: course.id, moduleIds: createdModuleIds,
+              courseTitle: title, language: planLanguage,
+            })),
+          }));
+        } catch (invokeErr: any) {
+          console.error('[wizard/save] lesson bulk invoke error:', invokeErr?.message);
+          await saveAiJob(lessonJobId, { status: 'error', error: 'No se pudo iniciar la generación de lecciones' });
+          lessonJobId = null;
+        }
       }
 
       await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});

@@ -78,6 +78,12 @@ const nextConfig = {
   // Skip type checking and lint in production build (handled locally / in CI)
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
+  async redirects() {
+    return [
+      { source: '/admin/courses/wizard', destination: '/admin/courses/lux-planner', permanent: true },
+      { source: '/admin/courses/wizard/:path*', destination: '/admin/courses/lux-planner/:path*', permanent: true },
+    ];
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

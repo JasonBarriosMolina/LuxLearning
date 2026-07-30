@@ -159,11 +159,18 @@ export function StepPlaneamiento({
         </div>
       )}
 
-      <Button onClick={saveCourse} disabled={step5.status === 'saving'}
-        leftIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-        className="w-full justify-center">
-        {step5.status === 'saving' ? s('Guardando...', 'Saving...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Guardar Curso y Generar Plan Word', 'Save Course & Generate Word Plan')}
-      </Button>
+      <div className="space-y-2">
+        <Button onClick={saveCourse} disabled={step5.status === 'saving'}
+          leftIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          className="w-full justify-center">
+          {step5.status === 'saving' ? s('Creando curso...', 'Creating course...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
+        </Button>
+        {!editingCourseId && step5.status !== 'saving' && (
+          <p className="text-xs text-center text-gray-400">
+            {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

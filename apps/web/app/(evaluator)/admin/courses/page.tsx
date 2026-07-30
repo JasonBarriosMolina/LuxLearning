@@ -422,7 +422,7 @@ export default function AdminCoursesPage() {
       <ChoiceModal
         open={choiceModalOpen}
         onClose={() => setChoiceModalOpen(false)}
-        onWizard={() => { setChoiceModalOpen(false); router.push('/admin/courses/wizard'); }}
+        onWizard={() => { setChoiceModalOpen(false); router.push('/admin/courses/lux-planner'); }}
         onManual={() => { setChoiceModalOpen(false); openCreate(); }}
         onTopic={() => { setChoiceModalOpen(false); openAiModal('topic', 2); }}
         onUrl={() => { setChoiceModalOpen(false); openAiModal('url', 2); }}

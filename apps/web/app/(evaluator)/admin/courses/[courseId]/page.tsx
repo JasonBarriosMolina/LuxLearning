@@ -170,7 +170,7 @@ export default function AdminCourseDetailPage() {
           <Button
             variant="secondary"
             leftIcon={<Wand2 className="w-4 h-4 text-amber-500" />}
-            onClick={() => router.push(`/admin/courses/wizard?courseId=${courseId}`)}
+            onClick={() => router.push(`/admin/courses/lux-planner?courseId=${courseId}`)}
             className="shrink-0"
           >
             Editar con Lux Planner
