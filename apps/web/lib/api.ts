@@ -415,13 +415,13 @@ export const api = {
   attendance: {
     // Evaluator/Admin
     sessions: (courseId: string) => request<any>(`/attendance/sessions/${courseId}`),
-    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' }[] }) =>
+    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' }[] }) =>
       request<any>('/attendance/record', { method: 'POST', body: JSON.stringify(body) }),
     matrix: (courseId: string) => request<any>(`/attendance/matrix/${courseId}`),
     pending: (courseId: string) => request<any>(`/attendance/pending/${courseId}`),
     review: (body: { courseId: string; sk: string; status: 'JUSTIFIED' | 'REJECTED'; evaluatorFeedback?: string }) =>
       request<any>('/attendance/review', { method: 'PUT', body: JSON.stringify(body) }),
-    override: (body: { courseId: string; sk: string; overrideReason: string }) =>
+    override: (body: { courseId: string; sk: string; overrideReason: string; extraHours?: number }) =>
       request<any>('/attendance/override', { method: 'PUT', body: JSON.stringify(body) }),
     risk: (courseId: string) => request<any>(`/attendance/risk/${courseId}`),
     // Student
