@@ -65,9 +65,11 @@ export default function AdminGroupDetailPage() {
         api.admin.groups.members(groupId),
         api.admin.groups.evaluators(groupId),
       ]);
-      setMembers(membersData.members ?? membersData);
-      setEvaluators(evalsData.evaluators ?? evalsData);
-      if (membersData.groupName) setGroupName(membersData.groupName);
+      const membersPayload = membersData.data ?? membersData;
+      setMembers(membersPayload.members ?? membersPayload);
+      const evalsPayload = evalsData.data ?? evalsData;
+      setEvaluators(evalsPayload.evaluators ?? evalsPayload);
+      if (membersPayload.groupName) setGroupName(membersPayload.groupName);
     } finally {
       setLoading(false);
     }
@@ -78,7 +80,7 @@ export default function AdminGroupDetailPage() {
   const openAddMembers = async () => {
     if (allUsers.length === 0) {
       const data = await api.admin.users.list();
-      setAllUsers(data.users ?? data);
+      setAllUsers(data.data ?? data.users ?? data);
     }
     setSelectedUserIds([]);
     setMemberSearch('');
@@ -104,7 +106,7 @@ export default function AdminGroupDetailPage() {
       try {
         const data = await api.admin.courses.list();
         const map: Record<string, string> = {};
-        (data.courses ?? data).forEach((c: any) => { map[c.id] = c.title; });
+        (data.data ?? data.courses ?? data).forEach((c: any) => { map[c.id] = c.title; });
         setCourseNames(map);
       } catch {}
     }
@@ -124,7 +126,7 @@ export default function AdminGroupDetailPage() {
   const openAddEval = async () => {
     if (allUsers.length === 0) {
       const data = await api.admin.users.list();
-      setAllUsers(data.users ?? data);
+      setAllUsers(data.data ?? data.users ?? data);
     }
     setEvalSearch('');
     setShowAddEval(true);
