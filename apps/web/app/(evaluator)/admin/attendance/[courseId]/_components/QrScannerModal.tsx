@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Loader2, CheckCircle, AlertCircle, Camera } from 'lucide-react';
 import { api } from '@/lib/api';
 
 type Session = { id: string; sessionDate: string; order: number };
@@ -15,10 +15,12 @@ interface Props {
   onRecorded: () => void;
 }
 
+type CameraState = 'idle' | 'requesting' | 'active' | 'denied' | 'error';
+
 export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onRecorded }: Props) {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [cameraError, setCameraError] = useState('');
+  const [cameraState, setCameraState] = useState<CameraState>('idle');
   const [recording, setRecording] = useState(false);
   const scannerRef = useRef<any>(null);
   const lastScannedRef = useRef<string>('');
@@ -27,39 +29,47 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
     if (sessions.length > 0 && !selectedSessionId) setSelectedSessionId(sessions[sessions.length - 1]!.id);
   }, [sessions]);
 
+  // Reset on close
   useEffect(() => {
     if (!open) {
       stopScanner();
       setFeedback(null);
-      setCameraError('');
+      setCameraState('idle');
       lastScannedRef.current = '';
-      return;
     }
-    startScanner();
-    return () => { stopScanner(); };
   }, [open]);
 
-  async function startScanner() {
-    const { Html5Qrcode } = await import('html5-qrcode');
-    const el = document.getElementById('qr-scanner-region');
-    if (!el) return;
-    const scanner = new Html5Qrcode('qr-scanner-region');
-    scannerRef.current = scanner;
-    scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      (decodedText: string) => {
-        if (decodedText !== lastScannedRef.current) {
-          lastScannedRef.current = decodedText;
-          handleQrScan(decodedText);
-        }
-      },
-      () => { /* per-frame error — ignore */ }
-    ).catch((err: any) => {
-      setCameraError('No se pudo acceder a la cámara. Verifica los permisos.');
-      console.error('[QrScanner]', err);
-    });
-  }
+  // Start html5-qrcode AFTER React has mounted the scanner div (state = 'active')
+  useEffect(() => {
+    if (cameraState !== 'active') return;
+    let cancelled = false;
+
+    (async () => {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      if (cancelled) return;
+      const el = document.getElementById('qr-scanner-region');
+      if (!el) { setCameraState('error'); return; }
+
+      const scanner = new Html5Qrcode('qr-scanner-region');
+      scannerRef.current = scanner;
+
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        (decodedText: string) => {
+          if (decodedText !== lastScannedRef.current) {
+            lastScannedRef.current = decodedText;
+            handleQrScan(decodedText);
+          }
+        },
+        () => { /* per-frame non-match — ignore */ }
+      ).catch(() => {
+        if (!cancelled) setCameraState('error');
+      });
+    })();
+
+    return () => { cancelled = true; stopScanner(); };
+  }, [cameraState]);
 
   function stopScanner() {
     if (scannerRef.current) {
@@ -67,6 +77,19 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
         scannerRef.current?.clear();
         scannerRef.current = null;
       });
+    }
+  }
+
+  // Must be called from a click handler (user gesture) so the browser shows the permission popup
+  async function activateCamera() {
+    if (cameraState === 'requesting' || cameraState === 'active') return;
+    setCameraState('requesting');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      stream.getTracks().forEach((t) => t.stop()); // release; html5-qrcode will re-acquire
+      setCameraState('active'); // triggers useEffect above after React re-renders
+    } catch (err: any) {
+      setCameraState(err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' ? 'denied' : 'error');
     }
   }
 
@@ -115,20 +138,51 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
             </select>
           </div>
 
-          {/* Camera feed */}
-          {cameraError ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-red-500">
-              <AlertCircle size={32} />
-              <p className="text-sm text-center">{cameraError}</p>
+          {/* Camera region — always in DOM when active so html5-qrcode can attach */}
+          <div className={`relative bg-gray-100 rounded-xl overflow-hidden ${cameraState === 'active' ? '' : 'hidden'}`} style={{ aspectRatio: '1' }}>
+            <div id="qr-scanner-region" className="w-full h-full" />
+            {recording && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                <Loader2 className="animate-spin text-blue-500" size={32} />
+              </div>
+            )}
+          </div>
+
+          {/* Idle: tap-to-start button */}
+          {cameraState === 'idle' && (
+            <button
+              onClick={activateCamera}
+              className="w-full flex flex-col items-center gap-3 py-10 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+            >
+              <Camera size={36} className="text-blue-400" />
+              <span className="text-sm font-medium text-gray-600">Toca para activar la cámara</span>
+              <span className="text-xs text-gray-400">El navegador solicitará permisos</span>
+            </button>
+          )}
+
+          {cameraState === 'requesting' && (
+            <div className="flex flex-col items-center gap-2 py-10 text-gray-500">
+              <Loader2 size={32} className="animate-spin text-blue-400" />
+              <p className="text-sm">Solicitando acceso a cámara…</p>
             </div>
-          ) : (
-            <div className="relative bg-gray-100 rounded-xl overflow-hidden" style={{ aspectRatio: '1' }}>
-              <div id="qr-scanner-region" className="w-full h-full" />
-              {recording && (
-                <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-                  <Loader2 className="animate-spin text-blue-500" size={32} />
-                </div>
-              )}
+          )}
+
+          {cameraState === 'denied' && (
+            <div className="flex flex-col items-center gap-3 py-8 text-red-500">
+              <AlertCircle size={32} />
+              <p className="text-sm font-medium text-center">Acceso a cámara denegado</p>
+              <p className="text-xs text-center text-gray-500 max-w-[240px]">
+                Ve a Ajustes del navegador → Permisos del sitio → Cámara y habilita el acceso para esta página.
+              </p>
+              <button onClick={() => setCameraState('idle')} className="text-xs text-blue-600 underline mt-1">Volver a intentar</button>
+            </div>
+          )}
+
+          {cameraState === 'error' && (
+            <div className="flex flex-col items-center gap-2 py-8 text-orange-500">
+              <AlertCircle size={32} />
+              <p className="text-sm text-center">No se pudo iniciar el escáner. Verifica que ninguna otra app esté usando la cámara.</p>
+              <button onClick={() => setCameraState('idle')} className="text-xs text-blue-600 underline mt-1">Reintentar</button>
             </div>
           )}
 
@@ -142,9 +196,11 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
             </div>
           )}
 
-          <p className="text-xs text-center text-gray-400">
-            Apunta la cámara al QR del estudiante. Se registra automáticamente.
-          </p>
+          {cameraState === 'active' && !recording && (
+            <p className="text-xs text-center text-gray-400">
+              Apunta la cámara al QR del estudiante. Se registra automáticamente.
+            </p>
+          )}
         </div>
       </div>
     </div>

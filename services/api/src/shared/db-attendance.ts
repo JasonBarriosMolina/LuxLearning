@@ -3,8 +3,7 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from './db-core';
 
-// FIX #12: LATE added — late arrivals should not be forced to go through full absence+justification flow
-export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED';
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'LATE_JUSTIFIED' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED';
 
 export interface AttendanceRecord {
   courseId: string;
@@ -13,6 +12,7 @@ export interface AttendanceRecord {
   sessionId: string;
   sessionDate: string;
   status: AttendanceStatus;
+  observations?: string;
   justificationDeadline?: string;
   documentKey?: string;
   aiOcrData?: {

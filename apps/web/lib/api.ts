@@ -415,7 +415,7 @@ export const api = {
   attendance: {
     // Evaluator/Admin
     sessions: (courseId: string) => request<any>(`/attendance/sessions/${courseId}`),
-    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' }[] }) =>
+    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'JUSTIFIED' | 'LATE_JUSTIFIED'; observations?: string }[] }) =>
       request<any>('/attendance/record', { method: 'POST', body: JSON.stringify(body) }),
     matrix: (courseId: string) => request<any>(`/attendance/matrix/${courseId}`),
     pending: (courseId: string) => request<any>(`/attendance/pending/${courseId}`),

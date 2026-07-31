@@ -107,8 +107,7 @@ export const handler = async (event: Event) => {
       const { courseId, sessionId, records: toRecord } = body as {
         courseId: string;
         sessionId: string;
-        // FIX #12: Accept LATE in addition to PRESENT/ABSENT
-        records: Array<{ userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' }>;
+        records: Array<{ userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'LATE_JUSTIFIED' | 'JUSTIFIED'; observations?: string }>;
       };
       if (!courseId || !sessionId || !Array.isArray(toRecord)) {
         return badRequest('courseId, sessionId y records son requeridos');
@@ -116,9 +115,10 @@ export const handler = async (event: Event) => {
       const session = await prisma.courseSession.findUnique({ where: { id: sessionId } });
       if (!session) return notFound('Sesión no encontrada');
 
+      const VALID_RECORD_STATUSES = ['PRESENT', 'ABSENT', 'LATE', 'LATE_JUSTIFIED', 'JUSTIFIED'];
       const now = new Date().toISOString();
       for (const r of toRecord) {
-        if (!['PRESENT', 'ABSENT', 'LATE'].includes(r.status)) continue;
+        if (!VALID_RECORD_STATUSES.includes(r.status)) continue;
         const sk = `${r.userId}#${sessionId}`;
         const gsiSk = `${sessionId}#${courseId}`;
         // LATE arrivals get the same justification window in case evaluator wants documentation
@@ -129,6 +129,7 @@ export const handler = async (event: Event) => {
           courseId, sk, userId: r.userId, sessionId,
           sessionDate: session.sessionDate.toISOString(),
           status: r.status,
+          observations: r.observations || undefined,
           justificationDeadline,
           createdAt: now, updatedAt: now,
         });
