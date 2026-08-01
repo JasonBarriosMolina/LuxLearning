@@ -24,10 +24,13 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
   const [recording, setRecording] = useState(false);
   const scannerRef = useRef<any>(null);
   const lastScannedRef = useRef<string>('');
+  const selectedSessionIdRef = useRef(selectedSessionId);
 
   useEffect(() => {
     if (sessions.length > 0 && !selectedSessionId) setSelectedSessionId(sessions[sessions.length - 1]!.id);
   }, [sessions]);
+
+  useEffect(() => { selectedSessionIdRef.current = selectedSessionId; }, [selectedSessionId]);
 
   // Reset on close
   useEffect(() => {
@@ -94,11 +97,12 @@ export function QrScannerModal({ open, onClose, sessions, courseId, nameMap, onR
   }
 
   async function handleQrScan(token: string) {
-    if (!selectedSessionId || recording) return;
+    const sessionId = selectedSessionIdRef.current;
+    if (!sessionId || recording) return;
     setRecording(true);
     setFeedback(null);
     try {
-      const res = await api.attendance.qrRecord({ token, sessionId: selectedSessionId, courseId }) as any;
+      const res = await api.attendance.qrRecord({ token, sessionId, courseId }) as any;
       const d = res.data ?? res;
       const name = nameMap[d.userId] || d.userId;
       setFeedback({ type: 'success', message: `✅ ${name} registrado como Presente` });
