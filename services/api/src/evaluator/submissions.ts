@@ -3,10 +3,10 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { EvalCtx, s3Ev, SUBMISSIONS_BUCKET_EV, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV } from './ctx';
 import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
-import { ok, badRequest } from '../shared/response';
+import { ok, badRequest, forbidden } from '../shared/response';
 
 export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
-  const { event, method, path, userId } = ctx;
+  const { event, method, path, userId, prisma, isAdminRole } = ctx;
 
   // ── GET /evaluator/submissions?moduleId=X ────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/submissions') {
@@ -21,10 +21,14 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
   if (gradeMatch && method === 'PUT') {
     const submissionId = gradeMatch[1]!;
     const body = JSON.parse(event.body ?? '{}');
-    const { studentUserId, grade, feedback } = body;
+    const { studentUserId, grade, feedback, courseId } = body;
     const gradeNum = Number(grade);
     if (!studentUserId || grade == null) return badRequest('studentUserId and grade required');
     if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
+    if (!isAdminRole && courseId) {
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { evaluatorId: true } });
+      if (course && course.evaluatorId !== userId) return forbidden('No autorizado para este curso');
+    }
     await updateSubmissionGrade(studentUserId, submissionId, gradeNum, String(feedback ?? ''), userId!);
     return ok({ graded: true });
   }
@@ -58,6 +62,13 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
     if (!studentUserId || grade == null) return badRequest('studentUserId and grade required');
     const gradeNum = Number(grade);
     if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
+    if (!isAdminRole) {
+      const ev = await prisma.evaluationEvent.findUnique({ where: { id: interviewId }, select: { courseId: true } });
+      if (ev) {
+        const course = await prisma.course.findUnique({ where: { id: ev.courseId }, select: { evaluatorId: true } });
+        if (course && course.evaluatorId !== userId) return forbidden('No autorizado para este curso');
+      }
+    }
     await updateInterviewGrade(studentUserId, interviewId, gradeNum, String(feedback ?? ''), userId!);
 
     if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {

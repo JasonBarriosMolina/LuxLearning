@@ -23,7 +23,7 @@ interface Submission {
 
 interface Course { id: string; title: string; }
 
-interface GradeState { grade: string; feedback: string; saving: boolean; saved: boolean; }
+interface GradeState { grade: string; feedback: string; saving: boolean; saved: boolean; error: string; }
 
 function fmtDuration(sec?: number) {
   if (!sec) return '—';
@@ -53,7 +53,7 @@ export function ReviewPanel({ courses }: Props) {
         init[s.interviewId] = {
           grade: s.grade != null ? String(s.grade) : '',
           feedback: s.feedback ?? '',
-          saving: false, saved: false,
+          saving: false, saved: false, error: '',
         };
       }
       setGrades(init);
@@ -71,7 +71,7 @@ export function ReviewPanel({ courses }: Props) {
     if (!st) return;
     const num = parseFloat(st.grade);
     if (isNaN(num) || num < 0 || num > 100) return;
-    setGrades((p) => ({ ...p, [sub.interviewId]: { ...p[sub.interviewId]!, saving: true, saved: false } }));
+    setGrades((p) => ({ ...p, [sub.interviewId]: { ...p[sub.interviewId]!, saving: true, saved: false, error: '' } }));
     try {
       await api.evaluator.interviews.grade(sub.interviewId, {
         studentUserId: sub.userId, grade: num, feedback: st.feedback,
@@ -81,8 +81,8 @@ export function ReviewPanel({ courses }: Props) {
         s.interviewId === sub.interviewId ? { ...s, grade: num, feedback: st.feedback } : s,
       ));
       setTimeout(() => setGrades((p) => ({ ...p, [sub.interviewId]: { ...p[sub.interviewId]!, saved: false } })), 2500);
-    } catch {
-      setGrades((p) => ({ ...p, [sub.interviewId]: { ...p[sub.interviewId]!, saving: false } }));
+    } catch (e: any) {
+      setGrades((p) => ({ ...p, [sub.interviewId]: { ...p[sub.interviewId]!, saving: false, error: e?.message ?? 'Error al guardar' } }));
     }
   }
 
@@ -223,18 +223,23 @@ export function ReviewPanel({ courses }: Props) {
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end">
-                        <button
-                          onClick={() => handleGrade(sub)}
-                          disabled={gs.saving || !gs.grade}
-                          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
-                        >
-                          {gs.saved
-                            ? <><CheckCircle className="w-4 h-4" /> Guardado</>
-                            : gs.saving
-                            ? <><Clock className="w-4 h-4 animate-spin" /> Guardando…</>
-                            : 'Guardar calificación'}
-                        </button>
+                      <div className="flex items-center justify-between">
+                        {gs.error && (
+                          <p className="text-xs text-red-600 font-medium">{gs.error}</p>
+                        )}
+                        <div className="ml-auto">
+                          <button
+                            onClick={() => handleGrade(sub)}
+                            disabled={gs.saving || !gs.grade}
+                            className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
+                          >
+                            {gs.saved
+                              ? <><CheckCircle className="w-4 h-4" /> Guardado</>
+                              : gs.saving
+                              ? <><Clock className="w-4 h-4 animate-spin" /> Guardando…</>
+                              : 'Guardar calificación'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
