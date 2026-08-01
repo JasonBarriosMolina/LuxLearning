@@ -4,13 +4,11 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BookCheck, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useLanguage } from '@/lib/i18n';
 
 type Course = { courseId: string; title: string; status: string };
 
 export default function EvaluatorAttendancePage() {
   const router = useRouter();
-  const { t } = useLanguage();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
