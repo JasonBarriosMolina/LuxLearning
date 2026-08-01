@@ -25,11 +25,17 @@ export function setRequestOrigin(origin: string | undefined) {
 }
 
 function buildCorsHeaders() {
+  const origin = _requestOrigin;
+  _requestOrigin = undefined; // reset after each use — prevents stale origin on warm containers
   return {
-    'Access-Control-Allow-Origin': getCorsOrigin(_requestOrigin),
+    'Access-Control-Allow-Origin': getCorsOrigin(origin),
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     'Content-Type': 'application/json',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   };
 }
 

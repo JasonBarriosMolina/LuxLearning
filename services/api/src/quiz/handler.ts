@@ -42,6 +42,10 @@ export const handler = async (event: Event) => {
         return badRequest('answers array is required');
       }
       if (!courseId) return badRequest('courseId is required');
+      if (answers.length === 0 || answers.length > 200) return badRequest('Número de respuestas inválido');
+      if (!answers.every((a) => Number.isInteger(a) && a >= 0 && a <= 100)) {
+        return badRequest('Respuestas con formato inválido');
+      }
 
       // Load module with questions
       const module = await prisma.module.findUnique({
@@ -51,6 +55,7 @@ export const handler = async (event: Event) => {
 
       if (!module) return badRequest('Module not found');
       if (!module.questions.length) return badRequest('Este módulo no tiene preguntas configuradas');
+      if (answers.length !== module.questions.length) return badRequest('Número de respuestas no coincide con las preguntas del módulo');
 
       // Verify all lessons are completed before allowing quiz
       const progress = await getLessonProgress(userId, courseId);

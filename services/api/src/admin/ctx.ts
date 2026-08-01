@@ -127,12 +127,16 @@ Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No mar
     let svgRaw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
     const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
     if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
-    const svg = match[0];
+    const svg = match[0]
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/javascript\s*:/gi, 'nojavascript:')
+      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET, Key: key,
       Body: Buffer.from(svg, 'utf-8'),
       ContentType: 'image/svg+xml',
+      ContentDisposition: 'attachment',
       CacheControl: 'public, max-age=31536000',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;

@@ -34,7 +34,16 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     const type = emailTemplateMatch[1]!;
     const { subject, htmlBody } = body as { subject: string; htmlBody: string };
     if (!subject || !htmlBody) return badRequest('subject and htmlBody required');
-    await saveEmailTemplate(type, subject, htmlBody, userId);
+    if (subject.length > 500) return badRequest('subject excede 500 caracteres');
+    if (htmlBody.length > 100_000) return badRequest('htmlBody excede 100,000 caracteres');
+    const safeHtml = htmlBody
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+      .replace(/<object[\s\S]*?<\/object>/gi, '')
+      .replace(/<embed[^>]*>/gi, '')
+      .replace(/javascript\s*:/gi, 'nojavascript:')
+      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
+    await saveEmailTemplate(type, subject, safeHtml, userId);
     return ok({ saved: true });
   }
 
@@ -43,8 +52,20 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
     const { fileName, fileType, folder = 'uploads' } = body as { fileName?: string; fileType?: string; folder?: string };
     if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
+
+    const ALLOWED_TYPES = new Set([
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      'application/pdf',
+      'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav',
+      'video/mp4', 'video/webm',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ]);
+    if (!ALLOWED_TYPES.has(fileType)) return badRequest('Tipo de archivo no permitido');
+
     const safeFolder = ['tasks', 'resources', 'uploads'].includes(folder) ? folder : 'uploads';
-    const ext = fileName.split('.').pop() ?? 'bin';
+    const ext = fileName.split('.').pop()?.replace(/[^a-z0-9]/gi, '') ?? 'bin';
     const fileKey = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const command = new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: fileKey, ContentType: fileType });
     const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 600 });
