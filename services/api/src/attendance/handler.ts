@@ -9,7 +9,7 @@ import {
   getPendingJustifications, getRiskScores, type AttendanceRecord, type AttendanceStatus,
 } from '../shared/db-dynamo';
 import { createNotification } from '../shared/db-dynamo';
-import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
+import { ok, created, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
