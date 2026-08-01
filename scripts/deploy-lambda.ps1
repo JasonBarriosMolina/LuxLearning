@@ -103,6 +103,21 @@ function Deploy-Lambda([string]$name) {
   Copy-Item "$outDir\index.js" "$stage\index.js"
 
   if ($usesPrisma) {
+    # Guard: verify generated client matches current schema (catch stale client after schema changes)
+    $schemaPath = "$ROOT\services\api\prisma\schema.prisma"
+    $genSchemaPath = "$PRISMA_GEN\schema.prisma"
+    if (Test-Path $genSchemaPath) {
+      $schemaHash = (Get-FileHash $schemaPath -Algorithm MD5).Hash
+      $genHash    = (Get-FileHash $genSchemaPath -Algorithm MD5).Hash
+      if ($schemaHash -ne $genHash) {
+        Write-Host "`n[WARN] schema.prisma changed since last prisma generate - regenerating client..." -ForegroundColor Yellow
+        Push-Location "$ROOT\services\api"
+        & npx prisma generate
+        Pop-Location
+        Write-Host "[OK]  Prisma client regenerated." -ForegroundColor Green
+      }
+    }
+
     New-Item -ItemType Directory "$stage\node_modules\.prisma"  -Force | Out-Null
     New-Item -ItemType Directory "$stage\node_modules\@prisma"  -Force | Out-Null
     # Generated Prisma client (JS + engine binary), skip Windows DLL
