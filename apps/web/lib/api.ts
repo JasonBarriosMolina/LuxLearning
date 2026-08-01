@@ -415,6 +415,8 @@ export const api = {
   attendance: {
     // Evaluator/Admin
     sessions: (courseId: string) => request<any>(`/attendance/sessions/${courseId}`),
+    addSession: (courseId: string, sessionDate: string) =>
+      request<any>(`/attendance/sessions/${courseId}`, { method: 'POST', body: JSON.stringify({ sessionDate }) }),
     record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'JUSTIFIED' | 'LATE_JUSTIFIED'; observations?: string }[] }) =>
       request<any>('/attendance/record', { method: 'POST', body: JSON.stringify(body) }),
     matrix: (courseId: string) => request<any>(`/attendance/matrix/${courseId}`),

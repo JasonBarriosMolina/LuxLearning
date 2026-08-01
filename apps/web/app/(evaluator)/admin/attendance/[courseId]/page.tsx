@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { QrScannerModal } from './_components/QrScannerModal';
 import { ReviewModal } from './_components/ReviewModal';
 import { OverrideModal } from './_components/OverrideModal';
+import { NewSessionModal } from './_components/NewSessionModal';
 import { StudentAttendanceRow, RECORD_STATUSES, type RecordStatus } from './_components/StudentAttendanceRow';
 
 // ── Status cell config for the read-only matrix ────────────────────────────────
@@ -49,6 +50,7 @@ export default function AttendanceMatrixPage() {
 
   // ── Modals ────────────────────────────────────────────────────────────────────
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showNewSession, setShowNewSession] = useState(false);
   const [reviewRecord, setReviewRecord] = useState<AttendanceRecord | null>(null);
   const [overrideRecord, setOverrideRecord] = useState<AttendanceRecord | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -249,6 +251,14 @@ export default function AttendanceMatrixPage() {
               {selectedSession?.present ?? 0} / {enrolledStudents.length}
             </p>
           </div>
+          <div className="h-8 w-px bg-gray-200" />
+          <button
+            onClick={() => setShowNewSession(true)}
+            title="Agregar sesión extra"
+            className="text-blue-600 hover:text-blue-800 transition-colors flex-shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
+          </button>
         </div>
 
         {sessions.length === 0 ? (
@@ -466,6 +476,13 @@ export default function AttendanceMatrixPage() {
           onSubmit={submitOverride}
         />
       )}
+
+      <NewSessionModal
+        open={showNewSession}
+        courseId={courseId}
+        onClose={() => setShowNewSession(false)}
+        onCreated={() => { loadMatrix(); }}
+      />
     </div>
   );
 }

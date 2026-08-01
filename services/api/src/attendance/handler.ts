@@ -100,6 +100,29 @@ export const handler = async (event: Event) => {
       return ok(summaries);
     }
 
+    // ── POST /attendance/sessions/:courseId ─────────────────────────────────
+    // Evaluator/admin adds an extra (unplanned) session to a course
+    if (sessionsMatch && method === 'POST') {
+      if (!isAdminOrEval(role)) return forbidden('Se requiere rol de evaluador o admin');
+      const courseId = sessionsMatch[1]!;
+      const { sessionDate } = body as { sessionDate?: string };
+      if (!sessionDate) return badRequest('sessionDate es requerido');
+      const last = await prisma.courseSession.findFirst({
+        where: { courseId },
+        orderBy: { order: 'desc' },
+        select: { order: true },
+      });
+      const session = await prisma.courseSession.create({
+        data: {
+          courseId,
+          sessionDate: new Date(sessionDate + 'T12:00:00'),
+          weekIndex: null,
+          order: (last?.order ?? 0) + 1,
+        },
+      });
+      return created(session);
+    }
+
     // ── POST /attendance/record ─────────────────────────────────────────────
     // Body: { courseId, sessionId, records: [{ userId, status }] }
     if (path === '/attendance/record' && method === 'POST') {
@@ -371,7 +394,7 @@ export const handler = async (event: Event) => {
     if (path === '/attendance/admin/overview' && method === 'GET') {
       if (!isAdmin(role)) return forbidden('Se requiere rol de admin o super_admin');
       const courses = await prisma.course.findMany({
-        where: { status: 'ACTIVE' },
+        where: { isActive: true, isDraft: false },
         select: { id: true, title: true },
       });
       const summaries = await Promise.all(courses.map(async (c) => {
