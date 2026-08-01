@@ -411,6 +411,26 @@ export const api = {
       removeEvaluator: (id: string, evaluatorId: string) =>
         request<any>(`/admin/groups/${id}/evaluators/${evaluatorId}`, { method: 'DELETE' }),
     },
+    // Interviews (EvaluationEvent definitions + DDB submissions)
+    interviews: {
+      listCourses: () => request<any>('/admin/interviews/courses'),
+      list: (courseId: string, includeSubmissions = false) =>
+        request<any>(`/admin/interviews?courseId=${courseId}${includeSubmissions ? '&includeSubmissions=true' : ''}`),
+      submissions: (courseId: string, status?: string) =>
+        request<any>(`/admin/interviews/submissions?courseId=${courseId}${status ? '&status=' + status : ''}`),
+      generate: (body: { title?: string; topic?: string; courseTitle?: string; moduleTitle?: string; language?: string }) =>
+        request<any>('/admin/interviews/generate', { method: 'POST', body: JSON.stringify(body) }),
+      create: (body: {
+        courseId: string; moduleId?: string; name: string; dueDate?: string;
+        weight?: number; instructions?: string; vapiPrompt?: string;
+        vapiObjectives?: string; targetStudentIds?: string[];
+      }) => request<any>('/admin/interviews', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: Partial<{
+        name: string; moduleId: string; dueDate: string; weight: number;
+        instructions: string; vapiPrompt: string; vapiObjectives: string; targetStudentIds: string[];
+      }>) => request<any>(`/admin/interviews/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/admin/interviews/${id}`, { method: 'DELETE' }),
+    },
   },
   attendance: {
     // Evaluator/Admin

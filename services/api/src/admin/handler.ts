@@ -11,6 +11,7 @@ import { handleAI } from './ai';
 import { handleProfile } from './profile';
 import { handleFiles } from './files';
 import { handleGroups } from './groups';
+import { handleInterviews } from './interviews';
 
 export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
@@ -50,6 +51,7 @@ export const handler = async (event: Event) => {
       await handleProfile(ctx) ??
       await handleFiles(ctx) ??
       await handleGroups(ctx) ??
+      await handleInterviews(ctx) ??
       notFound('Ruta no encontrada');
 
     return result;
