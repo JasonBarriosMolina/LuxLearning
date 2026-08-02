@@ -12,6 +12,7 @@ import { formatLastSeen } from './_components/helpers';
 import { PresenceBadge } from './_components/Badges';
 import { StudentCard } from './_components/StudentCard';
 import { AdminStudentList } from './_components/AdminStudentList';
+import { StudyPlanModal } from './_components/StudyPlanModal';
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function StudentsPageInner() {
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
   const [reminderSent, setReminderSent] = useState<Map<string, Date>>(new Map());
   const [openingChat, setOpeningChat] = useState<string | null>(null);
+  const [planModal, setPlanModal] = useState<{ userId: string; studentName?: string } | null>(null);
 
   const handleSendReminder = async (student: Student) => {
     setSendingReminder(student.userId);
@@ -71,6 +73,10 @@ function StudentsPageInner() {
     } catch { /* non-fatal */ } finally {
       setSendingReminder(null);
     }
+  };
+
+  const handleGeneratePlan = (student: Student) => {
+    setPlanModal({ userId: student.userId, studentName: student.studentName ?? undefined });
   };
 
   const handleOpenChat = async (student: Student) => {
@@ -265,6 +271,7 @@ function StudentsPageInner() {
                             student={student} courses={data.courses} ts={ts}
                             onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
                             onOpenChat={handleOpenChat} openingChatId={openingChat}
+                            onGeneratePlan={handleGeneratePlan}
                             selectedCourseId={selectedCourseId || undefined}
                           />
                         </div>
@@ -287,6 +294,7 @@ function StudentsPageInner() {
                         key={student.userId} student={student} courses={data.courses} ts={ts}
                         onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
                         onOpenChat={handleOpenChat} openingChatId={openingChat}
+                        onGeneratePlan={handleGeneratePlan}
                         selectedCourseId={selectedCourseId || undefined}
                       />
                     ))}
@@ -368,6 +376,14 @@ function StudentsPageInner() {
             </div>
           )}
         </div>
+      )}
+
+      {planModal && (
+        <StudyPlanModal
+          student={planModal}
+          onClose={() => setPlanModal(null)}
+          onSuccess={() => setPlanModal(null)}
+        />
       )}
     </div>
   );

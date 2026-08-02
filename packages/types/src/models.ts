@@ -105,7 +105,7 @@ export interface Notification {
   notifId: string;
   type: 'REFLECTION_APPROVED' | 'REFLECTION_REJECTED' | 'MODULE_UNLOCKED' | 'GENERAL'
     | 'TASK_SUBMITTED' | 'REFLECTION_RECONSIDERED' | 'COURSE_UPDATED' | 'MESSAGE_UNREAD'
-    | 'INACTIVITY_REMINDER';
+    | 'INACTIVITY_REMINDER' | 'STUDY_PLAN_LOCKED' | 'STUDY_PLAN_UNLOCKED' | 'STUDY_PLAN_CHANGE_REQUEST';
   message: string;
   read: boolean;
   createdAt: string;

@@ -29,6 +29,7 @@ export const navEs = {
     submissions: 'Entregas',
     interviews: 'Entrevistas',
     attendance: 'Asistencia',
+    studyPlan: 'Plan de Estudio',
   },
   roles: {
     superAdmin: 'Super Admin',
@@ -126,6 +127,7 @@ export const navEn = {
     submissions: 'Submissions',
     interviews: 'Interviews',
     attendance: 'Attendance',
+    studyPlan: 'Study Plan',
   },
   roles: {
     superAdmin: 'Super Admin',

@@ -202,6 +202,28 @@ export const api = {
       grade: (interviewId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/interviews/${interviewId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
     },
+    studyPlan: {
+      generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string }) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan`, { method: 'POST', body: JSON.stringify(body) }),
+      get: (studentId: string, weeks = 4) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan?weeks=${weeks}`),
+      unlock: (studentId: string, weekOf?: string) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan/unlock`, { method: 'POST', body: JSON.stringify({ weekOf }) }),
+    },
+  },
+
+  studyPlan: {
+    list: (weeks = 4) => request<any>(`/study-plan?weeks=${weeks}`),
+    current: () => request<any>('/study-plan/current'),
+    suggestions: () => request<any>('/study-plan/suggestions'),
+    toggleItem: (weekOf: string, itemId: string, patch: { pinned?: boolean; completed?: boolean }) =>
+      request<any>(`/study-plan/${weekOf}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    addItem: (weekOf: string, body: { dayIndex: number; title: string; type?: string; description?: string; estimatedMinutes?: number; courseId?: string; moduleId?: string }) =>
+      request<any>(`/study-plan/${weekOf}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    removeItem: (weekOf: string, itemId: string) =>
+      request<any>(`/study-plan/${weekOf}/items/${itemId}`, { method: 'DELETE' }),
+    requestChange: (weekOf: string, note?: string) =>
+      request<any>('/study-plan/request-change', { method: 'POST', body: JSON.stringify({ weekOf, note }) }),
   },
 
   tasks: {

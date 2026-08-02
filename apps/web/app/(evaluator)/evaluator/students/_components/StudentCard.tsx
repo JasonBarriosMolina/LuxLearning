@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquare, ListTodo } from 'lucide-react';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { Student, SP } from './types';
@@ -10,7 +10,7 @@ import { PresenceBadge, RiskBadge, ModuleStatusIcon } from './Badges';
 import { ReminderHistory } from './ReminderHistory';
 
 export function StudentCard({
-  student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, onOpenChat, openingChatId, selectedCourseId,
+  student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, onOpenChat, openingChatId, onGeneratePlan, planGeneratingId, selectedCourseId,
 }: {
   student: Student;
   courses: { id: string; title: string }[];
@@ -20,6 +20,8 @@ export function StudentCard({
   reminderSentIds?: Map<string, Date>;
   onOpenChat?: (student: Student) => void;
   openingChatId?: string | null;
+  onGeneratePlan?: (student: Student) => void;
+  planGeneratingId?: string | null;
   selectedCourseId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -95,6 +97,17 @@ export function StudentCard({
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 Chat
+              </button>
+            )}
+            {onGeneratePlan && (
+              <button
+                onClick={() => onGeneratePlan(student)}
+                disabled={planGeneratingId === student.userId}
+                title="Generar plan de estudio semanal"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
+              >
+                <ListTodo className="w-3.5 h-3.5" />
+                Plan
               </button>
             )}
           </div>

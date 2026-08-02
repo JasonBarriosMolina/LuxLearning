@@ -11,6 +11,7 @@ import { handleCalendar } from './calendar';
 import { handleGroups } from './groups';
 import { handleSubmissions } from './submissions';
 import { handleMisc } from './misc';
+import { handleEvalStudyPlans } from './study-plans';
 
 export const handler = async (event: Event) => {
   const origin = event.headers?.origin ?? event.headers?.Origin;
@@ -44,6 +45,7 @@ export const handler = async (event: Event) => {
       await handleCalendar(ctx) ??
       await handleGroups(ctx) ??
       await handleSubmissions(ctx) ??
+      await handleEvalStudyPlans(ctx) ??
       await handleMisc(ctx) ??
       notFound('Ruta no encontrada');
 

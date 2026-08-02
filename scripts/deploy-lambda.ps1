@@ -43,7 +43,8 @@ $LAMBDAS = [ordered]@{
   "lux-tasks"       = @("$API_SRC\tasks\handler.ts",        $false)
   "lux-notifs"      = @("$API_SRC\notifications\handler.ts",$false)
   "lux-push"        = @("$API_SRC\push\handler.ts",         $false)
-  "lux-authorizer"  = @("$API_SRC\shared\authorizer.ts",    $false)
+  "lux-authorizer"   = @("$API_SRC\shared\authorizer.ts",      $false)
+  "lux-study-plans"  = @("$API_SRC\study-plans\handler.ts",   $true)
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
