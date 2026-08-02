@@ -77,7 +77,7 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
           const subs = await getPushSubscriptionsByUserId(studentUserId);
           const payload = JSON.stringify({ title: 'Entrevista calificada', body: `Tu entrevista oral fue calificada: ${gradeNum}%` });
           await Promise.allSettled(subs.map((sub: any) =>
-            webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+            webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
           ));
         } catch {}
       })();

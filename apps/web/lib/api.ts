@@ -224,6 +224,8 @@ export const api = {
       request<any>(`/study-plan/${weekOf}/items/${itemId}`, { method: 'DELETE' }),
     requestChange: (weekOf: string, note?: string) =>
       request<any>('/study-plan/request-change', { method: 'POST', body: JSON.stringify({ weekOf, note }) }),
+    get: () => request<any>('/my-study-plan'),
+    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 
   tasks: {
@@ -506,9 +508,5 @@ export const api = {
     react: (chatId: string, ts: string, emoji: string) =>
       request<any>(`/messages/${chatId}/react`, { method: 'POST', body: JSON.stringify({ ts, emoji }) }),
     forum: (lessonId: string) => request<any>(`/messages/forum/${lessonId}`),
-  },
-  studyPlan: {
-    get: () => request<any>('/my-study-plan'),
-    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 };

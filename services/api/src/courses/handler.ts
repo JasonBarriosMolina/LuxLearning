@@ -371,7 +371,7 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
               const subs = await getPushSubscriptionsByUserId(interview.userId);
               const payload = JSON.stringify({ title: 'Entrevista completada', body: 'Tu entrevista oral ha sido procesada. El evaluador revisará tu resultado pronto.' });
               await Promise.allSettled(subs.map((sub: any) =>
-                webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+                webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
               ));
             }
           } catch (e) {
