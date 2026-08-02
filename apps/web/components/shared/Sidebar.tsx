@@ -71,6 +71,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/evaluator/attendance', labelKey: 'attendance', icon: <BookCheck className="w-5 h-5" />, roles: ['EVALUATOR'] },
   { href: '/admin/attendance', labelKey: 'attendance', icon: <BookCheck className="w-5 h-5" />, roles: ['ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/students', labelKey: 'students', icon: <Users className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
+  { href: '/evaluator/study-plans', labelKey: 'studyPlan', icon: <ListTodo className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/tasks', labelKey: 'tasks', icon: <CalendarCheck className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/my-courses', labelKey: 'myCourses', icon: <BookOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
   { href: '/evaluator/my-resources', labelKey: 'myResources', icon: <FolderOpen className="w-5 h-5" />, roles: ['EVALUATOR', 'ADMIN', 'SUPER_ADMIN'] },
