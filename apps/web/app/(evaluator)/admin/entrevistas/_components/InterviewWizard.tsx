@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Mic, Sparkles, Loader2, ChevronDown, X, Users, Calendar, BarChart2, BookOpen, Wand2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Mic, Loader2, ChevronDown, X, Users, Calendar, BarChart2, BookOpen, Wand2, CheckSquare, Square } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface Module { id: string; title: string; order: number; }
 interface Course { id: string; title: string; isActive: boolean; modules: Module[]; }
+interface Student { userId: string; name: string; email: string; }
 
 interface FormState {
   courseId: string;
@@ -18,13 +19,13 @@ interface FormState {
   vapiPrompt: string;
   vapiObjectives: string;
   targetAll: boolean;
-  targetStudentIds: string;
+  selectedStudentIds: string[];
 }
 
 const BLANK: FormState = {
   courseId: '', moduleId: '', name: '', topic: '', dueDate: '',
   weight: '0', instructions: '', vapiPrompt: '', vapiObjectives: '',
-  targetAll: true, targetStudentIds: '',
+  targetAll: true, selectedStudentIds: [],
 };
 
 interface Props {
@@ -38,12 +39,42 @@ export function InterviewWizard({ courses, onCreated }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [aiSection, setAiSection] = useState(true);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [coverageHint, setCoverageHint] = useState<string>('');
 
-  const set = (k: keyof FormState, v: string | boolean) =>
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
 
   const selectedCourse = courses.find((c) => c.id === form.courseId);
   const selectedModule = selectedCourse?.modules.find((m) => m.id === form.moduleId);
+
+  useEffect(() => {
+    if (!form.courseId) { setStudents([]); setCoverageHint(''); return; }
+    setLoadingStudents(true);
+    api.admin.interviews.students(form.courseId)
+      .then((res) => setStudents((res as any).data ?? []))
+      .catch(() => setStudents([]))
+      .finally(() => setLoadingStudents(false));
+    set('selectedStudentIds', []);
+
+    // Fetch coverage to pre-fill weight
+    api.admin.interviews.coverage(form.courseId)
+      .then((res: any) => {
+        const cov = (res as any).data ?? res;
+        const interviewCount: number = cov.interviewCount ?? 0;
+        const totalWeight: number = cov.totalWeight ?? 0;
+        const remaining = Math.max(0, 100 - totalWeight);
+        if (interviewCount > 0) {
+          const suggested = Math.round(remaining);
+          set('weight', String(suggested));
+          setCoverageHint(`El curso ya tiene ${interviewCount} entrevista${interviewCount !== 1 ? 's' : ''} · Peso restante disponible: ${remaining.toFixed(1)}%`);
+        } else {
+          setCoverageHint(remaining < 100 ? `Peso disponible para evaluaciones: ${remaining.toFixed(1)}%` : '');
+        }
+      })
+      .catch(() => setCoverageHint(''));
+  }, [form.courseId]);
 
   const handleGenerate = useCallback(async () => {
     if (!form.name && !form.topic) {
@@ -78,9 +109,7 @@ export function InterviewWizard({ courses, onCreated }: Props) {
     setSaving(true);
     setError('');
     try {
-      const studentIds = form.targetAll
-        ? []
-        : form.targetStudentIds.split('\n').map((s) => s.trim()).filter(Boolean);
+      const studentIds = form.targetAll ? [] : form.selectedStudentIds;
 
       await api.admin.interviews.create({
         courseId: form.courseId,
@@ -186,6 +215,9 @@ export function InterviewWizard({ courses, onCreated }: Props) {
             onChange={(e) => set('weight', e.target.value)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
           />
+          {coverageHint && (
+            <p className="text-[10px] text-blue-600 mt-1">{coverageHint}</p>
+          )}
         </div>
       </div>
 
@@ -201,20 +233,50 @@ export function InterviewWizard({ courses, onCreated }: Props) {
             Todo el curso
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input type="radio" checked={!form.targetAll} onChange={() => set('targetAll', false)} />
+            <input type="radio" checked={!form.targetAll} onChange={() => set('targetAll', false)} disabled={!form.courseId} />
             Estudiantes específicos
           </label>
         </div>
         {!form.targetAll && (
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Usernames de Cognito (uno por línea)</label>
-            <textarea
-              rows={3}
-              value={form.targetStudentIds}
-              onChange={(e) => set('targetStudentIds', e.target.value)}
-              placeholder={'estudiante1\nestudiante2\nestudiante3'}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
+          <div className="space-y-2">
+            {loadingStudents && (
+              <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando estudiantes…
+              </div>
+            )}
+            {!loadingStudents && students.length === 0 && (
+              <p className="text-xs text-gray-400 py-1">{form.courseId ? 'No hay estudiantes inscritos en este curso.' : 'Selecciona un curso primero.'}</p>
+            )}
+            {!loadingStudents && students.length > 0 && (
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">
+                {students.map((s) => {
+                  const selected = form.selectedStudentIds.includes(s.userId);
+                  return (
+                    <button
+                      key={s.userId}
+                      type="button"
+                      onClick={() => set('selectedStudentIds', selected
+                        ? form.selectedStudentIds.filter((id) => id !== s.userId)
+                        : [...form.selectedStudentIds, s.userId]
+                      )}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      {selected
+                        ? <CheckSquare className="w-4 h-4 text-blue-500 shrink-0" />
+                        : <Square className="w-4 h-4 text-gray-300 shrink-0" />
+                      }
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-800 truncate">{s.name}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{s.email || s.userId}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {form.selectedStudentIds.length > 0 && (
+              <p className="text-xs text-blue-600">{form.selectedStudentIds.length} estudiante{form.selectedStudentIds.length > 1 ? 's' : ''} seleccionado{form.selectedStudentIds.length > 1 ? 's' : ''}</p>
+            )}
           </div>
         )}
       </div>

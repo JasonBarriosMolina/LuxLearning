@@ -82,6 +82,8 @@ model EvaluationEvent {
   vapiObjectives   String?   // JSON array of 3 question objectives
   targetStudentIds String[]  @default([]) // empty = all enrolled; non-empty = specific Cognito usernames
   order            Int       @default(0)
+  isDraft          Boolean   @default(false)
+  isArchived       Boolean   @default(false)
   createdAt        DateTime  @default(now())
   course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
 

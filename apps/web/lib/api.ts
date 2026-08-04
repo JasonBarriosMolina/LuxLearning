@@ -310,6 +310,8 @@ export const api = {
         request<any>('/admin/courses/wizard/copilot', { method: 'POST', body: JSON.stringify(body) }),
       wizardSave: (body: any) =>
         request<any>('/admin/courses/wizard/save', { method: 'POST', body: JSON.stringify(body) }),
+      wizardPlanDoc: (courseId: string) =>
+        request<any>(`/admin/courses/wizard/plan-doc?courseId=${encodeURIComponent(courseId)}`),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
         request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
       aiGenerateModule: (body: { topic: string; courseTitle?: string }) =>
@@ -450,10 +452,13 @@ export const api = {
         vapiObjectives?: string; targetStudentIds?: string[];
       }) => request<any>('/admin/interviews', { method: 'POST', body: JSON.stringify(body) }),
       update: (id: string, body: Partial<{
-        name: string; moduleId: string; dueDate: string; weight: number;
+        name: string; courseId: string; moduleId: string; dueDate: string; weight: number;
         instructions: string; vapiPrompt: string; vapiObjectives: string; targetStudentIds: string[];
+        isDraft: boolean; isArchived: boolean;
       }>) => request<any>(`/admin/interviews/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (id: string) => request<any>(`/admin/interviews/${id}`, { method: 'DELETE' }),
+      students: (courseId: string) => request<any>(`/admin/interviews/students?courseId=${courseId}`),
+      coverage: (courseId: string) => request<any>(`/admin/interviews/coverage?courseId=${courseId}`),
     },
   },
   attendance: {

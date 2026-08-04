@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Pencil, Trash2, RotateCcw, Loader2, Link2 } from 'lucide-react';
 import { FolderBreadcrumb } from './FolderBreadcrumb';
+import { api } from '@/lib/api';
 
 export interface Resource {
   evaluatorId: string;
@@ -57,6 +59,24 @@ export function ResourceCard({
   deleting, restoring, viewFileLabel,
   onEdit, onDelete, onRestore,
 }: Props) {
+  const [planLoading, setPlanLoading] = useState(false);
+
+  const isPlanDoc = r.fileUrl.startsWith('plan://');
+
+  const handlePlanDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (planLoading) return;
+    setPlanLoading(true);
+    try {
+      const courseId = r.fileUrl.replace('plan://', '');
+      const res = await (api.admin.courses as any).wizardPlanDoc(courseId) as any;
+      const url = res?.data?.url ?? res?.url;
+      if (url) window.open(url, '_blank');
+    } catch { /* ignore */ } finally {
+      setPlanLoading(false);
+    }
+  };
+
   return (
     <div className="card p-4 space-y-3">
       <div className="flex items-start gap-3">
@@ -102,9 +122,15 @@ export function ResourceCard({
           })}
         </div>
       )}
-      <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
-        <Link2 className="w-3 h-3" /> {viewFileLabel}
-      </a>
+      {isPlanDoc ? (
+        <button onClick={handlePlanDownload} disabled={planLoading} className="text-xs text-indigo-500 hover:underline flex items-center gap-1 disabled:opacity-50">
+          {planLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />} {viewFileLabel}
+        </button>
+      ) : (
+        <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
+          <Link2 className="w-3 h-3" /> {viewFileLabel}
+        </a>
+      )}
     </div>
   );
 }

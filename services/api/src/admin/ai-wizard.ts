@@ -1,8 +1,9 @@
 // AI wizard domain handler for lux-admin.
 // Handles: wizard/copilot (plan generation), wizard/save, and their async workers.
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
-import { saveAiJob, batchCreateCalendarEvents, deleteWizardCalendarEvents } from '../shared/db-dynamo';
+import { saveAiJob, batchCreateCalendarEvents, deleteWizardCalendarEvents, saveResource } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
 import type { CalendarEvent } from '../shared/db-calendar';
 import { upsertChat } from '../shared/db-messages';
@@ -142,6 +143,17 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       return serverError('No se pudo iniciar el generador de plan');
     }
     return ok({ jobId });
+  }
+
+  // ── GET /admin/courses/wizard/plan-doc — fresh presigned URL for course plan ─
+  if (path === '/admin/courses/wizard/plan-doc' && method === 'GET') {
+    if (!isAuthorized(event)) return forbidden('Se requiere autenticación');
+    const courseId = event.queryStringParameters?.courseId;
+    if (!courseId) return badRequest('courseId es requerido');
+    const course = await prisma.course.findUnique({ where: { id: courseId }, select: { planDocumentS3Key: true } });
+    if (!course?.planDocumentS3Key) return badRequest('Este curso no tiene un plan Word generado');
+    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="plan-${courseId}.docx"` }), { expiresIn: 3600 });
+    return ok({ url });
   }
 
   // ── POST /admin/courses/wizard/save ─────────────────────────────────────────
@@ -297,8 +309,24 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
       const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
       await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="plan-${course.id}.docx"` }));
       planDocumentS3Key = s3Key;
-      docPublicUrl = `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${s3Key}`;
+      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
       await prisma.course.update({ where: { id: course.id }, data: { planDocumentS3Key: s3Key } });
+      const now = new Date().toISOString();
+      await saveResource({
+        evaluatorId: ctx.userId ?? 'system',
+        resourceId: `res-plan-${course.id}-${planLanguage.toLowerCase()}`,
+        title: `Plan de Estudios — ${title}`,
+        description: `Generado por Lux Planner (${planLanguage})`,
+        fileUrl: `plan://${course.id}`,
+        fileName: `plan-${course.id}.docx`,
+        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        fileSize: buffer.byteLength,
+        folder: 'Planes de Estudio',
+        courseIds: [course.id],
+        archived: false,
+        createdAt: now,
+        updatedAt: now,
+      }).catch((e: any) => console.error('[wizard/save] saveResource error:', e));
     } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
 
     let lessonJobId: string | null = null;

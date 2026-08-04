@@ -1,9 +1,10 @@
 'use client';
 
-import { GripVertical, Info, Plus, Trash2, Mic } from 'lucide-react';
+import { GripVertical, Info, Plus, Trash2, Mic, Sparkles, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import {
-  Step1Data, Step2Data, Step3Data, EvalItem, EvalType, CourseTypeId,
-  COURSE_TYPES, EVAL_TYPE_META, fmtDisplay,
+  Step1Data, Step2Data, Step3Data, Step4Data, EvalItem, EvalType, CourseTypeId,
+  COURSE_TYPES, EVAL_TYPE_META, fmtDisplay, TIME_SLOTS,
 } from './constants';
 
 interface OutOfRangeItem { itemName: string; date: string; }
@@ -12,6 +13,7 @@ interface StepEvaluacionProps {
   step1: Step1Data;
   step2: Step2Data;
   step3: Step3Data;
+  step4: Step4Data;
   totalWeight: number;
   weightOk: boolean;
   outOfRangeItems: OutOfRangeItem[];
@@ -24,18 +26,39 @@ interface StepEvaluacionProps {
   removeItem: (id: string) => void;
   isEN: boolean;
   onPilotoToggle?: (val: boolean) => void;
+  saveCourse: () => Promise<void>;
+  step5Status: 'idle' | 'saving' | 'done' | 'error';
+  step5Error: string;
+  editingCourseId: string | null;
 }
 
 export function StepEvaluacion({
-  step1, step2, step3,
+  step1, step2, step3, step4,
   totalWeight, weightOk,
   outOfRangeItems, dateWarningDismissed, setDateWarningDismissed,
   updateItem, updateDueDate, setCount, addEvalItem, removeItem,
   isEN, onPilotoToggle,
+  saveCourse, step5Status, step5Error, editingCourseId,
 }: StepEvaluacionProps) {
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
   const ct = COURSE_TYPES.find((c) => c.id === step1.courseType);
+  const [fillingId, setFillingId] = useState<string | null>(null);
+
+  const autoFillInterview = (itemId: string) => {
+    if (!step4.modules.length && !step4.weeklyPlan.length) return;
+    setFillingId(itemId);
+    const moduleList = step4.modules.map((m, i) =>
+      `${i + 1}. ${planEN ? (m.nameEN || m.name) : m.name}: ${planEN ? (m.descriptionEN || m.description) : m.description}`
+    ).join('\n');
+    const topicSample = step4.weeklyPlan.slice(0, 4).map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`).join('\n');
+    const prompt = `Eres Mentor, un evaluador oral amigable y profesional para el curso "${step1.title}". Realiza exactamente 3 preguntas orales al estudiante sobre los temas del módulo. Sé conversacional, claro y alentador. Saluda al estudiante por nombre si es posible.\n\nMódulos del curso:\n${moduleList}\n\nTemas por semana (muestra):\n${topicSample}`;
+    const objectives = step4.modules.slice(0, 3).map((m) =>
+      planEN ? (m.nameEN || m.name) : m.name
+    ).join('\n');
+    updateItem(itemId, { vapiPrompt: prompt, vapiObjectives: objectives });
+    setFillingId(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -116,16 +139,44 @@ export function StepEvaluacion({
                 )}
                 {item.type === 'INTERVIEW' && (
                   <div className="space-y-2 text-xs border-t border-border pt-3 mt-1">
-                    <div className="flex items-center gap-1.5 mb-1 text-rose-600">
-                      <Mic className="w-3 h-3" />
-                      <span className="font-semibold">{s('Configuración de IA (Vapi)', 'AI Configuration (Vapi)')}</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5 text-rose-600">
+                        <Mic className="w-3 h-3" />
+                        <span className="font-semibold">{s('Configuración de Mentor (Vapi)', 'Mentor Configuration (Vapi)')}</span>
+                      </div>
+                      {(step4.modules.length > 0 || step4.weeklyPlan.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => autoFillInterview(item.id)}
+                          disabled={fillingId === item.id}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition-colors"
+                        >
+                          {fillingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          {s('Llenar con temario', 'Fill from syllabus')}
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-gray-500 mb-1">{s('Fecha inicio entrevistas', 'Interview start date')}</label>
+                        <input type="date" value={item.interviewStartDate ?? ''} onChange={(e) => updateItem(item.id, { interviewStartDate: e.target.value })} className="input-field w-full text-xs py-1" />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1">{s('Fecha fin entrevistas', 'Interview end date')}</label>
+                        <input type="date" value={item.interviewEndDate ?? ''} onChange={(e) => updateItem(item.id, { interviewEndDate: e.target.value })} className="input-field w-full text-xs py-1" />
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-gray-500 mb-1">{s('Instrucciones del entrevistador IA', 'AI interviewer instructions')}</label>
+                      <label className="block text-gray-500 mb-1">{s('Horario de presentación', 'Presentation time slot')}</label>
+                      <datalist id={`interview-slots-${item.id}`}>{TIME_SLOTS.map((t) => <option key={t} value={t} />)}</datalist>
+                      <input type="text" list={`interview-slots-${item.id}`} value={item.interviewTimeSlot ?? ''} onChange={(e) => updateItem(item.id, { interviewTimeSlot: e.target.value })} placeholder={s('Ej. 8:00 AM – 10:00 AM', 'E.g. 8:00 AM – 10:00 AM')} className="input-field w-full text-xs py-1" />
+                    </div>
+                    <div>
+                      <label className="block text-gray-500 mb-1">{s('Instrucciones de Mentor', 'Mentor instructions')}</label>
                       <textarea
                         value={item.vapiPrompt ?? ''}
                         onChange={(e) => updateItem(item.id, { vapiPrompt: e.target.value })}
-                        placeholder={s('Eres un evaluador oral. Evalúa al estudiante con exactamente 3 preguntas sobre el tema del módulo. Sé conciso y profesional.', 'You are an oral evaluator. Assess the student with exactly 3 questions about the module topic. Be concise and professional.')}
+                        placeholder={s('Eres Mentor, un evaluador oral amigable. Conversa con el estudiante y hazle exactamente 3 preguntas sobre el tema del módulo.', 'You are Mentor, a friendly oral evaluator. Converse with the student and ask exactly 3 questions about the module topic.')}
                         className="input-field w-full min-h-[70px] text-xs resize-y"
                       />
                     </div>
@@ -138,7 +189,7 @@ export function StepEvaluacion({
                         className="input-field w-full min-h-[60px] text-xs resize-y"
                         rows={3}
                       />
-                      <p className="text-gray-400 mt-1">{s('La IA generará exactamente 3 preguntas basadas en estos objetivos.', 'The AI will generate exactly 3 questions based on these objectives.')}</p>
+                      <p className="text-gray-400 mt-1">{s('Mentor generará exactamente 3 preguntas basadas en estos objetivos.', 'Mentor will generate exactly 3 questions based on these objectives.')}</p>
                     </div>
                   </div>
                 )}
@@ -200,6 +251,28 @@ export function StepEvaluacion({
           {totalWeight > 100 ? s(`Excede 100% por ${(totalWeight - 100).toFixed(0)}%`, `Exceeds 100% by ${(totalWeight - 100).toFixed(0)}%`) : s(`Faltan ${(100 - totalWeight).toFixed(0)}%`, `${(100 - totalWeight).toFixed(0)}% remaining`)}
         </div>
       )}
+
+      {step5Error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex gap-2">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />{step5Error}
+        </div>
+      )}
+
+      <div className="space-y-2 pt-2">
+        <button
+          onClick={saveCourse}
+          disabled={step5Status === 'saving' || !weightOk}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-cta-from to-cta-to text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {step5Status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {step5Status === 'saving' ? s('Creando curso...', 'Creating course...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
+        </button>
+        {!editingCourseId && step5Status !== 'saving' && (
+          <p className="text-xs text-center text-gray-400">
+            {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

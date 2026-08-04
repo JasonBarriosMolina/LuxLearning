@@ -2,7 +2,7 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
@@ -46,12 +46,53 @@ function CourseWizardInner() {
   const [showNewPeriod, setShowNewPeriod] = useState(false);
   const [scheduleStart, setScheduleStart] = useState('');
   const [scheduleEnd, setScheduleEnd] = useState('');
+  const [schedulesPerDay, setSchedulesPerDay] = useState<Record<string, { start: string; end: string }>>({});
   const [exLabelInput, setExLabelInput] = useState('');
   const [pendingEx, setPendingEx] = useState<PendingException | null>(null);
   const [dateWarningDismissed, setDateWarningDismissed] = useState(false);
 
+  // ── Exit confirmation ──────────────────────────────────────────────────────
+  const [exitConfirm, setExitConfirm] = useState(false);
+  const [pendingNavDest, setPendingNavDest] = useState<string | null>(null);
+
+  const DRAFT_KEY = 'lux-planner-draft';
+
+  const saveDraft = useCallback(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ step1, step2, step3, step4, scheduleStart, scheduleEnd, schedulesPerDay, editingCourseId, savedAt: new Date().toISOString() }));
+    } catch { /* ignore */ }
+  }, [step1, step2, step3, step4, scheduleStart, scheduleEnd, schedulesPerDay, editingCourseId]);
+
+  // Block browser tab close/refresh
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (step > 1 && step5.status !== 'done') { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [step, step5.status]);
+
   useEffect(() => {
     api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? res ?? [])).catch(() => {});
+  }, []);
+
+  // Restore draft from localStorage (only when not editing an existing course)
+  useEffect(() => {
+    const courseId = searchParams.get('courseId');
+    if (courseId) return; // editing mode loads from API
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (draft.step1) setStep1(draft.step1);
+      if (draft.step2) setStep2(draft.step2);
+      if (draft.step3) setStep3(draft.step3);
+      if (draft.step4) setStep4(draft.step4);
+      if (draft.scheduleStart) setScheduleStart(draft.scheduleStart);
+      if (draft.scheduleEnd) setScheduleEnd(draft.scheduleEnd);
+      if (draft.schedulesPerDay) setSchedulesPerDay(draft.schedulesPerDay);
+    } catch { /* corrupt draft — ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Preload existing course when editing
@@ -72,6 +113,7 @@ function CourseWizardInner() {
         academicPeriod: c.academicPeriod ?? '',
         classDays: Array.isArray(c.classDays) ? c.classDays : [],
         classSchedule: c.classSchedule ?? '',
+        classSchedules: c.classSchedules ?? {},
         modality: c.modality ?? '',
         startDate: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
         planLanguage: (c.planLanguage ?? 'ES') as Step1Data['planLanguage'],
@@ -124,14 +166,28 @@ function CourseWizardInner() {
     return () => { if (copilotPollRef.current) clearInterval(copilotPollRef.current); };
   }, []);
 
-  // Keep classSchedule in sync with the two time selectors
+  // Keep classSchedule in sync with the single time selectors (used when only 1 day)
   useEffect(() => {
-    if (scheduleStart && scheduleEnd) {
-      setStep1((p) => ({ ...p, classSchedule: `${scheduleStart} – ${scheduleEnd}` }));
-    } else if (scheduleStart) {
-      setStep1((p) => ({ ...p, classSchedule: scheduleStart }));
+    if (step1.classDays.length <= 1) {
+      if (scheduleStart && scheduleEnd) {
+        setStep1((p) => ({ ...p, classSchedule: `${scheduleStart} – ${scheduleEnd}` }));
+      } else if (scheduleStart) {
+        setStep1((p) => ({ ...p, classSchedule: scheduleStart }));
+      }
     }
-  }, [scheduleStart, scheduleEnd]);
+  }, [scheduleStart, scheduleEnd, step1.classDays.length]);
+
+  // Keep classSchedules in sync for multi-day
+  useEffect(() => {
+    if (step1.classDays.length > 1) {
+      const built: Record<string, string> = {};
+      for (const day of step1.classDays) {
+        const v = schedulesPerDay[day];
+        if (v?.start) built[day] = v.end ? `${v.start} – ${v.end}` : v.start;
+      }
+      setStep1((p) => ({ ...p, classSchedules: built, classSchedule: Object.values(built)[0] ?? p.classSchedule }));
+    }
+  }, [schedulesPerDay, step1.classDays]);
 
   const s = (es: string, en: string) => isEN ? en : es;
   const activeDays = step1.classDays.length > 0 ? step1.classDays : ['Lunes', 'Miércoles', 'Viernes'];
@@ -217,9 +273,9 @@ function CourseWizardInner() {
   const addEvalItem = () => setStep3((p) => ({ ...p, items: [...p.items, { id: uid(), type: 'EVIDENCE' as EvalItem['type'], name: 'Actividad', nameEN: 'Activity', weight: 0, count: 1, dueDates: [''], instructions: '' }] }));
   const removeItem = (id: string) => setStep3((p) => ({ ...p, items: p.items.filter((it) => it.id !== id) }));
 
-  const enterStep3 = () => {
+  const enterStep5 = () => {
     if (step3.items.length === 0 && step1.courseType) setStep3({ items: defaultEvalItems(step1.courseType as CourseTypeId) });
-    setStep(3);
+    setStep(5);
   };
 
   // ── Step 4 — Lux Planner ───────────────────────────────────────────────────
@@ -308,6 +364,7 @@ function CourseWizardInner() {
       }) as any;
       const data = resp?.data ?? resp;
       if (!data?.courseId) throw new Error('No se recibió courseId');
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       setStep5({ status: 'done', courseId: data.courseId, docUrl: data.docUrl ?? null, lessonJobId: data.lessonJobId ?? null, error: '' });
     } catch (err: any) {
       setStep5({ status: 'error', error: err?.message ?? 'Error al guardar' });
@@ -349,10 +406,18 @@ function CourseWizardInner() {
   const step3Valid = step3.items.length > 0 && weightOk;
   const step4Valid = step4.status !== 'loading';
 
-  const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step3Valid : step === 4 ? step4Valid : false;
+  // New order: 1=Identidad, 2=Calendario, 3=Planner(LuxPlanner), 4=LuxPlanner(Planeamiento), 5=Evaluación
+  const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step4Valid : step === 4 ? true : false;
 
-  const goNext = () => { if (step === 2) { enterStep3(); return; } setStep((p) => Math.min(5, p + 1) as typeof step); };
-  const goBack = () => { if (step === 1) { router.push('/admin/courses'); return; } setStep((p) => Math.max(1, p - 1) as typeof step); };
+  const goNext = () => {
+    if (step === 4) { enterStep5(); return; }
+    setStep((p) => Math.min(5, p + 1) as typeof step);
+  };
+  const goBack = () => {
+    if (step5.status === 'done') { router.push('/admin/courses'); return; }
+    if (step === 1) { setPendingNavDest('/admin/courses'); setExitConfirm(true); return; }
+    setStep((p) => Math.max(1, p - 1) as typeof step);
+  };
 
   // ── Layout ─────────────────────────────────────────────────────────────────
 
@@ -384,6 +449,7 @@ function CourseWizardInner() {
               showNewPeriod={showNewPeriod} setShowNewPeriod={setShowNewPeriod}
               scheduleStart={scheduleStart} setScheduleStart={setScheduleStart}
               scheduleEnd={scheduleEnd} setScheduleEnd={setScheduleEnd}
+              schedulesPerDay={schedulesPerDay} setSchedulesPerDay={setSchedulesPerDay}
               labelInput={labelInput} setLabelInput={setLabelInput}
               imageGenerating={imageGenerating} imageError={imageError} setImageError={setImageError}
               fileInputRef={fileInputRef}
@@ -403,18 +469,6 @@ function CourseWizardInner() {
             />
           )}
           {step === 3 && (
-            <StepEvaluacion
-              step1={step1} step2={step2} step3={step3}
-              totalWeight={totalWeight} weightOk={weightOk}
-              outOfRangeItems={outOfRangeItems}
-              dateWarningDismissed={dateWarningDismissed} setDateWarningDismissed={setDateWarningDismissed}
-              updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
-              addEvalItem={addEvalItem} removeItem={removeItem}
-              isEN={isEN}
-              onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
-            />
-          )}
-          {step === 4 && (
             <StepLuxPlanner
               step4={step4} setStep4={setStep4}
               effectiveWeeks={effectiveWeeks} exceptionWeekIndices={exceptionWeekIndices}
@@ -427,7 +481,7 @@ function CourseWizardInner() {
               isEN={isEN}
             />
           )}
-          {step === 5 && (
+          {step === 4 && (
             <StepPlaneamiento
               step1={step1} step2={step2} step3={step3} step4={step4} step5={step5}
               effectiveWeeks={effectiveWeeks}
@@ -435,7 +489,45 @@ function CourseWizardInner() {
               saveCourse={saveCourse}
               onGoToCourse={(courseId) => router.push(`/admin/courses/${courseId}`)}
               isEN={isEN}
+              showSave={false}
             />
+          )}
+          {step === 5 && (
+            <StepEvaluacion
+              step1={step1} step2={step2} step3={step3} step4={step4}
+              totalWeight={totalWeight} weightOk={weightOk}
+              outOfRangeItems={outOfRangeItems}
+              dateWarningDismissed={dateWarningDismissed} setDateWarningDismissed={setDateWarningDismissed}
+              updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
+              addEvalItem={addEvalItem} removeItem={removeItem}
+              isEN={isEN}
+              onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
+              saveCourse={saveCourse}
+              step5Status={step5.status}
+              step5Error={step5.error}
+              editingCourseId={editingCourseId}
+            />
+          )}
+          {step5.status === 'done' && step === 5 && (
+            <div className="space-y-6 text-center py-8">
+              <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                <CheckCircle className="w-10 h-10 text-emerald-500" />
+              </div>
+              <p className="font-heading font-bold text-charcoal text-xl">{editingCourseId ? s('¡Curso actualizado exitosamente!', 'Course updated successfully!') : s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
+              <p className="text-sm text-gray-400">{step1.title}</p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {step5.courseId && (
+                  <button onClick={() => router.push(`/admin/courses/${step5.courseId}`)} className="px-6 py-2 rounded-xl bg-cta-from text-white font-semibold text-sm hover:opacity-90 transition-opacity">
+                    {s('Ir al curso', 'Go to course')}
+                  </button>
+                )}
+                {step5.docUrl && (
+                  <a href={step5.docUrl} target="_blank" rel="noopener noreferrer" download className="px-6 py-2 rounded-xl border-2 border-border text-charcoal font-semibold text-sm hover:bg-surface transition-colors">
+                    {s('Descargar plan Word', 'Download Word plan')}
+                  </a>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -443,6 +535,27 @@ function CourseWizardInner() {
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
             <Button variant="secondary" onClick={goBack} leftIcon={<ArrowLeft className="w-4 h-4" />}>{s('Atrás', 'Back')}</Button>
             {step < 5 && <Button onClick={goNext} disabled={!canNext} rightIcon={<ArrowRight className="w-4 h-4" />}>{s('Siguiente', 'Next')}</Button>}
+          </div>
+        )}
+
+        {/* Exit confirmation modal */}
+        {exitConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <p className="font-heading font-bold text-charcoal text-lg">{s('¿Desea salir de Lux Planner?', 'Leave Lux Planner?')}</p>
+              <p className="text-sm text-gray-500">{s('El progreso no guardado se perderá a menos que guardes un borrador.', 'Unsaved progress will be lost unless you save a draft.')}</p>
+              <div className="flex flex-col gap-2 pt-1">
+                <button onClick={() => { setExitConfirm(false); router.push(pendingNavDest ?? '/admin/courses'); }} className="w-full px-4 py-2.5 rounded-xl bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors">
+                  {s('Salir sin guardar', 'Exit without saving')}
+                </button>
+                <button onClick={() => { saveDraft(); setExitConfirm(false); router.push(pendingNavDest ?? '/admin/courses'); }} className="w-full px-4 py-2.5 rounded-xl border-2 border-cta-from text-cta-from font-semibold text-sm hover:bg-blue-50 transition-colors">
+                  {s('Guardar borrador y salir', 'Save draft and exit')}
+                </button>
+                <button onClick={() => { setExitConfirm(false); setPendingNavDest(null); }} className="w-full px-4 py-2.5 rounded-xl border border-border text-gray-500 font-semibold text-sm hover:bg-surface transition-colors">
+                  {s('Cancelar', 'Cancel')}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

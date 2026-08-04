@@ -341,6 +341,18 @@ export default function AdminCoursesPage() {
     load();
   };
 
+  const handleStatusChange = async (courseId: string, status: 'active' | 'inactive' | 'archived' | 'draft') => {
+    try {
+      if (status === 'archived') { await api.admin.courses.archive(courseId); }
+      else if (status === 'draft') { await api.admin.courses.update(courseId, { isDraft: true, isActive: false }); }
+      else { await api.admin.courses.update(courseId, { isActive: status === 'active', isDraft: false }); }
+      await load();
+    } catch (err: any) {
+      alert(err.message ?? 'Error al cambiar estado');
+      await load(); // revert dropdown to actual DB state
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
@@ -413,6 +425,7 @@ export default function AdminCoursesPage() {
               onRestore={handleRestore}
               onArchive={(id) => setArchiveConfirm(id)}
               onDelete={(id) => setConfirmDelete(id)}
+              onStatusChange={handleStatusChange}
               t={t}
             />
           ))}

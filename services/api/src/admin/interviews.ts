@@ -1,14 +1,15 @@
 // Interview definitions domain handler for lux-admin.
 // Manages EvaluationEvent records with type='INTERVIEW' — creation, editing, AI generation.
 // Actual interview sessions (transcripts, grades) live in DDB LuxInterviews.
+import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { ok, created, badRequest, forbidden, notFound } from '../shared/response';
 import { listInterviewsForModule } from '../shared/db-submissions';
-import { AdminCtx, isAdmin, isAuthorized, invokeBedrockForJson } from './ctx';
+import { getAllEnrollments } from '../shared/db-dynamo';
+import { AdminCtx, isAdmin, isAuthorized, invokeBedrockForJson, cognito, USER_POOL_ID } from './ctx';
 
 export async function handleInterviews(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
 
-  const role = event.requestContext?.authorizer?.lambda?.role ?? '';
   if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
 
   // ── POST /admin/interviews/generate — AI-assisted vapiPrompt + objectives ────
@@ -63,41 +64,6 @@ Rules:
     return ok({ vapiPrompt: String(result.vapiPrompt), vapiObjectives: Array.isArray(result.vapiObjectives) ? result.vapiObjectives : [] });
   }
 
-  // ── GET /admin/interviews — list interview definitions ────────────────────────
-  // Query params: courseId (required), includeSubmissions (optional)
-  if (path === '/admin/interviews' && method === 'GET') {
-    const courseId = event.queryStringParameters?.courseId;
-    if (!courseId) return badRequest('courseId es requerido');
-
-    const events = await prisma.evaluationEvent.findMany({
-      where: { courseId, type: 'INTERVIEW' },
-      orderBy: { order: 'asc' },
-    });
-
-    // Optionally enrich with DDB submission counts
-    const includeSubmissions = event.queryStringParameters?.includeSubmissions === 'true';
-    if (!includeSubmissions) return ok(events);
-
-    // Get course modules to resolve moduleId → title
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      select: { modules: { select: { id: true, title: true }, orderBy: { order: 'asc' } } },
-    });
-    const moduleMap = Object.fromEntries((course?.modules ?? []).map((m: any) => [m.id, m.title]));
-
-    // Fetch submission counts per moduleId
-    const enriched = await Promise.all(events.map(async (ev: any) => {
-      const moduleTitle = ev.moduleId ? (moduleMap[ev.moduleId] ?? ev.moduleId) : null;
-      if (!ev.moduleId) return { ...ev, moduleTitle, submissionCount: 0, pendingCount: 0 };
-      const submissions = await listInterviewsForModule(ev.moduleId);
-      const completed = submissions.filter((s) => s.status === 'completed');
-      const pending = completed.filter((s) => s.grade == null);
-      return { ...ev, moduleTitle, submissionCount: completed.length, pendingCount: pending.length };
-    }));
-
-    return ok(enriched);
-  }
-
   // ── GET /admin/interviews/courses — list courses + modules for selectors ──────
   if (path === '/admin/interviews/courses' && method === 'GET') {
     const courses = await prisma.course.findMany({
@@ -111,12 +77,64 @@ Rules:
     return ok(courses);
   }
 
+  // ── GET /admin/interviews/coverage — total weight of all eval events for course ─
+  if (path === '/admin/interviews/coverage' && method === 'GET') {
+    const courseId = event.queryStringParameters?.courseId;
+    if (!courseId) return badRequest('courseId es requerido');
+
+    const allEvents = await prisma.evaluationEvent.findMany({
+      where: { courseId, isArchived: false },
+      select: { type: true, weight: true, isDraft: true },
+    });
+
+    const totalWeight = allEvents.reduce((s: number, e: any) => s + (e.weight || 0), 0);
+    const interviewEvents = allEvents.filter((e: any) => e.type === 'INTERVIEW' && !e.isDraft);
+    const interviewWeight = interviewEvents.reduce((s: number, e: any) => s + (e.weight || 0), 0);
+    const interviewCount = interviewEvents.length;
+
+    return ok({ totalWeight, interviewWeight, interviewCount, isFull: totalWeight >= 99.9 });
+  }
+
+  // ── GET /admin/interviews — list interview definitions ────────────────────────
+  if (path === '/admin/interviews' && method === 'GET') {
+    const courseId = event.queryStringParameters?.courseId;
+    if (!courseId) return badRequest('courseId es requerido');
+
+    const includeArchived = event.queryStringParameters?.includeArchived === 'true';
+    const events = await prisma.evaluationEvent.findMany({
+      where: {
+        courseId, type: 'INTERVIEW',
+        ...(includeArchived ? {} : { isArchived: false }),
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    const includeSubmissions = event.queryStringParameters?.includeSubmissions === 'true';
+    if (!includeSubmissions) return ok(events);
+
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { modules: { select: { id: true, title: true }, orderBy: { order: 'asc' } } },
+    });
+    const moduleMap = Object.fromEntries((course?.modules ?? []).map((m: any) => [m.id, m.title]));
+
+    const enriched = await Promise.all(events.map(async (ev: any) => {
+      const moduleTitle = ev.moduleId ? (moduleMap[ev.moduleId] ?? ev.moduleId) : null;
+      if (!ev.moduleId) return { ...ev, moduleTitle, submissionCount: 0, pendingCount: 0 };
+      const submissions = await listInterviewsForModule(ev.moduleId);
+      const completed = submissions.filter((s) => s.status === 'completed');
+      const pending = completed.filter((s) => s.grade == null);
+      return { ...ev, moduleTitle, submissionCount: completed.length, pendingCount: pending.length };
+    }));
+
+    return ok(enriched);
+  }
+
   // ── GET /admin/interviews/submissions — completed DDB interviews by course ────
   if (path === '/admin/interviews/submissions' && method === 'GET') {
     const courseId = event.queryStringParameters?.courseId;
     if (!courseId) return badRequest('courseId es requerido');
 
-    // Get all INTERVIEW EvaluationEvents for this course to know all moduleIds
     const events = await prisma.evaluationEvent.findMany({
       where: { courseId, type: 'INTERVIEW' },
       select: { id: true, name: true, moduleId: true },
@@ -191,18 +209,25 @@ Rules:
   if (idMatch && method === 'PUT') {
     const id = idMatch[1]!;
     const {
-      name, moduleId, dueDate, weight,
+      name, courseId, moduleId, dueDate, weight,
       instructions, vapiPrompt, vapiObjectives, targetStudentIds,
+      isDraft, isArchived,
     } = body as any;
 
     const existing = await prisma.evaluationEvent.findUnique({ where: { id } });
     if (!existing) return notFound('Entrevista no encontrada');
     if (existing.type !== 'INTERVIEW') return badRequest('Este evento no es de tipo INTERVIEW');
 
+    if (courseId && courseId !== existing.courseId) {
+      const courseExists = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
+      if (!courseExists) return notFound('Curso no encontrado');
+    }
+
     const updated = await prisma.evaluationEvent.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: String(name).trim() }),
+        ...(courseId !== undefined && { courseId }),
         ...(moduleId !== undefined && { moduleId: moduleId || null }),
         ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
         ...(weight !== undefined && { weight: parseFloat(String(weight)) || 0 }),
@@ -210,9 +235,31 @@ Rules:
         ...(vapiPrompt !== undefined && { vapiPrompt: vapiPrompt || null }),
         ...(vapiObjectives !== undefined && { vapiObjectives: vapiObjectives || null }),
         ...(targetStudentIds !== undefined && { targetStudentIds: Array.isArray(targetStudentIds) ? targetStudentIds : [] }),
+        ...(isDraft !== undefined && { isDraft: Boolean(isDraft) }),
+        ...(isArchived !== undefined && { isArchived: Boolean(isArchived) }),
       },
     });
     return ok(updated);
+  }
+
+  // ── GET /admin/interviews/students — enrolled students for a course ───────────
+  if (path === '/admin/interviews/students' && method === 'GET') {
+    const courseId = event.queryStringParameters?.courseId;
+    if (!courseId) return badRequest('courseId es requerido');
+
+    const allEnrollments = await getAllEnrollments().catch(() => [] as { userId: string; courseId: string }[]);
+    const studentIds = [...new Set(
+      allEnrollments.filter((e) => e.courseId === courseId).map((e) => e.userId)
+    )];
+
+    const students = await Promise.all(studentIds.map(async (uid) => {
+      const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid })).catch(() => null);
+      const attrs = cogUser?.UserAttributes ?? [];
+      const getAttr = (n: string) => attrs.find((a: any) => a.Name === n)?.Value ?? '';
+      return { userId: uid, name: getAttr('name') || getAttr('email') || uid, email: getAttr('email') };
+    }));
+
+    return ok(students);
   }
 
   // ── DELETE /admin/interviews/:id — delete interview definition ───────────────
