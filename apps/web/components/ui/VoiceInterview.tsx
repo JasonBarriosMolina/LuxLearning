@@ -48,7 +48,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
     try {
       const res = await api.interviews.start({ courseId, moduleId });
       const config = (res as any).data;
-      if (!config?.vapiPublicKey || !config?.vapiAssistantId) {
+      if (!config?.vapiPublicKey) {
         setError(s('La entrevista aún no está configurada. Contacta a tu evaluador.', 'Interview is not configured yet. Contact your evaluator.'));
         setPhase('error');
         return;
@@ -108,8 +108,8 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       voice: { provider: 'playht', voiceId: lang === 'en' ? 'jennifer' : 'maria' },
       name: 'Lux Entrevistador',
       firstMessage: lang === 'en'
-        ? 'Hello! I am your oral evaluator. I will ask you 3 questions about this module. Are you ready to begin?'
-        : 'Hola, soy tu evaluador oral. Te haré exactamente 3 preguntas sobre este módulo. ¿Estás listo/a para comenzar?',
+        ? 'Hello! I\'m Mentor. I\'d love to chat with you about what you\'ve learned in this module. I\'ll ask you 3 questions — there\'s no rush. Ready to begin?'
+        : 'Hola, soy Mentor. Me gustaría conversar contigo sobre lo que aprendiste en este módulo. Te haré 3 preguntas, sin prisa. ¿Estás listo/a?',
       endCallMessage: lang === 'en'
         ? 'Thank you for your responses. The interview is now complete. Your evaluator will review your results shortly.'
         : 'Gracias por tus respuestas. La entrevista ha concluido. Tu evaluador revisará tu resultado en breve.',
@@ -172,8 +172,8 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
           <div className="space-y-3">
             <p className="text-xs text-gray-500 leading-relaxed">
               {s(
-                'La IA te hará exactamente 3 preguntas orales sobre el contenido del módulo. La sesión es grabada y transcrita para que tu evaluador revise tu desempeño.',
-                'The AI will ask you exactly 3 oral questions about the module content. The session is recorded and transcribed so your evaluator can review your performance.',
+                'Mentor conversará contigo y te hará 3 preguntas sobre los temas de este módulo. La sesión es grabada y transcrita para que tu evaluador revise tu desempeño.',
+                'Mentor will have a conversation with you and ask 3 questions about the topics in this module. The session is recorded and transcribed for your evaluator to review.',
               )}
             </p>
             <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -201,7 +201,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
               <ul className="text-xs text-rose-600 space-y-1 list-disc list-inside">
                 <li>{s('Asegúrate de estar en un lugar tranquilo', 'Make sure you are in a quiet place')}</li>
                 <li>{s('Activa tu micrófono cuando el navegador lo solicite', 'Enable your microphone when the browser requests it')}</li>
-                <li>{s('La IA te hará exactamente 3 preguntas y luego cerrará la sesión', 'The AI will ask exactly 3 questions then end the session')}</li>
+                <li>{s('Mentor te hará exactamente 3 preguntas y luego cerrará la sesión', 'Mentor will ask exactly 3 questions then end the session')}</li>
               </ul>
             </div>
             <Button onClick={connectCall} className="w-full bg-rose-600 hover:bg-rose-700">

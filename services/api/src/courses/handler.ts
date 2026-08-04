@@ -400,26 +400,37 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
       const { courseId, moduleId } = body as { courseId?: string; moduleId?: string };
       if (!courseId || !moduleId) return badRequest('courseId and moduleId required');
 
+      // Validate VAPI key BEFORE creating any DB record — avoids ghost pending records
+      const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
+      if (!vapiPublicKey) {
+        return ok({ interviewId: null, vapiPublicKey: '', vapiPrompt: null, vapiObjectives: null });
+      }
+
       // Find INTERVIEW type EvaluationEvent for this course
       const evalEvent = await prisma.evaluationEvent.findFirst({
         where: { courseId, type: 'INTERVIEW' },
         orderBy: { order: 'asc' },
       });
 
-      const interviewId = randomUUID();
-      await createInterview({
-        userId,
-        interviewId,
-        courseId,
-        moduleId,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      });
+      // Reuse existing pending interview to avoid duplicate DDB records per session
+      const existing = await listMyInterviews(userId, moduleId);
+      const reuseableInterview = existing.find((iv) => iv.status === 'pending' || iv.status === 'in_progress');
+
+      const interviewId = reuseableInterview?.interviewId ?? randomUUID();
+      if (!reuseableInterview) {
+        await createInterview({
+          userId,
+          interviewId,
+          courseId,
+          moduleId,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       return ok({
         interviewId,
-        vapiPublicKey: process.env.VAPI_PUBLIC_KEY ?? '',
-        vapiAssistantId: process.env.VAPI_ASSISTANT_ID ?? '',
+        vapiPublicKey,
         vapiPrompt: evalEvent?.vapiPrompt ?? null,
         vapiObjectives: evalEvent?.vapiObjectives ?? null,
       });

@@ -109,11 +109,13 @@ export async function getInterview(userId: string, interviewId: string): Promise
 }
 
 export async function getInterviewByCallId(vapiCallId: string): Promise<Interview | null> {
+  // NOTE: No Limit here — DDB Scan's Limit caps items READ before filtering,
+  // not items returned. Limit:1 would miss the record if it isn't the first
+  // item scanned.
   const result = await ddb.send(new ScanCommand({
     TableName: TABLES.INTERVIEWS,
     FilterExpression: 'vapiCallId = :cid',
     ExpressionAttributeValues: { ':cid': vapiCallId },
-    Limit: 1,
   }));
   return ((result.Items ?? [])[0] as Interview) ?? null;
 }

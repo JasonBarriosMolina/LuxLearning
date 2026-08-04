@@ -151,13 +151,14 @@ Rules:
 
     const flat = allSubmissions.flat();
 
-    // Deduplicate: keep latest session per (userId, evaluationEventId)
+    // Deduplicate by interviewId — a DDB interview record is unique per session.
+    // Keying by userId|evaluationEventId caused the same record to appear N times
+    // when N EvaluationEvents share the same moduleId (each ev query returns the
+    // same DDB rows, each tagged with a different evaluationEventId).
     const dedupMap = new Map<string, typeof flat[0]>();
     for (const sub of flat) {
-      const key = `${sub.userId}|${(sub as any).evaluationEventId}`;
-      const existing = dedupMap.get(key);
-      if (!existing || new Date(sub.createdAt) > new Date(existing.createdAt)) {
-        dedupMap.set(key, sub);
+      if (!dedupMap.has(sub.interviewId)) {
+        dedupMap.set(sub.interviewId, sub);
       }
     }
     const deduped = Array.from(dedupMap.values());
