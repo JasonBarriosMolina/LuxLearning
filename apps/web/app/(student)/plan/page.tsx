@@ -109,8 +109,8 @@ export default function StudyPlanPage() {
         api.studyPlan.list(4),
         api.studyPlan.current(),
       ]);
-      const list: StudyPlan[] = (listRes as any) ?? [];
-      const current: StudyPlan = (currentRes as any);
+      const list: StudyPlan[] = (listRes as any)?.data ?? [];
+      const current: StudyPlan = (currentRes as any)?.data;
       // Merge: put current at front, remove duplicate
       const merged = [current, ...list.filter((p) => p.weekOf !== current.weekOf)].filter(Boolean);
       setPlans(merged);

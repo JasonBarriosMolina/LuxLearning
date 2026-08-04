@@ -101,9 +101,10 @@ export default function EvalStudyPlansPage() {
     setError('');
     try {
       const studentsRes = await api.evaluator.students();
-      const students: any[] = Array.isArray(studentsRes)
-        ? studentsRes
-        : (studentsRes as any)?.data ?? [];
+      const rawData: any = (studentsRes as any)?.data;
+      const students: any[] = Array.isArray(rawData)
+        ? rawData
+        : rawData?.students ?? [];
 
       const planResults = await Promise.allSettled(
         students.map((s: any) => api.evaluator.studyPlan.get(s.userId, 1)),
