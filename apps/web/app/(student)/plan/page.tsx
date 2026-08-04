@@ -265,37 +265,53 @@ export default function StudyPlanPage() {
         </div>
       )}
 
-      {/* Suggestions — current week only */}
+      {/* Mentor Suggestions — current week only */}
       {isCurrentWeek && suggestionsStatus !== 'none' && (
-        <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl p-5">
+        <div className="bg-gradient-to-br from-[#7B2FBE]/5 to-[#17527E]/5 border border-[#7B2FBE]/20 dark:border-[#7B2FBE]/30 rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-4 h-4 text-[#7B2FBE]" />
             <h2 className="font-semibold text-gray-900 dark:text-white text-sm">{ts.suggestions}</h2>
           </div>
           {suggestionsStatus === 'processing' ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin" /> {ts.suggestionsLoading}
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin text-[#7B2FBE]" /> {ts.suggestionsLoading}
             </div>
           ) : suggestions.length === 0 ? (
             <p className="text-sm text-gray-400">{ts.suggestionsEmpty}</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {suggestions.map((s, i) => (
-                <div key={i} className="border border-gray-100 dark:border-white/10 rounded-xl p-3 flex gap-2.5">
-                  <span className="text-lg shrink-0">{SUGGESTION_TYPE_ICON[s.type] ?? '💡'}</span>
-                  <div className="min-w-0">
+            <div className="space-y-2">
+              {/* Resources (articles, videos, books, exercises) */}
+              {suggestions.filter((s) => s.type !== 'strategy').map((s, i) => (
+                <div key={i} className="flex items-start gap-3 bg-white dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/10 px-4 py-3">
+                  <span className="text-base shrink-0 mt-0.5">{SUGGESTION_TYPE_ICON[s.type] ?? '💡'}</span>
+                  <div className="flex-1 min-w-0">
                     {s.url ? (
                       <a href={s.url} target="_blank" rel="noopener noreferrer"
-                        className="text-sm font-medium text-[#17527E] dark:text-blue-300 hover:underline line-clamp-1">
-                        {s.title}
+                        className="text-sm font-semibold text-[#17527E] dark:text-blue-300 hover:underline leading-snug block">
+                        {s.title} ↗
                       </a>
                     ) : (
-                      <p className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">{s.title}</p>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">{s.title}</p>
                     )}
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{s.description}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">{s.description}</p>
                   </div>
                 </div>
               ))}
+              {/* Strategies — full-width advice style */}
+              {suggestions.filter((s) => s.type === 'strategy').length > 0 && (
+                <div className="mt-1 space-y-2">
+                  <p className="text-[10px] font-semibold text-[#7B2FBE] uppercase tracking-widest px-1">Consejo del mentor</p>
+                  {suggestions.filter((s) => s.type === 'strategy').map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 bg-[#7B2FBE]/5 dark:bg-[#7B2FBE]/10 rounded-xl border border-[#7B2FBE]/15 px-4 py-3">
+                      <span className="text-base shrink-0 mt-0.5">💡</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">{s.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">{s.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

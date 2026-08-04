@@ -9,6 +9,7 @@ import {
   getMonday, type StudyPlan, type DayPlan, type PlanItem,
 } from '../shared/db-study-plans';
 import { createNotification, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
+import { isModuleUnlocked } from '../shared/db-progress';
 import { getPrismaClient } from '../shared/db-neon';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -53,24 +54,30 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
 
   for (const course of courses) {
     promptLines.push(`Curso: ${course.title}`);
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+
     for (const mod of (course as any).modules) {
+      // Only include content from modules the student can actually access
+      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+      if (!unlocked) break; // Sequential lock — all further modules are also locked
+
       const quizPassed = passedModuleIds.has(mod.id);
-      if (quizPassed) continue; // skip completed modules
+      if (quizPassed) continue; // Already finished this module
 
       const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
       const needsQuiz = pendingLessons.length === 0 && !quizPassed;
 
-      promptLines.push(`  Módulo ${mod.order}: ${mod.title}`);
+      promptLines.push(`  Módulo ${mod.order}: ${mod.title} (${course.title})`);
 
       if (pendingLessons.length > 0) {
-        // Distribute pending lessons across days (Mon-Fri)
+        // Distribute pending lessons across Mon–Fri
         for (const lesson of pendingLessons.slice(0, 5)) {
-          const targetDay = Math.min(dayIndex % 5, 4); // Mon-Fri only
+          const targetDay = Math.min(dayIndex % 5, 4);
           days[targetDay].items.push({
             id: createId(),
             type: 'lesson',
             title: lesson.title,
-            description: `Módulo: ${mod.title} — ${course.title}`,
+            description: `${mod.title} · ${course.title}`,
             courseId: course.id,
             moduleId: mod.id,
             lessonId: lesson.id,
@@ -90,7 +97,7 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
           id: createId(),
           type: 'quiz',
           title: `Quiz — ${mod.title}`,
-          description: `Lecciones completadas. Quiz pendiente en ${course.title}`,
+          description: `${course.title}`,
           courseId: course.id,
           moduleId: mod.id,
           pinned: false,
@@ -127,7 +134,7 @@ async function triggerSuggestionsJob(userId: string, weekOf: string, promptLines
 export async function runSuggestionsWorker(userId: string, weekOf: string, promptLines: string[]): Promise<void> {
   try {
     const context = promptLines.join('\n');
-    const prompt = `Eres un coach educativo de Lux Learning. El estudiante tiene este progreso:\n\n${context}\n\nGenera exactamente 5 sugerencias de recursos o estrategias de estudio. Para cada una indica:\n- title: nombre corto (máx 60 chars)\n- type: uno de: article, video, exercise, book, strategy\n- description: descripción práctica en 1-2 frases\n- url: URL opcional si es recurso público conocido\n\nResponde SOLO con JSON array, sin texto extra:\n[{"title":"...","type":"...","description":"...","url":"..."},...]`;
+    const prompt = `Eres el Mentor de Lux Learning. El estudiante tiene este contenido pendiente:\n\n${context}\n\nGenera exactamente 5 sugerencias que le ayuden a avanzar CON LO QUE TIENE DISPONIBLE AHORA.\n\nREGLAS ESTRICTAS:\n- Solo recursos 100% educativos y verificados: Khan Academy, Coursera (cursos gratuitos), MIT OpenCourseWare, YouTube EDU (3Blue1Brown, CrashCourse, Professor Leonard, StatQuest, Organic Chemistry Tutor, etc.), libros clásicos de dominio público\n- NO inventes URLs. Si no conoces la URL exacta del recurso, omite el campo "url"\n- Mezcla: 2-3 recursos externos concretos sobre los TEMAS del contenido pendiente + 2 estrategias de estudio accionables\n- Las estrategias deben ser específicas al material (ej: "Antes de ver la lección de distribuciones, resuelve 10 problemas de probabilidad básica")\n- Sin lenguaje profano, sin fuentes dudosas, sin contenido inapropiado\n- description: máx 2 frases, práctica y directa\n\nResponde SOLO con JSON array válido, sin texto extra:\n[{"title":"...","type":"article|video|exercise|book|strategy","description":"...","url":"..."},...]`;
 
     const res = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
