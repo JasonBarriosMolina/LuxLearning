@@ -11,7 +11,8 @@ export type PlanLang = 'ES' | 'EN';
 
 export interface Step1Data {
   title: string; academicPeriod: string; classDays: string[];
-  classSchedule: string; modality: string; startDate: string;
+  classSchedule: string; classSchedules: Record<string, string>;
+  modality: string; startDate: string;
   planLanguage: PlanLang; courseType: CourseTypeId | '';
   description: string; imageUrl: string;
   cardColor: string; cardBorderColor: string; cardLabels: string[];
@@ -28,6 +29,7 @@ export interface EvalItem {
   id: string; type: EvalType; name: string; nameEN: string;
   weight: number; count: number; dueDates: string[]; instructions: string; locked?: boolean;
   vapiPrompt?: string; vapiObjectives?: string;
+  interviewStartDate?: string; interviewEndDate?: string; interviewTimeSlot?: string;
 }
 
 export interface Step3Data { items: EvalItem[]; }
@@ -71,8 +73,8 @@ export interface CalendarWeek {
 
 export const STEPS = [
   { n: 1, label: 'Identidad' }, { n: 2, label: 'Calendario' },
-  { n: 3, label: 'Evaluación' }, { n: 4, label: 'Lux Planner' },
-  { n: 5, label: 'Planeamiento' },
+  { n: 3, label: 'Planeamiento' }, { n: 4, label: 'Lux Planner' },
+  { n: 5, label: 'Evaluación' },
 ];
 
 export const COURSE_TYPES = [
@@ -135,7 +137,7 @@ export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
   }
 }
 
-export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false };
+export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false };
 export const EMPTY_STEP2: Step2Data = { totalWeeks: 16, exceptions: [] };
 export const EMPTY_STEP3: Step3Data = { items: [] };
 export const EMPTY_STEP4: Step4Data = { syllabusInput: '', weeklyPlan: [], modules: [], status: 'idle', error: '' };

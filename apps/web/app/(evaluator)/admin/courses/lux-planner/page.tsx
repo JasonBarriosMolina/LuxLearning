@@ -146,8 +146,24 @@ function CourseWizardInner() {
             locked: it.locked ?? false,
             vapiPrompt: it.vapiPrompt ?? '',
             vapiObjectives: it.vapiObjectives ?? '',
+            interviewStartDate: it.interviewStartDate ?? '',
+            interviewEndDate: it.interviewEndDate ?? '',
+            interviewTimeSlot: it.interviewTimeSlot ?? '',
           })),
         });
+      }
+
+      // Restore weekly plan and syllabus if previously saved
+      const savedPlan = Array.isArray(c.planWeeklyPlan) ? c.planWeeklyPlan : [];
+      const savedSyllabus = typeof c.planSyllabusInput === 'string' ? c.planSyllabusInput : '';
+      if (savedPlan.length > 0 || savedSyllabus) {
+        setStep4((p) => ({
+          ...p,
+          syllabusInput: savedSyllabus,
+          weeklyPlan: savedPlan.length > 0 ? savedPlan : p.weeklyPlan,
+          modules: savedPlan.length > 0 ? (Array.isArray(c.planModules) ? c.planModules : p.modules) : p.modules,
+          status: savedPlan.length > 0 ? 'done' : 'idle',
+        }));
       }
     } catch {
       // Ignore — wizard will start blank
@@ -360,6 +376,7 @@ function CourseWizardInner() {
           reflexWeek: m.reflexWeek ?? null,
         })),
         pilotoAutomatico: step1.pilotoAutomatico ?? false,
+        syllabusInput: step4.syllabusInput,
         ...(editingCourseId ? { editingCourseId } : {}),
       }) as any;
       const data = resp?.data ?? resp;
@@ -502,8 +519,6 @@ function CourseWizardInner() {
               addEvalItem={addEvalItem} removeItem={removeItem}
               isEN={isEN}
               onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
-              saveCourse={saveCourse}
-              step5Status={step5.status}
               step5Error={step5.error}
               editingCourseId={editingCourseId}
             />
@@ -535,6 +550,15 @@ function CourseWizardInner() {
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
             <Button variant="secondary" onClick={goBack} leftIcon={<ArrowLeft className="w-4 h-4" />}>{s('Atrás', 'Back')}</Button>
             {step < 5 && <Button onClick={goNext} disabled={!canNext} rightIcon={<ArrowRight className="w-4 h-4" />}>{s('Siguiente', 'Next')}</Button>}
+            {step === 5 && (
+              <Button
+                onClick={saveCourse}
+                disabled={step5.status === 'saving'}
+                rightIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              >
+                {s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
+              </Button>
+            )}
           </div>
         )}
 

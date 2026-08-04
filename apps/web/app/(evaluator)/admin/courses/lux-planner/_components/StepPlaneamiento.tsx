@@ -19,6 +19,7 @@ interface StepPlaneamientoProps {
   saveCourse: () => Promise<void>;
   onGoToCourse: (courseId: string) => void;
   isEN: boolean;
+  showSave?: boolean;
 }
 
 export function StepPlaneamiento({
@@ -26,6 +27,7 @@ export function StepPlaneamiento({
   effectiveWeeks, editingCourseId,
   saveCourse, onGoToCourse,
   isEN,
+  showSave = true,
 }: StepPlaneamientoProps) {
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
@@ -153,24 +155,26 @@ export function StepPlaneamiento({
         <p className="text-xs text-gray-400">{s('Se generará automáticamente y quedará disponible para descarga.', 'Auto-generated and available for download.')}</p>
       </div>
 
-      {step5.status === 'error' && (
+      {showSave && step5.status === 'error' && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex gap-2">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />{step5.error}
         </div>
       )}
 
-      <div className="space-y-2">
-        <Button onClick={saveCourse} disabled={step5.status === 'saving'}
-          leftIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          className="w-full justify-center">
-          {step5.status === 'saving' ? s('Creando curso...', 'Creating course...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
-        </Button>
-        {!editingCourseId && step5.status !== 'saving' && (
-          <p className="text-xs text-center text-gray-400">
-            {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
-          </p>
-        )}
-      </div>
+      {showSave && (
+        <div className="space-y-2">
+          <Button onClick={saveCourse} disabled={step5.status === 'saving'}
+            leftIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            className="w-full justify-center">
+            {step5.status === 'saving' ? s('Creando curso...', 'Creating course...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
+          </Button>
+          {!editingCourseId && step5.status !== 'saving' && (
+            <p className="text-xs text-center text-gray-400">
+              {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

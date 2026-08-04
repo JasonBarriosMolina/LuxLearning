@@ -24,6 +24,8 @@ interface StepIdentidadProps {
   setScheduleStart: React.Dispatch<React.SetStateAction<string>>;
   scheduleEnd: string;
   setScheduleEnd: React.Dispatch<React.SetStateAction<string>>;
+  schedulesPerDay: Record<string, { start: string; end: string }>;
+  setSchedulesPerDay: React.Dispatch<React.SetStateAction<Record<string, { start: string; end: string }>>>;
   labelInput: string;
   setLabelInput: React.Dispatch<React.SetStateAction<string>>;
   imageGenerating: boolean;
@@ -42,6 +44,7 @@ export function StepIdentidad({
   showNewPeriod, setShowNewPeriod,
   scheduleStart, setScheduleStart,
   scheduleEnd, setScheduleEnd,
+  schedulesPerDay, setSchedulesPerDay,
   labelInput, setLabelInput,
   imageGenerating, imageError, setImageError,
   fileInputRef, handleImageFile, handleGenerateImage,
@@ -50,6 +53,7 @@ export function StepIdentidad({
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
   const isAsync = step1.modality === 'ASINCRONICA';
+  const multiDay = step1.classDays.length > 1;
 
   return (
     <div className="space-y-8">
@@ -182,21 +186,39 @@ export function StepIdentidad({
                 <datalist id="wiz-time-slots">
                   {TIME_SLOTS.map((t) => <option key={t} value={t} />)}
                 </datalist>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text" list="wiz-time-slots"
-                    value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)}
-                    placeholder={s('Inicio (ej. 8:00 AM)', 'Start (e.g. 8:00 AM)')}
-                    className="input-field flex-1 text-sm py-2"
-                  />
-                  <span className="text-gray-400 text-sm shrink-0">–</span>
-                  <input
-                    type="text" list="wiz-time-slots"
-                    value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)}
-                    placeholder={s('Fin (ej. 10:00 AM)', 'End (e.g. 10:00 AM)')}
-                    className="input-field flex-1 text-sm py-2"
-                  />
-                </div>
+                {multiDay ? (
+                  <div className="space-y-2">
+                    {step1.classDays.map((day, i) => {
+                      const label = planEN ? DAYS_EN[DAYS_ES.indexOf(day)] ?? day : day;
+                      const vals = schedulesPerDay[day] ?? { start: '', end: '' };
+                      return (
+                        <div key={day} className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-gray-500 w-10 shrink-0">{label.slice(0, 3)}</span>
+                          <input type="text" list="wiz-time-slots" value={vals.start}
+                            onChange={(e) => setSchedulesPerDay((p) => ({ ...p, [day]: { ...vals, start: e.target.value } }))}
+                            placeholder={s('Inicio', 'Start')} className="input-field flex-1 text-sm py-1.5" />
+                          <span className="text-gray-400 text-sm shrink-0">–</span>
+                          <input type="text" list="wiz-time-slots" value={vals.end}
+                            onChange={(e) => setSchedulesPerDay((p) => ({ ...p, [day]: { ...vals, end: e.target.value } }))}
+                            placeholder={s('Fin', 'End')} className="input-field flex-1 text-sm py-1.5" />
+                        </div>
+                      );
+                    })}
+                    <p className="text-[10px] text-gray-400">{s('Cada día puede tener un horario diferente.', 'Each day can have a different schedule.')}</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input type="text" list="wiz-time-slots"
+                      value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)}
+                      placeholder={s('Inicio (ej. 8:00 AM)', 'Start (e.g. 8:00 AM)')}
+                      className="input-field flex-1 text-sm py-2" />
+                    <span className="text-gray-400 text-sm shrink-0">–</span>
+                    <input type="text" list="wiz-time-slots"
+                      value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)}
+                      placeholder={s('Fin (ej. 10:00 AM)', 'End (e.g. 10:00 AM)')}
+                      className="input-field flex-1 text-sm py-2" />
+                  </div>
+                )}
               </div>
             </>
           )}

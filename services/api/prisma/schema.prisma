@@ -42,6 +42,8 @@ model Course {
   calendarExceptions Json?     // [{date, type:'day'|'week', label}]
   evaluationConfig   Json?     // [{type, name, weight, count, dueDate?}]
   planDocumentS3Key  String?   // Word generado
+  planWeeklyPlan     Json?     // [{weekNum, topics, module, procedure, notes, evalEvent}]
+  planSyllabusInput  String?   // temario/syllabus textarea usado en Lux Planner
   pilotoAutomatico   Boolean   @default(false)
 
   modules            Module[]

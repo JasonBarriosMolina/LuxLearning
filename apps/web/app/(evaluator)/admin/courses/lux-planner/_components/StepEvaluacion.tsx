@@ -26,8 +26,6 @@ interface StepEvaluacionProps {
   removeItem: (id: string) => void;
   isEN: boolean;
   onPilotoToggle?: (val: boolean) => void;
-  saveCourse: () => Promise<void>;
-  step5Status: 'idle' | 'saving' | 'done' | 'error';
   step5Error: string;
   editingCourseId: string | null;
 }
@@ -38,25 +36,27 @@ export function StepEvaluacion({
   outOfRangeItems, dateWarningDismissed, setDateWarningDismissed,
   updateItem, updateDueDate, setCount, addEvalItem, removeItem,
   isEN, onPilotoToggle,
-  saveCourse, step5Status, step5Error, editingCourseId,
+  step5Error, editingCourseId,
 }: StepEvaluacionProps) {
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
   const ct = COURSE_TYPES.find((c) => c.id === step1.courseType);
   const [fillingId, setFillingId] = useState<string | null>(null);
+  const [fillModuleIdx, setFillModuleIdx] = useState<Record<string, number>>({});
 
-  const autoFillInterview = (itemId: string) => {
-    if (!step4.modules.length && !step4.weeklyPlan.length) return;
+  const autoFillInterview = (itemId: string, moduleIdx: number, currentTimeSlot?: string) => {
+    const mod = step4.modules[moduleIdx];
+    if (!mod) return;
     setFillingId(itemId);
-    const moduleList = step4.modules.map((m, i) =>
-      `${i + 1}. ${planEN ? (m.nameEN || m.name) : m.name}: ${planEN ? (m.descriptionEN || m.description) : m.description}`
-    ).join('\n');
-    const topicSample = step4.weeklyPlan.slice(0, 4).map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`).join('\n');
-    const prompt = `Eres Mentor, un evaluador oral amigable y profesional para el curso "${step1.title}". Realiza exactamente 3 preguntas orales al estudiante sobre los temas del módulo. Sé conversacional, claro y alentador. Saluda al estudiante por nombre si es posible.\n\nMódulos del curso:\n${moduleList}\n\nTemas por semana (muestra):\n${topicSample}`;
-    const objectives = step4.modules.slice(0, 3).map((m) =>
-      planEN ? (m.nameEN || m.name) : m.name
-    ).join('\n');
-    updateItem(itemId, { vapiPrompt: prompt, vapiObjectives: objectives });
+    const modName = planEN ? (mod.nameEN || mod.name) : mod.name;
+    const modDesc = planEN ? (mod.descriptionEN || mod.description) : mod.description;
+    const weekTopics = step4.weeklyPlan
+      .filter((w) => w.module === mod.name || w.module === mod.nameEN)
+      .map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`)
+      .join('\n') || step4.weeklyPlan.slice(0, 4).map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`).join('\n');
+    const prompt = `Eres Mentor, un evaluador oral amigable y profesional para el curso "${step1.title}".\n\nIMPORTANTE: Haz preguntas ÚNICAMENTE sobre los temas del siguiente módulo. NO hagas preguntas sobre ningún tema externo, general, o que no esté incluido en el contenido del módulo.\n\nMódulo: ${modName}\nDescripción: ${modDesc}\n\nTemas cubiertos en este módulo:\n${weekTopics}\n\nRealiza exactamente 3 preguntas orales al estudiante sobre los temas indicados. Sé conversacional, claro y alentador. Saluda al estudiante al inicio.`;
+    const objectives = `Verificar comprensión de los conceptos principales de "${modName}"\nEvaluar capacidad de aplicar los temas del módulo "${modName}"\nComprobar pensamiento crítico sobre el contenido de "${modName}"`;
+    updateItem(itemId, { vapiPrompt: prompt, vapiObjectives: objectives, interviewTimeSlot: currentTimeSlot || '11:59 PM' });
     setFillingId(null);
   };
 
@@ -144,16 +144,28 @@ export function StepEvaluacion({
                         <Mic className="w-3 h-3" />
                         <span className="font-semibold">{s('Configuración de Mentor (Vapi)', 'Mentor Configuration (Vapi)')}</span>
                       </div>
-                      {(step4.modules.length > 0 || step4.weeklyPlan.length > 0) && (
-                        <button
-                          type="button"
-                          onClick={() => autoFillInterview(item.id)}
-                          disabled={fillingId === item.id}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition-colors"
-                        >
-                          {fillingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                          {s('Llenar con temario', 'Fill from syllabus')}
-                        </button>
+                      {step4.modules.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={fillModuleIdx[item.id] ?? ''}
+                            onChange={(e) => setFillModuleIdx((p) => ({ ...p, [item.id]: parseInt(e.target.value) }))}
+                            className="input-field text-[10px] py-0.5 max-w-[140px]"
+                          >
+                            <option value="" disabled>{s('Módulo...', 'Module...')}</option>
+                            {step4.modules.map((m, i) => (
+                              <option key={i} value={i}>{planEN ? (m.nameEN || m.name) : m.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => autoFillInterview(item.id, fillModuleIdx[item.id]!, item.interviewTimeSlot)}
+                            disabled={fillingId === item.id || fillModuleIdx[item.id] === undefined}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition-colors"
+                          >
+                            {fillingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                            {s('Llenar con temario', 'Fill from syllabus')}
+                          </button>
+                        </div>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -167,9 +179,9 @@ export function StepEvaluacion({
                       </div>
                     </div>
                     <div>
-                      <label className="block text-gray-500 mb-1">{s('Horario de presentación', 'Presentation time slot')}</label>
+                      <label className="block text-gray-500 mb-1">{s('Hora máxima de entrega', 'Submission deadline time')}</label>
                       <datalist id={`interview-slots-${item.id}`}>{TIME_SLOTS.map((t) => <option key={t} value={t} />)}</datalist>
-                      <input type="text" list={`interview-slots-${item.id}`} value={item.interviewTimeSlot ?? ''} onChange={(e) => updateItem(item.id, { interviewTimeSlot: e.target.value })} placeholder={s('Ej. 8:00 AM – 10:00 AM', 'E.g. 8:00 AM – 10:00 AM')} className="input-field w-full text-xs py-1" />
+                      <input type="text" list={`interview-slots-${item.id}`} value={item.interviewTimeSlot ?? ''} onChange={(e) => updateItem(item.id, { interviewTimeSlot: e.target.value })} placeholder="11:59 PM" className="input-field w-full text-xs py-1" />
                     </div>
                     <div>
                       <label className="block text-gray-500 mb-1">{s('Instrucciones de Mentor', 'Mentor instructions')}</label>
@@ -258,21 +270,11 @@ export function StepEvaluacion({
         </div>
       )}
 
-      <div className="space-y-2 pt-2">
-        <button
-          onClick={saveCourse}
-          disabled={step5Status === 'saving' || !weightOk}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-cta-from to-cta-to text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-        >
-          {step5Status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          {step5Status === 'saving' ? s('Creando curso...', 'Creating course...') : editingCourseId ? s('Actualizar Curso', 'Update Course') : s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
-        </button>
-        {!editingCourseId && step5Status !== 'saving' && (
-          <p className="text-xs text-center text-gray-400">
-            {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
-          </p>
-        )}
-      </div>
+      {!editingCourseId && (
+        <p className="text-xs text-center text-gray-400 pt-2">
+          {s('El curso se alojará en Borradores y estará disponible para publicar cuando esté listo.', 'The course will be saved as a Draft and will be available to publish when ready.')}
+        </p>
+      )}
     </div>
   );
 }
