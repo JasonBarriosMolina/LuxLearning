@@ -1,7 +1,8 @@
 'use client';
 
-import { GripVertical, Info, Plus, Trash2, Mic, Sparkles, Loader2 } from 'lucide-react';
+import { GripVertical, Info, Plus, Trash2, Mic, Sparkles, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
+import { api } from '@/lib/api';
 import {
   Step1Data, Step2Data, Step3Data, Step4Data, EvalItem, EvalType, CourseTypeId,
   COURSE_TYPES, EVAL_TYPE_META, fmtDisplay, TIME_SLOTS,
@@ -41,24 +42,63 @@ export function StepEvaluacion({
   const s = (es: string, en: string) => isEN ? en : es;
   const planEN = step1.planLanguage === 'EN';
   const ct = COURSE_TYPES.find((c) => c.id === step1.courseType);
-  const [fillingId, setFillingId] = useState<string | null>(null);
-  const [fillModuleIdx, setFillModuleIdx] = useState<Record<string, number>>({});
 
-  const autoFillInterview = (itemId: string, moduleIdx: number, currentTimeSlot?: string) => {
-    const mod = step4.modules[moduleIdx];
-    if (!mod) return;
+  // Per-item interview topic state
+  const [fillSelectedWeeks, setFillSelectedWeeks] = useState<Record<string, number[]>>({});
+  const [fillTopicText, setFillTopicText] = useState<Record<string, string>>({});
+  const [fillingId, setFillingId] = useState<string | null>(null);
+
+  // Per-item evidence instruction generation state
+  const [genInstrId, setGenInstrId] = useState<string | null>(null);
+
+  const hasWeeklyPlan = step4.weeklyPlan.length > 0;
+
+  // Build interview prompt from selected weeks or free-text topic
+  const autoFillInterview = (itemId: string) => {
+    const selectedWeeks = fillSelectedWeeks[itemId] ?? [];
+    const topicText = fillTopicText[itemId] ?? '';
+
+    let weekTopicsLines: string;
+    let topicLabel: string;
+
+    if (selectedWeeks.length > 0 && hasWeeklyPlan) {
+      const filtered = step4.weeklyPlan.filter((w) => selectedWeeks.includes(w.weekNum));
+      weekTopicsLines = filtered.map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`).join('\n');
+      topicLabel = filtered.flatMap((w) => w.topics).join(', ');
+    } else if (topicText.trim()) {
+      weekTopicsLines = topicText.trim();
+      topicLabel = topicText.trim();
+    } else {
+      return;
+    }
+
     setFillingId(itemId);
-    const modName = planEN ? (mod.nameEN || mod.name) : mod.name;
-    const modDesc = planEN ? (mod.descriptionEN || mod.description) : mod.description;
-    const weekTopics = step4.weeklyPlan
-      .filter((w) => w.module === mod.name || w.module === mod.nameEN)
-      .map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`)
-      .join('\n') || step4.weeklyPlan.slice(0, 4).map((w) => `Sem ${w.weekNum}: ${w.topics.join(', ')}`).join('\n');
-    const prompt = `Eres Mentor, un evaluador oral amigable y profesional para el curso "${step1.title}".\n\nIMPORTANTE: Haz preguntas ÚNICAMENTE sobre los temas del siguiente módulo. NO hagas preguntas sobre ningún tema externo, general, o que no esté incluido en el contenido del módulo.\n\nMódulo: ${modName}\nDescripción: ${modDesc}\n\nTemas cubiertos en este módulo:\n${weekTopics}\n\nRealiza exactamente 3 preguntas orales al estudiante sobre los temas indicados. Sé conversacional, claro y alentador. Saluda al estudiante al inicio.`;
-    const objectives = `Verificar comprensión de los conceptos principales de "${modName}"\nEvaluar capacidad de aplicar los temas del módulo "${modName}"\nComprobar pensamiento crítico sobre el contenido de "${modName}"`;
-    updateItem(itemId, { vapiPrompt: prompt, vapiObjectives: objectives, interviewTimeSlot: currentTimeSlot || '11:59 PM' });
+    const prompt = `Eres Mentor, un evaluador oral amigable y profesional para el curso "${step1.title}".\n\nIMPORTANTE: Haz preguntas ÚNICAMENTE sobre los temas indicados a continuación. NO hagas preguntas sobre ningún tema externo, general, o que no esté en esta lista.\n\nTemas específicos a evaluar:\n${weekTopicsLines}\n\nRealiza exactamente 3 preguntas orales al estudiante sobre los temas indicados. Sé conversacional, claro y alentador. Saluda al estudiante al inicio.`;
+    const objectives = `Verificar comprensión de: ${topicLabel}\nEvaluar capacidad de aplicar: ${topicLabel}\nComprobar pensamiento crítico sobre: ${topicLabel}`;
+    updateItem(itemId, { vapiPrompt: prompt, vapiObjectives: objectives });
     setFillingId(null);
   };
+
+  // Generate EVIDENCE instruction with AI
+  const generateInstruction = async (itemId: string, evalName: string) => {
+    setGenInstrId(itemId);
+    try {
+      const res = await api.admin.courses.generateInstruction({
+        courseTitle: step1.title,
+        evalName,
+        syllabusInput: step4.syllabusInput,
+      }) as any;
+      const instruction = res?.data?.instruction ?? res?.instruction ?? '';
+      if (instruction) updateItem(itemId, { instructions: instruction });
+    } catch { /* silent — user can retry */ }
+    setGenInstrId(null);
+  };
+
+  const toggleWeek = (itemId: string, weekNum: number) =>
+    setFillSelectedWeeks((p) => {
+      const cur = p[itemId] ?? [];
+      return { ...p, [itemId]: cur.includes(weekNum) ? cur.filter((w) => w !== weekNum) : [...cur, weekNum] };
+    });
 
   return (
     <div className="space-y-6">
@@ -80,6 +120,10 @@ export function StepEvaluacion({
       <div className="space-y-3">
         {step3.items.map((item) => {
           const meta = EVAL_TYPE_META[item.type];
+          const selectedWeeks = fillSelectedWeeks[item.id] ?? [];
+          const topicText = fillTopicText[item.id] ?? '';
+          const canFillInterview = selectedWeeks.length > 0 || topicText.trim().length > 0;
+
           return (
             <div key={item.id} className="border border-border rounded-xl overflow-hidden">
               <div className="bg-surface px-4 py-3 flex items-center gap-3">
@@ -131,43 +175,101 @@ export function StepEvaluacion({
                     </div>
                   </div>
                 )}
+
+                {/* EVIDENCE — instructions with AI generate button */}
                 {item.type === 'EVIDENCE' && (
                   <details className="text-xs">
                     <summary className="cursor-pointer text-gray-400 hover:text-charcoal">{s('Instrucciones (opcional)', 'Instructions (optional)')}</summary>
-                    <textarea value={item.instructions} onChange={(e) => updateItem(item.id, { instructions: e.target.value })} className="input-field w-full mt-2 min-h-[60px] text-xs resize-y" />
+                    <div className="mt-2 space-y-1.5">
+                      <textarea value={item.instructions} onChange={(e) => updateItem(item.id, { instructions: e.target.value })} className="input-field w-full min-h-[60px] text-xs resize-y" />
+                      <button
+                        type="button"
+                        onClick={() => generateInstruction(item.id, planEN ? item.nameEN : item.name)}
+                        disabled={genInstrId === item.id}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-600 hover:text-purple-800 disabled:opacity-50 transition-colors"
+                      >
+                        {genInstrId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {s('Generar instrucción con Lux Planner', 'Generate instruction with Lux Planner')}
+                      </button>
+                    </div>
                   </details>
                 )}
+
+                {/* INTERVIEW — topic selector + prompt config */}
                 {item.type === 'INTERVIEW' && (
                   <div className="space-y-2 text-xs border-t border-border pt-3 mt-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5 text-rose-600">
-                        <Mic className="w-3 h-3" />
-                        <span className="font-semibold">{s('Configuración de Mentor (Vapi)', 'Mentor Configuration (Vapi)')}</span>
-                      </div>
-                      {step4.modules.length > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <select
-                            value={fillModuleIdx[item.id] ?? ''}
-                            onChange={(e) => setFillModuleIdx((p) => ({ ...p, [item.id]: parseInt(e.target.value) }))}
-                            className="input-field text-[10px] py-0.5 max-w-[140px]"
-                          >
-                            <option value="" disabled>{s('Módulo...', 'Module...')}</option>
-                            {step4.modules.map((m, i) => (
-                              <option key={i} value={i}>{planEN ? (m.nameEN || m.name) : m.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => autoFillInterview(item.id, fillModuleIdx[item.id]!, item.interviewTimeSlot)}
-                            disabled={fillingId === item.id || fillModuleIdx[item.id] === undefined}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 disabled:opacity-50 transition-colors"
-                          >
-                            {fillingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                            {s('Llenar con temario', 'Fill from syllabus')}
-                          </button>
+                    <div className="flex items-center gap-1.5 text-rose-600 mb-2">
+                      <Mic className="w-3 h-3" />
+                      <span className="font-semibold">{s('Configuración de Mentor (Vapi)', 'Mentor Configuration (Vapi)')}</span>
+                    </div>
+
+                    {/* Topic selector */}
+                    <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-900/10 border border-rose-100 space-y-2">
+                      <p className="text-[10px] font-semibold text-rose-700 uppercase tracking-wide">
+                        {s('Tema(s) a evaluar', 'Topic(s) to evaluate')}
+                      </p>
+                      {hasWeeklyPlan ? (
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] text-rose-600">{s('Selecciona las semanas que cubre esta entrevista:', 'Select the weeks this interview covers:')}</p>
+                          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                            {step4.weeklyPlan.map((w) => {
+                              const checked = selectedWeeks.includes(w.weekNum);
+                              return (
+                                <button
+                                  key={w.weekNum}
+                                  type="button"
+                                  onClick={() => toggleWeek(item.id, w.weekNum)}
+                                  className={`flex items-start gap-1.5 px-2 py-1 rounded-lg border text-[10px] transition-colors text-left ${checked ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-600 border-rose-200 hover:border-rose-400'}`}
+                                >
+                                  <span className="font-bold shrink-0">S{w.weekNum}</span>
+                                  <span className="line-clamp-1">{w.topics[0] ?? ''}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {selectedWeeks.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px] text-rose-600 font-medium">{s('Semanas seleccionadas:', 'Selected weeks:')} {selectedWeeks.sort((a,b)=>a-b).join(', ')}</span>
+                              <button type="button" onClick={() => setFillSelectedWeeks((p) => ({ ...p, [item.id]: [] }))} className="text-rose-400 hover:text-rose-700"><X className="w-3 h-3" /></button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-[10px] text-rose-600 mb-1">{s('Ingresa el tema específico a evaluar:', 'Enter the specific topic to evaluate:')}</p>
+                          <input
+                            type="text"
+                            value={topicText}
+                            onChange={(e) => setFillTopicText((p) => ({ ...p, [item.id]: e.target.value }))}
+                            placeholder={s('Ej. Variables y tipos de datos, Condicionales...', 'E.g. Variables and data types, Conditionals...')}
+                            className="input-field w-full text-xs py-1"
+                          />
                         </div>
                       )}
+                      {/* Always show free-text as supplement if weeklyPlan exists */}
+                      {hasWeeklyPlan && (
+                        <div>
+                          <p className="text-[10px] text-rose-500 mb-0.5">{s('O añade un tema adicional:', 'Or add an additional topic:')}</p>
+                          <input
+                            type="text"
+                            value={topicText}
+                            onChange={(e) => setFillTopicText((p) => ({ ...p, [item.id]: e.target.value }))}
+                            placeholder={s('Tema adicional (opcional)...', 'Additional topic (optional)...')}
+                            className="input-field w-full text-xs py-1"
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => autoFillInterview(item.id)}
+                        disabled={fillingId === item.id || !canFillInterview}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {fillingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {s('Llenar instrucciones con temario', 'Fill instructions from syllabus')}
+                      </button>
                     </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-gray-500 mb-1">{s('Fecha inicio entrevistas', 'Interview start date')}</label>
@@ -248,10 +350,7 @@ export function StepEvaluacion({
               </ul>
             </div>
           </div>
-          <button
-            onClick={() => setDateWarningDismissed(true)}
-            className="text-xs font-semibold text-amber-700 underline hover:text-amber-900 transition-colors"
-          >
+          <button onClick={() => setDateWarningDismissed(true)} className="text-xs font-semibold text-amber-700 underline hover:text-amber-900 transition-colors">
             {s('Continuar de todas maneras', 'Continue anyway')}
           </button>
         </div>

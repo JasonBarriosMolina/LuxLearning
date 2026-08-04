@@ -310,6 +310,8 @@ export const api = {
         request<any>('/admin/courses/wizard/copilot', { method: 'POST', body: JSON.stringify(body) }),
       wizardSave: (body: any) =>
         request<any>('/admin/courses/wizard/save', { method: 'POST', body: JSON.stringify(body) }),
+      generateInstruction: (body: { courseTitle: string; evalName: string; syllabusInput?: string }) =>
+        request<any>('/admin/courses/wizard/generate-instruction', { method: 'POST', body: JSON.stringify(body) }),
       wizardPlanDoc: (courseId: string) =>
         request<any>(`/admin/courses/wizard/plan-doc?courseId=${encodeURIComponent(courseId)}`),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>

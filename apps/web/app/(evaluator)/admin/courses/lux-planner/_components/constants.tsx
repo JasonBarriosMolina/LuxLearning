@@ -73,8 +73,8 @@ export interface CalendarWeek {
 
 export const STEPS = [
   { n: 1, label: 'Identidad' }, { n: 2, label: 'Calendario' },
-  { n: 3, label: 'Planeamiento' }, { n: 4, label: 'Lux Planner' },
-  { n: 5, label: 'Evaluación' },
+  { n: 3, label: 'Planeamiento' }, { n: 4, label: 'Evaluación' },
+  { n: 5, label: 'Lux Planner' },
 ];
 
 export const COURSE_TYPES = [

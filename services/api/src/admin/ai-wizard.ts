@@ -124,6 +124,32 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
     return ok({});
   }
 
+  // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
+  if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
+    if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+    const { courseTitle, evalName, syllabusInput = '' } = body as any;
+    if (!courseTitle || !evalName) return badRequest('courseTitle y evalName son requeridos');
+    const syllabusSnippet = (syllabusInput as string).slice(0, 400);
+    const prompt = `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega (evidence) en un curso universitario.
+
+Curso: ${courseTitle}
+Nombre de la evaluación: ${evalName}
+${syllabusSnippet ? `Extracto del temario:\n${syllabusSnippet}` : ''}
+
+Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
+{"instruction":"<1-3 oraciones de instrucción para el estudiante, específica y accionable>"}
+
+Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el impacto de las estructuras de control en algoritmos eficientes, con al menos 2 referencias bibliográficas en formato APA."}`;
+    try {
+      const raw = await invokeBedrockForJson(prompt, 300);
+      const instruction = (raw?.instruction ?? '').toString().trim();
+      if (!instruction) return badRequest('No se pudo generar la instrucción. Intenta de nuevo.');
+      return ok({ instruction });
+    } catch (err: any) {
+      return serverError('No se pudo generar la instrucción: ' + (err?.message ?? ''));
+    }
+  }
+
   // ── POST /admin/courses/wizard/copilot — dispatch async job ─────────────────
   if (path === '/admin/courses/wizard/copilot' && method === 'POST') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
@@ -173,6 +199,16 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
     if (academicPeriod && !finalLabels.includes(academicPeriod)) finalLabels.unshift(academicPeriod);
 
     const callerName = await getCallerName(event);
+
+    // Auto-upsert academic period so it appears in the reusable dropdown
+    if (academicPeriod?.trim()) {
+      await prisma.academicPeriod.upsert({
+        where: { name: academicPeriod.trim() },
+        update: {},
+        create: { name: academicPeriod.trim() },
+      }).catch(() => {}); // non-fatal
+    }
+
     const wizardCourseData = {
       title, description: description || title, imageUrl: rawImageUrl || null,
       courseType: courseType || null, academicPeriod: academicPeriod || null,

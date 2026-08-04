@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle, FolderOpen, Link2, FileText, CalendarCheck } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, PlayCircle, FolderOpen, Link2, FileText, CalendarCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -232,7 +232,7 @@ export default function CoursePage() {
         )}
 
         {/* Recursos del curso */}
-        {resources.length > 0 ? (
+        {resources.length > 0 && (
           <button
             onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
             className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
@@ -240,12 +240,6 @@ export default function CoursePage() {
             <FolderOpen className="w-4 h-4" />
             {t.courseDetail.resources(resources.length)}
           </button>
-        ) : (
-          <div className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group" title={t.courseDetail.comingSoon}>
-            <Library className="w-4 h-4" />
-            {t.courseDetail.library}
-            <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">{t.courseDetail.comingSoon}</span>
-          </div>
         )}
       </div>
 

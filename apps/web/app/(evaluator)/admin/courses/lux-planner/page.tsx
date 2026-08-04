@@ -2,7 +2,7 @@
 
 import { useState, useRef, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
@@ -156,15 +156,13 @@ function CourseWizardInner() {
       // Restore weekly plan and syllabus if previously saved
       const savedPlan = Array.isArray(c.planWeeklyPlan) ? c.planWeeklyPlan : [];
       const savedSyllabus = typeof c.planSyllabusInput === 'string' ? c.planSyllabusInput : '';
-      if (savedPlan.length > 0 || savedSyllabus) {
-        setStep4((p) => ({
-          ...p,
-          syllabusInput: savedSyllabus,
-          weeklyPlan: savedPlan.length > 0 ? savedPlan : p.weeklyPlan,
-          modules: savedPlan.length > 0 ? (Array.isArray(c.planModules) ? c.planModules : p.modules) : p.modules,
-          status: savedPlan.length > 0 ? 'done' : 'idle',
-        }));
-      }
+      // Always restore — even if empty string (keeps step4 in sync with DB)
+      setStep4((p) => ({
+        ...p,
+        syllabusInput: savedSyllabus,
+        weeklyPlan: savedPlan.length > 0 ? savedPlan : p.weeklyPlan,
+        status: savedPlan.length > 0 ? 'done' : 'idle',
+      }));
     } catch {
       // Ignore — wizard will start blank
     } finally {
@@ -289,9 +287,10 @@ function CourseWizardInner() {
   const addEvalItem = () => setStep3((p) => ({ ...p, items: [...p.items, { id: uid(), type: 'EVIDENCE' as EvalItem['type'], name: 'Actividad', nameEN: 'Activity', weight: 0, count: 1, dueDates: [''], instructions: '' }] }));
   const removeItem = (id: string) => setStep3((p) => ({ ...p, items: p.items.filter((it) => it.id !== id) }));
 
-  const enterStep5 = () => {
+  // Init default eval items when entering Evaluación (step 4)
+  const enterEvaluacion = () => {
     if (step3.items.length === 0 && step1.courseType) setStep3({ items: defaultEvalItems(step1.courseType as CourseTypeId) });
-    setStep(5);
+    setStep(4);
   };
 
   // ── Step 4 — Lux Planner ───────────────────────────────────────────────────
@@ -423,11 +422,11 @@ function CourseWizardInner() {
   const step3Valid = step3.items.length > 0 && weightOk;
   const step4Valid = step4.status !== 'loading';
 
-  // New order: 1=Identidad, 2=Calendario, 3=Planner(LuxPlanner), 4=LuxPlanner(Planeamiento), 5=Evaluación
-  const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step4Valid : step === 4 ? true : false;
+  // Order: 1=Identidad, 2=Calendario, 3=Planeamiento(LuxPlanner), 4=Evaluación, 5=Resumen Lux Planner
+  const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step4Valid : step === 4 ? step3Valid : false;
 
   const goNext = () => {
-    if (step === 4) { enterStep5(); return; }
+    if (step === 3) { enterEvaluacion(); return; }
     setStep((p) => Math.min(5, p + 1) as typeof step);
   };
   const goBack = () => {
@@ -499,17 +498,6 @@ function CourseWizardInner() {
             />
           )}
           {step === 4 && (
-            <StepPlaneamiento
-              step1={step1} step2={step2} step3={step3} step4={step4} step5={step5}
-              effectiveWeeks={effectiveWeeks}
-              editingCourseId={editingCourseId}
-              saveCourse={saveCourse}
-              onGoToCourse={(courseId) => router.push(`/admin/courses/${courseId}`)}
-              isEN={isEN}
-              showSave={false}
-            />
-          )}
-          {step === 5 && (
             <StepEvaluacion
               step1={step1} step2={step2} step3={step3} step4={step4}
               totalWeight={totalWeight} weightOk={weightOk}
@@ -519,30 +507,21 @@ function CourseWizardInner() {
               addEvalItem={addEvalItem} removeItem={removeItem}
               isEN={isEN}
               onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
-              step5Error={step5.error}
+              step5Error={''}
               editingCourseId={editingCourseId}
             />
           )}
-          {step5.status === 'done' && step === 5 && (
-            <div className="space-y-6 text-center py-8">
-              <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
-                <CheckCircle className="w-10 h-10 text-emerald-500" />
-              </div>
-              <p className="font-heading font-bold text-charcoal text-xl">{editingCourseId ? s('¡Curso actualizado exitosamente!', 'Course updated successfully!') : s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
-              <p className="text-sm text-gray-400">{step1.title}</p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                {step5.courseId && (
-                  <button onClick={() => router.push(`/admin/courses/${step5.courseId}`)} className="px-6 py-2 rounded-xl bg-cta-from text-white font-semibold text-sm hover:opacity-90 transition-opacity">
-                    {s('Ir al curso', 'Go to course')}
-                  </button>
-                )}
-                {step5.docUrl && (
-                  <a href={step5.docUrl} target="_blank" rel="noopener noreferrer" download className="px-6 py-2 rounded-xl border-2 border-border text-charcoal font-semibold text-sm hover:bg-surface transition-colors">
-                    {s('Descargar plan Word', 'Download Word plan')}
-                  </a>
-                )}
-              </div>
-            </div>
+          {step === 5 && (
+            <StepPlaneamiento
+              step1={step1} step2={step2} step3={step3} step4={step4} step5={step5}
+              effectiveWeeks={effectiveWeeks}
+              editingCourseId={editingCourseId}
+              saveCourse={saveCourse}
+              onGoToCourse={(courseId) => router.push(`/admin/courses/${courseId}`)}
+              onGoToEval={() => setStep(4)}
+              onRemoveEval={removeItem}
+              isEN={isEN}
+            />
           )}
         </div>
 
@@ -550,15 +529,6 @@ function CourseWizardInner() {
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
             <Button variant="secondary" onClick={goBack} leftIcon={<ArrowLeft className="w-4 h-4" />}>{s('Atrás', 'Back')}</Button>
             {step < 5 && <Button onClick={goNext} disabled={!canNext} rightIcon={<ArrowRight className="w-4 h-4" />}>{s('Siguiente', 'Next')}</Button>}
-            {step === 5 && (
-              <Button
-                onClick={saveCourse}
-                disabled={step5.status === 'saving'}
-                rightIcon={step5.status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              >
-                {s('Crear Curso con Lux Planner', 'Create Course with Lux Planner')}
-              </Button>
-            )}
           </div>
         )}
 
