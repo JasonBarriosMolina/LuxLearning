@@ -1,6 +1,7 @@
 'use client';
 
-import { Pin, CheckCircle2, Circle, Trash2, BookOpen, HelpCircle, MessageSquare, RotateCcw, Pencil } from 'lucide-react';
+import Link from 'next/link';
+import { Pin, CheckCircle2, Circle, Trash2, BookOpen, HelpCircle, MessageSquare, RotateCcw, Pencil, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PlanItem } from '../types';
 
@@ -28,22 +29,59 @@ const TYPE_COLOR: Record<string, string> = {
   custom: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
+function getItemHref(item: PlanItem): string | null {
+  if (!item.courseId || !item.moduleId) return null;
+  if (item.lessonId) return `/courses/${item.courseId}/modules/${item.moduleId}/lessons/${item.lessonId}`;
+  if (item.type === 'reflection') return `/courses/${item.courseId}/modules/${item.moduleId}/reflection`;
+  if (item.type === 'quiz') return `/courses/${item.courseId}/modules/${item.moduleId}/quiz`;
+  return `/courses/${item.courseId}/modules/${item.moduleId}`;
+}
+
 export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: Props) {
   const isDone = item.completed;
   const isPinned = item.pinned;
+  const href = !isDone ? getItemHref(item) : null;
+
+  const titleContent = (
+    <div className={cn('flex-1 min-w-0', href ? 'group-hover/title:text-[#17527E] dark:group-hover/title:text-blue-300' : '')}>
+      <div className="flex items-center gap-1">
+        <p className={cn('font-medium leading-tight truncate text-sm', isDone && 'line-through text-gray-400')}>
+          {item.title}
+        </p>
+        {href && <ExternalLink className="w-2.5 h-2.5 text-gray-300 shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity" />}
+      </div>
+      {item.description && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">{item.description}</p>
+      )}
+      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+        <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium', TYPE_COLOR[item.type] ?? TYPE_COLOR.custom)}>
+          {TYPE_ICON[item.type]}
+          {item.type}
+        </span>
+        {item.estimatedMinutes && (
+          <span className="text-xs text-gray-400">{item.estimatedMinutes} min</span>
+        )}
+        {isPinned && (
+          <span className="text-xs text-[#17527E] dark:text-blue-300 font-medium flex items-center gap-0.5">
+            <Pin className="w-2.5 h-2.5" /> Fijado
+          </span>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className={cn(
-      'group relative rounded-lg border px-3 py-2 text-sm transition-all',
+      'group/card relative rounded-lg border px-3 py-2 text-sm transition-all',
       isDone
         ? 'border-gray-200 bg-gray-50 dark:border-white/10 dark:bg-white/5 opacity-60'
         : isPinned
           ? 'border-[#17527E]/30 bg-blue-50 dark:border-blue-400/20 dark:bg-blue-950/30'
           : 'border-gray-200 bg-white dark:border-white/10 dark:bg-white/5',
+      href ? 'hover:border-[#17527E]/40 hover:shadow-sm' : '',
     )}>
-      {/* Top row */}
       <div className="flex items-start gap-2">
-        {/* Done toggle */}
+        {/* Done toggle — outside Link so clicks don't navigate */}
         <button
           onClick={() => onToggleDone(item.id, !isDone)}
           className="mt-0.5 shrink-0 text-gray-400 hover:text-green-500 transition-colors"
@@ -54,33 +92,18 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
             : <Circle className="w-4 h-4" />}
         </button>
 
-        {/* Title + type badge */}
-        <div className="flex-1 min-w-0">
-          <p className={cn('font-medium leading-tight truncate', isDone && 'line-through text-gray-400')}>
-            {item.title}
-          </p>
-          {item.description && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">{item.description}</p>
-          )}
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium', TYPE_COLOR[item.type] ?? TYPE_COLOR.custom)}>
-              {TYPE_ICON[item.type]}
-              {item.type}
-            </span>
-            {item.estimatedMinutes && (
-              <span className="text-xs text-gray-400">{item.estimatedMinutes} min</span>
-            )}
-            {isPinned && (
-              <span className="text-xs text-[#17527E] dark:text-blue-300 font-medium flex items-center gap-0.5">
-                <Pin className="w-2.5 h-2.5" /> Fijado
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Title area — Link when navigable */}
+        {href ? (
+          <Link href={href} className="flex-1 min-w-0 group/title">
+            {titleContent}
+          </Link>
+        ) : (
+          titleContent
+        )}
 
         {/* Actions — show on hover */}
         {!locked && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <div className="flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity shrink-0">
             <button
               onClick={() => onTogglePin(item.id, !isPinned)}
               className={cn('p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10 transition-colors', isPinned ? 'text-[#17527E] dark:text-blue-300' : 'text-gray-400')}
