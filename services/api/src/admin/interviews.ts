@@ -130,7 +130,7 @@ Rules:
     return ok(enriched);
   }
 
-  // ── GET /admin/interviews/submissions — completed DDB interviews by course ────
+  // ── GET /admin/interviews/submissions — DDB interviews by course ─────────────
   if (path === '/admin/interviews/submissions' && method === 'GET') {
     const courseId = event.queryStringParameters?.courseId;
     if (!courseId) return badRequest('courseId es requerido');
@@ -150,11 +150,38 @@ Rules:
     );
 
     const flat = allSubmissions.flat();
+
+    // Deduplicate: keep latest session per (userId, evaluationEventId)
+    const dedupMap = new Map<string, typeof flat[0]>();
+    for (const sub of flat) {
+      const key = `${sub.userId}|${(sub as any).evaluationEventId}`;
+      const existing = dedupMap.get(key);
+      if (!existing || new Date(sub.createdAt) > new Date(existing.createdAt)) {
+        dedupMap.set(key, sub);
+      }
+    }
+    const deduped = Array.from(dedupMap.values());
+
     const status = event.queryStringParameters?.status;
-    const filtered = status ? flat.filter((s) => s.status === status) : flat;
+    const filtered = status ? deduped.filter((s) => s.status === status) : deduped;
     filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    return ok(filtered);
+    // Resolve display names from Cognito for unique userIds
+    const uniqueUserIds = [...new Set(filtered.map((s) => s.userId))];
+    const nameMap: Record<string, string> = {};
+    await Promise.all(uniqueUserIds.map(async (uid) => {
+      try {
+        const cogUser = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: uid }));
+        const attrs = cogUser.UserAttributes ?? [];
+        const getAttr = (n: string) => attrs.find((a: any) => a.Name === n)?.Value ?? '';
+        nameMap[uid] = getAttr('name') || getAttr('email') || uid;
+      } catch {
+        nameMap[uid] = uid;
+      }
+    }));
+
+    const enriched = filtered.map((s) => ({ ...s, displayName: nameMap[s.userId] ?? s.userId }));
+    return ok(enriched);
   }
 
   // ── POST /admin/interviews — create interview definition ──────────────────────
