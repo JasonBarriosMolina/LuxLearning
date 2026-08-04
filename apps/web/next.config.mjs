@@ -55,7 +55,7 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=()' },
+  { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=()' },
   {
     key: 'Content-Security-Policy',
     value: [
@@ -65,7 +65,7 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https: http:",
       "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://youtube.com",
-      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com",
+      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com https://api.vapi.ai wss://*.vapi.ai",
       "media-src 'self' blob: https://lux-learning-images.s3.amazonaws.com",
       "worker-src 'self' blob:",
     ].join('; '),
