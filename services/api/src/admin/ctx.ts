@@ -76,6 +76,29 @@ export const STYLE_SUFFIXES: Record<string, string> = {
   corporate:    ', professional corporate style, blue and gray tones, business',
 };
 
+// Converts arbitrary user text (may contain "infografía", "diagrama", etc.) into a
+// diffusion-safe visual scene description. Prevents pseudo-text hallucination.
+export async function sanitizeUserPromptForImage(userPrompt: string): Promise<string> {
+  try {
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31', max_tokens: 120,
+        messages: [{ role: 'user', content:
+          `Convert this user request into a diffusion model image prompt (max 70 words). Rules: describe ONLY visual elements — objects, people, settings, lighting, colors, composition. NEVER mention text, labels, titles, banners, infographic layouts, charts, or diagrams in any form. Flat illustration style, clean white background.\nUser request: "${userPrompt}"\nReturn ONLY the visual prompt, nothing else.`
+        }],
+      }),
+    }));
+    const text = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    if (text.length > 20) return text;
+  } catch { /* fall through to deterministic fallback */ }
+  const cleaned = userPrompt
+    .replace(/\b(infograph\w*|infografía|charts?|diagrama?s?|tables?|texto|texts?|labels?|banners?|posters?|flyers?|slides?|títulos?|titl\w*)\b/gi, '')
+    .replace(/\s+/g, ' ').trim();
+  return `${cleaned || userPrompt}, flat illustration, colorful educational scene, clean white background, no text, no labels, no words`;
+}
+
 // Haiku → visual prompt for Stability AI (pure scene description, no text in image)
 export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string, content: string): Promise<string> {
   const snippet = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
@@ -121,7 +144,7 @@ Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No mar
     const res = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json', accept: 'application/json',
-      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 4000,
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 8192,
         messages: [{ role: 'user', content: prompt }] }),
     }));
     let svgRaw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
@@ -152,10 +175,10 @@ export async function generateLessonImage(
   order: number,
   override?: { promptText?: string; style?: string; lessonContent?: string }
 ): Promise<string | null> {
-  // Build prompt: custom override → Haiku visual scene from content → simple fallback
+  // Build prompt: sanitize user text via Haiku first → lessonContent → simple fallback
   let prompt: string;
   if (override?.promptText) {
-    prompt = override.promptText;
+    prompt = await sanitizeUserPromptForImage(override.promptText);
   } else if (override?.lessonContent) {
     prompt = await buildVisualPrompt(lessonTitle, moduleTitle, override.lessonContent);
   } else {
@@ -172,7 +195,7 @@ export async function generateLessonImage(
       accept: 'application/json',
       body: JSON.stringify({
         prompt,
-        negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, signs, blurry, low quality, distorted, infographic, chart, diagram',
+        negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
         mode: 'text-to-image',
         aspect_ratio: '1:1',
         output_format: 'jpeg',

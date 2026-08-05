@@ -143,6 +143,33 @@ describe('POST /admin/lessons/:lessonId/regenerate', () => {
     expect(body.data).toHaveProperty('imageUrl');
   });
 
+  it('returns 200 with imageUrl preview for type=infographic', async () => {
+    const prisma = makePrisma({ lesson: { findUnique: vi.fn().mockResolvedValue(lesson) } });
+    const ctx = makeAdminCtx({
+      method: 'POST', path: '/admin/lessons/l1/regenerate', prisma,
+      body: { type: 'infographic', preview: true },
+    });
+    const res = await handleAIRegen(ctx);
+    expect(res?.statusCode).toBe(200);
+    const body = await bodyOf(res);
+    expect(body.data).toHaveProperty('imageUrl');
+    expect(body.data.preview).toBe(true);
+  });
+
+  it('applies infographic previewData imageUrl to DB when not in preview mode', async () => {
+    const updateFn = vi.fn().mockResolvedValue({ id: 'l1', imageUrl: 'https://s3.example.com/infographic.jpg' });
+    const prisma = makePrisma({ lesson: { findUnique: vi.fn().mockResolvedValue(lesson), update: updateFn } });
+    const ctx = makeAdminCtx({
+      method: 'POST', path: '/admin/lessons/l1/regenerate', prisma,
+      body: { type: 'infographic', preview: false, previewData: { imageUrl: 'https://s3.example.com/infographic.jpg' } },
+    });
+    const res = await handleAIRegen(ctx);
+    expect(res?.statusCode).toBe(200);
+    expect(updateFn).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ imageUrl: 'https://s3.example.com/infographic.jpg' }),
+    }));
+  });
+
   it('returns 403 for STUDENT', async () => {
     const ctx = makeAdminCtx({ event: makeEvent('STUDENT'), method: 'POST', path: '/admin/lessons/l1/regenerate', body: {} });
     const res = await handleAIRegen(ctx);

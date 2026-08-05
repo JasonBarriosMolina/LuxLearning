@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  PlayCircle, Eye, Volume2, RefreshCw, Pencil, RotateCcw, Trash2,
+  PlayCircle, Eye, Volume2, RefreshCw, Pencil, RotateCcw, Trash2, GripVertical, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -12,7 +12,11 @@ import { ConfirmDelete } from './ConfirmDelete';
 import { LessonFields } from './LessonFields';
 import type { LessonForm } from './types';
 
-export function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () => void }) {
+export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, isLast }: {
+  lesson: any; onRefresh: () => void;
+  onMoveUp?: () => void; onMoveDown?: () => void;
+  isFirst?: boolean; isLast?: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<LessonForm>({
     title: lesson.title, duration: lesson.duration, youtubeId: lesson.youtubeId ?? '',
@@ -119,6 +123,11 @@ export function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () =>
   if (!editing) {
     return (
       <div className="flex items-start gap-3 p-3 bg-surface rounded-xl border border-border">
+        <div className="flex flex-col items-center gap-0.5 shrink-0 mt-0.5">
+          <GripVertical className="w-3.5 h-3.5 text-gray-300" />
+          <button onClick={onMoveUp} disabled={isFirst} className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-30 transition-colors" title="Mover arriba"><ChevronUp className="w-3 h-3" /></button>
+          <button onClick={onMoveDown} disabled={isLast} className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-30 transition-colors" title="Mover abajo"><ChevronDown className="w-3 h-3" /></button>
+        </div>
         <PlayCircle className="w-4 h-4 text-cta-from shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-charcoal">{lesson.order}. {lesson.title}</p>
@@ -267,13 +276,13 @@ export function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () =>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Tipo</p>
                   <div className="flex rounded-lg border border-border overflow-hidden">
-                    {(['text', 'image'] as const).map((t) => (
+                    {(['text', 'image', 'infographic'] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => { setRegenType(t); setRegenStyle(''); }}
                         className={`flex-1 py-1.5 text-xs font-medium transition-colors ${regenType === t ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                       >
-                        {t === 'text' ? '📝 Texto' : '🖼 Imagen'}
+                        {t === 'text' ? '📝 Texto' : t === 'image' ? '🖼 Imagen' : '📊 Infografía'}
                       </button>
                     ))}
                   </div>
@@ -318,6 +327,17 @@ export function LessonRow({ lesson, onRefresh }: { lesson: any; onRefresh: () =>
                       ))}
                     </div>
                     <p className="text-xs text-gray-400 mt-1.5">Opcional — deja vacío para estilo automático.</p>
+                  </div>
+                )}
+
+                {/* Infographic description */}
+                {regenType === 'infographic' && (
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-indigo-700">¿Qué genera?</p>
+                    <p className="text-xs text-indigo-600 leading-relaxed">
+                      Claude analiza el contenido de la lección y genera una <strong>infografía SVG educativa</strong> con título, íconos y secciones de texto real — sin pseudo-texto ni alucinaciones tipográficas.
+                    </p>
+                    <p className="text-xs text-indigo-500 mt-1">El archivo se guarda como imagen de la lección y puede descargarse.</p>
                   </div>
                 )}
 
