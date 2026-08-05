@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, PlayCircle, FolderOpen, Link2, FileText, CalendarCheck } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -317,10 +318,12 @@ export default function CoursePage() {
                   <th className="text-center pb-2 font-semibold">{t.courseGrades.weightHeader}</th>
                   <th className="text-center pb-2 font-semibold">{t.courseGrades.dueDateHeader}</th>
                   <th className="text-right pb-2 font-semibold">{t.courseGrades.gradeHeader}</th>
+                  <th className="text-right pb-2 font-semibold">{t.courseGrades.actionHeader}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {(() => {
+                  const today = new Date();
                   const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', INTERVIEW: 'bg-purple-100 text-purple-700' };
                   const getGradeForEvent = (ev: any): number | null => {
                     if (ev.type !== 'EVIDENCE') return null;
@@ -330,6 +333,28 @@ export default function CoursePage() {
                     const subs = mods.flatMap((m: any) => m?.submissions ?? []).filter((s: any) => s.status === 'graded');
                     if (subs.length === 0) return null;
                     return Math.round(subs.reduce((sum: number, s: any) => sum + (s.grade ?? 0), 0) / subs.length);
+                  };
+                  const getActionCell = (ev: any) => {
+                    const isOverdue = ev.dueDate && new Date(ev.dueDate) < today;
+                    if (isOverdue) return <span className="text-xs text-red-400 font-medium">{t.courseGrades.overdue}</span>;
+                    if (!ev.moduleId) return null;
+                    const modPath = `/courses/${courseId}/modules/${ev.moduleId}`;
+                    if (ev.type === 'QUIZ') return (
+                      <Link href={`${modPath}/quiz`}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.goToQuiz}</Button>
+                      </Link>
+                    );
+                    if (ev.type === 'INTERVIEW') return (
+                      <Link href={modPath}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.present}</Button>
+                      </Link>
+                    );
+                    if (ev.type === 'EVIDENCE') return (
+                      <Link href={modPath}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.submit}</Button>
+                      </Link>
+                    );
+                    return null;
                   };
                   return course.evaluationEvents?.map((ev: any) => {
                     const grade = getGradeForEvent(ev);
@@ -349,6 +374,7 @@ export default function CoursePage() {
                             : <span className="text-xs text-gray-400">{t.courseGrades.pending}</span>
                           }
                         </td>
+                        <td className="py-2.5 text-right">{getActionCell(ev)}</td>
                       </tr>
                     );
                   });

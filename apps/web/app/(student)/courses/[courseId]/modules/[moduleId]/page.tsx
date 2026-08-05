@@ -12,6 +12,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { VoiceInterview } from '@/components/ui/VoiceInterview';
+import { EvidenceCard } from '@/components/ui/EvidenceCard';
 import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
@@ -280,6 +281,19 @@ export default function ModulePage() {
           {!module.quizPassed && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
+
+      {/* Evidence submissions — one card per EVIDENCE eval event linked to this module */}
+      {course?.evaluationEvents
+        ?.filter((e: any) => e.type === 'EVIDENCE' && e.moduleId === moduleId)
+        .map((e: any) => (
+          <EvidenceCard
+            key={e.id}
+            courseId={courseId}
+            moduleId={moduleId}
+            evalName={e.name}
+            instructions={e.instructions}
+          />
+        ))}
 
       {/* Voice Interview — shown when course has INTERVIEW evaluation events */}
       {course?.evaluationEvents?.some((e: any) => e.type === 'INTERVIEW') && (

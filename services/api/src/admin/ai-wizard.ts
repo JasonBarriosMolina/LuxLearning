@@ -287,6 +287,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
             description: item.instructions || undefined,
             type: 'deadline', startDate: dayStart, endDate: dayEnd, allDay: true,
             visibility: 'community', creatorRole: callerRole, createdAt: now,
+            targetCourseId: course.id,
           });
         }
       }
