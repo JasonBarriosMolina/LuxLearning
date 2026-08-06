@@ -102,10 +102,10 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       transcriber: { provider: 'deepgram', model: 'nova-2', language: lang === 'en' ? 'en' : 'es' },
       model: {
         provider: 'anthropic',
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'system', content: systemPrompt }],
       },
-      voice: { provider: 'openai', voiceId: lang === 'en' ? 'nova' : 'alloy' },
+      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: 'auto' },
       name: 'Lux Entrevistador',
       firstMessage: lang === 'en'
         ? 'Hello! I\'m Mentor. I\'d love to chat with you about what you\'ve learned in this module. I\'ll ask you 3 questions — there\'s no rush. Ready to begin?'
