@@ -12,5 +12,6 @@ export * from './db-notifications.js';
 export * from './db-tasks.js';
 export * from './db-calendar.js';
 export * from './db-submissions.js';
+export * from './db-classes.js';
 export * from './db-attendance.js';
 export * from './db-misc.js';

@@ -29,6 +29,7 @@ const BASE_TABLES = {
   USER_PROFILES: process.env.DYNAMO_TABLE_USER_PROFILES ?? 'LuxUserProfiles',
   SUBMISSIONS: process.env.DYNAMO_TABLE_SUBMISSIONS ?? 'LuxSubmissions',
   INTERVIEWS: process.env.DYNAMO_TABLE_INTERVIEWS ?? 'LuxInterviews',
+  CLASSES: process.env.DYNAMO_TABLE_CLASSES ?? 'LuxClasses',
   ATTENDANCE: process.env.DYNAMO_TABLE_ATTENDANCE ?? 'LuxAttendance',
   STUDY_PLANS: process.env.DYNAMO_TABLE_STUDY_PLANS ?? 'LuxStudyPlans',
 };

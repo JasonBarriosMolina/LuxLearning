@@ -2,7 +2,7 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { EvalCtx, s3Ev, SUBMISSIONS_BUCKET_EV, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV } from './ctx';
-import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
+import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, listClassSessionsForModule, updateClassSessionGrade, getClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden } from '../shared/response';
 
 export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
@@ -76,6 +76,51 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
         try {
           const subs = await getPushSubscriptionsByUserId(studentUserId);
           const payload = JSON.stringify({ title: 'Entrevista calificada', body: `Tu entrevista oral fue calificada: ${gradeNum}%` });
+          await Promise.allSettled(subs.map((sub: any) =>
+            webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
+          ));
+        } catch {}
+      })();
+    }
+    return ok({ graded: true });
+  }
+
+  // ── GET /evaluator/classes?moduleId=X ───────────────────────────────────────
+  if (method === 'GET' && path === '/evaluator/classes') {
+    const moduleId = event.queryStringParameters?.moduleId;
+    if (!moduleId) return badRequest('moduleId required');
+    const sessions = await listClassSessionsForModule(moduleId);
+    return ok(sessions.filter((s) => !s.voided));
+  }
+
+  // ── PUT /evaluator/classes/:sessionId/grade ──────────────────────────────────
+  const classGradeMatch = path.match(/^\/evaluator\/classes\/([^/]+)\/grade$/);
+  if (classGradeMatch && method === 'PUT') {
+    const sessionId = classGradeMatch[1]!;
+    let body: any = {};
+    try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+    const { studentUserId, grade, feedback, courseId } = body as { studentUserId?: string; grade?: number; feedback?: string; courseId?: string };
+    if (!studentUserId || grade == null) return badRequest('studentUserId and grade required');
+    const gradeNum = Number(grade);
+    if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
+
+    // Verify evaluator owns the course (unless admin)
+    if (!isAdminRole && courseId) {
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { evaluatorId: true } });
+      if (course && course.evaluatorId !== userId) return forbidden('No autorizado para este curso');
+    }
+
+    // Verify session exists
+    const session = await getClassSession(studentUserId, sessionId);
+    if (!session) return badRequest('Sesión no encontrada');
+
+    await updateClassSessionGrade(studentUserId, sessionId, gradeNum, String(feedback ?? ''), userId!);
+
+    if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
+      void (async () => {
+        try {
+          const subs = await getPushSubscriptionsByUserId(studentUserId);
+          const payload = JSON.stringify({ title: 'Clase calificada', body: `Tu sesión de Lux Mentor fue calificada: ${gradeNum}%` });
           await Promise.allSettled(subs.map((sub: any) =>
             webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
           ));

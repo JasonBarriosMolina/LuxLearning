@@ -12,6 +12,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { VoiceInterview } from '@/components/ui/VoiceInterview';
+import { LuxMentorClass } from '@/components/ui/LuxMentorClass';
 import { EvidenceCard } from '@/components/ui/EvidenceCard';
 import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
@@ -24,11 +25,19 @@ export default function ModulePage() {
   const [loading, setLoading] = useState(true);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [interviews, setInterviews] = useState<any[]>([]);
+  const [classSessions, setClassSessions] = useState<any[]>([]);
 
   const loadInterviews = useCallback(async () => {
     try {
       const res = await api.interviews.list(moduleId);
       setInterviews((res as any).data ?? []);
+    } catch {}
+  }, [moduleId]);
+
+  const loadClassSessions = useCallback(async () => {
+    try {
+      const res = await api.classes.list(moduleId);
+      setClassSessions((res as any).data ?? []);
     } catch {}
   }, [moduleId]);
 
@@ -38,11 +47,13 @@ export default function ModulePage() {
       api.courses.get(courseId),
       api.lessons.favorites(),
       api.interviews.list(moduleId).catch(() => ({ data: [] })),
-    ]).then(([courseRes, favRes, intRes]) => {
+      api.classes.list(moduleId).catch(() => ({ data: [] })),
+    ]).then(([courseRes, favRes, intRes, classRes]) => {
       setCourse((courseRes as any).data);
       const favs: any[] = (favRes as any).data ?? [];
       setFavIds(new Set(favs.filter((f: any) => f?.type === 'lesson').map((f: any) => f?.id)));
       setInterviews((intRes as any).data ?? []);
+      setClassSessions((classRes as any).data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [courseId, moduleId, lang]);
@@ -302,6 +313,16 @@ export default function ModulePage() {
           moduleId={moduleId}
           interviews={interviews}
           onCompleted={loadInterviews}
+        />
+      )}
+
+      {/* Lux Mentor Class — shown when course has CLASS evaluation events for this module */}
+      {course?.evaluationEvents?.some((e: any) => e.type === 'CLASS' && (e.moduleId === moduleId || !e.moduleId)) && (
+        <LuxMentorClass
+          courseId={courseId}
+          moduleId={moduleId}
+          sessions={classSessions}
+          onCompleted={loadClassSessions}
         />
       )}
     </div>

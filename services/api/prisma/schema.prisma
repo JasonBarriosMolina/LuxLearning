@@ -80,8 +80,10 @@ model EvaluationEvent {
   dueDate        DateTime?
   weight         Float    // porcentaje (ej. 20.0)
   instructions   String?
-  vapiPrompt       String?   // System prompt for Vapi AI interviewer
+  vapiPrompt       String?   // System prompt for Vapi AI interviewer / Lux Mentor
   vapiObjectives   String?   // JSON array of 3 question objectives
+  lessonVideoUrl   String?   // CLASS type: evaluator-uploaded video URL (S3 or YouTube)
+  lessonScript     String?   // CLASS type: text script for TTS (Phase 1 fallback)
   targetStudentIds String[]  @default([]) // empty = all enrolled; non-empty = specific Cognito usernames
   order            Int       @default(0)
   isDraft          Boolean   @default(false)

@@ -114,6 +114,15 @@ export const api = {
       request<any>(`/my-interviews/${interviewId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   },
 
+  classes: {
+    list: (moduleId: string) =>
+      request<any>(`/my-classes?moduleId=${moduleId}`),
+    start: (body: { courseId: string; moduleId: string }) =>
+      request<any>('/my-classes/start', { method: 'POST', body: JSON.stringify(body) }),
+    update: (sessionId: string, patch: { vapiCallId?: string; status?: string }) =>
+      request<any>(`/my-classes/${sessionId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  },
+
   evaluator: {
     myCourses: () => request<any>(`/evaluator/my-courses?lang=${getLang()}`),
     reflections: () => request('/evaluator/reflections'),
@@ -201,6 +210,11 @@ export const api = {
       list: (moduleId: string) => request<any>(`/evaluator/interviews?moduleId=${moduleId}`),
       grade: (interviewId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/interviews/${interviewId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    classes: {
+      list: (moduleId: string) => request<any>(`/evaluator/classes?moduleId=${moduleId}`),
+      grade: (sessionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/classes/${sessionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
     },
     studyPlan: {
       generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string }) =>
@@ -461,6 +475,31 @@ export const api = {
       delete: (id: string) => request<any>(`/admin/interviews/${id}`, { method: 'DELETE' }),
       students: (courseId: string) => request<any>(`/admin/interviews/students?courseId=${courseId}`),
       coverage: (courseId: string) => request<any>(`/admin/interviews/coverage?courseId=${courseId}`),
+    },
+    // Lux Mentor Classes (EvaluationEvent type=CLASS + DDB LuxClasses)
+    classes: {
+      listCourses: () => request<any>('/admin/classes/courses'),
+      list: (courseId: string, includeSubmissions = false) =>
+        request<any>(`/admin/classes?courseId=${courseId}${includeSubmissions ? '&includeSubmissions=true' : ''}`),
+      submissions: (courseId: string, status?: string) =>
+        request<any>(`/admin/classes/submissions?courseId=${courseId}${status ? '&status=' + status : ''}`),
+      generate: (body: { title?: string; topic?: string; courseTitle?: string; moduleTitle?: string; language?: string }) =>
+        request<any>('/admin/classes/generate', { method: 'POST', body: JSON.stringify(body) }),
+      presignVideo: (body: { fileName: string; fileType: string }) =>
+        request<any>('/admin/classes/presign-video', { method: 'POST', body: JSON.stringify(body) }),
+      create: (body: {
+        courseId: string; moduleId?: string; name: string; dueDate?: string;
+        weight?: number; instructions?: string; vapiPrompt?: string; vapiObjectives?: string;
+        lessonVideoUrl?: string; lessonScript?: string; targetStudentIds?: string[];
+      }) => request<any>('/admin/classes', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: Partial<{
+        name: string; courseId: string; moduleId: string; dueDate: string; weight: number;
+        instructions: string; vapiPrompt: string; vapiObjectives: string;
+        lessonVideoUrl: string; lessonScript: string; targetStudentIds: string[];
+        isDraft: boolean; isArchived: boolean;
+      }>) => request<any>(`/admin/classes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/admin/classes/${id}`, { method: 'DELETE' }),
+      students: (courseId: string) => request<any>(`/admin/classes/students?courseId=${courseId}`),
     },
   },
   attendance: {
