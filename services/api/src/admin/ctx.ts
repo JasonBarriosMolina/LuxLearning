@@ -96,7 +96,7 @@ export async function sanitizeUserPromptForImage(userPrompt: string): Promise<st
   const cleaned = userPrompt
     .replace(/\b(infograph\w*|infografía|charts?|diagrama?s?|tables?|texto|texts?|labels?|banners?|posters?|flyers?|slides?|títulos?|titl\w*)\b/gi, '')
     .replace(/\s+/g, ' ').trim();
-  return `${cleaned || userPrompt}, flat illustration, colorful educational scene, clean white background, no text, no labels, no words`;
+  return `${cleaned || 'colorful educational scene'}, flat illustration, colorful educational scene, clean white background, no text, no labels, no words`;
 }
 
 // Haiku → visual prompt for Stability AI (pure scene description, no text in image)

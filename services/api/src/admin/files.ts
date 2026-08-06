@@ -55,7 +55,7 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     const isAnyRole = ['ADMIN', 'SUPER_ADMIN', 'EVALUATOR', 'STUDENT'].includes(role ?? '');
     if (!isAnyRole) return forbidden('Se requiere sesión activa');
 
-    const { fileName, fileType, folder = 'uploads' } = body as { fileName?: string; fileType?: string; folder?: string };
+    const { fileName, fileType, folder } = body as { fileName?: string; fileType?: string; folder?: string };
     if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
 
     // Students may only upload to the 'photos' folder
