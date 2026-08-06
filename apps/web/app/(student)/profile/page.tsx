@@ -26,6 +26,39 @@ interface ProfileData {
   socialLinks: { platform: string; url: string }[];
 }
 
+// Country dial codes (most common first, then alphabetical)
+const COUNTRY_CODES = [
+  { code: '+57', flag: '🇨🇴', label: 'Colombia' },
+  { code: '+1', flag: '🇺🇸', label: 'EE. UU. / Canadá' },
+  { code: '+52', flag: '🇲🇽', label: 'México' },
+  { code: '+54', flag: '🇦🇷', label: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', label: 'Chile' },
+  { code: '+51', flag: '🇵🇪', label: 'Perú' },
+  { code: '+58', flag: '🇻🇪', label: 'Venezuela' },
+  { code: '+593', flag: '🇪🇨', label: 'Ecuador' },
+  { code: '+591', flag: '🇧🇴', label: 'Bolivia' },
+  { code: '+595', flag: '🇵🇾', label: 'Paraguay' },
+  { code: '+598', flag: '🇺🇾', label: 'Uruguay' },
+  { code: '+34', flag: '🇪🇸', label: 'España' },
+  { code: '+44', flag: '🇬🇧', label: 'Reino Unido' },
+  { code: '+49', flag: '🇩🇪', label: 'Alemania' },
+  { code: '+33', flag: '🇫🇷', label: 'Francia' },
+  { code: '+55', flag: '🇧🇷', label: 'Brasil' },
+  { code: '+507', flag: '🇵🇦', label: 'Panamá' },
+  { code: '+506', flag: '🇨🇷', label: 'Costa Rica' },
+];
+
+/** Split a phone like "+57 300 000 0000" into { dialCode, local } */
+function splitPhone(phone: string): { dialCode: string; local: string } {
+  if (!phone) return { dialCode: '+57', local: '' };
+  for (const c of COUNTRY_CODES.sort((a, b) => b.code.length - a.code.length)) {
+    if (phone.startsWith(c.code)) {
+      return { dialCode: c.code, local: phone.slice(c.code.length).trim() };
+    }
+  }
+  return { dialCode: '+57', local: phone };
+}
+
 const SOCIAL_PLATFORMS = [
   { id: 'linkedin', label: 'LinkedIn', placeholder: 'https://linkedin.com/in/tu-perfil' },
   { id: 'github', label: 'GitHub', placeholder: 'https://github.com/tu-usuario' },
@@ -54,7 +87,7 @@ export default function ProfilePage() {
 
   // Basic info edit
   const [editingBasic, setEditingBasic] = useState(false);
-  const [basicForm, setBasicForm] = useState({ name: '', phone: '', bio: '' });
+  const [basicForm, setBasicForm] = useState({ name: '', phone: '', bio: '', dialCode: '+57' });
   const [basicSaving, setBasicSaving] = useState(false);
   const [basicSaved, setBasicSaved] = useState(false);
   const [basicError, setBasicError] = useState('');
@@ -89,7 +122,8 @@ export default function ProfilePage() {
     api.profile.get().then((res: any) => {
       const p: ProfileData = res.data;
       setProfile(p);
-      setBasicForm({ name: p.name, phone: p.phone, bio: p.bio });
+      const { dialCode, local } = splitPhone(p.phone);
+      setBasicForm({ name: p.name, phone: local, bio: p.bio, dialCode });
       setAcademicForm({ university: p.university, career: p.career, semester: p.semester });
       setSocialLinks(p.socialLinks ?? []);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -129,8 +163,9 @@ export default function ProfilePage() {
     e.preventDefault();
     setBasicSaving(true); setBasicError('');
     try {
-      await api.profile.update({ name: basicForm.name, phone: basicForm.phone, bio: basicForm.bio });
-      setProfile((p) => p ? { ...p, ...basicForm } : p);
+      const fullPhone = basicForm.phone.trim() ? `${basicForm.dialCode} ${basicForm.phone.trim()}` : '';
+      await api.profile.update({ name: basicForm.name, phone: fullPhone, bio: basicForm.bio });
+      setProfile((p) => p ? { ...p, name: basicForm.name, phone: fullPhone, bio: basicForm.bio } : p);
       setEditingBasic(false);
       setBasicSaved(true); setTimeout(() => setBasicSaved(false), 3000);
       showToast('Información actualizada correctamente.');
@@ -283,7 +318,34 @@ export default function ProfilePage() {
         {editingBasic ? (
           <form onSubmit={handleBasicSave} className="space-y-3">
             <Input label="Nombre completo" value={basicForm.name} onChange={(e) => setBasicForm((f) => ({ ...f, name: e.target.value }))} placeholder="Tu nombre completo" leftIcon={<User className="w-4 h-4" />} />
-            <Input label="Teléfono" value={basicForm.phone} onChange={(e) => setBasicForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+57 300 000 0000" leftIcon={<Phone className="w-4 h-4" />} />
+            {/* Phone with country code selector */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-charcoal flex items-center gap-1">
+                <Phone className="w-3.5 h-3.5 text-gray-400" /> Teléfono
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={basicForm.dialCode}
+                  onChange={(e) => setBasicForm((f) => ({ ...f, dialCode: e.target.value }))}
+                  className="input-field w-36 shrink-0 text-sm pr-1"
+                  aria-label="Código de país"
+                >
+                  {COUNTRY_CODES.map((c) => (
+                    <option key={c.code + c.label} value={c.code}>
+                      {c.flag} {c.code} {c.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  value={basicForm.phone}
+                  onChange={(e) => setBasicForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="300 000 0000"
+                  className="input-field flex-1 text-sm"
+                  aria-label="Número local"
+                />
+              </div>
+            </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-charcoal">Biografía</label>
               <textarea value={basicForm.bio} onChange={(e) => setBasicForm((f) => ({ ...f, bio: e.target.value }))}
@@ -292,7 +354,7 @@ export default function ProfilePage() {
             </div>
             {basicError && <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"><AlertTriangle className="w-4 h-4 shrink-0" />{basicError}</div>}
             <div className="flex gap-2 justify-end">
-              <Button type="button" variant="secondary" size="sm" onClick={() => { setEditingBasic(false); setBasicForm({ name: profile?.name ?? '', phone: profile?.phone ?? '', bio: profile?.bio ?? '' }); }}>Cancelar</Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => { setEditingBasic(false); const sp = splitPhone(profile?.phone ?? ''); setBasicForm({ name: profile?.name ?? '', phone: sp.local, bio: profile?.bio ?? '', dialCode: sp.dialCode }); }}>Cancelar</Button>
               <Button type="submit" size="sm" loading={basicSaving} leftIcon={<Save className="w-4 h-4" />}>Guardar</Button>
             </div>
           </form>

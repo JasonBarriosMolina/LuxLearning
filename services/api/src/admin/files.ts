@@ -47,11 +47,21 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     return ok({ saved: true });
   }
 
-  // POST /admin/files/presign — generate S3 presigned upload URL (tasks + resources)
+  // POST /admin/files/presign — generate S3 presigned upload URL
+  // 'photos' folder is open to any authenticated role (students upload their profile picture).
+  // Other folders ('tasks', 'resources', 'uploads') require admin or evaluator.
   if (method === 'POST' && path === '/admin/files/presign') {
-    if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+    const role = event.requestContext.authorizer?.lambda?.role;
+    const isAnyRole = ['ADMIN', 'SUPER_ADMIN', 'EVALUATOR', 'STUDENT'].includes(role ?? '');
+    if (!isAnyRole) return forbidden('Se requiere sesión activa');
+
     const { fileName, fileType, folder = 'uploads' } = body as { fileName?: string; fileType?: string; folder?: string };
     if (!fileName || !fileType) return badRequest('fileName y fileType son requeridos');
+
+    // Students may only upload to the 'photos' folder
+    const requestedFolder = folder ?? 'uploads';
+    if (role === 'STUDENT' && requestedFolder !== 'photos') return forbidden('Los estudiantes solo pueden subir fotos de perfil');
+    if (!isAuthorized(event) && requestedFolder !== 'photos') return forbidden('Se requiere rol de administrador o evaluador');
 
     const ALLOWED_TYPES = new Set([
       'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
@@ -64,7 +74,7 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     ]);
     if (!ALLOWED_TYPES.has(fileType)) return badRequest('Tipo de archivo no permitido');
 
-    const safeFolder = ['tasks', 'resources', 'uploads'].includes(folder) ? folder : 'uploads';
+    const safeFolder = ['tasks', 'resources', 'uploads', 'photos'].includes(requestedFolder) ? requestedFolder : 'uploads';
     const ext = fileName.split('.').pop()?.replace(/[^a-z0-9]/gi, '') ?? 'bin';
     const fileKey = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const command = new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: fileKey, ContentType: fileType });
