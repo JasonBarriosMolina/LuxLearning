@@ -187,6 +187,9 @@ export async function generateLessonImage(
   if (override?.style && STYLE_SUFFIXES[override.style]) {
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }
+  // Branding: append Lux Learning watermark instruction to every image prompt
+  const LUX_WATERMARK = ', bottom-right corner overlay: semi-transparent white circular minimalist icon at 45% opacity as brand watermark, flat solid colors no gradients';
+  prompt = prompt + LUX_WATERMARK;
   try {
     // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
     const resp = await bedrockImageClient.send(new InvokeModelCommand({
@@ -195,7 +198,7 @@ export async function generateLessonImage(
       accept: 'application/json',
       body: JSON.stringify({
         prompt,
-        negative_prompt: 'text, words, letters, labels, captions, watermark, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
+        negative_prompt: 'text, words, letters, labels, captions, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
         mode: 'text-to-image',
         aspect_ratio: '1:1',
         output_format: 'jpeg',

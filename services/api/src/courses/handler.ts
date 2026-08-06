@@ -205,7 +205,9 @@ export const handler = async (event: Event) => {
           })
         );
         const ct = translations?.get(`course#${course.id}`);
-        return ok({ ...course, ...(ct ?? {}), modules: enriched });
+        // Compute isCourseLocked: course is active but startDate is still in the future
+        const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+        return ok({ ...course, ...(ct ?? {}), modules: enriched, isCourseLocked });
       }
 
       if (translations) {
@@ -216,10 +218,12 @@ export const handler = async (event: Event) => {
           lessons: applyTranslations(mod.lessons, 'lesson', translations!),
           questions: applyTranslations(mod.questions, 'question', translations!),
         }));
-        return ok({ ...course, ...(ct ?? {}), modules });
+        const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+        return ok({ ...course, ...(ct ?? {}), modules, isCourseLocked });
       }
 
-      return ok(course);
+      const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+      return ok({ ...course, isCourseLocked });
     }
 
     // GET /courses/:courseId/resources — public resources for students enrolled in this course

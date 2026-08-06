@@ -330,7 +330,14 @@ export default function CoursePage() {
                   const getActionCell = (ev: any) => {
                     const isOverdue = ev.dueDate && new Date(ev.dueDate) < today;
                     if (isOverdue) return <span className="text-xs text-red-400 font-medium">{t.courseGrades.overdue}</span>;
-                    if (!ev.moduleId) return null;
+                    // Course locked: content not available yet
+                    if (course.isCourseLocked) {
+                      return <span className="text-xs text-amber-500 font-medium">Bloqueado</span>;
+                    }
+                    if (!ev.moduleId) {
+                      // Course-level evaluation (no module assigned yet) — show pending
+                      return <span className="text-xs text-gray-400">{t.courseGrades.pending}</span>;
+                    }
                     const modPath = `/courses/${courseId}/modules/${ev.moduleId}`;
                     if (ev.type === 'QUIZ') return (
                       <Link href={`${modPath}/quiz`}>
@@ -378,6 +385,19 @@ export default function CoursePage() {
         </div>
       )}
 
+      {/* Course locked banner — shown when startDate is in the future */}
+      {course.isCourseLocked && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+          <Lock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">Curso disponible a partir del{' '}
+              {new Date(course.startDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">Puedes ver el programa del curso, pero el contenido estará disponible cuando inicie el período.</p>
+          </div>
+        </div>
+      )}
+
       {/* Modules */}
       <div className="space-y-3">
         <h2 className="font-heading font-bold text-xl text-charcoal">{t.courseDetail.modulesTitle}</h2>
@@ -385,7 +405,7 @@ export default function CoursePage() {
           const modLessons = mod.lessons ?? [];
           const modCompleted = modLessons.filter((l: any) => l.completed).length;
           const modProgress = modLessons.length > 0 ? Math.round((modCompleted / modLessons.length) * 100) : 0;
-          const isLocked = !mod.unlocked;
+          const isLocked = !mod.unlocked || !!course.isCourseLocked;
           const isDone = mod.reflectionStatus === 'APPROVED';
 
           return (

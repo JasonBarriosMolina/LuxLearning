@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-08-02T05:13:17.596Z",
+  "target": "D:\\InHouse\\Lux\\services\\api\\src",
+  "totalFiles": 80,
+  "scannableFiles": 64,
+  "strategy": "extended",
+  "modeFile": "modes/extended.md",
+  "needsLoop": false,
+  "fileBudget": 60,
+  "avgLines": 225,
+  "avgTokensPerFile": 900,
+  "estimatedTotalLines": 18000,
+  "sampledFiles": 30,
+  "domains": [
+    {
+      "path": "admin",
+      "tier": "HIGH",
+      "fileCount": 15,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 13,
+        "low": 0,
+        "context-only": 1
+      }
+    },
+    {
+      "path": "analysis",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "attendance",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "certificates",
+      "tier": "HIGH",
+      "fileCount": 2,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 1
+      }
+    },
+    {
+      "path": "courses",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "evaluator",
+      "tier": "HIGH",
+      "fileCount": 11,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 10,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "lessons",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "messages",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "notifications",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "push",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "quiz",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "reflection",
+      "tier": "HIGH",
+      "fileCount": 4,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 2,
+        "medium": 1,
+        "low": 0,
+        "context-only": 1
+      }
+    },
+    {
+      "path": "reminders",
+      "tier": "HIGH",
+      "fileCount": 2,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 1
+      }
+    },
+    {
+      "path": "reports",
+      "tier": "HIGH",
+      "fileCount": 1,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "shared",
+      "tier": "HIGH",
+      "fileCount": 21,
+      "riskBreakdown": {
+        "critical": 1,
+        "high": 15,
+        "medium": 5,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "study-plans",
+      "tier": "HIGH",
+      "fileCount": 3,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 2,
+        "medium": 1,
+        "low": 0,
+        "context-only": 0
+      }
+    },
+    {
+      "path": "tasks",
+      "tier": "HIGH",
+      "fileCount": 2,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "low": 0,
+        "context-only": 1
+      }
+    },
+    {
+      "path": "__tests__",
+      "tier": "CONTEXT-ONLY",
+      "fileCount": 11,
+      "riskBreakdown": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "context-only": 11
+      }
+    }
+  ],
+  "scanOrder": [
+    "shared\\auth.ts",
+    "admin\\handler.ts",
+    "analysis\\handler.ts",
+    "attendance\\handler.ts",
+    "certificates\\handler.ts",
+    "courses\\handler.ts",
+    "evaluator\\handler.ts",
+    "lessons\\handler.ts",
+    "messages\\handler.ts",
+    "notifications\\handler.ts",
+    "push\\handler.ts",
+    "quiz\\handler.ts",
+    "reflection\\handler.ts",
+    "reflection\\sqs-consumer.ts",
+    "reminders\\handler.ts",
+    "reports\\handler.ts",
+    "shared\\db-attendance.ts",
+    "shared\\db-calendar.ts",
+    "shared\\db-core.ts",
+    "shared\\db-dynamo.ts",
+    "shared\\db-enrollments.ts",
+    "shared\\db-messages.ts",
+    "shared\\db-misc.ts",
+    "shared\\db-neon.ts",
+    "shared\\db-notifications.ts",
+    "shared\\db-progress.ts",
+    "shared\\db-reflections.ts",
+    "shared\\db-study-plans.ts",
+    "shared\\db-submissions.ts",
+    "shared\\db-tasks.ts",
+    "shared\\email.ts",
+    "study-plans\\cron.ts",
+    "study-plans\\handler.ts",
+    "tasks\\handler.ts",
+    "admin\\ai-media.ts",
+    "admin\\ai-regen.ts",
+    "admin\\ai-wizard.ts",
+    "admin\\ai.ts",
+    "admin\\courses-content.ts",
+    "admin\\courses.ts",
+    "admin\\ctx.ts",
+    "admin\\files.ts",
+    "admin\\groups.ts",
+    "admin\\interviews.ts",
+    "admin\\profile.ts",
+    "admin\\reports.ts",
+    "admin\\users.ts",
+    "evaluator\\calendar.ts",
+    "evaluator\\courses.ts",
+    "evaluator\\ctx.ts",
+    "evaluator\\groups.ts",
+    "evaluator\\misc.ts",
+    "evaluator\\reflections.ts",
+    "evaluator\\resources.ts",
+    "evaluator\\study-plans.ts",
+    "evaluator\\submissions.ts",
+    "evaluator\\tasks.ts",
+    "reflection\\detect-ai.ts",
+    "shared\\authorizer.ts",
+    "shared\\env-context.ts",
+    "shared\\response.ts",
+    "shared\\translate.ts",
+    "shared\\validate.ts",
+    "study-plans\\plans.ts"
+  ],
+  "tokenEstimate": {
+    "recon": 1600,
+    "perHunterChunk": 54000,
+    "totalPipeline": 72000
+  },
+  "recommendations": [],
+  "riskMap": {
+    "critical": [
+      "shared\\auth.ts"
+    ],
+    "high": [
+      "admin\\handler.ts",
+      "analysis\\handler.ts",
+      "attendance\\handler.ts",
+      "certificates\\handler.ts",
+      "courses\\handler.ts",
+      "evaluator\\handler.ts",
+      "lessons\\handler.ts",
+      "messages\\handler.ts",
+      "notifications\\handler.ts",
+      "push\\handler.ts",
+      "quiz\\handler.ts",
+      "reflection\\handler.ts",
+      "reflection\\sqs-consumer.ts",
+      "reminders\\handler.ts",
+      "reports\\handler.ts",
+      "shared\\db-attendance.ts",
+      "shared\\db-calendar.ts",
+      "shared\\db-core.ts",
+      "shared\\db-dynamo.ts",
+      "shared\\db-enrollments.ts",
+      "shared\\db-messages.ts",
+      "shared\\db-misc.ts",
+      "shared\\db-neon.ts",
+      "shared\\db-notifications.ts",
+      "shared\\db-progress.ts",
+      "shared\\db-reflections.ts",
+      "shared\\db-study-plans.ts",
+      "shared\\db-submissions.ts",
+      "shared\\db-tasks.ts",
+      "shared\\email.ts",
+      "study-plans\\cron.ts",
+      "study-plans\\handler.ts",
+      "tasks\\handler.ts"
+    ],
+    "medium": [
+      "admin\\ai-media.ts",
+      "admin\\ai-regen.ts",
+      "admin\\ai-wizard.ts",
+      "admin\\ai.ts",
+      "admin\\courses-content.ts",
+      "admin\\courses.ts",
+      "admin\\ctx.ts",
+      "admin\\files.ts",
+      "admin\\groups.ts",
+      "admin\\interviews.ts",
+      "admin\\profile.ts",
+      "admin\\reports.ts",
+      "admin\\users.ts",
+      "evaluator\\calendar.ts",
+      "evaluator\\courses.ts",
+      "evaluator\\ctx.ts",
+      "evaluator\\groups.ts",
+      "evaluator\\misc.ts",
+      "evaluator\\reflections.ts",
+      "evaluator\\resources.ts",
+      "evaluator\\study-plans.ts",
+      "evaluator\\submissions.ts",
+      "evaluator\\tasks.ts",
+      "reflection\\detect-ai.ts",
+      "shared\\authorizer.ts",
+      "shared\\env-context.ts",
+      "shared\\response.ts",
+      "shared\\translate.ts",
+      "shared\\validate.ts",
+      "study-plans\\plans.ts"
+    ],
+    "low": [],
+    "context-only": [
+      "__tests__\\admin\\ai-regen.test.ts",
+      "__tests__\\admin\\ai.test.ts",
+      "__tests__\\admin\\courses-content.test.ts",
+      "__tests__\\admin\\ctx.test.ts",
+      "__tests__\\admin\\interviews.test.ts",
+      "__tests__\\admin\\users.test.ts",
+      "__tests__\\attendance\\handler.test.ts",
+      "__tests__\\evaluator\\groups.test.ts",
+      "__tests__\\evaluator\\misc.test.ts",
+      "__tests__\\helpers\\ctx.ts",
+      "__tests__\\study-plans\\study-plans.test.ts",
+      "admin\\handler.test.ts",
+      "certificates\\handler.test.ts",
+      "reflection\\detect-ai.test.ts",
+      "reminders\\handler.test.ts",
+      "tasks\\handler.test.ts"
+    ]
+  }
+}

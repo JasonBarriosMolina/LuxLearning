@@ -18,8 +18,11 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
 
   // ── Async worker: wizard bulk lesson generation ──────────────────────────────
   if (ctx.action === 'wizard-lessons-bulk') {
-    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES' } = body as any;
+    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES', evaluationItems: blEvalItems = [] } = body as any;
     const isBlEN = blLang === 'EN';
+    // Only generate quiz questions if the evaluation plan explicitly includes a QUIZ type.
+    // Lux Planner is the authority — if no QUIZ was configured, don't create one.
+    const hasQuizInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'QUIZ');
     const failed: string[] = [];
     try {
       for (const moduleId of moduleIds as string[]) {
@@ -27,21 +30,46 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
           const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
           if (!mod) continue;
 
+          // ── Rich lesson prompt (5-7 min read, 4-pillar structure) ───────────
           const lessonPrompt = isBlEN
-            ? `You are an expert instructional designer. Generate exactly 10 lessons for module "${mod.title}" in course "${blTitle}".
-Return ONLY a JSON array (10 elements):
-[{"title":"Introduction to ${mod.title}","order":1,"type":"video","content":"<p>Introductory paragraph.</p>","duration":"5 min","points":["Point 1","Point 2","Point 3"],"tip":"Helpful tip."},
-{"title":"Topic A","order":2,"type":"text","content":"<h3>Heading</h3><p>Paragraph.</p><ul><li>Item A</li><li>Item B</li></ul>","duration":"8 min","points":["Key 1","Key 2","Key 3"],"tip":"Tip."},
-{"title":"Summary — ${mod.title}","order":10,"type":"video","content":"<p>Summary.</p>","duration":"5 min","points":["Summary 1","Summary 2","Next steps"],"tip":"Complete the quiz."}]
-Lessons 2-9 must be type text with rich HTML: <h3>, <ul><li>, <blockquote>. No markdown.`
-            : `Eres experto en diseño instruccional. Genera exactamente 10 lecciones para el módulo "${mod.title}" del curso "${blTitle}".
-Devuelve ÚNICAMENTE un array JSON (10 elementos):
-[{"title":"Introducción — ${mod.title}","order":1,"type":"video","content":"<p>Párrafo introductorio.</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo útil."},
-{"title":"Subtema A","order":2,"type":"text","content":"<h3>Encabezado</h3><p>Párrafo.</p><ul><li>Punto A</li><li>Punto B</li></ul>","duration":"8 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"Tip."},
-{"title":"Resumen — ${mod.title}","order":10,"type":"video","content":"<p>Resumen.</p>","duration":"5 min","points":["Resumen 1","Resumen 2","Próximos pasos"],"tip":"Completa el quiz."}]
-Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`;
+            ? `You are an expert e-learning instructional designer. Generate exactly 10 lessons for the module "${mod.title}" in the course "${blTitle}".
 
-          const rawLessons = await invokeBedrockForJson(lessonPrompt, 5000);
+STRUCTURE for each text lesson (lessons 2-9) — 4 mandatory pillars:
+1. HOOK: 2-3 compelling sentences that capture attention and contextualize the topic.
+2. DEVELOPMENT: 4-6 substantive paragraphs with real examples, analogies, and practical connections. Each paragraph must have 4-6 sentences. Use <h3> for sub-headings, <blockquote> for key concepts or citations.
+3. PRACTICAL BRIDGE: A concrete real-world application or case study (1-2 paragraphs).
+4. REFLECTIVE CLOSE: 2-3 key takeaways as <ul><li> + 1-2 self-assessment questions.
+
+REQUIREMENTS:
+- Lessons 2-9 (type "text"): minimum 700 words each (5-7 min read time). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. NO markdown.
+- Lesson 1 (type "video"): short intro content ~100 words.
+- Lesson 10 (type "video"): summary, key recap, transition to next module.
+- Neutral professional English. No filler phrases or padding.
+- duration field: "5 min" for video, "7 min" for text lessons.
+
+Return ONLY a valid JSON array of exactly 10 objects:
+[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Key 1","Key 2","Key 3"],"tip":"string"},
+{"title":"string","order":2,"type":"text","content":"<h3>Hook</h3><p>...</p><h3>Development</h3><p>...</p><blockquote>...</blockquote><h3>Practical Bridge</h3><p>...</p><h3>Key Takeaways</h3><ul><li>...</li></ul>","duration":"7 min","points":["Key 1","Key 2","Key 3"],"tip":"string"}]`
+            : `Eres un experto en diseño instruccional para e-learning. Genera exactamente 10 lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+
+ESTRUCTURA para cada lección tipo texto (lecciones 2-9) — 4 pilares obligatorios:
+1. GANCHO: 2-3 oraciones contundentes que capturan la atención y contextualizan el tema.
+2. DESARROLLO: 4-6 párrafos sustanciales con ejemplos reales, analogías y conexiones prácticas. Cada párrafo debe tener 4-6 oraciones. Usa <h3> para sub-títulos, <blockquote> para conceptos clave o citas relevantes.
+3. PUENTE PRÁCTICO: Aplicación real o caso de estudio concreto (1-2 párrafos).
+4. CIERRE REFLEXIVO: 2-3 puntos clave como <ul><li> + 1-2 preguntas de autoevaluación.
+
+REQUISITOS:
+- Lecciones 2-9 (tipo "text"): mínimo 700 palabras cada una (5-7 min de lectura). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. SIN markdown.
+- Lección 1 (tipo "video"): contenido introductorio breve ~100 palabras.
+- Lección 10 (tipo "video"): resumen, repaso de puntos clave, transición al siguiente módulo.
+- Español latino neutro, formal. Sin modismos locales. Sin frases de relleno.
+- Campo duration: "5 min" para video, "7 min" para lecciones de texto.
+
+Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
+[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"string"},
+{"title":"string","order":2,"type":"text","content":"<h3>Gancho</h3><p>...</p><h3>Desarrollo</h3><p>...</p><blockquote>...</blockquote><h3>Puente Práctico</h3><p>...</p><h3>Cierre Reflexivo</h3><ul><li>...</li></ul>","duration":"7 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}]`;
+
+          const rawLessons = await invokeBedrockForJson(lessonPrompt, 7000);
           const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
           if (lessons.length === 0) { failed.push(moduleId); continue; }
 
@@ -53,27 +81,30 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
               content: l.content || null,
               youtubeId: '',
               imageUrl: null,
-              duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '8 min'),
+              duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '7 min'),
               points: Array.isArray(l.points) ? l.points : [],
               tip: l.tip || '',
               order: l.order || i + 1,
             })),
           });
 
-          const qPrompt = isBlEN
-            ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
-            : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
-          const rawQ = await invokeBedrockForJson(qPrompt, 2000);
-          const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
-          if (questions.length > 0) {
-            await prisma.question.createMany({
-              data: questions.map((q: any, i: number) => ({
-                moduleId, text: q.text, options: q.options,
-                correctIndex: Number(q.correctIndex), order: i + 1,
-              })),
-            });
+          // Only create quiz questions if the evaluation plan includes QUIZ type
+          if (hasQuizInPlan) {
+            const qPrompt = isBlEN
+              ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
+              : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
+            const rawQ = await invokeBedrockForJson(qPrompt, 2000);
+            const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
+            if (questions.length > 0) {
+              await prisma.question.createMany({
+                data: questions.map((q: any, i: number) => ({
+                  moduleId, text: q.text, options: q.options,
+                  correctIndex: Number(q.correctIndex), order: i + 1,
+                })),
+              });
+            }
           }
-          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${lessons.length * 8} min` } });
+          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${lessons.length * 7} min` } });
         } catch (modErr: any) {
           console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
           failed.push(moduleId);
@@ -398,6 +429,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
+              evaluationItems,
             })),
           }));
         } catch (invokeErr: any) {

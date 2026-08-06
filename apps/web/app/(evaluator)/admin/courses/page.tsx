@@ -43,6 +43,9 @@ export default function AdminCoursesPage() {
   const [deleting, setDeleting] = useState(false);
   const [tagInput, setTagInput] = useState('');
 
+  // Publish dialog — shows when course has a future startDate
+  const [publishDialog, setPublishDialog] = useState<{ courseId: string; startDate: string } | null>(null);
+
   // Evaluator assignment modal state
   const [evalModal, setEvalModal] = useState<{ courseId: string; courseName: string } | null>(null);
   const [evaluators, setEvaluators] = useState<{ sub: string; email: string; name: string; username: string }[]>([]);
@@ -294,13 +297,24 @@ export default function AdminCoursesPage() {
     }
   };
 
-  const handlePublish = async (courseId: string) => {
+  const doPublish = async (courseId: string) => {
     try {
       await api.admin.courses.publish(courseId);
       await load();
     } catch (err: any) {
       alert(err.message ?? 'Error al publicar');
     }
+  };
+
+  const handlePublish = async (courseId: string) => {
+    const course = courses.find((c) => c.id === courseId);
+    const startDate = course?.startDate;
+    if (startDate && new Date(startDate) > new Date()) {
+      // Course has a future opening date — show dialog
+      setPublishDialog({ courseId, startDate });
+      return;
+    }
+    await doPublish(courseId);
   };
 
   const handleArchive = async (courseId: string) => {
@@ -546,6 +560,67 @@ export default function AdminCoursesPage() {
         onConfirm={() => { setConfirmCloseOpen(false); setAiModalOpen(false); }}
         onCancel={() => setConfirmCloseOpen(false)}
       />
+
+      {/* Publish dialog — shown when course has a future openingDate */}
+      {publishDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+            <div>
+              <p className="font-heading font-bold text-charcoal text-lg">Publicar curso</p>
+              <p className="text-sm text-gray-500 mt-1">
+                La fecha de apertura configurada para este curso es:{' '}
+                <strong className="text-charcoal">
+                  {new Date(publishDialog.startDate).toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </strong>.
+                Los estudiantes verán el curso pero no podrán acceder al contenido hasta esa fecha.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={async () => {
+                  const cId = publishDialog.courseId;
+                  setPublishDialog(null);
+                  await doPublish(cId);
+                }}
+                className="w-full px-4 py-2.5 rounded-xl bg-cta-gradient text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+              >
+                Publicar con fecha de apertura
+              </button>
+              <button
+                onClick={() => {
+                  const cId = publishDialog.courseId;
+                  setPublishDialog(null);
+                  router.push(`/admin/courses/lux-planner?courseId=${cId}`);
+                }}
+                className="w-full px-4 py-2.5 rounded-xl border-2 border-cta-from text-cta-from font-semibold text-sm hover:bg-blue-50 transition-colors"
+              >
+                Modificar fecha de apertura
+              </button>
+              <button
+                onClick={async () => {
+                  const cId = publishDialog.courseId;
+                  setPublishDialog(null);
+                  try {
+                    await api.admin.courses.update(cId, { startDate: null });
+                    await doPublish(cId);
+                  } catch (err: any) {
+                    alert(err.message ?? 'Error al abrir curso');
+                  }
+                }}
+                className="w-full px-4 py-2.5 rounded-xl border border-border text-gray-600 font-semibold text-sm hover:bg-surface transition-colors"
+              >
+                Abrir curso ahora (sin fecha de apertura)
+              </button>
+              <button
+                onClick={() => setPublishDialog(null)}
+                className="w-full px-4 py-2.5 rounded-xl text-gray-400 text-sm hover:text-gray-600 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

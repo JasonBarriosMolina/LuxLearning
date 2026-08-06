@@ -252,8 +252,32 @@ export function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: s
                 Sin lecciones. Agrega la primera con el botón de arriba.
               </p>
             )}
-            {mod.lessons?.map((lesson: any) => (
-              <LessonRow key={lesson.id} lesson={lesson} onRefresh={onRefresh} />
+            {mod.lessons?.map((lesson: any, li: number) => (
+              <LessonRow
+                key={lesson.id}
+                lesson={lesson}
+                onRefresh={onRefresh}
+                isFirst={li === 0}
+                isLast={li === (mod.lessons.length - 1)}
+                onMoveUp={async () => {
+                  const prev = mod.lessons[li - 1];
+                  if (!prev) return;
+                  await Promise.all([
+                    api.admin.lessons.update(lesson.id, { order: prev.order }),
+                    api.admin.lessons.update(prev.id, { order: lesson.order }),
+                  ]);
+                  onRefresh();
+                }}
+                onMoveDown={async () => {
+                  const next = mod.lessons[li + 1];
+                  if (!next) return;
+                  await Promise.all([
+                    api.admin.lessons.update(lesson.id, { order: next.order }),
+                    api.admin.lessons.update(next.id, { order: lesson.order }),
+                  ]);
+                  onRefresh();
+                }}
+              />
             ))}
           </div>
 

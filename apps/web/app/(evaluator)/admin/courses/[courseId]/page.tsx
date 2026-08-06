@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, BookOpen, ShieldCheck, GraduationCap, Sparkles,
   RefreshCw, Loader2, CheckCircle2, AlertCircle, ExternalLink, CalendarCheck2, Wand2,
+  Zap, EyeOff,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -66,6 +67,22 @@ export default function AdminCourseDetailPage() {
     } catch (err: any) {
       setAiModuleError(err.message ?? 'Error al generar módulo');
       setAiModuleLoading(false);
+    }
+  };
+
+  // ── Activate / deactivate ────────────────────────────────────────────────────
+  const [togglingActive, setTogglingActive] = useState(false);
+
+  const handleToggleActive = async () => {
+    if (!course) return;
+    setTogglingActive(true);
+    try {
+      await api.admin.courses.update(courseId, { isActive: !course.isActive, isDraft: false });
+      await load();
+    } catch (err: any) {
+      alert('Error: ' + (err?.message ?? 'desconocido'));
+    } finally {
+      setTogglingActive(false);
     }
   };
 
@@ -164,6 +181,23 @@ export default function AdminCourseDetailPage() {
             <p className="text-sm text-gray-500 leading-relaxed">{course.description}</p>
             <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
           </div>
+        </div>
+        {/* Activate / Deactivate — prominent CTA */}
+        <div className="pl-11 mb-1">
+          <Button
+            variant={course.isActive ? 'secondary' : 'primary'}
+            leftIcon={togglingActive
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : course.isActive
+                ? <EyeOff className="w-4 h-4" />
+                : <Zap className="w-4 h-4" />
+            }
+            onClick={handleToggleActive}
+            disabled={togglingActive}
+            className={!course.isActive ? 'ring-2 ring-emerald-400 ring-offset-2' : ''}
+          >
+            {course.isActive ? 'Desactivar curso' : 'Activar curso'}
+          </Button>
         </div>
         {/* Action buttons — scroll horizontally on mobile */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 pl-11">
