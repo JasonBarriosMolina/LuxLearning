@@ -13,6 +13,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { createEnrollment, getEnrollments, deleteEnrollment, createTask, createNotification } from '../shared/db-dynamo';
+import { batchCreateCalendarEvents } from '../shared/db-calendar';
 import { sendTemplatedEmail } from '../shared/email';
 import { upsertChat, upsertMembership } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, notFound, conflict } from '../shared/response';
@@ -399,6 +400,31 @@ export async function handleUsers(ctx: AdminCtx): Promise<any | null> {
           });
         }));
       } catch (e) { console.warn('Auto-task creation failed:', e); }
+
+      // M-8: Sync evaluation due-dates to student calendar (deadline events)
+      try {
+        const evalEvents = await prisma.evaluationEvent.findMany({
+          where: { courseId, dueDate: { not: null }, isDraft: false, isArchived: false },
+          select: { id: true, name: true, dueDate: true, type: true },
+        });
+        const courseTitle = (await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } }))?.title ?? '';
+        const calEvents = evalEvents
+          .filter((ev: any) => ev.dueDate != null)
+          .map((ev: any) => ({
+            creatorId: `enroll-${username}`,
+            eventId: `eval-${ev.id}-${username}`,
+            title: `${ev.name} — ${courseTitle}`,
+            type: 'deadline' as const,
+            startDate: ev.dueDate!.toISOString(),
+            endDate: ev.dueDate!.toISOString(),
+            allDay: true,
+            visibility: 'course_mine' as const,
+            targetStudentIds: [username],
+            targetCourseId: courseId,
+            createdAt: new Date().toISOString(),
+          }));
+        if (calEvents.length > 0) await batchCreateCalendarEvents(calEvents);
+      } catch (e) { console.warn('Calendar sync failed:', e); }
 
       return ok({ enrolled: true });
     }
