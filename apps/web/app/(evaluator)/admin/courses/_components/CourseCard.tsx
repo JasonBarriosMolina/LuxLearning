@@ -13,6 +13,8 @@ import {
   FolderOpen,
   ClipboardList,
   Users,
+  CalendarDays,
+  User,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 
@@ -26,6 +28,7 @@ interface CourseCardProps {
   onRestore: (courseId: string) => void;
   onArchive: (courseId: string) => void;
   onDelete: (courseId: string) => void;
+  onStatusChange: (courseId: string, status: 'active' | 'inactive' | 'archived' | 'draft') => void;
   t: any;
 }
 
@@ -39,6 +42,7 @@ export function CourseCard({
   onRestore,
   onArchive,
   onDelete,
+  onStatusChange,
   t,
 }: CourseCardProps) {
   return (
@@ -60,32 +64,51 @@ export function CourseCard({
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-charcoal truncate mb-0.5">{course.title}</p>
         <div className="flex items-center gap-2 flex-wrap">
-          {course.isArchived ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 font-medium">
-              {t.admin.statusArchived}
-            </span>
-          ) : course.isDraft ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">
-              {t.admin.statusDraft}
-            </span>
-          ) : (
-            <Badge variant={course.isActive ? 'success' : 'default'}>
-              {course.isActive ? t.admin.courseActive : t.admin.courseInactive}
-            </Badge>
-          )}
+          <select
+            value={course.isArchived ? 'archived' : course.isDraft ? 'draft' : course.isActive ? 'active' : 'inactive'}
+            onChange={(e) => onStatusChange(course.id, e.target.value as any)}
+            onClick={(e) => e.stopPropagation()}
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full border-0 outline-none cursor-pointer appearance-none pr-5 bg-no-repeat
+              ${course.isArchived ? 'bg-gray-100 text-gray-600' : course.isDraft ? 'bg-yellow-100 text-yellow-700' : course.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`, backgroundPosition: 'right 6px center', backgroundSize: '8px 5px' }}
+          >
+            <option value="active">{t.admin.courseActive ?? 'Activo'}</option>
+            <option value="inactive">{t.admin.courseInactive ?? 'Inactivo'}</option>
+            <option value="draft">{t.admin.statusDraft ?? 'Borrador'}</option>
+            <option value="archived">{t.admin.statusArchived ?? 'Archivado'}</option>
+          </select>
           {course.isPilot && <Badge variant="info">{t.admin.coursePilot}</Badge>}
           {course.isLegacy && (
             <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
               {t.admin.statusLegacy}
             </span>
           )}
-          <p className="text-xs text-gray-500">{t.admin.modulesCount(course.modules?.length ?? 0)}</p>
+          <span className="text-xs text-gray-500">{t.admin.modulesCount(course.modules?.length ?? 0)}</span>
+
+          {/* Creator */}
+          {course.createdByName && (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+              <User className="w-2.5 h-2.5" />
+              {course.createdByName}
+            </span>
+          )}
+
+          {/* Evaluator assigned */}
           {course.evaluatorName && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-teal-50 text-teal-700 font-medium">
               <UserCircle className="w-2.5 h-2.5" />
               {course.evaluatorName}
             </span>
           )}
+
+          {/* Creation date */}
+          {course.createdAt && (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+              <CalendarDays className="w-2.5 h-2.5" />
+              {new Date(course.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          )}
+
           {course.tags?.map((tag: string) => (
             <span
               key={tag}
@@ -153,10 +176,11 @@ export function CourseCard({
             </Link>
             <Link
               href={`/evaluator/students?courseId=${course.id}`}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-teal-600 hover:bg-teal-50 transition-colors"
               title="Ver estudiantes de este curso"
             >
-              <Users className="w-4 h-4" />
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Estudiantes</span>
             </Link>
             <button
               onClick={() => onEdit(course)}
