@@ -216,7 +216,7 @@ export default function CoursePage() {
         </Link>
 
         {/* Contactar Evaluador */}
-        {course.evaluatorId ? (
+        {course.evaluatorId && (
           <button
             onClick={handleContactEvaluator}
             disabled={contactingEvaluator}
@@ -225,23 +225,16 @@ export default function CoursePage() {
             <UserCog className="w-4 h-4 text-purple-500" />
             {contactingEvaluator ? t.courseDetail.openingChat : t.courseDetail.contactEvaluator}
           </button>
-        ) : (
-          <div className="flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface">
-            <UserCog className="w-4 h-4" />
-            {t.courseDetail.adminLabel}
-          </div>
         )}
 
-        {/* Recursos del curso */}
-        {resources.length > 0 && (
-          <button
-            onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
-            className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
-          >
-            <FolderOpen className="w-4 h-4" />
-            {t.courseDetail.resources(resources.length)}
-          </button>
-        )}
+        {/* Recursos del curso — siempre visible */}
+        <button
+          onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
+          className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
+        >
+          <FolderOpen className="w-4 h-4" />
+          {t.courseDetail.resourcesSection}
+        </button>
       </div>
 
       {/* Resources section */}

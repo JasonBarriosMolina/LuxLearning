@@ -110,7 +110,7 @@ export default function EvaluatorTasksPage() {
   const [filterStudent, setFilterStudent] = useState<string>('all');
   const [filterDueFrom, setFilterDueFrom] = useState<string>('');
   const [filterDueTo, setFilterDueTo] = useState<string>('');
-  const [groupBy, setGroupBy] = useState<GroupBy>('student');
+  const [groupBy, setGroupBy] = useState<GroupBy>('course');
 
   const load = async () => {
     const [tasksRes, usersRes, coursesRes] = await Promise.allSettled([
@@ -417,58 +417,77 @@ export default function EvaluatorTasksPage() {
                     <span className="text-xs text-gray-400">({groupTasks.length})</span>
                   </div>
 
-                  {/* Task cards */}
-                  <div className="space-y-2">
+                  {/* Task rows — two-column layout */}
+                  <div className="divide-y divide-gray-100">
+                    {/* Table header */}
+                    <div className="hidden sm:grid grid-cols-[1fr_160px_110px_80px_72px] gap-3 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                      <span>Tarea</span>
+                      <span>Estudiante</span>
+                      <span>Vencimiento</span>
+                      <span>Estado</span>
+                      <span className="text-right">Acciones</span>
+                    </div>
                     {groupTasks.map((task) => {
                       const href = getTaskHref(task);
-                      const cardContent = (
-                        <div className={`flex items-center gap-3 p-3 rounded-xl bg-surface transition-colors ${href ? 'cursor-pointer hover:bg-indigo-50 group' : ''}`}>
-                          {taskStatusIcon(task.status)}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
+                      return (
+                        <div
+                          key={task.taskId}
+                          className={`grid grid-cols-1 sm:grid-cols-[1fr_160px_110px_80px_72px] gap-x-3 gap-y-1 items-center px-3 py-2.5 rounded-xl transition-colors ${href ? 'cursor-pointer hover:bg-indigo-50/60 group' : 'hover:bg-gray-50'}`}
+                          onClick={() => href && router.push(href)}
+                        >
+                          {/* Col 1 — Tarea */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            {taskStatusIcon(task.status)}
+                            <div className="min-w-0">
                               <p className="text-sm font-medium text-charcoal truncate">{task.title}</p>
                               {looksLikeUUID(task.title) && (
-                                <span className="shrink-0 text-[10px] font-semibold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{t.evaluator.reviewTitleFlag}</span>
+                                <span className="text-[10px] font-semibold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{t.evaluator.reviewTitleFlag}</span>
                               )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-2 text-xs text-gray-400 mt-0.5">
-                              <span>{task.dueDate}</span>
-                              <span>·</span>
-                              <span>{TYPE_LABELS[task.type] ?? task.type}</span>
-                              {groupBy !== 'student' && task.userId && (
-                                <><span>·</span><span>{getStudentName(task.userId)}</span></>
-                              )}
-                              {groupBy !== 'course' && (task.courseTitle || task.courseId) && (
-                                <><span>·</span><span className="text-indigo-500">{task.courseTitle || getCourseName(task.courseId)}</span></>
-                              )}
+                              <p className="text-xs text-gray-400 truncate sm:hidden mt-0.5">
+                                {getStudentName(task.userId)} · {task.dueDate}
+                              </p>
                             </div>
                           </div>
-                          <Badge variant={taskStatusVariant(task.status)}>
-                            {task.status === 'PENDING' ? t.evaluator.taskStatusPending : task.status === 'COMPLETED' ? t.evaluator.taskStatusCompleted : t.evaluator.taskStatusOverdue}
-                          </Badge>
-                          {href && <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-400 shrink-0 transition-colors" />}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); openEdit(task); }}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors shrink-0"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDelete(task); }}
-                            disabled={deleting === task.taskId}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40 shrink-0"
-                          >
-                            {deleting === task.taskId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      );
 
-                      return href ? (
-                        <div key={task.taskId} onClick={() => router.push(href)}>
-                          {cardContent}
+                          {/* Col 2 — Estudiante */}
+                          <div className="hidden sm:flex items-center gap-1.5 min-w-0">
+                            <User className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                            <span className="text-xs text-charcoal truncate">{getStudentName(task.userId)}</span>
+                          </div>
+
+                          {/* Col 3 — Vencimiento */}
+                          <div className="hidden sm:block">
+                            <span className="text-xs text-gray-500">{task.dueDate ?? '—'}</span>
+                            {task.dueDate && new Date(task.dueDate + 'T00:00:00') < new Date() && task.status !== 'COMPLETED' && (
+                              <span className="ml-1 text-[10px] font-semibold text-red-500">Vencida</span>
+                            )}
+                          </div>
+
+                          {/* Col 4 — Estado */}
+                          <div className="hidden sm:block">
+                            <Badge variant={taskStatusVariant(task.status)}>
+                              {task.status === 'PENDING' ? t.evaluator.taskStatusPending : task.status === 'COMPLETED' ? t.evaluator.taskStatusCompleted : t.evaluator.taskStatusOverdue}
+                            </Badge>
+                          </div>
+
+                          {/* Col 5 — Acciones */}
+                          <div className="flex items-center justify-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {href && <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-400 hidden sm:block transition-colors" />}
+                            <button
+                              onClick={() => openEdit(task)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(task)}
+                              disabled={deleting === task.taskId}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                            >
+                              {deleting === task.taskId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        <div key={task.taskId}>{cardContent}</div>
                       );
                     })}
                   </div>
