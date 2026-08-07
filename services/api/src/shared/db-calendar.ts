@@ -99,8 +99,17 @@ export async function getAllVisibleCalendarEvents(
       return true;
     }
     if (ev.visibility === 'community') return true;
-    if (ev.visibility === 'course_mine') return true;
-    if (ev.visibility === 'course_all') return true;
+    if (ev.visibility === 'course_mine') {
+      // Only visible to targeted students (enrollment deadline events)
+      if (ev.targetStudentIds && ev.targetStudentIds.length > 0) {
+        return ev.targetStudentIds.includes(requestorId);
+      }
+      return false;
+    }
+    if (ev.visibility === 'course_all') {
+      // Visible to anyone enrolled in the target course — filter by targetCourseId applied by caller
+      return true;
+    }
     return false;
   });
 }

@@ -53,7 +53,7 @@ export async function handleClasses(
 
     // Reuse existing non-completed session to avoid ghost records
     const existing = await listMyClassSessions(userId, moduleId);
-    const reusable = existing.find((s) => s.status === 'pending' || s.status === 'content_viewed');
+    const reusable = existing.find((s) => s.status === 'pending' || s.status === 'content_viewed' || s.status === 'in_progress');
 
     const sessionId = reusable?.sessionId ?? randomUUID();
     if (!reusable) {

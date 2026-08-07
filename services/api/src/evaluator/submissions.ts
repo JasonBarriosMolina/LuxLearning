@@ -2,7 +2,7 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { EvalCtx, s3Ev, SUBMISSIONS_BUCKET_EV, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV } from './ctx';
-import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, listClassSessionsForModule, updateClassSessionGrade, getClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
+import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, getInterview, listClassSessionsForModule, updateClassSessionGrade, getClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden } from '../shared/response';
 
 export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
@@ -63,9 +63,10 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
     const gradeNum = Number(grade);
     if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) return badRequest('grade must be 0-100');
     if (!isAdminRole) {
-      const ev = await prisma.evaluationEvent.findUnique({ where: { id: interviewId }, select: { courseId: true } });
-      if (ev) {
-        const course = await prisma.course.findUnique({ where: { id: ev.courseId }, select: { evaluatorId: true } });
+      // interviewId is a DDB session UUID — look up courseId from the interview record itself
+      const interview = await getInterview(studentUserId!, interviewId);
+      if (interview?.courseId) {
+        const course = await prisma.course.findUnique({ where: { id: interview.courseId }, select: { evaluatorId: true } });
         if (course && course.evaluatorId !== userId) return forbidden('No autorizado para este curso');
       }
     }
