@@ -134,7 +134,8 @@ function CourseWizardInner() {
 
       const evalConfig = Array.isArray(c.evaluationConfig) ? c.evaluationConfig : [];
       if (evalConfig.length > 0) {
-        setStep3({
+        setStep3((prev) => ({
+          ...prev,
           items: evalConfig.map((it: any, i: number) => ({
             id: it.id ?? String(i),
             type: it.type ?? 'EXAM',
@@ -151,7 +152,7 @@ function CourseWizardInner() {
             interviewEndDate: it.interviewEndDate ?? '',
             interviewTimeSlot: it.interviewTimeSlot ?? '',
           })),
-        });
+        }));
       }
 
       // Restore weekly plan and syllabus if previously saved
@@ -296,7 +297,7 @@ function CourseWizardInner() {
       if (step1.modality === 'ASINCRONICA') {
         items = items.filter((item) => item.type !== 'ATTENDANCE');
       }
-      setStep3({ items });
+      setStep3((prev) => ({ ...prev, items }));
     }
     setStep(4);
   };
@@ -362,6 +363,9 @@ function CourseWizardInner() {
 
   const updateModuleReflexWeek = (moduleIdx: number, reflexWeek: number | null) =>
     setStep4((p) => ({ ...p, modules: p.modules.map((m, i) => i === moduleIdx ? { ...m, reflexWeek } : m) }));
+
+  const updateLuxMentorWeeks = (luxWeeks: number[]) =>
+    setStep3((p) => ({ ...p, luxMentorWeeks: luxWeeks }));
 
   // ── Step 5 — Save ──────────────────────────────────────────────────────────
   const saveCourse = async () => {
@@ -502,6 +506,8 @@ function CourseWizardInner() {
               updateWeekProcedure={updateWeekProcedure} updateWeekNotes={updateWeekNotes}
               weeks={weeks}
               isEN={isEN}
+              luxMentorWeeks={step3.luxMentorWeeks}
+              updateLuxMentorWeeks={updateLuxMentorWeeks}
             />
           )}
           {step === 4 && (

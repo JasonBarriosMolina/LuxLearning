@@ -73,7 +73,7 @@ export function StepIdentidad({
         <SectionLabel>{s('Tipo de curso', 'Course type')}</SectionLabel>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {COURSE_TYPES.map((ct) => (
-            <button key={ct.id} onClick={() => { setStep1((p) => ({ ...p, courseType: ct.id })); setStep3({ items: [] }); }}
+            <button key={ct.id} onClick={() => { setStep1((p) => ({ ...p, courseType: ct.id })); setStep3({ items: [], luxMentorWeeks: [] }); }}
               className={`text-left p-4 rounded-xl border-2 transition-all ${step1.courseType === ct.id ? 'border-cta-from bg-blue-50 dark:bg-blue-900/20' : 'border-border hover:border-gray-300 hover:bg-surface'}`}>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${step1.courseType === ct.id ? 'bg-cta-from text-white' : 'bg-gray-100 text-gray-500'}`}>{ct.icon}</div>
               <p className="font-semibold text-charcoal text-sm">{planEN ? ct.labelEN : ct.label}</p>

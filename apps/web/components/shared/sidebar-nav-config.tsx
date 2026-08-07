@@ -16,7 +16,7 @@ export type NavKey =
   | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
   | 'communications' | 'myResources' | 'adminCerts' | 'groups' | 'submissions'
-  | 'interviews' | 'attendance' | 'studyPlan';
+  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases';
 
 export interface NavItem {
   href: string;
@@ -76,9 +76,10 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
     labelEn: 'Academic Center',
     icon: <BookOpen className="w-5 h-5" />,
     items: [
-      { href: '/evaluator/my-courses',   labelKey: 'myCourses',    icon: <BookOpen   className="w-5 h-5" /> },
-      { href: '/evaluator/my-resources', labelKey: 'myResources',  icon: <FolderOpen className="w-5 h-5" /> },
-      { href: '/admin/assign-courses',   labelKey: 'assignCourses', icon: <UserPlus  className="w-5 h-5" /> },
+      { href: '/evaluator/my-courses',   labelKey: 'myCourses',       icon: <BookOpen   className="w-5 h-5" /> },
+      { href: '/admin/clases',           labelKey: 'luxMentorClases',  icon: <BookOpen   className="w-5 h-5" /> },
+      { href: '/evaluator/my-resources', labelKey: 'myResources',      icon: <FolderOpen className="w-5 h-5" /> },
+      { href: '/admin/assign-courses',   labelKey: 'assignCourses',    icon: <UserPlus   className="w-5 h-5" /> },
     ],
   },
   {
@@ -143,10 +144,11 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     labelEn: 'Academic Center',
     icon: <BookOpen className="w-5 h-5" />,
     items: [
-      { href: '/evaluator/my-courses',   labelKey: 'myCourses',    icon: <BookOpen   className="w-5 h-5" /> },
-      { href: '/admin/courses',          labelKey: 'contentMgmt',  icon: <Settings2  className="w-5 h-5" /> },
-      { href: '/evaluator/my-resources', labelKey: 'myResources',  icon: <FolderOpen className="w-5 h-5" /> },
-      { href: '/admin/assign-courses',   labelKey: 'assignCourses', icon: <UserPlus  className="w-5 h-5" /> },
+      { href: '/evaluator/my-courses',   labelKey: 'myCourses',      icon: <BookOpen   className="w-5 h-5" /> },
+      { href: '/admin/courses',          labelKey: 'contentMgmt',    icon: <Settings2  className="w-5 h-5" /> },
+      { href: '/admin/clases',           labelKey: 'luxMentorClases', icon: <BookOpen   className="w-5 h-5" /> },
+      { href: '/evaluator/my-resources', labelKey: 'myResources',    icon: <FolderOpen className="w-5 h-5" /> },
+      { href: '/admin/assign-courses',   labelKey: 'assignCourses',  icon: <UserPlus   className="w-5 h-5" /> },
     ],
   },
   {

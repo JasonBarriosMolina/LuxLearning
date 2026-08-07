@@ -32,7 +32,7 @@ export interface EvalItem {
   interviewStartDate?: string; interviewEndDate?: string; interviewTimeSlot?: string;
 }
 
-export interface Step3Data { items: EvalItem[]; }
+export interface Step3Data { items: EvalItem[]; luxMentorWeeks: number[]; }
 
 export interface WeekPlanItem {
   weekNum: number; topics: string[]; module: string;
@@ -139,7 +139,7 @@ export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
 
 export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false };
 export const EMPTY_STEP2: Step2Data = { totalWeeks: 16, exceptions: [] };
-export const EMPTY_STEP3: Step3Data = { items: [] };
+export const EMPTY_STEP3: Step3Data = { items: [], luxMentorWeeks: [] };
 export const EMPTY_STEP4: Step4Data = { syllabusInput: '', weeklyPlan: [], modules: [], status: 'idle', error: '' };
 export const EMPTY_STEP5: Step5Data = { status: 'idle', error: '' };
 

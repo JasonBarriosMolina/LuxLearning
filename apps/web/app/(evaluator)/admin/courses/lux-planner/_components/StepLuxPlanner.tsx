@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, Loader2, Info, CheckCircle, RefreshCw } from 'lucide-react';
+import { Sparkles, Loader2, Info, CheckCircle, RefreshCw, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Step4Data, CalendarWeek } from './constants';
 import { SectionLabel } from './StepBar';
@@ -19,6 +19,8 @@ interface StepLuxPlannerProps {
   updateWeekNotes: (weekNum: number, text: string) => void;
   weeks: CalendarWeek[];
   isEN: boolean;
+  luxMentorWeeks: number[];
+  updateLuxMentorWeeks: (weeks: number[]) => void;
 }
 
 function EditableCell({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -49,9 +51,20 @@ export function StepLuxPlanner({
   step4, setStep4,
   effectiveWeeks, exceptionWeekIndices, step2TotalWeeks,
   planEN, runCopilot, updateWeekTopics, updateWeekProcedure, updateWeekNotes,
-  weeks, isEN,
+  weeks, isEN, luxMentorWeeks, updateLuxMentorWeeks,
 }: StepLuxPlannerProps) {
   const s = (es: string, en: string) => isEN ? en : es;
+
+  const toggleLuxMentorWeek = (weekNum: number) => {
+    updateLuxMentorWeeks(
+      luxMentorWeeks.includes(weekNum)
+        ? luxMentorWeeks.filter((w) => w !== weekNum)
+        : [...luxMentorWeeks, weekNum].sort((a, b) => a - b),
+    );
+  };
+
+  // All week numbers 1..step2TotalWeeks
+  const allWeekNums = Array.from({ length: step2TotalWeeks }, (_, i) => i + 1);
 
   const weekDates = (weekNum: number): string => {
     const wk = weeks.find((w) => w.weekNum === weekNum);
@@ -165,6 +178,52 @@ export function StepLuxPlanner({
           {s('Plan generado. Puedes editar cualquier celda antes de continuar.', 'Plan generated. You can edit any cell before continuing.')}
         </div>
       )}
+
+      {/* ── Lux Mentor — Clases ──────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+            <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+          </div>
+          <SectionLabel>{s('Lux Mentor — Clases', 'Lux Mentor — Classes')}</SectionLabel>
+        </div>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          {s(
+            'Selecciona las semanas en las que se impartirá una clase interactiva con Lux Mentor (sesión Vapi). Puedes configurar el contenido de cada sesión en ',
+            'Select the weeks that will have an interactive Lux Mentor class session (Vapi). You can configure each session\'s content in ',
+          )}
+          <span className="font-medium text-indigo-600">{s('Admin → Lux Mentor — Clases', 'Admin → Lux Mentor — Classes')}</span>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {allWeekNums.map((wk) => {
+            const isException = exceptionWeekIndices.includes(wk);
+            const isSelected = luxMentorWeeks.includes(wk);
+            return (
+              <button
+                key={wk}
+                type="button"
+                disabled={isException}
+                onClick={() => toggleLuxMentorWeek(wk)}
+                title={isException ? s('Semana de excepción', 'Exception week') : `${s('Semana', 'Week')} ${wk}`}
+                className={`w-10 h-10 rounded-xl text-xs font-bold border-2 transition-all ${
+                  isException
+                    ? 'border-dashed border-gray-200 text-gray-300 cursor-not-allowed'
+                    : isSelected
+                    ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
+                    : 'border-gray-200 text-gray-500 hover:border-indigo-300 hover:text-indigo-600'
+                }`}
+              >
+                {wk}
+              </button>
+            );
+          })}
+        </div>
+        {luxMentorWeeks.length > 0 && (
+          <p className="text-xs text-indigo-600 font-medium">
+            {luxMentorWeeks.length} {s('semana(s) seleccionada(s):', 'week(s) selected:')} {luxMentorWeeks.map((w) => `S${w}`).join(', ')}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
