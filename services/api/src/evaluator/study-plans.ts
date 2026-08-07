@@ -7,6 +7,7 @@ import {
   getMonday, type StudyPlan, type DayPlan, type PlanItem,
 } from '../shared/db-study-plans';
 import { getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
+import { isModuleUnlocked } from '../shared/db-progress';
 import type { EvalCtx } from './ctx';
 
 function buildEmptyDays(weekOf: string): DayPlan[] {
@@ -69,10 +70,14 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
         });
       }
     } else {
-      // Auto-generate from student progress
+      // Auto-generate from student progress — only include accessible (unlocked) modules
       let dayIndex = 0;
       for (const course of courses) {
+        const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
         for (const mod of (course as any).modules) {
+          const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs);
+          if (!unlocked) break; // Sequential lock — all further modules are also locked
+
           if (passedModuleIds.has(mod.id)) continue;
           const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
           const needsQuiz = pendingLessons.length === 0 && !passedModuleIds.has(mod.id);
@@ -125,17 +130,19 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       lockedBy: userId,
       changeRequested: false,
       generatedBy: 'evaluator',
+      ...(note ? { mentorNote: String(note).slice(0, 500) } : {}),
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     await saveStudyPlan(plan);
 
     // Notify student
+    const noteMsg = note ? ` Nota del mentor: "${String(note).slice(0, 100)}"` : '';
     await createNotification({
       userId: studentId!,
       notifId: `splan-lock-${createId()}`,
       type: 'STUDY_PLAN_LOCKED',
-      message: `Tu evaluador generó un plan de estudio para la semana del ${weekOf}. Está en modo solo lectura.`,
+      message: `Tu evaluador generó un plan de estudio para la semana del ${weekOf}. Está en modo solo lectura.${noteMsg}`,
       actionUrl: '/plan',
       read: false,
       createdAt: new Date().toISOString(),

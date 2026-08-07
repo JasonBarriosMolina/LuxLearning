@@ -51,12 +51,18 @@ vi.mock('../../shared/db-dynamo', () => ({
   getAllQuizAttemptsForUser: (...a: any[]) => mockGetAllQuizAttempts(...a),
 }));
 
+// isModuleUnlocked — default: all modules unlocked
+const mockIsModuleUnlocked = vi.fn().mockResolvedValue(true);
+vi.mock('../../shared/db-progress', () => ({
+  isModuleUnlocked: (...a: any[]) => mockIsModuleUnlocked(...a),
+}));
+
 vi.mock('../../shared/db-neon', () => ({
   getPrismaClient: vi.fn().mockResolvedValue(makePrisma()),
 }));
 
 // ── Import after mocks ────────────────────────────────────────────────────────
-import { getMonday } from '../../shared/db-study-plans';
+import { getMonday, getNextMonday } from '../../shared/db-study-plans';
 import { handleStudyPlans } from '../../study-plans/plans';
 import { handleEvalStudyPlans } from '../../evaluator/study-plans';
 
@@ -100,6 +106,31 @@ describe('getMonday()', () => {
     const mondays = dates.map((d) => getMonday(new Date(d + 'T10:00:00Z')));
     expect(new Set(mondays).size).toBe(1);
     expect(mondays[0]).toBe('2026-08-03');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1b. getNextMonday — pure function (Sunday cron helper)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('getNextMonday()', () => {
+  it('returns next Monday when called on Sunday', () => {
+    const sun = new Date('2026-08-09T00:00:00Z'); // Sunday
+    expect(getNextMonday(sun)).toBe('2026-08-10');
+  });
+
+  it('returns next Monday when called on Monday', () => {
+    const mon = new Date('2026-08-03T00:00:00Z'); // Monday
+    expect(getNextMonday(mon)).toBe('2026-08-10');
+  });
+
+  it('returns next Monday when called on Saturday', () => {
+    const sat = new Date('2026-08-08T00:00:00Z'); // Saturday
+    expect(getNextMonday(sat)).toBe('2026-08-10');
+  });
+
+  it('returns next Monday when called on Wednesday', () => {
+    const wed = new Date('2026-08-05T00:00:00Z'); // Wednesday
+    expect(getNextMonday(wed)).toBe('2026-08-10');
   });
 });
 
@@ -316,6 +347,7 @@ describe('handleEvalStudyPlans — evaluator routes', () => {
     mockGetStudyPlan.mockResolvedValue(null);
     mockGetEnrollments.mockResolvedValue([]);
     mockGetAllQuizAttempts.mockResolvedValue([]);
+    mockIsModuleUnlocked.mockResolvedValue(true); // default: all unlocked
   });
 
   describe('POST /evaluator/students/:studentId/study-plan', () => {
@@ -435,6 +467,60 @@ describe('handleEvalStudyPlans — evaluator routes', () => {
       expect(notif.userId).toBe('student-123');
       expect(notif.type).toBe('STUDY_PLAN_UNLOCKED');
     });
+  });
+
+  it('skips locked modules in auto-generate (only unlocked modules included)', async () => {
+    // Module 2 is locked (isModuleUnlocked returns false for order > 1)
+    mockIsModuleUnlocked.mockImplementation((_uid: string, order: number) =>
+      Promise.resolve(order <= 1),
+    );
+    const prisma = makePrisma({
+      course: {
+        findMany: vi.fn().mockResolvedValue([{
+          id: 'course-1',
+          title: 'Test Course',
+          modules: [
+            { id: 'mod-1', order: 1, title: 'Module 1', lessons: [{ id: 'les-1', title: 'Lesson 1' }] },
+            { id: 'mod-2', order: 2, title: 'Module 2', lessons: [{ id: 'les-2', title: 'Lesson 2' }] },
+          ],
+        }]),
+      },
+    });
+    vi.doMock('../../shared/db-neon', () => ({ getPrismaClient: vi.fn().mockResolvedValue(prisma) }));
+    mockGetEnrollments.mockResolvedValue(['course-1']);
+
+    const ctx = makeEvalCtx({
+      method: 'POST',
+      path: '/evaluator/students/student-123/study-plan',
+      body: {},
+    });
+    await handleEvalStudyPlans(ctx);
+    const saved = mockSaveStudyPlan.mock.calls[0][0];
+    const allItems = saved.days.flatMap((d: any) => d.items);
+    // Only lesson from mod-1 (unlocked); mod-2 is locked → excluded
+    expect(allItems.every((i: any) => i.moduleId === 'mod-1')).toBe(true);
+  });
+
+  it('stores mentorNote in plan when note provided', async () => {
+    const ctx = makeEvalCtx({
+      method: 'POST',
+      path: '/evaluator/students/student-123/study-plan',
+      body: { note: 'Enfócate en módulo 1 esta semana' },
+    });
+    await handleEvalStudyPlans(ctx);
+    const saved = mockSaveStudyPlan.mock.calls[0][0];
+    expect(saved.mentorNote).toBe('Enfócate en módulo 1 esta semana');
+  });
+
+  it('does not store mentorNote when note is empty', async () => {
+    const ctx = makeEvalCtx({
+      method: 'POST',
+      path: '/evaluator/students/student-123/study-plan',
+      body: { note: '' },
+    });
+    await handleEvalStudyPlans(ctx);
+    const saved = mockSaveStudyPlan.mock.calls[0][0];
+    expect(saved.mentorNote).toBeUndefined();
   });
 
   it('returns null for unrecognized routes', async () => {

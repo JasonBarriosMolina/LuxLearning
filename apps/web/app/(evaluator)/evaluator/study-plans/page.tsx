@@ -18,7 +18,9 @@ interface StudentPlanRow {
   studentEmail: string | null;
   planStatus: PlanStatus;
   weekOf?: string;
-  generatedBy?: string;
+  generatedBy?: 'auto' | 'evaluator' | 'student';
+  updatedAt?: string;
+  mentorNote?: string;
   changeRequestNote?: string;
 }
 
@@ -95,6 +97,9 @@ export default function EvalStudyPlansPage() {
   const [error, setError] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('status');
   const [sortAsc, setSortAsc] = useState(true);
+  // Per-row note expand state
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const [noteValues, setNoteValues] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,6 +135,8 @@ export default function EvalStudyPlansPage() {
           planStatus,
           weekOf: plan?.weekOf,
           generatedBy: plan?.generatedBy,
+          updatedAt: plan?.updatedAt,
+          mentorNote: plan?.mentorNote,
           changeRequestNote: plan?.changeRequestNote,
         };
       });
@@ -144,11 +151,23 @@ export default function EvalStudyPlansPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleGenerate = async (row: StudentPlanRow) => {
+  const handleGenerateClick = (row: StudentPlanRow) => {
+    if (expandedNoteId === row.userId) {
+      // Already expanded → confirm generation
+      handleGenerateConfirm(row);
+    } else {
+      // First click → expand note textarea
+      setExpandedNoteId(row.userId);
+    }
+  };
+
+  const handleGenerateConfirm = async (row: StudentPlanRow) => {
     setGenerating(row.userId);
+    setExpandedNoteId(null);
     setError('');
     try {
-      await api.evaluator.studyPlan.generate(row.userId, {});
+      const note = noteValues[row.userId]?.trim() || undefined;
+      await api.evaluator.studyPlan.generate(row.userId, { note });
       setSuccessId(row.userId);
       setTimeout(() => setSuccessId(null), 3000);
       await load();
@@ -208,7 +227,7 @@ export default function EvalStudyPlansPage() {
               <ListTodo className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Planes de Estudio</h1>
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Mentor&apos;s Learning Path</h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Gestiona los planes semanales de tus estudiantes
               </p>
@@ -316,6 +335,11 @@ export default function EvalStudyPlansPage() {
                         </td>
                         <td className="px-4 py-3">
                           <StatusBadge status={row.planStatus} note={row.changeRequestNote} />
+                          {row.generatedBy && (
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              {row.generatedBy === 'evaluator' ? 'Por evaluador' : row.generatedBy === 'auto' ? 'Auto' : 'Por estudiante'}
+                            </p>
+                          )}
                           {row.changeRequestNote && (
                             <p className="text-xs text-gray-400 mt-1 max-w-[200px] truncate" title={row.changeRequestNote}>
                               {row.changeRequestNote}
@@ -323,32 +347,62 @@ export default function EvalStudyPlansPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">
-                          {row.weekOf ?? '—'}
+                          <div>{row.weekOf ?? '—'}</div>
+                          {row.updatedAt && (
+                            <div className="text-[11px] text-gray-400 mt-0.5">
+                              {new Date(row.updatedAt).toLocaleDateString('es', { day: '2-digit', month: 'short' })}
+                            </div>
+                          )}
+                          {row.mentorNote && (
+                            <div className="text-[11px] text-indigo-500 mt-0.5 max-w-[120px] truncate" title={row.mentorNote}>
+                              📝 {row.mentorNote}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            {(row.planStatus === 'locked' || row.planStatus === 'change_requested') && (
+                          <div className="flex flex-col gap-1.5 items-end">
+                            <div className="flex items-center gap-2 justify-end">
+                              {(row.planStatus === 'locked' || row.planStatus === 'change_requested') && (
+                                <button
+                                  onClick={() => handleUnlock(row)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50 transition-colors"
+                                >
+                                  {unlocking === row.userId
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <Unlock className="w-3 h-3" />}
+                                  Desbloquear
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleUnlock(row)}
+                                onClick={() => handleGenerateClick(row)}
                                 disabled={isBusy}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50 transition-colors"
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity disabled:opacity-50 ${expandedNoteId === row.userId ? 'bg-indigo-600 text-white hover:opacity-90' : 'bg-gradient-to-r from-[#7B2FBE] to-[#00B4D8] text-white hover:opacity-90'}`}
                               >
-                                {unlocking === row.userId
+                                {generating === row.userId
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <Unlock className="w-3 h-3" />}
-                                Desbloquear
+                                  : <ListTodo className="w-3 h-3" />}
+                                {expandedNoteId === row.userId ? 'Confirmar' : row.planStatus === 'none' ? 'Generar plan' : 'Regenerar'}
                               </button>
+                              {expandedNoteId === row.userId && (
+                                <button
+                                  onClick={() => setExpandedNoteId(null)}
+                                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                            {expandedNoteId === row.userId && (
+                              <textarea
+                                autoFocus
+                                value={noteValues[row.userId] ?? ''}
+                                onChange={e => setNoteValues(prev => ({ ...prev, [row.userId]: e.target.value }))}
+                                placeholder="Nota del mentor: ej. Enfócate en módulos 1–3…"
+                                rows={2}
+                                className="w-64 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0D0D1A] text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 resize-none"
+                              />
                             )}
-                            <button
-                              onClick={() => handleGenerate(row)}
-                              disabled={isBusy}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#7B2FBE] to-[#00B4D8] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-                            >
-                              {generating === row.userId
-                                ? <Loader2 className="w-3 h-3 animate-spin" />
-                                : <ListTodo className="w-3 h-3" />}
-                              {row.planStatus === 'none' ? 'Generar plan' : 'Regenerar'}
-                            </button>
                           </div>
                         </td>
                       </tr>

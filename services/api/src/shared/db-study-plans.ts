@@ -38,6 +38,7 @@ export interface StudyPlan {
   days: DayPlan[];
   lockedBy?: string;       // evaluator/admin userId
   lockedByName?: string;
+  mentorNote?: string;     // evaluator's note/suggestion when generating
   changeRequested?: boolean;
   changeRequestNote?: string;
   bedrockSuggestions?: BedrockSuggestion[];
@@ -47,11 +48,21 @@ export interface StudyPlan {
   updatedAt: string;
 }
 
-/** ISO date of the Monday for any given date */
+/** ISO date of the Monday for any given date (current week) */
 export function getMonday(date: Date = new Date()): string {
   const d = new Date(date);
   const day = d.getUTCDay(); // 0=Sun
   const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+/** ISO date of the NEXT Monday (used by Sunday cron to generate next week's plan) */
+export function getNextMonday(date: Date = new Date()): string {
+  const d = new Date(date);
+  const day = d.getUTCDay(); // 0=Sun
+  // Sunday → +1 day; any other day → days until next Monday
+  const diff = day === 0 ? 1 : 8 - day;
   d.setUTCDate(d.getUTCDate() + diff);
   return d.toISOString().slice(0, 10);
 }

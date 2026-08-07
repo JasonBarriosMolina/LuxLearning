@@ -29,7 +29,7 @@ export const navEs = {
     submissions: 'Entregas',
     interviews: 'Entrevistas',
     attendance: 'Asistencia',
-    studyPlan: 'Plan de Estudio',
+    studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Clases',
   },
   roles: {
@@ -128,7 +128,7 @@ export const navEn = {
     submissions: 'Submissions',
     interviews: 'Interviews',
     attendance: 'Attendance',
-    studyPlan: 'Study Plan',
+    studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Classes',
   },
   roles: {

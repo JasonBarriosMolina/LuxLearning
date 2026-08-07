@@ -4,9 +4,10 @@ import { createId } from '@paralleldrive/cuid2';
 import { CognitoIdentityProviderClient, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import {
   getStudyPlan, saveStudyPlan,
-  getMonday, type StudyPlan, type DayPlan,
+  getNextMonday, type StudyPlan, type DayPlan,
 } from '../shared/db-study-plans';
 import { getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
+import { isModuleUnlocked } from '../shared/db-progress';
 import { getPrismaClient } from '../shared/db-neon';
 
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -69,7 +70,12 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
 
   let dayIndex = 0;
   for (const course of courses) {
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
     for (const mod of (course as any).modules) {
+      // Only include accessible (unlocked) modules — sequential lock check
+      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+      if (!unlocked) break;
+
       if (passedModuleIds.has(mod.id)) continue;
       const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
       const needsQuiz = pendingLessons.length === 0 && !passedModuleIds.has(mod.id);
@@ -120,8 +126,9 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
   await saveStudyPlan(plan);
 }
 
+// EventBridge rule must fire Sunday midnight UTC so getNextMonday() targets the upcoming week.
 export async function runCronGeneration(): Promise<void> {
-  const weekOf = getMonday();
+  const weekOf = getNextMonday();
   console.log(`[StudyPlan Cron] Generating plans for week ${weekOf}`);
 
   const userIds = await getAllStudentUserIds();
