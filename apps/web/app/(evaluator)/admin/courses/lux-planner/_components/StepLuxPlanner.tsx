@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, Loader2, Info, CheckCircle, RefreshCw, BookOpen } from 'lucide-react';
+import { Sparkles, Loader2, Info, CheckCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Step4Data, CalendarWeek } from './constants';
 import { SectionLabel } from './StepBar';
@@ -17,8 +17,6 @@ interface StepLuxPlannerProps {
   updateWeekTopics: (weekNum: number, text: string) => void;
   updateWeekProcedure: (weekNum: number, text: string) => void;
   updateWeekNotes: (weekNum: number, text: string) => void;
-  updateModuleQuizWeek: (moduleIdx: number, quizWeek: number | null) => void;
-  updateModuleReflexWeek: (moduleIdx: number, reflexWeek: number | null) => void;
   weeks: CalendarWeek[];
   isEN: boolean;
 }
@@ -51,7 +49,6 @@ export function StepLuxPlanner({
   step4, setStep4,
   effectiveWeeks, exceptionWeekIndices, step2TotalWeeks,
   planEN, runCopilot, updateWeekTopics, updateWeekProcedure, updateWeekNotes,
-  updateModuleQuizWeek, updateModuleReflexWeek,
   weeks, isEN,
 }: StepLuxPlannerProps) {
   const s = (es: string, en: string) => isEN ? en : es;
@@ -64,8 +61,6 @@ export function StepLuxPlanner({
       return `${parts[2]}/${parts[1]}`;
     }).join(', ');
   };
-
-  const allWeekNums = step4.weeklyPlan.map((w) => w.weekNum);
 
   return (
     <div className="space-y-6">
@@ -109,7 +104,7 @@ export function StepLuxPlanner({
             : s('Generar Plan con Lux Planner', 'Generate Plan with Lux Planner')}
         </Button>
         {step4.status === 'done' && (
-          <button onClick={runCopilot} disabled={step4.status === 'loading'} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-charcoal transition-colors">
+          <button onClick={runCopilot} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-charcoal transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />{s('Regenerar', 'Regenerate')}
           </button>
         )}
@@ -161,45 +156,6 @@ export function StepLuxPlanner({
             </table>
           </div>
           <p className="text-[11px] text-gray-400">{s('Haz clic en cualquier celda de texto para editar.', 'Click any text cell to edit.')}</p>
-        </div>
-      )}
-
-      {/* ── Module quiz/reflexión assignment ──────────────────────────────────── */}
-      {step4.modules.length > 0 && (
-        <div className="space-y-3">
-          <SectionLabel>{s('Módulos — Quiz y Reflexión', 'Modules — Quiz & Reflection')}</SectionLabel>
-          <p className="text-xs text-gray-400">{s('Asigna en qué semana se realizará el quiz y la reflexión de cada módulo (opcional).', 'Assign which week the quiz and reflection for each module will take place (optional).')}</p>
-          <div className="space-y-2">
-            {step4.modules.map((mod, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-surface flex-wrap">
-                <BookOpen className="w-3.5 h-3.5 text-cta-from shrink-0" />
-                <p className="text-sm font-medium text-charcoal flex-1 min-w-[120px] truncate">{planEN ? mod.nameEN : mod.name}</p>
-                {mod.weeks?.length > 0 && (
-                  <span className="text-[10px] text-gray-400 shrink-0">{s('Sem.', 'Wk.')} {mod.weeks.join(', ')}</span>
-                )}
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  <span className="text-[11px] text-gray-400">Quiz</span>
-                  <select
-                    value={mod.quizWeek ?? ''}
-                    onChange={(e) => updateModuleQuizWeek(i, e.target.value ? parseInt(e.target.value) : null)}
-                    className="input-field py-0.5 text-xs w-16"
-                  >
-                    <option value="">—</option>
-                    {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
-                  </select>
-                  <span className="text-[11px] text-gray-400">{s('Reflexión', 'Reflection')}</span>
-                  <select
-                    value={mod.reflexWeek ?? ''}
-                    onChange={(e) => updateModuleReflexWeek(i, e.target.value ? parseInt(e.target.value) : null)}
-                    className="input-field py-0.5 text-xs w-16"
-                  >
-                    <option value="">—</option>
-                    {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
-                  </select>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

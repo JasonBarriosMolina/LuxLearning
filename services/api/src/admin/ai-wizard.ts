@@ -18,7 +18,7 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
 
   // ── Async worker: wizard bulk lesson generation ──────────────────────────────
   if (ctx.action === 'wizard-lessons-bulk') {
-    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES', evaluationItems: blEvalItems = [] } = body as any;
+    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES', evaluationItems: blEvalItems = [], _quizOnlyForExistingModules = false } = body as any;
     const isBlEN = blLang === 'EN';
     // Only generate quiz questions if the evaluation plan explicitly includes a QUIZ type.
     // Lux Planner is the authority — if no QUIZ was configured, don't create one.
@@ -29,6 +29,28 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
         try {
           const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
           if (!mod) continue;
+
+          // When re-using this worker just to generate quiz questions for already-existing modules,
+          // skip lesson generation if the module already has lessons.
+          if (_quizOnlyForExistingModules) {
+            const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
+            if (existingLessonCount > 0 && hasQuizInPlan) {
+              const qPrompt = isBlEN
+                ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
+                : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
+              const rawQ = await invokeBedrockForJson(qPrompt, 2000);
+              const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
+              if (questions.length > 0) {
+                await prisma.question.createMany({
+                  data: questions.map((q: any, i: number) => ({
+                    moduleId, text: q.text, options: q.options,
+                    correctIndex: Number(q.correctIndex), order: i + 1,
+                  })),
+                });
+              }
+              continue; // Skip lesson generation for this module
+            }
+          }
 
           // ── Rich lesson prompt (5-7 min read, 4-pillar structure) ───────────
           const lessonPrompt = isBlEN
@@ -440,6 +462,42 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }
 
       await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+    }
+
+    // When editing a course: if QUIZ was added to the eval plan, auto-generate questions
+    // for modules that currently have no questions.
+    if (editingCourseId) {
+      const hasQuizInNewPlan = (evaluationItems as any[]).some((it: any) => it.type === 'QUIZ');
+      if (hasQuizInNewPlan) {
+        try {
+          const courseModules = await prisma.module.findMany({
+            where: { courseId: course.id },
+            select: { id: true, title: true },
+          });
+          const modulesWithoutQuiz = await Promise.all(
+            courseModules.map(async (mod: any) => {
+              const count = await prisma.question.count({ where: { moduleId: mod.id } });
+              return count === 0 ? mod : null;
+            })
+          );
+          const missingQuizModules = modulesWithoutQuiz.filter(Boolean) as { id: string; title: string }[];
+          for (const mod of missingQuizModules) {
+            const jobId = `quiz-gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            await saveAiJob(jobId, { status: 'processing' });
+            await lambdaClient.send(new LambdaInvokeCommand({
+              FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+              InvocationType: 'Event',
+              Payload: Buffer.from(JSON.stringify({
+                _action: 'wizard-lessons-bulk', _jobId: jobId, _env: getCurrentEnv(),
+                courseId: course.id, moduleIds: [mod.id],
+                courseTitle: title, language: planLanguage,
+                evaluationItems,
+                _quizOnlyForExistingModules: true,
+              })),
+            })).catch(() => {});
+          }
+        } catch { /* non-fatal */ }
+      }
     }
 
     // Generate CourseSession records from schedule

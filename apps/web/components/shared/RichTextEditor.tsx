@@ -371,7 +371,7 @@ export function RichTextEditor({ value, onChange, placeholder = 'Escribe el cont
     if (!editor) return;
     const current = editor.getHTML();
     if (current !== value) {
-      editor.commands.setContent(value || '', false);
+      editor.commands.setContent(value || '', false as any);
     }
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 

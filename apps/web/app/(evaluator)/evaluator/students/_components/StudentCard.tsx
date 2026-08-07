@@ -63,7 +63,7 @@ export function StudentCard({
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0">
           <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-            {(student.presenceStatus === 'inactive' || student.presenceStatus === 'never_active') && student.presenceStatus !== 'disabled' && onSendReminder && (() => {
+            {(student.presenceStatus === 'inactive' || student.presenceStatus === 'never_active') && onSendReminder && (() => {
               // Optimistic update takes precedence; server data persists across refresh
               const optimistic = reminderSentIds?.get(student.userId);
               const serverSent = student.lastManualReminder?.lastSent;

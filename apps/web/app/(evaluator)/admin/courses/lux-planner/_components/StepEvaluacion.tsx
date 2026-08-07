@@ -1,6 +1,6 @@
 'use client';
 
-import { GripVertical, Info, Plus, Trash2, Mic, Sparkles, Loader2, X } from 'lucide-react';
+import { GripVertical, Info, Plus, Trash2, Mic, Sparkles, Loader2, X, BookOpen } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import {
@@ -25,6 +25,8 @@ interface StepEvaluacionProps {
   setCount: (id: string, count: number) => void;
   addEvalItem: () => void;
   removeItem: (id: string) => void;
+  updateModuleQuizWeek: (moduleIdx: number, quizWeek: number | null) => void;
+  updateModuleReflexWeek: (moduleIdx: number, reflexWeek: number | null) => void;
   isEN: boolean;
   onPilotoToggle?: (val: boolean) => void;
   step5Error: string;
@@ -36,6 +38,7 @@ export function StepEvaluacion({
   totalWeight, weightOk,
   outOfRangeItems, dateWarningDismissed, setDateWarningDismissed,
   updateItem, updateDueDate, setCount, addEvalItem, removeItem,
+  updateModuleQuizWeek, updateModuleReflexWeek,
   isEN, onPilotoToggle,
   step5Error, editingCourseId,
 }: StepEvaluacionProps) {
@@ -102,19 +105,20 @@ export function StepEvaluacion({
 
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-surface rounded-xl border border-border flex items-start gap-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-cta-from text-white">{ct?.icon}</div>
-        <div>
-          <p className="font-semibold text-charcoal text-sm">{planEN ? ct?.labelEN : ct?.label}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{s('Total debe sumar exactamente 100%.', 'Total must equal exactly 100%.')}</p>
+      {/* ── Sticky weight bar ───────────────────────────────────────────────────── */}
+      <div className="sticky top-[57px] z-10 bg-white/95 dark:bg-gray-950/95 backdrop-blur -mx-6 px-6 py-3 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-cta-from text-white text-xs">{ct?.icon}</div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold text-charcoal">{planEN ? ct?.labelEN : ct?.label} — {s('Total debe ser 100%', 'Total must be 100%')}</p>
+              <div className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${weightOk ? 'bg-emerald-100 text-emerald-700' : totalWeight > 100 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{totalWeight.toFixed(0)}%</div>
+            </div>
+            <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all duration-300 ${weightOk ? 'bg-emerald-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, totalWeight)}%` }} />
+            </div>
+          </div>
         </div>
-        <div className="ml-auto shrink-0">
-          <div className={`text-sm font-bold px-3 py-1 rounded-full ${weightOk ? 'bg-emerald-100 text-emerald-700' : totalWeight > 100 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{totalWeight.toFixed(0)}%</div>
-        </div>
-      </div>
-
-      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-300 ${weightOk ? 'bg-emerald-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, totalWeight)}%` }} />
       </div>
 
       <div className="space-y-3">
@@ -366,6 +370,51 @@ export function StepEvaluacion({
       {step5Error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex gap-2">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />{step5Error}
+        </div>
+      )}
+
+      {/* ── Módulos — Quiz y Reflexión ──────────────────────────────────────────── */}
+      {step4.modules.length > 0 && (
+        <div className="space-y-3 border-t border-border pt-6">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-cta-from" />
+            <p className="text-sm font-semibold text-charcoal">{s('Módulos — Quiz y Reflexión', 'Modules — Quiz & Reflection')}</p>
+          </div>
+          <p className="text-xs text-gray-400">{s('Asigna en qué semana se realizará el quiz y la reflexión de cada módulo (opcional).', 'Assign which week the quiz and reflection for each module will take place (optional).')}</p>
+          <div className="space-y-2">
+            {step4.modules.map((mod, i) => {
+              const allWeekNums = step4.weeklyPlan.map((w) => w.weekNum);
+              return (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-surface flex-wrap">
+                  <BookOpen className="w-3.5 h-3.5 text-cta-from shrink-0" />
+                  <p className="text-sm font-medium text-charcoal flex-1 min-w-[120px] truncate">{planEN ? mod.nameEN : mod.name}</p>
+                  {mod.weeks?.length > 0 && (
+                    <span className="text-[10px] text-gray-400 shrink-0">{s('Sem.', 'Wk.')} {mod.weeks.join(', ')}</span>
+                  )}
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <span className="text-[11px] text-gray-400">Quiz</span>
+                    <select
+                      value={mod.quizWeek ?? ''}
+                      onChange={(e) => updateModuleQuizWeek(i, e.target.value ? parseInt(e.target.value) : null)}
+                      className="input-field py-0.5 text-xs w-16"
+                    >
+                      <option value="">—</option>
+                      {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
+                    </select>
+                    <span className="text-[11px] text-gray-400">{s('Reflexión', 'Reflection')}</span>
+                    <select
+                      value={mod.reflexWeek ?? ''}
+                      onChange={(e) => updateModuleReflexWeek(i, e.target.value ? parseInt(e.target.value) : null)}
+                      className="input-field py-0.5 text-xs w-16"
+                    >
+                      <option value="">—</option>
+                      {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

@@ -51,8 +51,9 @@ function CourseWizardInner() {
   const [pendingEx, setPendingEx] = useState<PendingException | null>(null);
   const [dateWarningDismissed, setDateWarningDismissed] = useState(false);
 
-  // ── Exit confirmation ──────────────────────────────────────────────────────
+  // ── Exit / Back confirmation ────────────────────────────────────────────────
   const [exitConfirm, setExitConfirm] = useState(false);
+  const [backConfirm, setBackConfirm] = useState(false);
   const [pendingNavDest, setPendingNavDest] = useState<string | null>(null);
 
   const DRAFT_KEY = 'lux-planner-draft';
@@ -289,7 +290,14 @@ function CourseWizardInner() {
 
   // Init default eval items when entering Evaluación (step 4)
   const enterEvaluacion = () => {
-    if (step3.items.length === 0 && step1.courseType) setStep3({ items: defaultEvalItems(step1.courseType as CourseTypeId) });
+    if (step3.items.length === 0 && step1.courseType) {
+      let items = defaultEvalItems(step1.courseType as CourseTypeId);
+      // Async courses don't have mandatory attendance
+      if (step1.modality === 'ASINCRONICA') {
+        items = items.filter((item) => item.type !== 'ATTENDANCE');
+      }
+      setStep3({ items });
+    }
     setStep(4);
   };
 
@@ -432,7 +440,7 @@ function CourseWizardInner() {
   const goBack = () => {
     if (step5.status === 'done') { router.push('/admin/courses'); return; }
     if (step === 1) { setPendingNavDest('/admin/courses'); setExitConfirm(true); return; }
-    setStep((p) => Math.max(1, p - 1) as typeof step);
+    setBackConfirm(true);
   };
 
   // ── Layout ─────────────────────────────────────────────────────────────────
@@ -492,7 +500,6 @@ function CourseWizardInner() {
               planEN={step1.planLanguage === 'EN'}
               runCopilot={runCopilot} updateWeekTopics={updateWeekTopics}
               updateWeekProcedure={updateWeekProcedure} updateWeekNotes={updateWeekNotes}
-              updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek}
               weeks={weeks}
               isEN={isEN}
             />
@@ -505,6 +512,7 @@ function CourseWizardInner() {
               dateWarningDismissed={dateWarningDismissed} setDateWarningDismissed={setDateWarningDismissed}
               updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
               addEvalItem={addEvalItem} removeItem={removeItem}
+              updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek}
               isEN={isEN}
               onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
               step5Error={''}
@@ -529,6 +537,27 @@ function CourseWizardInner() {
           <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
             <Button variant="secondary" onClick={goBack} leftIcon={<ArrowLeft className="w-4 h-4" />}>{s('Atrás', 'Back')}</Button>
             {step < 5 && <Button onClick={goNext} disabled={!canNext} rightIcon={<ArrowRight className="w-4 h-4" />}>{s('Siguiente', 'Next')}</Button>}
+          </div>
+        )}
+
+        {/* Back step confirmation modal */}
+        {backConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <p className="font-heading font-bold text-charcoal text-lg">{s('¿Regresar al paso anterior?', 'Go back to the previous step?')}</p>
+              <p className="text-sm text-gray-500">{s('Los cambios del paso actual se conservarán.', 'Changes in the current step will be preserved.')}</p>
+              <div className="flex flex-col gap-2 pt-1">
+                <button onClick={() => { setBackConfirm(false); setStep((p) => Math.max(1, p - 1) as typeof step); }} className="w-full px-4 py-2.5 rounded-xl bg-cta-from text-white font-semibold text-sm hover:bg-blue-700 transition-colors">
+                  {s('Regresar', 'Go back')}
+                </button>
+                <button onClick={() => { saveDraft(); setBackConfirm(false); setStep((p) => Math.max(1, p - 1) as typeof step); }} className="w-full px-4 py-2.5 rounded-xl border-2 border-cta-from text-cta-from font-semibold text-sm hover:bg-blue-50 transition-colors">
+                  {s('Guardar borrador y regresar', 'Save draft and go back')}
+                </button>
+                <button onClick={() => setBackConfirm(false)} className="w-full px-4 py-2.5 rounded-xl border border-border text-gray-500 font-semibold text-sm hover:bg-surface transition-colors">
+                  {s('Cancelar', 'Cancel')}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

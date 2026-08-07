@@ -363,7 +363,7 @@ export default function EvaluatorCalendarPage() {
       {selected && (
         <CalendarEventDetail
           selected={selected}
-          currentUserId={currentUserId}
+          currentUserId={currentUserId ?? undefined}
           isAdmin={isAdmin}
           deleting={deleting}
           onEdit={openEdit}

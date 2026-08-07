@@ -105,7 +105,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'system', content: systemPrompt }],
       },
-      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: 'auto' },
+      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: 'auto' } as any,
       name: 'Lux Entrevistador',
       firstMessage: lang === 'en'
         ? 'Hello! I\'m Mentor. I\'d love to chat with you about what you\'ve learned in this module. I\'ll ask you 3 questions — there\'s no rush. Ready to begin?'

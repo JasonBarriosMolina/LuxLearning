@@ -74,7 +74,7 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
     ]);
     if (!ALLOWED_TYPES.has(fileType)) return badRequest('Tipo de archivo no permitido');
 
-    const safeFolder = ['tasks', 'resources', 'uploads', 'photos'].includes(requestedFolder) ? requestedFolder : 'uploads';
+    const safeFolder = ['tasks', 'resources', 'uploads', 'photos', 'covers', 'editor'].includes(requestedFolder) ? requestedFolder : 'uploads';
     const ext = fileName.split('.').pop()?.replace(/[^a-z0-9]/gi, '') ?? 'bin';
     const fileKey = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const command = new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: fileKey, ContentType: fileType });

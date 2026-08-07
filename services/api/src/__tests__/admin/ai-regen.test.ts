@@ -226,12 +226,15 @@ describe('/admin/modules/_regen_worker async worker', () => {
       ]);
   });
 
-  it('returns 200 and saves done job', async () => {
+  it('generates quiz questions when course has QUIZ eval event', async () => {
     const { saveAiJob } = await import('../../shared/db-dynamo');
     vi.mocked(saveAiJob).mockClear();
+    const questionCreate = vi.fn().mockResolvedValue({ count: 1 });
     const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ courseId: 'course-1' }) },
+      evaluationEvent: { count: vi.fn().mockResolvedValue(1) }, // course HAS a QUIZ event
       lesson: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({ count: 2 }) },
-      question: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      question: { deleteMany: vi.fn().mockResolvedValue({}), createMany: questionCreate },
     });
     const ctx = makeAdminCtx({
       method: 'POST', path: '/admin/modules/_regen_worker', prisma,
@@ -239,8 +242,33 @@ describe('/admin/modules/_regen_worker async worker', () => {
     });
     const res = await handleAIRegen(ctx);
     expect(res?.statusCode).toBe(200);
+    // Quiz was generated because course has QUIZ eval event
+    expect(questionCreate).toHaveBeenCalled();
     const doneCalls = vi.mocked(saveAiJob).mock.calls.filter((c) => (c[1] as any)?.status === 'done');
     expect(doneCalls.length).toBeGreaterThan(0);
+  });
+
+  it('skips quiz generation when course has NO QUIZ eval event', async () => {
+    vi.mocked(invokeBedrockForJson).mockReset();
+    vi.mocked(invokeBedrockForJson).mockResolvedValueOnce([
+      { title: 'Lec 1', order: 1, type: 'video', content: null, duration: '5 min', points: ['p1'], tip: 'tip' },
+      { title: 'Lec 2', order: 2, type: 'text', content: '<p>x</p>', duration: '8 min', points: ['p2'], tip: 'tip2' },
+    ]);
+    const questionCreate = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ courseId: 'course-no-quiz' }) },
+      evaluationEvent: { count: vi.fn().mockResolvedValue(0) }, // course has NO QUIZ event
+      lesson: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      question: { deleteMany: vi.fn().mockResolvedValue({}), createMany: questionCreate },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST', path: '/admin/modules/_regen_worker', prisma,
+      body: { _jobId: 'job-2', _moduleId: 'mod-2', _moduleTitle: 'Módulo 2', _moduleDesc: '', _courseTitle: 'Curso B', _lessonCount: 2 },
+    });
+    const res = await handleAIRegen(ctx);
+    expect(res?.statusCode).toBe(200);
+    // Quiz was NOT generated because no QUIZ eval event
+    expect(questionCreate).not.toHaveBeenCalled();
   });
 
   it('saves error job when _jobId or _moduleId is missing', async () => {

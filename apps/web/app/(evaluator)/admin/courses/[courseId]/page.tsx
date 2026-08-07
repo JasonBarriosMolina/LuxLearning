@@ -228,7 +228,7 @@ export default function AdminCourseDetailPage() {
           <Button
             variant="secondary"
             leftIcon={<ShieldCheck className="w-4 h-4" />}
-            onClick={handleValidateVideos}
+            onClick={() => handleValidateVideos()}
             className="shrink-0"
           >
             Validar videos

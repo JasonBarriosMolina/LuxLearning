@@ -186,6 +186,12 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
     try {
       const targetCount: number = Number(_lessonCount) || 10;
 
+      // Check if the course has a QUIZ evaluation event configured — only then generate questions
+      const modRecord = await prisma.module.findUnique({ where: { id: _moduleId }, select: { courseId: true } });
+      const hasQuizInCourse = modRecord?.courseId
+        ? await prisma.evaluationEvent.count({ where: { courseId: modRecord.courseId, type: 'QUIZ' } }) > 0
+        : false;
+
       const descContext = _moduleDesc ? ` Descripción del módulo: "${_moduleDesc}".` : '';
       const newLessons = await invokeBedrockForJson(
         `Eres experto en diseño instruccional. Regenera exactamente ${targetCount} lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".${descContext}
@@ -196,13 +202,15 @@ Lección 1 y ${targetCount}: type "video". Lecciones intermedias: type "text" co
       const lessons = Array.isArray(newLessons) ? newLessons.slice(0, targetCount) : [];
       if (lessons.length === 0) throw new Error('Bedrock no generó lecciones válidas — se conservan las lecciones originales');
 
-      const lessonTitles = lessons.map((l: any, i: number) => `${i + 1}. ${l.title ?? `Lección ${i + 1}`}`).join('\n');
-      const newQuestions = await invokeBedrockForJson(
-        `Genera exactamente 10 preguntas de opción múltiple para el módulo "${_moduleTitle}" del curso "${_courseTitle}".
+      let questions: any[] = [];
+      if (hasQuizInCourse) {
+        const lessonTitles = lessons.map((l: any, i: number) => `${i + 1}. ${l.title ?? `Lección ${i + 1}`}`).join('\n');
+        const newQuestions = await invokeBedrockForJson(
+          `Genera exactamente 10 preguntas de opción múltiple para el módulo "${_moduleTitle}" del curso "${_courseTitle}".
 Las preguntas deben cubrir el contenido de estas lecciones:\n${lessonTitles}
 Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas, correctIndex entre 0-3.`, 2500);
-
-      const questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
+        questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
+      }
 
       // Delete old data and create new — only now that we have valid content
       await prisma.$transaction([
