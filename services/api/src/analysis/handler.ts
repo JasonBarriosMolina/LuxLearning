@@ -1,6 +1,6 @@
 /**
  * Nightly Analysis Lambda — triggered by EventBridge at 02:00 UTC
- * Analyzes reflections and quiz data per module using Bedrock Sonnet 4.5
+ * Analyzes reflections and quiz data per module using Bedrock Haiku 4.5
  * Stores results in ReportAnalysis + CurriculumRecommendations tables
  */
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
@@ -10,7 +10,7 @@ import { getPrismaClient } from '../shared/db-neon';
 import { initEnvFromFunctionName } from '../shared/env-context';
 import {
   getAllReflections, getAllQuizAttempts, getAllEnrollments,
-  saveReportAnalysis, saveRecommendations,
+  saveReportAnalysis, getReportAnalysis, saveRecommendations,
   getAttendanceMatrix, saveRiskScores, createTask, type RiskScore,
 } from '../shared/db-dynamo';
 import { createId } from '@paralleldrive/cuid2';
@@ -20,7 +20,7 @@ const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1' });
 const SES_FROM = process.env.SES_FROM_EMAIL ?? 'jason.rbm@gmail.com';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
-const MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 const MIN_REFLECTIONS = 3; // minimum reflections needed to run AI analysis
 
 async function callBedrock(prompt: string, maxTokens = 1024): Promise<string> {
@@ -94,6 +94,23 @@ export const handler = async () => {
           }
           skipped++;
           continue;
+        }
+
+        // Cost optimization: skip Bedrock if no new data since last analysis
+        const existingAnalysis = await getReportAnalysis(mod.id);
+        if (existingAnalysis?.analyzedAt) {
+          const latestReflection = modReflections.reduce(
+            (max, r) => ((r.submittedAt ?? '') > max ? (r.submittedAt ?? '') : max), ''
+          );
+          const latestAttempt = modAttempts.reduce(
+            (max, a) => ((a.submittedAt ?? '') > max ? (a.submittedAt ?? '') : max), ''
+          );
+          const latestData = latestReflection > latestAttempt ? latestReflection : latestAttempt;
+          if (latestData && existingAnalysis.analyzedAt >= latestData) {
+            console.log(`[Analysis] ${mod.title} — no new data since ${existingAnalysis.analyzedAt}, skipping Bedrock`);
+            skipped++;
+            continue;
+          }
         }
 
         // Build context for Bedrock (limit text to avoid token overflow)

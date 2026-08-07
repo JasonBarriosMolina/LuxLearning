@@ -138,6 +138,13 @@ async function processRecord(record: SQSRecord) {
     return;
   }
 
+  // Cost optimization: skip Bedrock if already scored (SQS duplicate delivery race condition)
+  // updateReflectionStatus stores `aiResult` object, not `aiScore`
+  if ((reflection as any).aiResult !== undefined) {
+    console.log('[AI Detection] Cache hit — aiResult already stored, skipping Bedrock');
+    return;
+  }
+
   const analyzedAt = new Date().toISOString();
   let aiResult;
   try {

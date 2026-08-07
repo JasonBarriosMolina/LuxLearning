@@ -342,7 +342,7 @@ export const handler = async (event: Event) => {
                   const resp = await bedrock.send(new InvokeModelCommand({
                     modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
                     contentType: 'application/json', accept: 'application/json',
-                    body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 768, messages: [{ role: 'user', content: analysisPrompt }] }),
+                    body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 450, messages: [{ role: 'user', content: analysisPrompt }] }), // cost: JSON score+analysis ~300-400 tokens
                   }));
                   const raw = JSON.parse(Buffer.from(resp.body).toString());
                   const parsed = JSON.parse((raw.content?.[0]?.text ?? '{}').replace(/```json\n?|\n?```/g, '').trim());
@@ -391,7 +391,7 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
                 accept: 'application/json',
                 body: JSON.stringify({
                   anthropic_version: 'bedrock-2023-05-31',
-                  max_tokens: 1024,
+                  max_tokens: 550, // cost: JSON score+2-paragraph analysis ~400-500 tokens
                   messages: [{ role: 'user', content: analysisPrompt }],
                 }),
               }));

@@ -341,7 +341,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
         accept: 'application/json',
         body: JSON.stringify({
           anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: 2048,
+          max_tokens: 900, // cost: 3 párrafos ~500-700 tokens; 2048 era excesivo
           messages: [{ role: 'user', content: prompt }],
         }),
       }));

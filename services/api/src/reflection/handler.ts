@@ -91,7 +91,7 @@ Responde ÚNICAMENTE con JSON válido:
           accept: 'application/json',
           body: JSON.stringify({
             anthropic_version: 'bedrock-2023-05-31',
-            max_tokens: 768,
+            max_tokens: 400, // cost: assessment 1-2 sentences + 3 suggestions ~300 tokens max
             messages: [{ role: 'user', content: prompt }],
           }),
         }));
