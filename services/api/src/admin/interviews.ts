@@ -28,34 +28,36 @@ export async function handleInterviews(ctx: AdminCtx): Promise<any | null> {
     ].filter(Boolean).join('\n');
 
     const prompt = isES
-      ? `Eres un diseñador de evaluaciones orales para un LMS educativo. Genera la configuración de una entrevista oral IA (Vapi).
+      ? `Eres un diseñador de evaluaciones orales para un LMS educativo. Genera la configuración de una entrevista oral conducida por Mentor, un evaluador IA cálido y profesional.
 
 ${context}
 
 Devuelve SOLO un objeto JSON con esta estructura exacta:
 {
-  "vapiPrompt": "Instrucciones completas para el entrevistador IA (2-4 párrafos). Debe incluir: rol del entrevistador, tema, tono, instrucciones de duración (~5 min), reglas de calificación interna.",
-  "vapiObjectives": ["Objetivo de pregunta 1", "Objetivo de pregunta 2", "Objetivo de pregunta 3"]
+  "vapiPrompt": "Instrucciones detalladas para Mentor. DEBE incluir: (1) instrucción de saludar al estudiante por nombre con calidez y gentileza, (2) instrucción de introducir brevemente el tema del módulo en 2-3 oraciones que den contexto y relevancia, (3) instrucción de desarrollar las ideas principales del tema de forma accesible antes de las preguntas, (4) instrucción de hacer la transición a las preguntas diciendo algo como 'Ahora me gustaría hacerte algunas preguntas...', (5) reglas de evaluación interna. Tono cálido, alentador y académico. Duración total ~8 minutos.",
+  "vapiObjectives": ["Objetivo de pregunta 1 (nivel conceptual)", "Objetivo de pregunta 2 (nivel aplicación)", "Objetivo de pregunta 3 (nivel análisis/reflexión)"]
 }
 
 Reglas:
-- vapiPrompt en español, tono profesional y académico
-- Exactamente 3 objetivos de preguntas, cada uno evaluando un nivel cognitivo diferente (conceptual, aplicación, análisis)
+- vapiPrompt en español, tono cálido, gentil y académico
+- El vapiPrompt debe enfatizar que las preguntas van AL FINAL, después de la introducción y el desarrollo del tema
+- Exactamente 3 objetivos de preguntas, cada uno evaluando un nivel cognitivo diferente
 - No incluir las preguntas literales, solo los objetivos
 - SOLO el JSON, sin markdown ni explicaciones`
-      : `You are an oral evaluation designer for an educational LMS. Generate the configuration for an AI oral interview (Vapi).
+      : `You are an oral evaluation designer for an educational LMS. Generate the configuration for an AI oral interview conducted by Mentor, a warm and professional AI evaluator.
 
 ${context}
 
 Return ONLY a JSON object with this exact structure:
 {
-  "vapiPrompt": "Full instructions for the AI interviewer (2-4 paragraphs). Must include: interviewer role, topic, tone, duration instructions (~5 min), internal grading rules.",
-  "vapiObjectives": ["Question objective 1", "Question objective 2", "Question objective 3"]
+  "vapiPrompt": "Detailed instructions for Mentor. MUST include: (1) instruction to greet the student warmly by name, (2) instruction to briefly introduce the module topic in 2-3 sentences providing context and relevance, (3) instruction to develop the main ideas of the topic in an accessible way before the questions, (4) instruction to transition to questions saying something like 'Now I'd like to ask you a few questions...', (5) internal evaluation rules. Warm, encouraging, and academic tone. Total duration ~8 minutes.",
+  "vapiObjectives": ["Question objective 1 (conceptual level)", "Question objective 2 (application level)", "Question objective 3 (analysis/reflection level)"]
 }
 
 Rules:
-- vapiPrompt in English, professional and academic tone
-- Exactly 3 question objectives, each evaluating a different cognitive level (conceptual, application, analysis)
+- vapiPrompt in English, warm, gentle, and academic tone
+- The vapiPrompt must emphasize that questions come AT THE END, after the intro and topic development
+- Exactly 3 question objectives, each evaluating a different cognitive level
 - Do not include literal questions, only objectives
 - ONLY the JSON, no markdown or explanations`;
 

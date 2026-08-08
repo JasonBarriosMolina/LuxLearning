@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, PhoneCall, PhoneOff, CheckCircle, Clock, AlertCircle, Volume2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { getUserFirstName } from '@/lib/auth';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
@@ -24,8 +25,13 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
   const [vapiConfig, setVapiConfig] = useState<{ interviewId: string; vapiPublicKey: string; vapiAssistantId: string; vapiPrompt: string | null; vapiObjectives: string | null } | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [volume, setVolume] = useState(0);
+  const [studentFirstName, setStudentFirstName] = useState<string>('');
   const vapiRef = useRef<Vapi | null>(null);
   const interviewIdRef = useRef<string>('');
+
+  useEffect(() => {
+    getUserFirstName().then((name) => { if (name) setStudentFirstName(name); });
+  }, []);
 
   const s = useCallback((es: string, en: string) => lang === 'en' ? en : es, [lang]);
 
@@ -97,7 +103,8 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       cleanup();
     });
 
-    const systemPrompt = buildSystemPrompt(vapiConfig.vapiPrompt, vapiConfig.vapiObjectives, lang);
+    const systemPrompt = buildSystemPrompt(vapiConfig.vapiPrompt, vapiConfig.vapiObjectives, lang, studentFirstName);
+    const greeting = studentFirstName ? `, ${studentFirstName}` : '';
     await vapi.start({
       transcriber: { provider: 'deepgram', model: 'nova-2', language: lang === 'en' ? 'en' : 'es' },
       model: {
@@ -106,10 +113,10 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
         messages: [{ role: 'system', content: systemPrompt }],
       },
       voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: 'auto' } as any,
-      name: 'Lux Entrevistador',
+      name: 'Lux Mentor',
       firstMessage: lang === 'en'
-        ? 'Hello! I\'m Mentor. I\'d love to chat with you about what you\'ve learned in this module. I\'ll ask you 3 questions — there\'s no rush. Ready to begin?'
-        : 'Hola, soy Mentor. Me gustaría conversar contigo sobre lo que aprendiste en este módulo. Te haré 3 preguntas, sin prisa. ¿Estás listo/a?',
+        ? `Hello${greeting}! I'm Mentor. Today we're going to talk about what you've learned in this module. I'll start with a brief introduction to the topic, and then ask you 3 questions at the end. Take your time — there's no rush. Shall we begin?`
+        : `¡Hola${greeting}! Soy Mentor. Hoy vamos a conversar sobre lo que aprendiste en este módulo. Comenzaré con una breve introducción al tema y luego te haré 3 preguntas al final. Tómate tu tiempo, sin prisa. ¿Comenzamos?`,
       endCallMessage: lang === 'en'
         ? 'Thank you for your responses. The interview is now complete. Your evaluator will review your results shortly.'
         : 'Gracias por tus respuestas. La entrevista ha concluido. Tu evaluador revisará tu resultado en breve.',
@@ -279,38 +286,59 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
   );
 }
 
-function buildSystemPrompt(vapiPrompt: string | null, vapiObjectives: string | null, lang: string): string {
+function buildSystemPrompt(
+  vapiPrompt: string | null,
+  vapiObjectives: string | null,
+  lang: string,
+  studentName?: string,
+): string {
   const objectives = vapiObjectives
     ? vapiObjectives.split('\n').filter(Boolean).slice(0, 3).map((o, i) => `${i + 1}. ${o.trim()}`).join('\n')
     : lang === 'en'
       ? '1. Understand the main concepts of the module\n2. Apply knowledge to a practical example\n3. Reflect on lessons learned'
       : '1. Comprender los conceptos principales del módulo\n2. Aplicar el conocimiento a un ejemplo práctico\n3. Reflexionar sobre lo aprendido';
 
-  if (vapiPrompt) return `${vapiPrompt}\n\nObjetivos de las preguntas:\n${objectives}`;
+  const nameRef = studentName || (lang === 'en' ? 'the student' : 'el/la estudiante');
+
+  const structureRules = lang === 'en'
+    ? `REQUIRED CONVERSATION STRUCTURE — follow this order strictly:
+1. GREETING: Greet ${nameRef} warmly by name. Be gentle and welcoming.
+2. TOPIC INTRODUCTION: Briefly introduce the topic of today's session (2-3 sentences giving context and relevance).
+3. TOPIC DEVELOPMENT: Develop the main ideas of the topic — key concepts, why they matter, a brief overview (not a full lecture, just enough to contextualize the evaluation).
+4. TRANSITION: Say something like "Now I'd like to ask you a few questions to check your understanding..."
+5. QUESTIONS: Ask exactly 3 questions, ONE AT A TIME, strictly about the objectives listed below. Wait for the full response before the next.
+6. CLOSING: After the 3rd answer, warmly thank ${nameRef} and end the call using the endCall function.`
+    : `ESTRUCTURA DE CONVERSACIÓN OBLIGATORIA — sigue este orden estrictamente:
+1. SALUDO: Saluda a ${nameRef} con calidez y por su nombre. Sé gentil y acogedor/a.
+2. INTRODUCCIÓN AL TEMA: Presenta brevemente el tema de la sesión de hoy (2-3 oraciones dando contexto y relevancia).
+3. DESARROLLO DEL TEMA: Desarrolla las ideas principales del tema — conceptos clave, por qué importan, un panorama breve (no una conferencia larga, solo suficiente para contextualizar la evaluación).
+4. TRANSICIÓN: Di algo como "Ahora me gustaría hacerte algunas preguntas para verificar tu comprensión..."
+5. PREGUNTAS: Haz exactamente 3 preguntas, UNA A LA VEZ, estrictamente sobre los objetivos indicados. Espera la respuesta completa antes de la siguiente.
+6. CIERRE: Tras la 3ª respuesta, agradece a ${nameRef} con calidez y cierra la llamada con la función endCall.`;
+
+  if (vapiPrompt) {
+    return `${structureRules}\n\nInstrucciones del evaluador:\n${vapiPrompt}\n\nObjetivos de las preguntas:\n${objectives}`;
+  }
 
   return lang === 'en'
-    ? `You are Mentor, an oral evaluator for an online course. Your task is to assess the student with exactly 3 questions.
+    ? `You are Mentor, a warm and professional oral evaluator for an online course.
+Student name: ${nameRef}
 
-IMPORTANT: Ask questions ONLY about the topics listed in the objectives below. Do NOT ask about any topic outside the specified objectives.
+${structureRules}
 
-Rules:
-- Ask exactly 3 questions, one at a time, strictly about the listed objectives.
-- Wait for the student's full response before asking the next question.
-- After the 3rd question and the student's response, thank them and end the call using the endCall function.
-- Be professional, encouraging, and concise.
+IMPORTANT: Questions must be ONLY about the topics in the objectives below. Do NOT deviate.
+Tone: warm, patient, encouraging — make the student feel comfortable throughout.
 
-Question objectives (stay strictly within these topics):
+Question objectives:
 ${objectives}`
-    : `Eres Mentor, un evaluador oral para un curso en línea. Tu tarea es evaluar al estudiante con exactamente 3 preguntas.
+    : `Eres Mentor, un evaluador oral cálido y profesional para un curso en línea.
+Nombre del estudiante: ${nameRef}
 
-IMPORTANTE: Haz preguntas ÚNICAMENTE sobre los temas indicados en los objetivos. NO hagas preguntas sobre ningún tema externo o que no esté en los objetivos.
+${structureRules}
 
-Reglas:
-- Haz exactamente 3 preguntas, una a la vez, estrictamente sobre los objetivos indicados.
-- Espera la respuesta completa del estudiante antes de hacer la siguiente pregunta.
-- Después de la 3ª pregunta y la respuesta del estudiante, agradéceles y cierra la llamada usando la función endCall.
-- Sé profesional, alentador y conciso.
+IMPORTANTE: Las preguntas deben ser ÚNICAMENTE sobre los temas en los objetivos. NO te desvíes.
+Tono: cálido, paciente, alentador — haz que el estudiante se sienta cómodo/a durante toda la conversación.
 
-Objetivos de las preguntas (mantente estrictamente dentro de estos temas):
+Objetivos de las preguntas:
 ${objectives}`;
 }

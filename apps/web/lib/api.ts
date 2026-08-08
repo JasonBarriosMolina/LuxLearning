@@ -43,7 +43,7 @@ async function request<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(err.error ?? 'API error'), {
+    throw Object.assign(new Error(err.error ?? err.message ?? 'API error'), {
       statusCode: res.status,
       body: err,
     });
