@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Lock, ChevronLeft, ChevronRight, Sparkles, Loader2, X, Plus } from 'lucide-react';
+import { Lock, ChevronLeft, ChevronRight, Sparkles, Loader2, X, Plus, RefreshCw, AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import { WeeklyGrid } from './_components/WeeklyGrid';
@@ -139,6 +139,8 @@ export default function StudyPlanPage() {
           if (res.status === 'done') {
             setSuggestions(res.suggestions ?? []);
             if (pollRef.current) clearInterval(pollRef.current);
+          } else if (res.status === 'error') {
+            if (pollRef.current) clearInterval(pollRef.current);
           }
         } catch { if (pollRef.current) clearInterval(pollRef.current); }
       }, 4000);
@@ -179,6 +181,31 @@ export default function StudyPlanPage() {
       ...p, days: p.days.map((d, i) => i !== dayIndex ? d : { ...d, items: [...d.items, item] }),
     }));
   };
+
+  const retrySuggestions = useCallback(async () => {
+    setSuggestionsStatus('processing');
+    setSuggestions([]);
+    try {
+      // Backend auto-retries when status === 'error' on GET /study-plan/current
+      await api.studyPlan.current();
+      // Start polling
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const res: any = await api.studyPlan.suggestions();
+          setSuggestionsStatus(res.status);
+          if (res.status === 'done') {
+            setSuggestions(res.suggestions ?? []);
+            if (pollRef.current) clearInterval(pollRef.current);
+          } else if (res.status === 'error') {
+            if (pollRef.current) clearInterval(pollRef.current);
+          }
+        } catch { if (pollRef.current) clearInterval(pollRef.current); }
+      }, 4000);
+    } catch {
+      setSuggestionsStatus('error');
+    }
+  }, []);
 
   const handleRequestChange = async () => {
     if (!activePlan) return;
@@ -276,8 +303,27 @@ export default function StudyPlanPage() {
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <Loader2 className="w-4 h-4 animate-spin text-[#7B2FBE]" /> {ts.suggestionsLoading}
             </div>
+          ) : suggestionsStatus === 'error' ? (
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <p className="text-sm text-gray-400 flex-1">{(ts as any).suggestionsError}</p>
+              <button
+                onClick={retrySuggestions}
+                className="flex items-center gap-1.5 text-xs font-medium text-[#7B2FBE] hover:underline shrink-0"
+              >
+                <RefreshCw className="w-3 h-3" /> {(ts as any).suggestionsRetry}
+              </button>
+            </div>
           ) : suggestions.length === 0 ? (
-            <p className="text-sm text-gray-400">{ts.suggestionsEmpty}</p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-400 flex-1">{ts.suggestionsEmpty}</p>
+              <button
+                onClick={retrySuggestions}
+                className="flex items-center gap-1.5 text-xs font-medium text-[#7B2FBE] hover:underline shrink-0"
+              >
+                <RefreshCw className="w-3 h-3" /> {(ts as any).suggestionsRetry}
+              </button>
+            </div>
           ) : (
             <div className="space-y-2">
               {/* Resources (articles, videos, books, exercises) */}

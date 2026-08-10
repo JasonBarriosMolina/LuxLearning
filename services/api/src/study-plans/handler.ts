@@ -2,15 +2,19 @@
 import { cors, forbidden, notFound, serverError, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, initEnvFromFunctionName } from '../shared/env-context';
 import { handleStudyPlans, runSuggestionsWorker } from './plans';
-import { runCronGeneration } from './cron';
+import { runCronGeneration, runComplianceCron } from './cron';
 
 type AnyEvent = any;
 
 export const handler = async (event: AnyEvent) => {
-  // ── EventBridge scheduled event (Monday cron) ────────────────────────────
+  // ── EventBridge scheduled events ─────────────────────────────────────────
   if (event.source === 'aws.events' || event['detail-type'] === 'Scheduled Event') {
     initEnvFromFunctionName();
-    await runCronGeneration();
+    if (event._complianceCron) {
+      await runComplianceCron();
+    } else {
+      await runCronGeneration();
+    }
     return { statusCode: 200, body: 'ok' };
   }
 

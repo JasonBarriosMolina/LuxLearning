@@ -195,8 +195,8 @@ export async function handleStudyPlans(ctx: Ctx): Promise<any | null> {
       if (promptLines.length > 0) {
         triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
       }
-    } else if (!plan.suggestionsStatus) {
-      // Plan exists (e.g. evaluator-generated) but has no suggestions yet — trigger them
+    } else if (!plan.suggestionsStatus || plan.suggestionsStatus === 'error') {
+      // Plan exists but has no suggestions or previous attempt errored — trigger/retry
       const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
       if (totalItems > 0) {
         const promptLines = plan.days.flatMap((d) =>

@@ -1,6 +1,6 @@
 // ─── db-study-plans.ts ───────────────────────────────────────────────────────
 // Domain: Weekly Study Plans (LuxStudyPlans table)
-import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from './db-core';
 
 export interface PlanItem {
@@ -106,6 +106,24 @@ export async function removeStudyPlanAttributes(userId: string, weekOf: string, 
     UpdateExpression: `REMOVE ${removeExpr}`,
     ExpressionAttributeNames: names,
   }));
+}
+
+/** Batch-get study plans for multiple students for a given weekOf (max 100 userIds) */
+export async function getStudyPlansBatch(userIds: string[], weekOf: string): Promise<StudyPlan[]> {
+  if (userIds.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < userIds.length; i += 100) chunks.push(userIds.slice(i, i + 100));
+
+  const results: StudyPlan[] = [];
+  for (const chunk of chunks) {
+    const keys = chunk.map((uid) => ({ userId: uid, weekOf }));
+    const res = await ddb.send(new BatchGetCommand({
+      RequestItems: { [TABLES.STUDY_PLANS]: { Keys: keys } },
+    }));
+    const items = res.Responses?.[TABLES.STUDY_PLANS] ?? [];
+    items.forEach((item) => results.push(item as StudyPlan));
+  }
+  return results;
 }
 
 export async function updateStudyPlanField(

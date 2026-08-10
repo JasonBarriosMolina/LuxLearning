@@ -44,7 +44,8 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
   const isPinned = item.pinned;
   const href = !isDone ? getItemHref(item) : null;
   const hasDescription = !!(item.description);
-  const hasExtra = hasDescription || !!href;
+  // Expand button only needed for description or removable student items (actions)
+  const hasExtra = hasDescription || (!locked && item.source === 'student');
 
   return (
     <div className={cn(
@@ -69,13 +70,25 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
             : <Circle className="w-4 h-4" />}
         </button>
 
-        {/* Title — wraps, no truncate */}
-        <p className={cn(
-          'flex-1 text-sm font-medium leading-snug',
-          isDone ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200',
-        )}>
-          {item.title}
-        </p>
+        {/* Title — wraps, no truncate; clickable when linked */}
+        {href ? (
+          <Link
+            href={href}
+            className={cn(
+              'flex-1 text-sm font-medium leading-snug hover:text-[#17527E] dark:hover:text-blue-300 transition-colors',
+              isDone ? 'line-through text-gray-400 pointer-events-none' : 'text-gray-800 dark:text-gray-200',
+            )}
+          >
+            {item.title}
+          </Link>
+        ) : (
+          <p className={cn(
+            'flex-1 text-sm font-medium leading-snug',
+            isDone ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200',
+          )}>
+            {item.title}
+          </p>
+        )}
 
         {/* Expand toggle */}
         {hasExtra && (
@@ -114,15 +127,6 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            {href && (
-              <Link
-                href={href}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#17527E] dark:text-blue-300 hover:underline"
-              >
-                Ir a la actividad →
-              </Link>
-            )}
-
             {!locked && (
               <>
                 <button

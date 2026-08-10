@@ -4,9 +4,10 @@ import { createId } from '@paralleldrive/cuid2';
 import { ok, badRequest } from '../shared/response';
 import {
   getStudyPlan, getStudyPlans, saveStudyPlan, updateStudyPlanField, removeStudyPlanAttributes,
-  getMonday, type StudyPlan, type DayPlan, type PlanItem,
+  getStudyPlansBatch, getMonday, type StudyPlan, type DayPlan, type PlanItem,
 } from '../shared/db-study-plans';
-import { getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
+import { getAllEnrollments, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
+import { resolveStudentContact } from './ctx';
 import { isModuleUnlocked } from '../shared/db-progress';
 import type { EvalCtx } from './ctx';
 
@@ -178,6 +179,61 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       createdAt: new Date().toISOString(),
     }).catch(() => {});
     return ok({ unlocked: true });
+  }
+
+  // GET /evaluator/study-plan/compliance — students with < 50% plan completion this week
+  if (method === 'GET' && path === '/evaluator/study-plan/compliance') {
+    const weekOf = getMonday();
+
+    // Get evaluator's courses
+    const courses = await prisma.course.findMany({
+      where: isAdminRole ? {} : { evaluatorId: userId },
+      select: { id: true, title: true },
+    });
+    const courseIds = new Set(courses.map((c: any) => c.id));
+    if (courseIds.size === 0) return ok({ weekOf, compliance: [] });
+
+    // Get all enrolled students for those courses
+    const allEnrollments = await getAllEnrollments().catch(() => [] as any[]);
+    const studentIds = [...new Set(
+      allEnrollments
+        .filter((e: any) => courseIds.has(e.courseId))
+        .map((e: any) => e.userId as string)
+    )];
+    if (studentIds.length === 0) return ok({ weekOf, compliance: [] });
+
+    // Batch-get study plans for current week
+    const plans = await getStudyPlansBatch(studentIds, weekOf);
+
+    // Calculate compliance — only flag plans with items and < 50% done
+    const THRESHOLD = 0.5;
+    const compliance = await Promise.all(
+      plans
+        .map((plan) => {
+          const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
+          const completedItems = plan.days.reduce(
+            (s, d) => s + d.items.filter((i) => i.completed).length, 0
+          );
+          const completionPct = totalItems === 0 ? 1 : completedItems / totalItems;
+          return { plan, totalItems, completedItems, completionPct };
+        })
+        .filter(({ totalItems, completionPct }) => totalItems > 0 && completionPct < THRESHOLD)
+        .map(async ({ plan, totalItems, completedItems, completionPct }) => {
+          const contact = await resolveStudentContact(plan.userId, {}).catch(() => ({ name: plan.userId, email: '' }));
+          return {
+            userId: plan.userId,
+            studentName: contact.name,
+            studentEmail: contact.email,
+            weekOf,
+            totalItems,
+            completedItems,
+            completionPct: Math.round(completionPct * 100),
+            hasLock: !!plan.lockedBy,
+          };
+        })
+    );
+
+    return ok({ weekOf, compliance });
   }
 
   return null;

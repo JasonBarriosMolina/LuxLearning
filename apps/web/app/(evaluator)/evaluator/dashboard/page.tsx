@@ -14,6 +14,7 @@ import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils';
 import type { Reflection } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
+import { ComplianceWidget } from './_components/ComplianceWidget';
 
 type EnrichedReflection = Reflection & {
   moduleTitle?: string;
@@ -257,6 +258,9 @@ export default function EvaluatorDashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* ── Plan compliance widget ── */}
+      <ComplianceWidget />
 
       {/* ── Urgent alerts ── */}
       {!loading && urgent.length > 0 && (

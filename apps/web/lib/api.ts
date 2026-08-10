@@ -223,6 +223,8 @@ export const api = {
         request<any>(`/evaluator/students/${studentId}/study-plan?weeks=${weeks}`),
       unlock: (studentId: string, weekOf?: string) =>
         request<any>(`/evaluator/students/${studentId}/study-plan/unlock`, { method: 'POST', body: JSON.stringify({ weekOf }) }),
+      compliance: () =>
+        request<any>('/evaluator/study-plan/compliance'),
     },
   },
 
