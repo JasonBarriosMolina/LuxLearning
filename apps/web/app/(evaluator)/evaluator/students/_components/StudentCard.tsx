@@ -74,13 +74,14 @@ export function StudentCard({
                     onClick={() => onSendReminder(student)}
                     disabled={sendingReminderId === student.userId || !!sentAt}
                     title={ts.sendReminderTitle2}
-                    className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${
+                    className={`flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg transition-colors ${
                       sentAt
                         ? 'bg-emerald-100 text-emerald-600 cursor-default'
                         : 'bg-red-100 text-red-600 hover:bg-red-200'
                     }`}
                   >
-                    {sentAt ? ts.reminderSent : ts.sendReminderBtn}
+                    <span className="hidden sm:inline">{sentAt ? ts.reminderSent : ts.sendReminderBtn}</span>
+                    <span className="sm:hidden">{sentAt ? '✓' : '🔔'}</span>
                   </button>
                   {sentAt && (
                     <span className="text-[10px] text-gray-400 leading-none">{formatReminderAge(sentAt)}</span>
@@ -93,10 +94,10 @@ export function StudentCard({
                 onClick={() => onOpenChat(student)}
                 disabled={openingChatId === student.userId}
                 title="Abrir chat con este estudiante"
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                Chat
+                <span className="hidden sm:inline">Chat</span>
               </button>
             )}
             {onGeneratePlan && (
@@ -104,10 +105,10 @@ export function StudentCard({
                 onClick={() => onGeneratePlan(student)}
                 disabled={planGeneratingId === student.userId}
                 title="Generar plan de estudio semanal"
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
+                className="flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
               >
                 <ListTodo className="w-3.5 h-3.5" />
-                Plan
+                <span className="hidden sm:inline">Plan</span>
               </button>
             )}
           </div>

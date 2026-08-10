@@ -6,7 +6,7 @@ import {
   getStudyPlan, saveStudyPlan,
   getNextMonday, type StudyPlan, type DayPlan,
 } from '../shared/db-study-plans';
-import { getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
+import { getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
 import { isModuleUnlocked } from '../shared/db-progress';
 import { getPrismaClient } from '../shared/db-neon';
 
@@ -40,10 +40,52 @@ function buildEmptyDays(weekOf: string): DayPlan[] {
   });
 }
 
+/** ISO date of the previous Monday (weekOf - 7 days) */
+function getPrevMonday(weekOf: string): string {
+  const d = new Date(weekOf + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 7);
+  return d.toISOString().slice(0, 10);
+}
+
+async function checkNoProgressNotification(userId: string, weekOf: string): Promise<void> {
+  const prevWeek = getPrevMonday(weekOf);
+  const prevPlan = await getStudyPlan(userId, prevWeek);
+  if (!prevPlan) return;
+
+  const allItems = prevPlan.days.flatMap((d) => d.items);
+  if (allItems.length === 0) return;
+
+  const completed = allItems.filter((i) => i.completed).length;
+  if (completed === 0) {
+    // Student completed nothing last week — send motivational nudge
+    await createNotification({
+      userId,
+      notifId: `splan-noprog-${createId()}`,
+      type: 'STUDY_PLAN_NO_PROGRESS',
+      message: '¡Tu Mentor preparó un nuevo plan para esta semana! La semana pasada no completaste actividades. Dedica solo 1 hora hoy para empezar — ¡pequeños pasos hacen grandes diferencias!',
+      actionUrl: '/plan',
+      read: false,
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
+  } else if (completed < allItems.length) {
+    // Partial progress — encourage to keep going
+    const pct = Math.round((completed / allItems.length) * 100);
+    await createNotification({
+      userId,
+      notifId: `splan-prog-${createId()}`,
+      type: 'STUDY_PLAN_NEW_WEEK',
+      message: `¡Nuevo plan de la semana listo! La semana pasada completaste el ${pct}% de tus actividades. ¡Sigue así y esta semana llega al 100%!`,
+      actionUrl: '/plan',
+      read: false,
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
+  }
+}
+
 async function generatePlanForStudent(userId: string, weekOf: string): Promise<void> {
-  // Idempotency: skip if plan already exists for this week
+  // Respect evaluator-locked plans — never overwrite them automatically
   const existing = await getStudyPlan(userId, weekOf);
-  if (existing) return;
+  if (existing?.lockedBy) return;
 
   const prisma = await getPrismaClient();
   const days = buildEmptyDays(weekOf);
@@ -139,7 +181,12 @@ export async function runCronGeneration(): Promise<void> {
   let success = 0, skip = 0, fail = 0;
   for (let i = 0; i < userIds.length; i += BATCH) {
     const batch = userIds.slice(i, i + BATCH);
-    const results = await Promise.allSettled(batch.map((uid) => generatePlanForStudent(uid, weekOf)));
+    const results = await Promise.allSettled(
+      batch.map((uid) =>
+        generatePlanForStudent(uid, weekOf)
+          .then(() => checkNoProgressNotification(uid, weekOf).catch(() => {}))
+      )
+    );
     for (const r of results) {
       if (r.status === 'fulfilled') success++;
       else { fail++; console.error('[StudyPlan Cron] Error:', r.reason); }

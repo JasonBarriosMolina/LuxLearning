@@ -195,6 +195,16 @@ export async function handleStudyPlans(ctx: Ctx): Promise<any | null> {
       if (promptLines.length > 0) {
         triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
       }
+    } else if (!plan.suggestionsStatus) {
+      // Plan exists (e.g. evaluator-generated) but has no suggestions yet — trigger them
+      const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
+      if (totalItems > 0) {
+        const promptLines = plan.days.flatMap((d) =>
+          d.items.map((i) => `${i.type}: ${i.title}${i.description ? ` (${i.description})` : ''}`)
+        );
+        triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
+        plan = { ...plan, suggestionsStatus: 'processing' };
+      }
     }
     return ok(plan);
   }

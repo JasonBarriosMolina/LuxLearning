@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { Pin, CheckCircle2, Circle, Trash2 } from 'lucide-react';
+import { Pin, CheckCircle2, Circle, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PlanItem } from '../types';
 
@@ -13,7 +14,6 @@ interface Props {
   onRemove: (id: string) => void;
 }
 
-// Left-border accent by type — color hint without text noise
 const TYPE_BORDER: Record<string, string> = {
   lesson:     'border-l-blue-400',
   quiz:       'border-l-purple-500',
@@ -22,13 +22,12 @@ const TYPE_BORDER: Record<string, string> = {
   custom:     'border-l-gray-300 dark:border-l-gray-600',
 };
 
-// Dot color for the type indicator
-const TYPE_DOT: Record<string, string> = {
-  lesson:     'bg-blue-400',
-  quiz:       'bg-purple-500',
-  reflection: 'bg-emerald-400',
-  review:     'bg-amber-400',
-  custom:     'bg-gray-300 dark:bg-gray-600',
+const TYPE_LABEL: Record<string, string> = {
+  lesson:     'Lección',
+  quiz:       'Quiz',
+  reflection: 'Reflexión',
+  review:     'Repaso',
+  custom:     'Personalizado',
 };
 
 function getItemHref(item: PlanItem): string | null {
@@ -40,74 +39,118 @@ function getItemHref(item: PlanItem): string | null {
 }
 
 export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const isDone = item.completed;
   const isPinned = item.pinned;
   const href = !isDone ? getItemHref(item) : null;
+  const hasDescription = !!(item.description);
+  const hasExtra = hasDescription || !!href;
 
-  const cardClass = cn(
-    'group/card relative flex items-center gap-2 rounded-lg border-l-4 pl-2.5 pr-2 py-2 transition-all',
-    TYPE_BORDER[item.type] ?? TYPE_BORDER.custom,
-    isDone
-      ? 'bg-gray-50 dark:bg-white/5 border-r border-t border-b border-gray-200 dark:border-white/10 opacity-50'
-      : isPinned
-        ? 'bg-blue-50 dark:bg-blue-950/30 border-r border-t border-b border-[#17527E]/20'
-        : 'bg-white dark:bg-white/5 border-r border-t border-b border-gray-200 dark:border-white/10',
-    href ? 'hover:border-r-[#17527E]/30 hover:shadow-sm cursor-pointer' : '',
-  );
+  return (
+    <div className={cn(
+      'flex flex-col gap-1.5 rounded-lg border-l-4 px-3 py-2.5 transition-all',
+      TYPE_BORDER[item.type] ?? TYPE_BORDER.custom,
+      isDone
+        ? 'bg-gray-50 dark:bg-white/5 border-r border-t border-b border-gray-200 dark:border-white/10 opacity-60'
+        : isPinned
+          ? 'bg-blue-50 dark:bg-blue-950/30 border-r border-t border-b border-[#17527E]/20'
+          : 'bg-white dark:bg-white/5 border-r border-t border-b border-gray-200 dark:border-white/10',
+    )}>
+      {/* Row 1: done toggle + title + expand */}
+      <div className="flex items-start gap-2">
+        {/* Done toggle — large tap target */}
+        <button
+          onClick={() => onToggleDone(item.id, !isDone)}
+          className="shrink-0 mt-0.5 text-gray-300 hover:text-green-500 active:text-green-600 transition-colors p-0.5 -ml-0.5 touch-manipulation"
+          title={isDone ? 'Marcar pendiente' : 'Marcar hecho'}
+        >
+          {isDone
+            ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+            : <Circle className="w-4 h-4" />}
+        </button>
 
-  const inner = (
-    <>
-      {/* Done toggle */}
-      <button
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleDone(item.id, !isDone); }}
-        className="shrink-0 text-gray-300 hover:text-green-500 transition-colors"
-        title={isDone ? 'Marcar pendiente' : 'Marcar hecho'}
-      >
-        {isDone
-          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-          : <Circle className="w-3.5 h-3.5" />}
-      </button>
+        {/* Title — wraps, no truncate */}
+        <p className={cn(
+          'flex-1 text-sm font-medium leading-snug',
+          isDone ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200',
+        )}>
+          {item.title}
+        </p>
 
-      {/* Title */}
-      <p className={cn(
-        'flex-1 text-xs font-medium leading-tight truncate',
-        isDone ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200',
-      )}>
-        {item.title}
-      </p>
-
-      {/* Time + actions */}
-      <div className="flex items-center gap-1 shrink-0">
-        {item.estimatedMinutes && (
-          <span className="text-[10px] text-gray-400">{item.estimatedMinutes}m</span>
-        )}
-        {!locked && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePin(item.id, !isPinned); }}
-              className={cn('p-0.5 rounded transition-colors', isPinned ? 'text-[#17527E] dark:text-blue-300' : 'text-gray-300 hover:text-[#17527E]')}
-              title={isPinned ? 'Desfijar' : 'Fijar'}
-            >
-              <Pin className="w-3 h-3" />
-            </button>
-            {item.source === 'student' && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(item.id); }}
-                className="p-0.5 rounded text-gray-300 hover:text-red-500 transition-colors"
-                title="Eliminar"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+        {/* Expand toggle */}
+        {hasExtra && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="shrink-0 mt-0.5 text-gray-300 hover:text-gray-500 dark:hover:text-gray-300 transition-colors p-0.5 touch-manipulation"
+            title={expanded ? 'Colapsar' : 'Ver más'}
+          >
+            {expanded
+              ? <ChevronUp className="w-3.5 h-3.5" />
+              : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
         )}
       </div>
-    </>
-  );
 
-  return href ? (
-    <Link href={href} className={cardClass}>{inner}</Link>
-  ) : (
-    <div className={cardClass}>{inner}</div>
+      {/* Row 2: type badge + time + pin indicator */}
+      <div className="flex items-center gap-2 pl-6">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+          {TYPE_LABEL[item.type] ?? item.type}
+        </span>
+        {item.estimatedMinutes && (
+          <span className="text-[10px] text-gray-400">{item.estimatedMinutes} min</span>
+        )}
+        {isPinned && !isDone && (
+          <span className="text-[10px] text-[#17527E] dark:text-blue-300 font-semibold flex items-center gap-0.5">
+            <Pin className="w-2.5 h-2.5 inline" /> Fijado
+          </span>
+        )}
+      </div>
+
+      {/* Expanded: description + navigation link + actions */}
+      {expanded && (
+        <div className="pl-6 space-y-2 pt-0.5">
+          {hasDescription && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{item.description}</p>
+          )}
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {href && (
+              <Link
+                href={href}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#17527E] dark:text-blue-300 hover:underline"
+              >
+                Ir a la actividad →
+              </Link>
+            )}
+
+            {!locked && (
+              <>
+                <button
+                  onClick={() => onTogglePin(item.id, !isPinned)}
+                  className={cn(
+                    'flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors',
+                    isPinned
+                      ? 'bg-[#17527E]/10 text-[#17527E] dark:text-blue-300'
+                      : 'bg-gray-100 dark:bg-white/10 text-gray-500 hover:text-[#17527E]',
+                  )}
+                >
+                  <Pin className="w-3 h-3" />
+                  {isPinned ? 'Desfijar' : 'Fijar'}
+                </button>
+                {item.source === 'student' && (
+                  <button
+                    onClick={() => onRemove(item.id)}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Eliminar
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
