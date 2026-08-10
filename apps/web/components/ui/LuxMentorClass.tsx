@@ -132,7 +132,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'system', content: systemPrompt }],
       },
-      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: 'auto' } as any,
+      voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: 'auto' } as any,
       name: 'Lux Mentor',
       firstMessage: lang === 'en'
         ? 'Hello! I\'m Lux Mentor. You\'ve just reviewed the lesson content. Now I\'d like to chat with you about what you learned. Ready to begin?'
