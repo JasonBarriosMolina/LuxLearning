@@ -29,7 +29,7 @@ function AddItemModal({
     setSaving(true);
     try {
       const res = await api.studyPlan.addItem(weekOf, { dayIndex, title: title.trim(), type, description: desc || undefined, estimatedMinutes: minutes });
-      onSave((res as any).item);
+      onSave((res as any)?.data?.item ?? (res as any)?.item);
     } finally { setSaving(false); }
   };
 
@@ -135,11 +135,12 @@ export default function StudyPlanPage() {
       pollRef.current = setInterval(async () => {
         try {
           const res: any = await api.studyPlan.suggestions();
-          setSuggestionsStatus(res.status);
-          if (res.status === 'done') {
-            setSuggestions(res.suggestions ?? []);
+          const d = res?.data ?? res;
+          setSuggestionsStatus(d.status);
+          if (d.status === 'done') {
+            setSuggestions(d.suggestions ?? []);
             if (pollRef.current) clearInterval(pollRef.current);
-          } else if (res.status === 'error') {
+          } else if (d.status === 'error') {
             if (pollRef.current) clearInterval(pollRef.current);
           }
         } catch { if (pollRef.current) clearInterval(pollRef.current); }
@@ -193,11 +194,12 @@ export default function StudyPlanPage() {
       pollRef.current = setInterval(async () => {
         try {
           const res: any = await api.studyPlan.suggestions();
-          setSuggestionsStatus(res.status);
-          if (res.status === 'done') {
-            setSuggestions(res.suggestions ?? []);
+          const d = res?.data ?? res;
+          setSuggestionsStatus(d.status);
+          if (d.status === 'done') {
+            setSuggestions(d.suggestions ?? []);
             if (pollRef.current) clearInterval(pollRef.current);
-          } else if (res.status === 'error') {
+          } else if (d.status === 'error') {
             if (pollRef.current) clearInterval(pollRef.current);
           }
         } catch { if (pollRef.current) clearInterval(pollRef.current); }

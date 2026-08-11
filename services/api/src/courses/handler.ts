@@ -59,9 +59,10 @@ export const handler = async (event: Event) => {
   const path = event.rawPath;
   const rawLang = event.queryStringParameters?.lang ?? 'es';
   const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
-  const prisma = await getPrismaClient();
 
   try {
+    // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
+    const prisma = await getPrismaClient();
     // GET /courses
     if (path === '/courses' || path === '/courses/') {
       const role = event.requestContext.authorizer?.lambda?.role;

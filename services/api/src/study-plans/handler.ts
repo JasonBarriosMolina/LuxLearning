@@ -20,6 +20,7 @@ export const handler = async (event: AnyEvent) => {
 
   // ── Bedrock suggestions background worker (self-invoke via Lambda) ────────
   if (event._studyPlanSuggestionsWorker) {
+    initEnvFromFunctionName(); // cold-start: default is 'prod'; infer correct env from function name suffix
     const { userId, weekOf, promptLines } = event;
     await runSuggestionsWorker(userId, weekOf, promptLines ?? []);
     return { statusCode: 200, body: 'ok' };
