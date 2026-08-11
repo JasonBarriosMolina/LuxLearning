@@ -52,9 +52,9 @@ export const handler = async (event: Event) => {
 
   const method = event.requestContext.http.method;
   const path = event.rawPath;
-  const prisma = await getPrismaClient();
-
   try {
+    // getPrismaClient inside try-catch so DB init errors return 500 instead of crashing (502)
+    const prisma = await getPrismaClient();
     // ── GET /reports — filtered report data ─────────────────────────────────
     if (method === 'GET' && path === '/reports') {
       const qs = event.queryStringParameters ?? {};

@@ -24,7 +24,8 @@ import { setEnvironmentFromOrigin } from '../shared/env-context.js';
 
 const scheduler = new SchedulerClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const SCHEDULER_ROLE_ARN = process.env.SCHEDULER_ROLE_ARN ?? '';
-const LAMBDA_ARN = `arn:aws:lambda:us-east-1:798694628803:function:lux-messages`;
+// Use the current function name so staging/test invoke their own Lambda (not prod)
+const LAMBDA_ARN = `arn:aws:lambda:us-east-1:798694628803:function:${process.env.AWS_LAMBDA_FUNCTION_NAME ?? 'lux-messages'}`;
 
 function schedulerName(chatId: string, recipientId: string): string {
   return `msg-email-${chatId}-${recipientId}`

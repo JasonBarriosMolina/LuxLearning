@@ -48,9 +48,10 @@ function parseJSON(raw: string): any {
 export const handler = async () => {
   initEnvFromFunctionName();
   console.log('[Analysis] Starting nightly analysis job...');
-  const prisma = await getPrismaClient();
 
   try {
+    // getPrismaClient inside try-catch so DB init errors are caught and logged (not unhandled rejection)
+    const prisma = await getPrismaClient();
     const [allReflections, allAttempts, modules] = await Promise.all([
       getAllReflections(),
       getAllQuizAttempts(),
