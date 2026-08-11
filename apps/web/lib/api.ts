@@ -17,7 +17,7 @@ function getApiUrl(): string {
   if (typeof window === 'undefined') return '';
   const host = window.location.hostname;
   if (host.startsWith('test.'))    return 'https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com';
-  if (host.startsWith('staging.')) return 'https://v4vabtmerb.execute-api.us-east-1.amazonaws.com'; // staging GW TBD
+  if (host.startsWith('staging.')) return 'https://1ohrw48nii.execute-api.us-east-1.amazonaws.com';
   return 'https://v4vabtmerb.execute-api.us-east-1.amazonaws.com'; // prod
 }
 
