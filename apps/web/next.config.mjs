@@ -55,17 +55,17 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=()' },
   {
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://www.youtube-nocookie.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://www.youtube-nocookie.com https://vercel.live",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https: http:",
-      "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://youtube.com",
-      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com",
+      "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://youtube.com https://vercel.live",
+      "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com https://api.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.sentry.io",
       "media-src 'self' blob: https://lux-learning-images.s3.amazonaws.com",
       "worker-src 'self' blob:",
     ].join('; '),
@@ -78,6 +78,12 @@ const nextConfig = {
   // Skip type checking and lint in production build (handled locally / in CI)
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
+  async redirects() {
+    return [
+      { source: '/admin/courses/wizard', destination: '/admin/courses/lux-planner', permanent: true },
+      { source: '/admin/courses/wizard/:path*', destination: '/admin/courses/lux-planner/:path*', permanent: true },
+    ];
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

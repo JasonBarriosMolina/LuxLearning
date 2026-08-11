@@ -14,6 +14,7 @@ import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils';
 import type { Reflection } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
+import { ComplianceWidget } from './_components/ComplianceWidget';
 
 type EnrichedReflection = Reflection & {
   moduleTitle?: string;
@@ -258,6 +259,9 @@ export default function EvaluatorDashboardPage() {
         ))}
       </div>
 
+      {/* ── Plan compliance widget ── */}
+      <ComplianceWidget />
+
       {/* ── Urgent alerts ── */}
       {!loading && urgent.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
@@ -496,8 +500,8 @@ export default function EvaluatorDashboardPage() {
               ) : students.length === 0 ? (
                 <div className="card text-center py-12">
                   <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                  <p className="font-heading font-bold text-charcoal">{t.evaluator.noStudents ?? 'Sin estudiantes'}</p>
-                  <p className="text-gray-500 text-sm mt-1">{t.evaluator.noStudentsHint ?? 'No hay estudiantes inscritos en tus cursos.'}</p>
+                  <p className="font-heading font-bold text-charcoal">{t.evaluator.noStudentsMsg ?? 'Sin estudiantes'}</p>
+                  <p className="text-gray-500 text-sm mt-1">{t.evaluator.noStudentsTitle ?? 'No hay estudiantes inscritos en tus cursos.'}</p>
                 </div>
               ) : (
                 <div className="space-y-2">

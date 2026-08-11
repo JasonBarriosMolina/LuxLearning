@@ -72,6 +72,20 @@ export async function getIdToken(): Promise<string | null> {
   }
 }
 
+/** Returns the user's first name (or full name if no space), falling back to email prefix. */
+export async function getUserFirstName(): Promise<string | null> {
+  try {
+    const session = await fetchAuthSession();
+    const payload = session.tokens?.idToken?.payload;
+    const full = (payload?.name as string | undefined) ?? (payload?.email as string | undefined) ?? null;
+    if (!full) return null;
+    // Return only the first word (first name)
+    return full.split(/[\s@]/)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getCurrentAuthUser() {
   try {
     return await getCurrentUser();

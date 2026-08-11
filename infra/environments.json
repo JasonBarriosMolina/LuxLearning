@@ -1,0 +1,32 @@
+{
+  "test": {
+    "apiId": "hxnd6tzmce",
+    "authorizerId": "67j4my",
+    "suffix": "-test",
+    "region": "us-east-1",
+    "account": "798694628803",
+    "lambdaOverrides": {
+      "attendance": "lux-attendance-test"
+    }
+  },
+  "staging": {
+    "apiId": "1ohrw48nii",
+    "authorizerId": "fi0dev",
+    "suffix": "-staging",
+    "region": "us-east-1",
+    "account": "798694628803",
+    "lambdaOverrides": {
+      "attendance": "lux-attendance-test"
+    }
+  },
+  "prod": {
+    "apiId": "v4vabtmerb",
+    "authorizerId": "zsk60q",
+    "suffix": "",
+    "region": "us-east-1",
+    "account": "798694628803",
+    "lambdaOverrides": {
+      "attendance": "lux-attendance-test"
+    }
+  }
+}

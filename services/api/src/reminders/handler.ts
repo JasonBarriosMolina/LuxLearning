@@ -8,6 +8,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification, scanCalendarEventsInRange, updateCalendarEvent } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
+import { initEnvFromFunctionName } from '../shared/env-context';
 import { sendTemplatedEmail } from '../shared/email';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -324,6 +325,7 @@ function calendarReminderHtml(title: string, type: string, startFmt: string, loc
 }
 
 export const handler = async () => {
+  initEnvFromFunctionName();
   console.log('[Reminders] Starting daily reminder check...');
 
   try {

@@ -5,29 +5,90 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 model Course {
-  id             String    @id @default(cuid())
-  title          String
-  slug           String    @unique
-  description    String
-  imageUrl       String?
-  isActive       Boolean   @default(false)
-  isPilot        Boolean   @default(false)
-  tags           String[]  @default([])
-  startDate      DateTime?
-  closeDate      DateTime?
-  isDraft        Boolean   @default(false)
-  isArchived     Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  createdByName  String?
-  evaluatorName  String?
-  evaluatorId    String?
-  modules        Module[]
+  id                 String            @id @default(cuid())
+  title              String
+  slug               String            @unique
+  description        String
+  imageUrl           String?
+  isActive           Boolean           @default(false)
+  isPilot            Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  tags               String[]          @default([])
+  closeDate          DateTime?
+  startDate          DateTime?
+  createdByName      String?
+  evaluatorName      String?
+  evaluatorId        String?
+  isArchived         Boolean           @default(false)
+  isDraft            Boolean           @default(false)
+  academicPeriod     String?
+  calendarExceptions Json?
+  cardBorderColor    String?
+  cardColor          String?
+  cardLabels         String[]          @default([])
+  classDays          String[]          @default([])
+  classSchedule      String?
+  courseType         String?
+  evaluationConfig   Json?
+  modality           String?
+  planDocumentS3Key  String?
+  planLanguage       String?           @default("ES")
+  totalWeeks         Int?
+  pilotoAutomatico   Boolean           @default(false)
+  planSyllabusInput  String?
+  planWeeklyPlan     Json?
+  sessions           CourseSession[]
+  evaluationEvents   EvaluationEvent[]
+  modules            Module[]
+}
+
+model CourseSession {
+  id          String   @id @default(cuid())
+  courseId    String
+  sessionDate DateTime
+  weekIndex   Int?
+  order       Int
+  createdAt   DateTime @default(now())
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+}
+
+model AcademicPeriod {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model EvaluationEvent {
+  id               String    @id @default(cuid())
+  courseId         String
+  type             String
+  name             String
+  dueDate          DateTime?
+  weight           Float
+  instructions     String?
+  order            Int       @default(0)
+  createdAt        DateTime  @default(now())
+  moduleId         String?
+  vapiObjectives   String?
+  vapiPrompt       String?
+  targetStudentIds String[]  @default([])
+  isArchived       Boolean   @default(false)
+  isDraft          Boolean   @default(false)
+  lessonScript     String?
+  lessonVideoUrl   String?
+  course           Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([moduleId])
 }
 
 model Module {
@@ -38,27 +99,27 @@ model Module {
   description  String
   duration     String
   passingScore Int
-  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
   lessons      Lesson[]
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
   questions    Question[]
 
   @@unique([courseId, order])
 }
 
 model Lesson {
-  id        String   @id @default(cuid())
-  moduleId  String
-  order     Int
-  title     String
-  duration  String
-  type      String   @default("video")
-  youtubeId String   @default("")
-  content   String?
-  imageUrl  String?
-  audioUrl     String?
+  id           String   @id @default(cuid())
+  moduleId     String
+  order        Int
+  title        String
+  duration     String
+  youtubeId    String   @default("")
+  imageUrl     String?
   points       String[]
   tip          String
-  prevSnapshot String?   // JSON snapshot of fields before last manual edit — for "restore previous version"
+  content      String?
+  type         String   @default("video")
+  audioUrl     String?
+  prevSnapshot String?
   module       Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@unique([moduleId, order])
@@ -77,21 +138,21 @@ model Question {
 }
 
 model StudentGroup {
-  id                    String                  @id @default(cuid())
-  name                  String
-  description           String?
-  color                 String                  @default("#17527E")
-  createdByEvaluatorId  String?                 // null = created by admin
-  createdAt             DateTime                @default(now())
-  members               StudentGroupMember[]
-  evaluators            StudentGroupEvaluator[]
+  id                   String                  @id @default(cuid())
+  name                 String
+  description          String?
+  createdAt            DateTime                @default(now())
+  color                String                  @default("#17527E")
+  createdByEvaluatorId String?
+  evaluators           StudentGroupEvaluator[]
+  members              StudentGroupMember[]
 }
 
 model StudentGroupMember {
   groupId           String
-  userId            String    // Cognito username
-  addedAt           DateTime  @default(now())
-  enrolledCourseIds String[]  @default([])
+  userId            String
+  addedAt           DateTime     @default(now())
+  enrolledCourseIds String[]     @default([])
   group             StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([groupId, userId])
@@ -99,8 +160,8 @@ model StudentGroupMember {
 
 model StudentGroupEvaluator {
   groupId     String
-  evaluatorId String    // Cognito sub (UUID)
-  assignedAt  DateTime  @default(now())
+  evaluatorId String
+  assignedAt  DateTime     @default(now())
   group       StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@id([groupId, evaluatorId])

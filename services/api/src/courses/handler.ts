@@ -1,9 +1,29 @@
+import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse } from '../shared/db-dynamo';
-import { ok, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getClassSessionByCallId, updateClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
+import { handleClasses } from './classes';
+import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
+
+const s3 = new S3Client({ region: 'us-east-1' });
+const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+
+const VAPID_PUBLIC_CO = process.env.VAPID_PUBLIC_KEY ?? '';
+const VAPID_PRIVATE_CO = process.env.VAPID_PRIVATE_KEY ?? '';
+if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+  webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_CO, VAPID_PRIVATE_CO);
+}
+
+const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
+const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
+const VAPI_WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET ?? '';
 
 /** Applies cached/fresh translations over a list of {id, ...fields} entities, mutating nothing — returns new objects. */
 function applyTranslations<T extends { id: string }>(
@@ -35,6 +55,7 @@ export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
+  const method = event.requestContext.http.method;
   const path = event.rawPath;
   const rawLang = event.queryStringParameters?.lang ?? 'es';
   const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
@@ -132,6 +153,7 @@ export const handler = async (event: Event) => {
               questions: { orderBy: { order: 'asc' } },
             },
           },
+          evaluationEvents: { orderBy: { order: 'asc' } },
         },
       });
 
@@ -147,14 +169,16 @@ export const handler = async (event: Event) => {
       if (userId) {
         // Enrich with unlock status
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+        const lessonProgress = await getLessonProgress(userId, courseId);
+        const completedLessonIds = new Set(lessonProgress.map((p) => p.lessonId));
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
-            const progress = await getLessonProgress(userId, courseId);
-            const completedLessonIds = new Set(progress.map((p) => p.lessonId));
             const quizPassed = await hasPassedQuiz(userId, mod.id);
             const reflection = await getReflection(userId, mod.id);
             const mt = translations?.get(`module#${mod.id}`);
+
+            const mySubmissions = await listMySubmissions(userId, mod.id);
 
             return {
               ...mod,
@@ -163,6 +187,15 @@ export const handler = async (event: Event) => {
               quizPassed,
               reflectionStatus: reflection?.status ?? null,
               qualityScore: (reflection as any)?.qualityScore ?? null,
+              submissions: mySubmissions.map((s) => ({
+                submissionId: s.submissionId,
+                fileName: s.fileName,
+                fileSize: s.fileSize,
+                status: s.status,
+                grade: s.grade ?? null,
+                feedback: s.feedback ?? null,
+                createdAt: s.createdAt,
+              })),
               lessons: applyTranslations(mod.lessons, 'lesson', translations ?? new Map()).map((l) => ({
                 ...l,
                 completed: completedLessonIds.has(l.id),
@@ -172,7 +205,9 @@ export const handler = async (event: Event) => {
           })
         );
         const ct = translations?.get(`course#${course.id}`);
-        return ok({ ...course, ...(ct ?? {}), modules: enriched });
+        // Compute isCourseLocked: course is active but startDate is still in the future
+        const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+        return ok({ ...course, ...(ct ?? {}), modules: enriched, isCourseLocked });
       }
 
       if (translations) {
@@ -183,10 +218,12 @@ export const handler = async (event: Event) => {
           lessons: applyTranslations(mod.lessons, 'lesson', translations!),
           questions: applyTranslations(mod.questions, 'question', translations!),
         }));
-        return ok({ ...course, ...(ct ?? {}), modules });
+        const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+        return ok({ ...course, ...(ct ?? {}), modules, isCourseLocked });
       }
 
-      return ok(course);
+      const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
+      return ok({ ...course, isCourseLocked });
     }
 
     // GET /courses/:courseId/resources — public resources for students enrolled in this course
@@ -201,6 +238,273 @@ export const handler = async (event: Event) => {
         return ok([]); // degrade gracefully — never block module view
       }
     }
+
+    // GET /my-submissions?moduleId=X — list this student's submissions for a module
+    if (path === '/my-submissions' && method === 'GET') {
+      if (!userId) return forbidden('Login required');
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const subs = await listMySubmissions(userId, moduleId);
+      return ok(subs);
+    }
+
+    // POST /my-submissions/presign — get presigned S3 PUT URL
+    if (path === '/my-submissions/presign' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      const body = JSON.parse(event.body ?? '{}');
+      const { courseId, moduleId, fileName, fileType } = body;
+      if (!courseId || !moduleId || !fileName || !fileType) return badRequest('courseId, moduleId, fileName, fileType required');
+      const submissionId = randomUUID();
+      const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+      const s3Key = `submissions/${courseId}/${moduleId}/${userId}/${submissionId}.${ext}`;
+      const cmd = new PutObjectCommand({
+        Bucket: SUBMISSIONS_BUCKET,
+        Key: s3Key,
+        ContentType: fileType,
+      });
+      const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 3600 });
+      return ok({ submissionId, uploadUrl, s3Key });
+    }
+
+    // POST /my-submissions — register submission after S3 upload
+    if (path === '/my-submissions' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      const body = JSON.parse(event.body ?? '{}');
+      const { submissionId, courseId, moduleId, fileName, fileSize, fileType } = body;
+      if (!submissionId || !courseId || !moduleId || !fileName) return badRequest('Missing required fields');
+      const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+      const s3Key = `submissions/${courseId}/${moduleId}/${userId}/${submissionId}.${ext}`;
+      await createSubmission({
+        userId,
+        submissionId,
+        courseId,
+        moduleId,
+        fileName,
+        fileSize: Number(fileSize ?? 0),
+        fileType: fileType ?? 'application/octet-stream',
+        s3Key,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+      return ok({ submissionId });
+    }
+
+    // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
+    if (path === '/vapi/webhook' && method === 'POST') {
+      // Verify Vapi webhook signature if secret is configured
+      if (VAPI_WEBHOOK_SECRET) {
+        const { createHmac } = await import('crypto');
+        const rawBody = event.body ?? '';
+        const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
+        const expectedSignature = createHmac('sha256', VAPI_WEBHOOK_SECRET).update(rawBody).digest('hex');
+        if (incomingSignature !== expectedSignature) {
+          return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
+        }
+      }
+
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+
+      const { message } = body as { message?: any };
+      if (!message) return ok({ received: true });
+
+      const msgType: string = message.type ?? '';
+      const callId: string = message.call?.id ?? message.callId ?? '';
+
+      if (msgType === 'end-of-call-report' && callId) {
+        const transcript: string = message.artifact?.transcript ?? message.transcript ?? '';
+        const messages: any[] = message.artifact?.messages ?? message.messages ?? [];
+        const durationSec: number = message.durationSeconds ?? message.call?.endedAt
+          ? Math.round((new Date(message.call.endedAt).getTime() - new Date(message.call.startedAt ?? message.call.createdAt).getTime()) / 1000)
+          : 0;
+        const endedReason: string = message.call?.endedReason ?? '';
+        // Void if network failure: no audio from customer, or call too short with no transcript
+        const isVoided = endedReason === 'customer-did-not-give-audio' || (durationSec < 30 && !transcript.trim());
+
+        void (async () => {
+          try {
+            // ── Try interview first, then class session ───────────────────────
+            const interview = await getInterviewByCallId(callId);
+            if (!interview) {
+              // Check if it's a class session
+              const classSession = await getClassSessionByCallId(callId);
+              if (!classSession) { console.warn('[vapi] no record for callId=%s', callId); return; }
+              if (isVoided) {
+                await updateClassSession(classSession.userId, classSession.sessionId, {
+                  status: 'error', voided: true, voidedReason: endedReason || 'short-duration',
+                });
+                return;
+              }
+              let aiAnalysis = ''; let aiScore = 0;
+              if (transcript) {
+                const analysisPrompt = `Eres un tutor evaluando la sesión de clase de un estudiante con Lux Mentor.\nAnaliza la transcripción y proporciona:\n1. Un puntaje del 0 al 100 basado en: comprensión demostrada, calidad de respuestas, participación.\n2. Retroalimentación formativa (máx. 2 párrafos).\nResponde en el idioma de la transcripción.\nTranscripción:\n${transcript.slice(0, 4000)}\nDevuelve SOLO JSON: {"score": <n>, "analysis": "<texto>"}`;
+                try {
+                  const resp = await bedrock.send(new InvokeModelCommand({
+                    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+                    contentType: 'application/json', accept: 'application/json',
+                    body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 450, messages: [{ role: 'user', content: analysisPrompt }] }), // cost: JSON score+analysis ~300-400 tokens
+                  }));
+                  const raw = JSON.parse(Buffer.from(resp.body).toString());
+                  const parsed = JSON.parse((raw.content?.[0]?.text ?? '{}').replace(/```json\n?|\n?```/g, '').trim());
+                  aiScore = Math.min(100, Math.max(0, Number(parsed.score ?? 0)));
+                  aiAnalysis = String(parsed.analysis ?? '');
+                } catch { /* non-fatal */ }
+              }
+              await updateClassSession(classSession.userId, classSession.sessionId, {
+                status: 'completed', transcript, messages, aiAnalysis, aiScore,
+                durationSeconds: durationSec, completedAt: new Date().toISOString(),
+              });
+              if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+                const subs = await getPushSubscriptionsByUserId(classSession.userId);
+                const payload = JSON.stringify({ title: 'Clase completada', body: 'Tu sesión con Lux Mentor ha sido procesada. Tu evaluador revisará tu resultado pronto.' });
+                await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
+              }
+              return;
+            }
+
+            if (isVoided) {
+              await updateInterview(interview.userId, interview.interviewId, {
+                status: 'error', voided: true, voidedReason: endedReason || 'short-duration',
+              } as any);
+              return;
+            }
+
+            // Run Bedrock analysis
+            let aiAnalysis = '';
+            let aiScore = 0;
+            if (transcript) {
+              const analysisPrompt = `Analiza la siguiente transcripción de una entrevista oral de evaluación.
+Proporciona:
+1. Un puntaje formativo del 0 al 100 basado en: claridad de ideas, dominio del tema, fluidez y profundidad de respuestas.
+2. Un análisis formativo breve (máx. 3 párrafos) con fortalezas y áreas de mejora.
+3. Responde en el mismo idioma de la transcripción.
+
+Transcripción:
+${transcript.slice(0, 4000)}
+
+Responde ÚNICAMENTE con este JSON (sin markdown):
+{"score": <número>, "analysis": "<texto análisis>"}`;
+
+              const resp = await bedrock.send(new InvokeModelCommand({
+                modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+                contentType: 'application/json',
+                accept: 'application/json',
+                body: JSON.stringify({
+                  anthropic_version: 'bedrock-2023-05-31',
+                  max_tokens: 550, // cost: JSON score+2-paragraph analysis ~400-500 tokens
+                  messages: [{ role: 'user', content: analysisPrompt }],
+                }),
+              }));
+              const raw = JSON.parse(Buffer.from(resp.body).toString());
+              const text: string = raw.content?.[0]?.text ?? '';
+              try {
+                const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
+                aiScore = Math.min(100, Math.max(0, Number(parsed.score ?? 0)));
+                aiAnalysis = String(parsed.analysis ?? '');
+              } catch {
+                aiAnalysis = text;
+              }
+            }
+
+            await updateInterview(interview.userId, interview.interviewId, {
+              status: 'completed',
+              transcript,
+              messages,
+              aiAnalysis,
+              aiScore,
+              durationSeconds: durationSec,
+              questionsAsked: messages.filter((m: any) => m.role === 'assistant').length,
+              completedAt: new Date().toISOString(),
+            });
+
+            // Push notification to student
+            if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+              const subs = await getPushSubscriptionsByUserId(interview.userId);
+              const payload = JSON.stringify({ title: 'Entrevista completada', body: 'Tu entrevista oral ha sido procesada. El evaluador revisará tu resultado pronto.' });
+              await Promise.allSettled(subs.map((sub: any) =>
+                webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
+              ));
+            }
+          } catch (e) {
+            console.error('[vapi] webhook processing error', e);
+          }
+        })();
+      }
+
+      return ok({ received: true });
+    }
+
+    // ── GET /my-interviews?moduleId=X ─────────────────────────────────────────
+    if (path === '/my-interviews' && method === 'GET') {
+      if (!userId) return forbidden('Login required');
+      const moduleId = event.queryStringParameters?.moduleId;
+      if (!moduleId) return badRequest('moduleId required');
+      const interviews = await listMyInterviews(userId, moduleId);
+      return ok(interviews);
+    }
+
+    // ── POST /my-interviews/start — register a new interview and return Vapi config ──
+    if (path === '/my-interviews/start' && method === 'POST') {
+      if (!userId) return forbidden('Login required');
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+      const { courseId, moduleId } = body as { courseId?: string; moduleId?: string };
+      if (!courseId || !moduleId) return badRequest('courseId and moduleId required');
+
+      // Validate VAPI key BEFORE creating any DB record — avoids ghost pending records
+      const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
+      if (!vapiPublicKey) {
+        return ok({ interviewId: null, vapiPublicKey: '', vapiPrompt: null, vapiObjectives: null });
+      }
+
+      // Find INTERVIEW type EvaluationEvent for this course
+      const evalEvent = await prisma.evaluationEvent.findFirst({
+        where: { courseId, type: 'INTERVIEW' },
+        orderBy: { order: 'asc' },
+      });
+
+      // Reuse existing pending interview to avoid duplicate DDB records per session
+      const existing = await listMyInterviews(userId, moduleId);
+      const reuseableInterview = existing.find((iv) => iv.status === 'pending' || iv.status === 'in_progress');
+
+      const interviewId = reuseableInterview?.interviewId ?? randomUUID();
+      if (!reuseableInterview) {
+        await createInterview({
+          userId,
+          interviewId,
+          courseId,
+          moduleId,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      return ok({
+        interviewId,
+        vapiPublicKey,
+        vapiPrompt: evalEvent?.vapiPrompt ?? null,
+        vapiObjectives: evalEvent?.vapiObjectives ?? null,
+      });
+    }
+
+    // ── PATCH /my-interviews/:interviewId — update call status/callId ─────────
+    const interviewUpdateMatch = path.match(/^\/my-interviews\/([^/]+)$/);
+    if (interviewUpdateMatch && method === 'PATCH') {
+      if (!userId) return forbidden('Login required');
+      const interviewId = interviewUpdateMatch[1]!;
+      let body: any = {};
+      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+      const { vapiCallId, status } = body as { vapiCallId?: string; status?: string };
+      const patch: Record<string, any> = {};
+      if (vapiCallId) patch.vapiCallId = vapiCallId;
+      if (status) patch.status = status;
+      if (Object.keys(patch).length) await updateInterview(userId, interviewId, patch as any);
+      return ok({ updated: true });
+    }
+
+    // ── Lux Mentor Class routes (/my-classes/*) ──────────────────────────────
+    const classResult = await handleClasses(event, method, path, userId, prisma);
+    if (classResult) return classResult;
 
     return notFound();
   } catch (err) {

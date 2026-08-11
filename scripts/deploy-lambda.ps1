@@ -9,11 +9,10 @@
 
 param(
   [Parameter(ValueFromRemainingArguments)][string[]]$targets,
-  [ValidateSet('prod','staging','test')][string]$Env = 'prod'
+  [ValidateSet('prod','staging','test')][string]$DeployEnv = 'prod'
 )
 
 Set-StrictMode -Off
-$ErrorActionPreference = "Stop"
 
 $ROOT      = "D:\InHouse\Lux"
 $API_SRC   = "$ROOT\services\api\src"
@@ -29,6 +28,7 @@ $PRISMA_ENGINE = "$PRISMA_GEN\libquery_engine-linux-arm64-openssl-3.0.x.so.node"
 # Map: lambda-name -> [ entrypoint, usesPrisma ]
 $LAMBDAS = [ordered]@{
   "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true)
+  "lux-attendance"  = @("$API_SRC\attendance\handler.ts",   $true)
   "lux-reflection"  = @("$API_SRC\reflection\handler.ts",   $true)
   "lux-evaluator"   = @("$API_SRC\evaluator\handler.ts",    $true)
   "lux-courses"     = @("$API_SRC\courses\handler.ts",      $true)
@@ -43,12 +43,31 @@ $LAMBDAS = [ordered]@{
   "lux-tasks"       = @("$API_SRC\tasks\handler.ts",        $false)
   "lux-notifs"      = @("$API_SRC\notifications\handler.ts",$false)
   "lux-push"        = @("$API_SRC\push\handler.ts",         $false)
-  "lux-authorizer"  = @("$API_SRC\shared\authorizer.ts",    $false)
+  "lux-authorizer"   = @("$API_SRC\shared\authorizer.ts",      $false)
+  "lux-study-plans"  = @("$API_SRC\study-plans\handler.ts",   $true)
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$ENV_SUFFIX = if ($Env -eq 'prod') { '' } else { "-$Env" }
+# --- Pre-deploy test gate ---
+Write-Host "`n==> Running unit tests..." -ForegroundColor Cyan
+$testExit = 0
+try {
+  Push-Location "$ROOT\services\api"
+  & npm test
+  $testExit = $LASTEXITCODE
+  Pop-Location
+} catch {
+  Write-Host "[ERR] Exception in test gate: $_" -ForegroundColor Red
+  Pop-Location -ErrorAction SilentlyContinue
+}
+if ($testExit -ne 0) {
+  Write-Host "`n[FAIL] Unit tests failed - aborting deploy." -ForegroundColor Red
+  exit 1
+}
+Write-Host "[OK]  All tests passed." -ForegroundColor Green
+
+$ENV_SUFFIX = if ($DeployEnv -eq 'prod') { '' } else { "-$DeployEnv" }
 
 function Deploy-Lambda([string]$name) {
   if (-not $LAMBDAS.Contains($name)) {
@@ -85,6 +104,21 @@ function Deploy-Lambda([string]$name) {
   Copy-Item "$outDir\index.js" "$stage\index.js"
 
   if ($usesPrisma) {
+    # Guard: verify generated client matches current schema (catch stale client after schema changes)
+    $schemaPath = "$ROOT\services\api\prisma\schema.prisma"
+    $genSchemaPath = "$PRISMA_GEN\schema.prisma"
+    if (Test-Path $genSchemaPath) {
+      $schemaHash = (Get-FileHash $schemaPath -Algorithm MD5).Hash
+      $genHash    = (Get-FileHash $genSchemaPath -Algorithm MD5).Hash
+      if ($schemaHash -ne $genHash) {
+        Write-Host "`n[WARN] schema.prisma changed since last prisma generate - regenerating client..." -ForegroundColor Yellow
+        Push-Location "$ROOT\services\api"
+        & npx prisma generate
+        Pop-Location
+        Write-Host "[OK]  Prisma client regenerated." -ForegroundColor Green
+      }
+    }
+
     New-Item -ItemType Directory "$stage\node_modules\.prisma"  -Force | Out-Null
     New-Item -ItemType Directory "$stage\node_modules\@prisma"  -Force | Out-Null
     # Generated Prisma client (JS + engine binary), skip Windows DLL
@@ -107,6 +141,9 @@ function Deploy-Lambda([string]$name) {
     --query "CodeSize" --output text
   if ($LASTEXITCODE -ne 0) { throw "Deploy failed for $targetName" }
   Write-Host "   Deployed: $([math]::Round([int]$codeSize / 1MB, 1)) MB" -ForegroundColor Green
+
+  # 4b. Wait for function to be Active before touching config
+  aws lambda wait function-updated --function-name $targetName | Out-Null
 
   # 5. Ensure PRISMA_QUERY_ENGINE_LIBRARY is set (merge, never wipe other vars)
   #    DATABASE_URL persists automatically — update-function-code never touches env vars

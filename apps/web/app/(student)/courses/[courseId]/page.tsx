@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, Library, PlayCircle, FolderOpen, Link2, FileText } from 'lucide-react';
+import { ArrowLeft, Clock, Lock, CheckCircle, ChevronRight, Trophy, Star, Download, BookOpen, User, UserCog, MessageSquare, PlayCircle, FolderOpen, Link2, FileText, CalendarCheck } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
@@ -191,6 +192,15 @@ export default function CoursePage() {
           </Link>
         )}
 
+        {/* Mi Asistencia */}
+        <Link
+          href={`/courses/${courseId}/attendance`}
+          className="flex items-center gap-2 bg-white border border-border text-charcoal font-semibold text-sm px-4 py-3 rounded-xl hover:bg-surface transition-colors"
+        >
+          <CalendarCheck className="w-4 h-4 text-blue-500" />
+          {t.courseDetail.myAttendance}
+        </Link>
+
         {/* Chat del Curso */}
         <Link
           href={`/communications?chatId=group_${courseId}`}
@@ -206,7 +216,7 @@ export default function CoursePage() {
         </Link>
 
         {/* Contactar Evaluador */}
-        {course.evaluatorId ? (
+        {course.evaluatorId && (
           <button
             onClick={handleContactEvaluator}
             disabled={contactingEvaluator}
@@ -215,29 +225,16 @@ export default function CoursePage() {
             <UserCog className="w-4 h-4 text-purple-500" />
             {contactingEvaluator ? t.courseDetail.openingChat : t.courseDetail.contactEvaluator}
           </button>
-        ) : (
-          <div className="flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface">
-            <UserCog className="w-4 h-4" />
-            {t.courseDetail.adminLabel}
-          </div>
         )}
 
-        {/* Recursos del curso */}
-        {resources.length > 0 ? (
-          <button
-            onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
-            className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
-          >
-            <FolderOpen className="w-4 h-4" />
-            {t.courseDetail.resources(resources.length)}
-          </button>
-        ) : (
-          <div className="relative flex items-center gap-2 border border-border text-gray-400 font-medium text-sm px-4 py-3 rounded-xl bg-surface cursor-not-allowed group" title={t.courseDetail.comingSoon}>
-            <Library className="w-4 h-4" />
-            {t.courseDetail.library}
-            <span className="absolute -top-2 -right-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">{t.courseDetail.comingSoon}</span>
-          </div>
-        )}
+        {/* Recursos del curso — siempre visible */}
+        <button
+          onClick={() => document.getElementById('course-resources')?.scrollIntoView({ behavior: 'smooth' })}
+          className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 font-medium text-sm px-4 py-3 rounded-xl hover:bg-indigo-100 transition-colors"
+        >
+          <FolderOpen className="w-4 h-4" />
+          {t.courseDetail.resourcesSection}
+        </button>
       </div>
 
       {/* Resources section */}
@@ -300,6 +297,107 @@ export default function CoursePage() {
         </div>
       )}
 
+      {/* Evaluation events / grades section */}
+      {(course.evaluationEvents?.length ?? 0) > 0 && (
+        <div className="card space-y-3">
+          <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
+            <Star className="w-4 h-4 text-amber-500" /> {t.courseGrades.title}
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <th className="text-left pb-2 font-semibold">{t.courseGrades.evalHeader}</th>
+                  <th className="text-center pb-2 font-semibold">{t.courseGrades.weightHeader}</th>
+                  <th className="text-center pb-2 font-semibold">{t.courseGrades.dueDateHeader}</th>
+                  <th className="text-right pb-2 font-semibold">{t.courseGrades.gradeHeader}</th>
+                  <th className="text-right pb-2 font-semibold">{t.courseGrades.actionHeader}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {(() => {
+                  const today = new Date();
+                  const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', INTERVIEW: 'bg-purple-100 text-purple-700' };
+                  const getGradeForEvent = (ev: any): number | null => {
+                    if (ev.type !== 'EVIDENCE') return null;
+                    const mods = ev.moduleId
+                      ? [course.modules?.find((m: any) => m.id === ev.moduleId)]
+                      : (course.modules ?? []);
+                    const subs = mods.flatMap((m: any) => m?.submissions ?? []).filter((s: any) => s.status === 'graded');
+                    if (subs.length === 0) return null;
+                    return Math.round(subs.reduce((sum: number, s: any) => sum + (s.grade ?? 0), 0) / subs.length);
+                  };
+                  const getActionCell = (ev: any) => {
+                    const isOverdue = ev.dueDate && new Date(ev.dueDate) < today;
+                    if (isOverdue) return <span className="text-xs text-red-400 font-medium">{t.courseGrades.overdue}</span>;
+                    // Course locked: content not available yet
+                    if (course.isCourseLocked) {
+                      return <span className="text-xs text-amber-500 font-medium">Bloqueado</span>;
+                    }
+                    if (!ev.moduleId) {
+                      // Course-level evaluation (no module assigned yet) — show pending
+                      return <span className="text-xs text-gray-400">{t.courseGrades.pending}</span>;
+                    }
+                    const modPath = `/courses/${courseId}/modules/${ev.moduleId}`;
+                    if (ev.type === 'QUIZ') return (
+                      <Link href={`${modPath}/quiz`}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.goToQuiz}</Button>
+                      </Link>
+                    );
+                    if (ev.type === 'INTERVIEW') return (
+                      <Link href={modPath}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.present}</Button>
+                      </Link>
+                    );
+                    if (ev.type === 'EVIDENCE') return (
+                      <Link href={modPath}>
+                        <Button size="sm" variant="secondary">{t.courseGrades.submit}</Button>
+                      </Link>
+                    );
+                    return null;
+                  };
+                  return course.evaluationEvents?.map((ev: any) => {
+                    const grade = getGradeForEvent(ev);
+                    return (
+                      <tr key={ev.id} className="py-2">
+                        <td className="py-2.5 pr-3">
+                          <p className="font-medium text-charcoal">{ev.name}</p>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${typeColor[ev.type] ?? 'bg-gray-100 text-gray-600'}`}>{t.courseGrades.typeNames[ev.type] ?? ev.type}</span>
+                        </td>
+                        <td className="py-2.5 text-center text-gray-600">{t.courseGrades.weight(ev.weight)}</td>
+                        <td className="py-2.5 text-center text-gray-500 text-xs">
+                          {ev.dueDate ? new Date(ev.dueDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-ES', { day: '2-digit', month: 'short' }) : '—'}
+                        </td>
+                        <td className="py-2.5 text-right">
+                          {grade !== null
+                            ? <Badge variant="success">{t.courseGrades.gradeValue(grade)}</Badge>
+                            : <span className="text-xs text-gray-400">{t.courseGrades.pending}</span>
+                          }
+                        </td>
+                        <td className="py-2.5 text-right">{getActionCell(ev)}</td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Course locked banner — shown when startDate is in the future */}
+      {course.isCourseLocked && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+          <Lock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">Curso disponible a partir del{' '}
+              {new Date(course.startDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">Puedes ver el programa del curso, pero el contenido estará disponible cuando inicie el período.</p>
+          </div>
+        </div>
+      )}
+
       {/* Modules */}
       <div className="space-y-3">
         <h2 className="font-heading font-bold text-xl text-charcoal">{t.courseDetail.modulesTitle}</h2>
@@ -307,7 +405,7 @@ export default function CoursePage() {
           const modLessons = mod.lessons ?? [];
           const modCompleted = modLessons.filter((l: any) => l.completed).length;
           const modProgress = modLessons.length > 0 ? Math.round((modCompleted / modLessons.length) * 100) : 0;
-          const isLocked = !mod.unlocked;
+          const isLocked = !mod.unlocked || !!course.isCourseLocked;
           const isDone = mod.reflectionStatus === 'APPROVED';
 
           return (

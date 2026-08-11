@@ -10,7 +10,18 @@ import type {
   GetNotificationsResponse,
 } from '@lux/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+const ENV_API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+function getApiUrl(): string {
+  if (ENV_API_URL) return ENV_API_URL;
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  if (host.startsWith('test.'))    return 'https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com';
+  if (host.startsWith('staging.')) return 'https://1ohrw48nii.execute-api.us-east-1.amazonaws.com';
+  return 'https://v4vabtmerb.execute-api.us-east-1.amazonaws.com'; // prod
+}
+
+const API_URL = getApiUrl();
 
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
@@ -32,7 +43,7 @@ async function request<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(err.error ?? 'API error'), {
+    throw Object.assign(new Error(err.error ?? err.message ?? 'API error'), {
       statusCode: res.status,
       body: err,
     });
@@ -83,6 +94,33 @@ export const api = {
       request(`/reflection/${moduleId}`),
     aiPreview: (text: string, moduleTitle?: string) =>
       request<any>('/reflection/ai-preview', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
+  },
+
+  submissions: {
+    list: (moduleId: string) =>
+      request<any>(`/my-submissions?moduleId=${moduleId}`),
+    presign: (body: { courseId: string; moduleId: string; fileName: string; fileType: string }) =>
+      request<any>('/my-submissions/presign', { method: 'POST', body: JSON.stringify(body) }),
+    register: (body: { submissionId: string; courseId: string; moduleId: string; fileName: string; fileSize: number; fileType: string }) =>
+      request<any>('/my-submissions', { method: 'POST', body: JSON.stringify(body) }),
+  },
+
+  interviews: {
+    list: (moduleId: string) =>
+      request<any>(`/my-interviews?moduleId=${moduleId}`),
+    start: (body: { courseId: string; moduleId: string }) =>
+      request<any>('/my-interviews/start', { method: 'POST', body: JSON.stringify(body) }),
+    update: (interviewId: string, patch: { vapiCallId?: string; status?: string }) =>
+      request<any>(`/my-interviews/${interviewId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  },
+
+  classes: {
+    list: (moduleId: string) =>
+      request<any>(`/my-classes?moduleId=${moduleId}`),
+    start: (body: { courseId: string; moduleId: string }) =>
+      request<any>('/my-classes/start', { method: 'POST', body: JSON.stringify(body) }),
+    update: (sessionId: string, patch: { vapiCallId?: string; status?: string }) =>
+      request<any>(`/my-classes/${sessionId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   },
 
   evaluator: {
@@ -161,6 +199,49 @@ export const api = {
       studentPool: () => request<any>('/evaluator/students/pool'),
     },
     evaluatorsList: () => request<any>('/evaluator/evaluators'),
+    submissions: {
+      list: (moduleId: string) => request<any>(`/evaluator/submissions?moduleId=${moduleId}`),
+      grade: (submissionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/submissions/${submissionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+      downloadUrl: (submissionId: string, s3Key: string) =>
+        request<any>(`/evaluator/submissions/${submissionId}/download?s3Key=${encodeURIComponent(s3Key)}`),
+    },
+    interviews: {
+      list: (moduleId: string) => request<any>(`/evaluator/interviews?moduleId=${moduleId}`),
+      grade: (interviewId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/interviews/${interviewId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    classes: {
+      list: (moduleId: string) => request<any>(`/evaluator/classes?moduleId=${moduleId}`),
+      grade: (sessionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
+        request<any>(`/evaluator/classes/${sessionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    studyPlan: {
+      generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string }) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan`, { method: 'POST', body: JSON.stringify(body) }),
+      get: (studentId: string, weeks = 4) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan?weeks=${weeks}`),
+      unlock: (studentId: string, weekOf?: string) =>
+        request<any>(`/evaluator/students/${studentId}/study-plan/unlock`, { method: 'POST', body: JSON.stringify({ weekOf }) }),
+      compliance: () =>
+        request<any>('/evaluator/study-plan/compliance'),
+    },
+  },
+
+  studyPlan: {
+    list: (weeks = 4) => request<any>(`/study-plan?weeks=${weeks}`),
+    current: () => request<any>('/study-plan/current'),
+    suggestions: () => request<any>('/study-plan/suggestions'),
+    toggleItem: (weekOf: string, itemId: string, patch: { pinned?: boolean; completed?: boolean }) =>
+      request<any>(`/study-plan/${weekOf}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    addItem: (weekOf: string, body: { dayIndex: number; title: string; type?: string; description?: string; estimatedMinutes?: number; courseId?: string; moduleId?: string }) =>
+      request<any>(`/study-plan/${weekOf}/items`, { method: 'POST', body: JSON.stringify(body) }),
+    removeItem: (weekOf: string, itemId: string) =>
+      request<any>(`/study-plan/${weekOf}/items/${itemId}`, { method: 'DELETE' }),
+    requestChange: (weekOf: string, note?: string) =>
+      request<any>('/study-plan/request-change', { method: 'POST', body: JSON.stringify({ weekOf, note }) }),
+    get: () => request<any>('/my-study-plan'),
+    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 
   tasks: {
@@ -230,6 +311,10 @@ export const api = {
   },
 
   admin: {
+    periods: {
+      list: () => request<any>('/admin/periods'),
+      create: (name: string) => request<any>('/admin/periods', { method: 'POST', body: JSON.stringify({ name }) }),
+    },
     // Courses
     courses: {
       list: () => request<any>(`/admin/courses?lang=${getLang()}`),
@@ -237,6 +322,14 @@ export const api = {
       create: (body: any) => request<any>('/admin/courses', { method: 'POST', body: JSON.stringify(body) }),
       update: (courseId: string, body: any) => request<any>(`/admin/courses/${courseId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (courseId: string) => request<any>(`/admin/courses/${courseId}`, { method: 'DELETE' }),
+      wizardCopilot: (body: any) =>
+        request<any>('/admin/courses/wizard/copilot', { method: 'POST', body: JSON.stringify(body) }),
+      wizardSave: (body: any) =>
+        request<any>('/admin/courses/wizard/save', { method: 'POST', body: JSON.stringify(body) }),
+      generateInstruction: (body: { courseTitle: string; evalName: string; syllabusInput?: string }) =>
+        request<any>('/admin/courses/wizard/generate-instruction', { method: 'POST', body: JSON.stringify(body) }),
+      wizardPlanDoc: (courseId: string) =>
+        request<any>(`/admin/courses/wizard/plan-doc?courseId=${encodeURIComponent(courseId)}`),
       aiGenerate: (body: { method: 'topic' | 'url'; input: string }) =>
         request<any>('/admin/courses/ai-generate', { method: 'POST', body: JSON.stringify(body) }),
       aiGenerateModule: (body: { topic: string; courseTitle?: string }) =>
@@ -362,7 +455,82 @@ export const api = {
       removeEvaluator: (id: string, evaluatorId: string) =>
         request<any>(`/admin/groups/${id}/evaluators/${evaluatorId}`, { method: 'DELETE' }),
     },
+    // Interviews (EvaluationEvent definitions + DDB submissions)
+    interviews: {
+      listCourses: () => request<any>('/admin/interviews/courses'),
+      list: (courseId: string, includeSubmissions = false) =>
+        request<any>(`/admin/interviews?courseId=${courseId}${includeSubmissions ? '&includeSubmissions=true' : ''}`),
+      submissions: (courseId: string, status?: string) =>
+        request<any>(`/admin/interviews/submissions?courseId=${courseId}${status ? '&status=' + status : ''}`),
+      generate: (body: { title?: string; topic?: string; courseTitle?: string; moduleTitle?: string; language?: string }) =>
+        request<any>('/admin/interviews/generate', { method: 'POST', body: JSON.stringify(body) }),
+      create: (body: {
+        courseId: string; moduleId?: string; name: string; dueDate?: string;
+        weight?: number; instructions?: string; vapiPrompt?: string;
+        vapiObjectives?: string; targetStudentIds?: string[];
+      }) => request<any>('/admin/interviews', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: Partial<{
+        name: string; courseId: string; moduleId: string; dueDate: string; weight: number;
+        instructions: string; vapiPrompt: string; vapiObjectives: string; targetStudentIds: string[];
+        isDraft: boolean; isArchived: boolean;
+      }>) => request<any>(`/admin/interviews/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/admin/interviews/${id}`, { method: 'DELETE' }),
+      students: (courseId: string) => request<any>(`/admin/interviews/students?courseId=${courseId}`),
+      coverage: (courseId: string) => request<any>(`/admin/interviews/coverage?courseId=${courseId}`),
+    },
+    // Lux Mentor Classes (EvaluationEvent type=CLASS + DDB LuxClasses)
+    classes: {
+      listCourses: () => request<any>('/admin/classes/courses'),
+      list: (courseId: string, includeSubmissions = false) =>
+        request<any>(`/admin/classes?courseId=${courseId}${includeSubmissions ? '&includeSubmissions=true' : ''}`),
+      submissions: (courseId: string, status?: string) =>
+        request<any>(`/admin/classes/submissions?courseId=${courseId}${status ? '&status=' + status : ''}`),
+      generate: (body: { title?: string; topic?: string; courseTitle?: string; moduleTitle?: string; language?: string }) =>
+        request<any>('/admin/classes/generate', { method: 'POST', body: JSON.stringify(body) }),
+      presignVideo: (body: { fileName: string; fileType: string }) =>
+        request<any>('/admin/classes/presign-video', { method: 'POST', body: JSON.stringify(body) }),
+      create: (body: {
+        courseId: string; moduleId?: string; name: string; dueDate?: string;
+        weight?: number; instructions?: string; vapiPrompt?: string; vapiObjectives?: string;
+        lessonVideoUrl?: string; lessonScript?: string; targetStudentIds?: string[];
+      }) => request<any>('/admin/classes', { method: 'POST', body: JSON.stringify(body) }),
+      update: (id: string, body: Partial<{
+        name: string; courseId: string; moduleId: string; dueDate: string; weight: number;
+        instructions: string; vapiPrompt: string; vapiObjectives: string;
+        lessonVideoUrl: string; lessonScript: string; targetStudentIds: string[];
+        isDraft: boolean; isArchived: boolean;
+      }>) => request<any>(`/admin/classes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      delete: (id: string) => request<any>(`/admin/classes/${id}`, { method: 'DELETE' }),
+      students: (courseId: string) => request<any>(`/admin/classes/students?courseId=${courseId}`),
+    },
   },
+  attendance: {
+    // Evaluator/Admin
+    sessions: (courseId: string) => request<any>(`/attendance/sessions/${courseId}`),
+    addSession: (courseId: string, sessionDate: string) =>
+      request<any>(`/attendance/sessions/${courseId}`, { method: 'POST', body: JSON.stringify({ sessionDate }) }),
+    record: (body: { courseId: string; sessionId: string; records: { userId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'JUSTIFIED' | 'LATE_JUSTIFIED'; observations?: string }[] }) =>
+      request<any>('/attendance/record', { method: 'POST', body: JSON.stringify(body) }),
+    matrix: (courseId: string) => request<any>(`/attendance/matrix/${courseId}`),
+    pending: (courseId: string) => request<any>(`/attendance/pending/${courseId}`),
+    review: (body: { courseId: string; sk: string; status: 'JUSTIFIED' | 'REJECTED'; evaluatorFeedback?: string }) =>
+      request<any>('/attendance/review', { method: 'PUT', body: JSON.stringify(body) }),
+    override: (body: { courseId: string; sk: string; overrideReason: string; extraHours?: number }) =>
+      request<any>('/attendance/override', { method: 'PUT', body: JSON.stringify(body) }),
+    risk: (courseId: string) => request<any>(`/attendance/risk/${courseId}`),
+    // Student
+    my: (courseId: string) => request<any>(`/attendance/my/${courseId}`),
+    presignJustify: (body: { courseId: string; sk: string; fileName: string; fileType: string }) =>
+      request<any>('/attendance/justify', { method: 'POST', body: JSON.stringify(body) }),
+    submitJustify: (body: { courseId: string; sk: string; documentKey: string }) =>
+      request<any>('/attendance/justify/submit', { method: 'PUT', body: JSON.stringify(body) }),
+    qrToken: (courseId: string) => request<any>(`/attendance/qr-token?courseId=${encodeURIComponent(courseId)}`),
+    qrRecord: (body: { token: string; sessionId: string; courseId: string }) =>
+      request<any>('/attendance/qr-record', { method: 'POST', body: JSON.stringify(body) }),
+    adminOverview: () => request<any>('/attendance/admin/overview'),
+    exportCsv: (courseId: string) => request<any>(`/attendance/export/${courseId}`),
+  },
+
   profile: {
     get: () => request<any>('/user/profile'),
     update: (body: {
@@ -388,9 +556,5 @@ export const api = {
     react: (chatId: string, ts: string, emoji: string) =>
       request<any>(`/messages/${chatId}/react`, { method: 'POST', body: JSON.stringify({ ts, emoji }) }),
     forum: (lessonId: string) => request<any>(`/messages/forum/${lessonId}`),
-  },
-  studyPlan: {
-    get: () => request<any>('/my-study-plan'),
-    refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
   },
 };

@@ -1,0 +1,317 @@
+// ─── study-plans/plans.ts ────────────────────────────────────────────────────
+// Student CRUD routes for weekly study plans.
+import { createId } from '@paralleldrive/cuid2';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
+import { ok, badRequest } from '../shared/response';
+import {
+  getStudyPlan, getStudyPlans, saveStudyPlan, updateStudyPlanField,
+  getMonday, type StudyPlan, type DayPlan, type PlanItem,
+} from '../shared/db-study-plans';
+import { createNotification, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
+import { isModuleUnlocked } from '../shared/db-progress';
+import { getPrismaClient } from '../shared/db-neon';
+
+const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const lambda = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+
+type Ctx = { method: string; path: string; body: any; userId: string; event: any };
+
+// Build an empty 7-day grid for a given weekOf (Monday ISO date)
+function buildEmptyDays(weekOf: string): DayPlan[] {
+  const days: DayPlan[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekOf + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + i);
+    days.push({ dayIndex: i, date: d.toISOString().slice(0, 10), items: [] });
+  }
+  return days;
+}
+
+/** Auto-populate a plan from course progress — used for student self-generation */
+async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; promptLines: string[] }> {
+  const prisma = await getPrismaClient();
+  const weekOf = getMonday();
+  const days = buildEmptyDays(weekOf);
+
+  const [courseIds, quizAttempts] = await Promise.all([
+    getEnrollments(userId),
+    getAllQuizAttemptsForUser(userId),
+  ]);
+  if (courseIds.length === 0) return { days, promptLines: [] };
+
+  const courses = await prisma.course.findMany({
+    where: { id: { in: courseIds } },
+    include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true }, orderBy: { order: 'asc' } } } } },
+  });
+
+  const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(userId, cid)));
+  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
+  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
+
+  const promptLines: string[] = [];
+  let dayIndex = 0;
+
+  for (const course of courses) {
+    promptLines.push(`Curso: ${course.title}`);
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+
+    for (const mod of (course as any).modules) {
+      // Only include content from modules the student can actually access
+      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+      if (!unlocked) break; // Sequential lock — all further modules are also locked
+
+      const quizPassed = passedModuleIds.has(mod.id);
+      if (quizPassed) continue; // Already finished this module
+
+      const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
+      const needsQuiz = pendingLessons.length === 0 && !quizPassed;
+
+      promptLines.push(`  Módulo ${mod.order}: ${mod.title} (${course.title})`);
+
+      if (pendingLessons.length > 0) {
+        // Distribute pending lessons across Mon–Fri
+        for (const lesson of pendingLessons.slice(0, 5)) {
+          const targetDay = Math.min(dayIndex % 5, 4);
+          days[targetDay].items.push({
+            id: createId(),
+            type: 'lesson',
+            title: lesson.title,
+            description: `${mod.title} · ${course.title}`,
+            courseId: course.id,
+            moduleId: mod.id,
+            lessonId: lesson.id,
+            pinned: false,
+            completed: false,
+            estimatedMinutes: 30,
+            source: 'auto',
+          });
+          dayIndex++;
+          promptLines.push(`    Lección pendiente: ${lesson.title}`);
+        }
+      }
+
+      if (needsQuiz) {
+        const targetDay = Math.min(dayIndex % 5, 4);
+        days[targetDay].items.push({
+          id: createId(),
+          type: 'quiz',
+          title: `Quiz — ${mod.title}`,
+          description: `${course.title}`,
+          courseId: course.id,
+          moduleId: mod.id,
+          pinned: false,
+          completed: false,
+          estimatedMinutes: 20,
+          source: 'auto',
+        });
+        dayIndex++;
+        promptLines.push(`    Quiz pendiente`);
+      }
+    }
+  }
+
+  return { days, promptLines };
+}
+
+async function triggerSuggestionsJob(userId: string, weekOf: string, promptLines: string[]): Promise<string> {
+  const jobId = `splan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await updateStudyPlanField(userId, weekOf, { suggestionsStatus: 'processing' });
+
+  const payload = {
+    _studyPlanSuggestionsWorker: true,
+    userId, weekOf, jobId,
+    promptLines,
+  };
+  await lambda.send(new LambdaInvokeCommand({
+    FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+    InvocationType: 'Event',
+    Payload: Buffer.from(JSON.stringify(payload)),
+  }));
+  return jobId;
+}
+
+export async function runSuggestionsWorker(userId: string, weekOf: string, promptLines: string[]): Promise<void> {
+  try {
+    const context = promptLines.join('\n');
+    const prompt = `Eres el Mentor de Lux Learning. El estudiante tiene este contenido pendiente esta semana:\n\n${context}\n\nGenera exactamente 5 sugerencias de "Sugerencias de Mentor" que le ayuden a avanzar CON LO QUE TIENE DISPONIBLE AHORA.\n\nREGLAS ESTRICTAS:\n- Solo recursos 100% educativos y verificados: Khan Academy, Coursera (cursos gratuitos), MIT OpenCourseWare, YouTube EDU (3Blue1Brown, CrashCourse, Professor Leonard, StatQuest, Organic Chemistry Tutor, etc.), libros clásicos de dominio público\n- NO inventes URLs. Si no conoces la URL exacta del recurso, omite el campo "url"\n- Mezcla obligatoria:\n  * 2 recursos externos concretos sobre los TEMAS del contenido pendiente (video de YouTube EDU o artículo verificado)\n  * 1 libro o lectura complementaria relacionada con el tema\n  * 2 estrategias de estudio accionables y realistas\n- Las estrategias deben ser específicas al material Y al tiempo disponible (ej: "Si tienes 30 min al día: completa una lección por día y reserva el viernes para el quiz")\n- Si el estudiante tiene material atrasado, incluye una estrategia de recuperación concreta y motivadora\n- Priorización dinámica: si hay mucho contenido, sugiere qué hacer primero según impacto en el avance del curso\n- Sin lenguaje profano, sin fuentes dudosas, sin contenido inapropiado\n- description: máx 2 frases, práctica y directa\n\nResponde SOLO con JSON array válido, sin texto extra:\n[{"title":"...","type":"article|video|exercise|book|strategy","description":"...","url":"..."},...]`;
+
+    const res = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 800,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    }));
+    const parsed = JSON.parse(new TextDecoder().decode(res.body));
+    const raw = parsed.content?.[0]?.text?.trim() ?? '[]';
+    const jsonStart = raw.indexOf('[');
+    const jsonEnd = raw.lastIndexOf(']');
+    const suggestions = jsonStart >= 0 && jsonEnd > jsonStart
+      ? JSON.parse(raw.slice(jsonStart, jsonEnd + 1))
+      : [];
+
+    await updateStudyPlanField(userId, weekOf, {
+      bedrockSuggestions: Array.isArray(suggestions) ? suggestions.slice(0, 5) : [],
+      suggestionsStatus: 'done',
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[StudyPlan] Suggestions worker error:', err);
+    await updateStudyPlanField(userId, weekOf, { suggestionsStatus: 'error', updatedAt: new Date().toISOString() });
+  }
+}
+
+export async function handleStudyPlans(ctx: Ctx): Promise<any | null> {
+  const { method, path, body, userId } = ctx;
+
+  // GET /study-plan?weeks=N — list last N weeks (default 4)
+  if (method === 'GET' && path === '/study-plan') {
+    const weeksParam = ctx.event.queryStringParameters?.weeks;
+    const weeks = Math.min(parseInt(weeksParam ?? '4', 10), 12);
+    const plans = await getStudyPlans(userId, weeks);
+    return ok(plans);
+  }
+
+  // GET /study-plan/current — current week (auto-create if missing)
+  if (method === 'GET' && path === '/study-plan/current') {
+    const weekOf = getMonday();
+    let plan = await getStudyPlan(userId, weekOf);
+    if (!plan) {
+      const { days, promptLines } = await buildPlanItems(userId);
+      plan = {
+        userId, weekOf,
+        planId: createId(),
+        days,
+        generatedBy: 'student',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveStudyPlan(plan);
+      // Kick off suggestions async
+      if (promptLines.length > 0) {
+        triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
+      }
+    } else if (!plan.suggestionsStatus || plan.suggestionsStatus === 'error') {
+      // Plan exists but has no suggestions or previous attempt errored — trigger/retry
+      const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
+      if (totalItems > 0) {
+        const promptLines = plan.days.flatMap((d) =>
+          d.items.map((i) => `${i.type}: ${i.title}${i.description ? ` (${i.description})` : ''}`)
+        );
+        triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
+        plan = { ...plan, suggestionsStatus: 'processing' };
+      }
+    }
+    return ok(plan);
+  }
+
+  // GET /study-plan/suggestions — poll suggestions status for current week
+  if (method === 'GET' && path === '/study-plan/suggestions') {
+    const weekOf = getMonday();
+    const plan = await getStudyPlan(userId, weekOf);
+    if (!plan) return ok({ status: 'none', suggestions: [] });
+    return ok({
+      status: plan.suggestionsStatus ?? 'none',
+      suggestions: plan.bedrockSuggestions ?? [],
+    });
+  }
+
+  // PUT /study-plan/:weekOf/items/:itemId — toggle pin / complete
+  const itemMatch = path.match(/^\/study-plan\/(\d{4}-\d{2}-\d{2})\/items\/([^/]+)$/);
+  if (itemMatch && method === 'PUT') {
+    const [, weekOf, itemId] = itemMatch;
+    const plan = await getStudyPlan(userId, weekOf!);
+    if (!plan) return badRequest('Plan not found');
+    if (plan.lockedBy && plan.lockedBy !== userId) return badRequest('Plan bloqueado por evaluador — solicita cambio');
+
+    const { pinned, completed } = body as { pinned?: boolean; completed?: boolean };
+    const days = plan.days.map((d) => ({
+      ...d,
+      items: d.items.map((item) => {
+        if (item.id !== itemId) return item;
+        return {
+          ...item,
+          ...(pinned !== undefined ? { pinned } : {}),
+          ...(completed !== undefined ? { completed } : {}),
+        };
+      }),
+    }));
+    await updateStudyPlanField(userId, weekOf!, { days, updatedAt: new Date().toISOString() });
+    return ok({ updated: true });
+  }
+
+  // POST /study-plan/:weekOf/items — add custom item
+  const addItemMatch = path.match(/^\/study-plan\/(\d{4}-\d{2}-\d{2})\/items$/);
+  if (addItemMatch && method === 'POST') {
+    const [, weekOf] = addItemMatch;
+    const plan = await getStudyPlan(userId, weekOf!);
+    if (!plan) return badRequest('Plan not found');
+    if (plan.lockedBy && plan.lockedBy !== userId) return badRequest('Plan bloqueado por evaluador — solicita cambio');
+
+    const { dayIndex, title, description, type, estimatedMinutes, courseId, moduleId, lessonId } = body;
+    if (typeof dayIndex !== 'number' || !title) return badRequest('dayIndex y title requeridos');
+    const idx = Math.max(0, Math.min(6, dayIndex));
+    const newItem: PlanItem = {
+      id: createId(),
+      type: type ?? 'custom',
+      title: String(title).slice(0, 120),
+      description: description ? String(description).slice(0, 300) : undefined,
+      courseId, moduleId, lessonId,
+      pinned: false, completed: false,
+      estimatedMinutes: estimatedMinutes ?? 30,
+      source: 'student',
+    };
+    const days = plan.days.map((d, i) =>
+      i === idx ? { ...d, items: [...d.items, newItem] } : d
+    );
+    await updateStudyPlanField(userId, weekOf!, { days, updatedAt: new Date().toISOString() });
+    return ok({ item: newItem });
+  }
+
+  // DELETE /study-plan/:weekOf/items/:itemId
+  const delMatch = path.match(/^\/study-plan\/(\d{4}-\d{2}-\d{2})\/items\/([^/]+)$/);
+  if (delMatch && method === 'DELETE') {
+    const [, weekOf, itemId] = delMatch;
+    const plan = await getStudyPlan(userId, weekOf!);
+    if (!plan) return badRequest('Plan not found');
+    if (plan.lockedBy && plan.lockedBy !== userId) return badRequest('Plan bloqueado — solicita cambio');
+
+    const days = plan.days.map((d) => ({ ...d, items: d.items.filter((i) => i.id !== itemId) }));
+    await updateStudyPlanField(userId, weekOf!, { days, updatedAt: new Date().toISOString() });
+    return ok({ deleted: true });
+  }
+
+  // POST /study-plan/request-change — student requests unlock from evaluator
+  if (method === 'POST' && path === '/study-plan/request-change') {
+    const { weekOf, note } = body as { weekOf?: string; note?: string };
+    const targetWeek = weekOf ?? getMonday();
+    const plan = await getStudyPlan(userId, targetWeek);
+    if (!plan) return badRequest('Plan not found');
+    if (!plan.lockedBy) return ok({ alreadyUnlocked: true });
+
+    await updateStudyPlanField(userId, targetWeek, {
+      changeRequested: true,
+      changeRequestNote: note ? String(note).slice(0, 400) : undefined,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Notify evaluator
+    await createNotification({
+      userId: plan.lockedBy,
+      notifId: `splan-chg-${createId()}`,
+      type: 'STUDY_PLAN_CHANGE_REQUEST',
+      message: `Un estudiante solicitó modificar su plan de estudio (semana ${targetWeek})${note ? `: "${note}"` : ''}`,
+      actionUrl: `/evaluator/students?userId=${userId}`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
+
+    return ok({ requested: true });
+  }
+
+  return null;
+}

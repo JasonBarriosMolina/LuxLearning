@@ -77,7 +77,7 @@ export default function AssignCoursesPage() {
   useEffect(() => {
     if (!isEvaluator) return;
     api.evaluator.groups.list().then((res: any) => {
-      const list: any[] = Array.isArray(res) ? res : (res?.groups ?? []);
+      const list: any[] = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : (res?.data?.groups ?? res?.groups ?? []);
       setMyGroups(list.map((g: any) => ({ id: g.id, name: g.name, color: g.color })));
     }).catch(() => {});
   }, [isEvaluator]);
@@ -85,7 +85,7 @@ export default function AssignCoursesPage() {
   useEffect(() => {
     if (!isEvaluator || selectedGroupId === 'all') { setGroupMemberIds(null); return; }
     api.evaluator.groups.members(selectedGroupId).then((res: any) => {
-      const members: any[] = res.members ?? res ?? [];
+      const members: any[] = Array.isArray(res.data) ? res.data : (res.data?.members ?? res.members ?? []);
       setGroupMemberIds(new Set(members.map((m: any) => m.userId)));
     }).catch(() => setGroupMemberIds(null));
   }, [isEvaluator, selectedGroupId]);

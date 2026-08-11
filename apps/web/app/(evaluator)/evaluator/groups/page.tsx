@@ -75,7 +75,8 @@ export default function EvaluatorGroupsPage() {
     setLoading(true);
     try {
       const data = await api.evaluator.groups.list();
-      setGroups(data.groups ?? data);
+      const list = (data as any)?.data ?? (data as any)?.groups ?? (Array.isArray(data) ? data : []);
+      setGroups(list);
     } finally {
       setLoading(false);
     }
@@ -88,7 +89,7 @@ export default function EvaluatorGroupsPage() {
       setMyCourses(list.filter((c: any) => c.isActive).map((c: any) => ({ id: c.id ?? c.courseId, title: c.title })));
     }).catch(() => {});
     api.evaluator.groups.studentPool().then((res: any) => {
-      setPool(Array.isArray(res) ? res : (res?.students ?? []));
+      setPool(Array.isArray(res) ? res : (res?.data ?? res?.students ?? []));
     }).catch(() => {});
   }, [loadGroups]);
 
@@ -99,7 +100,7 @@ export default function EvaluatorGroupsPage() {
       setLoadingMembers(groupId);
       try {
         const data = await api.evaluator.groups.members(groupId);
-        setMembersMap((prev) => ({ ...prev, [groupId]: data.members ?? data }));
+        setMembersMap((prev) => ({ ...prev, [groupId]: (data as any)?.data ?? (data as any)?.members ?? (Array.isArray(data) ? data : []) }));
       } finally {
         setLoadingMembers(null);
       }
@@ -156,7 +157,7 @@ export default function EvaluatorGroupsPage() {
     try {
       await api.evaluator.groups.addMembers(addMembersGroup, { userIds: selectedPool });
       const data = await api.evaluator.groups.members(addMembersGroup);
-      setMembersMap((prev) => ({ ...prev, [addMembersGroup]: data.members ?? data }));
+      setMembersMap((prev) => ({ ...prev, [addMembersGroup]: (data as any)?.data ?? (data as any)?.members ?? (Array.isArray(data) ? data : []) }));
       setAddMembersGroup(null);
       loadGroups();
     } catch (e: any) {
@@ -197,7 +198,7 @@ export default function EvaluatorGroupsPage() {
     try {
       await api.evaluator.groups.enroll(enrollModal.groupId, { userIds: selectedEnrollIds, courseId: selectedCourseId });
       const data = await api.evaluator.groups.members(enrollModal.groupId);
-      setMembersMap((prev) => ({ ...prev, [enrollModal.groupId]: data.members ?? data }));
+      setMembersMap((prev) => ({ ...prev, [enrollModal.groupId]: (data as any)?.data ?? (data as any)?.members ?? (Array.isArray(data) ? data : []) }));
       setEnrollModal(null);
     } catch (e: any) {
       alert(e.message ?? 'Error al inscribir');

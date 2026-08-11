@@ -29,6 +29,22 @@ function formatTime(iso?: string): string {
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const msgDay = new Date(d); msgDay.setHours(0, 0, 0, 0);
+  if (msgDay.getTime() === today.getTime()) return 'Hoy';
+  if (msgDay.getTime() === yesterday.getTime()) return 'Ayer';
+  return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function msgDayKey(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
 export function CommunicationsPanel({ role, currentUserId }: Props) {
   const searchParams = useSearchParams();
   const [chats, setChats] = useState<any[]>([]);
@@ -357,9 +373,20 @@ export function CommunicationsPanel({ role, currentUserId }: Props) {
                     const reactions: Record<string, string[]> = msg.reactions ?? {};
                     const isHovered = reactionTarget === msg.ts;
                     const QUICK_EMOJIS = ['👍', '❤️', '😂', '🎉', '👏'];
+                    const showDateDivider = i === 0
+                      || msgDayKey(msg.createdAt) !== msgDayKey(messages[i - 1]?.createdAt);
                     return (
+                      <div key={msg.ts ?? i}>
+                        {showDateDivider && msg.createdAt && (
+                          <div className="flex items-center gap-3 my-3">
+                            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700 opacity-60" />
+                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-2 select-none">
+                              {formatDateLabel(msg.createdAt)}
+                            </span>
+                            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700 opacity-60" />
+                          </div>
+                        )}
                       <div
-                        key={msg.ts ?? i}
                         className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}
                         onMouseEnter={() => setReactionTarget(msg.ts)}
                         onMouseLeave={() => setReactionTarget(null)}
@@ -415,6 +442,7 @@ export function CommunicationsPanel({ role, currentUserId }: Props) {
                             )}
                           </div>
                         </div>
+                      </div>
                       </div>
                     );
                   })

@@ -32,7 +32,7 @@ export default function AdminGroupsPage() {
     setLoading(true);
     try {
       const data = await api.admin.groups.list();
-      setGroups(data.groups ?? data);
+      setGroups(data.data ?? data.groups ?? data);
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export default function AdminGroupsPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await api.admin.groups.create({ name: form.name.trim(), description: form.description.trim() || undefined, color: form.color });
+      await api.admin.groups.create({ name: form.name.trim(), description: form.description.trim() || undefined, color: form.color } as any);
       setShowModal(false);
       setForm({ name: '', description: '', color: COLOR_PALETTE[0] });
       load();

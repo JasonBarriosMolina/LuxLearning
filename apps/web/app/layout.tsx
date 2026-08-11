@@ -45,9 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AmplifyProvider>
           <LanguageProvider>
+            <Watermark />
             {children}
             <PwaUpdatePrompt />
-            <Watermark />
           </LanguageProvider>
         </AmplifyProvider>
       </body>

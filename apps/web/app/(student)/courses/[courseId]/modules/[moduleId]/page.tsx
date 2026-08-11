@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -11,6 +11,9 @@ import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Badge, ReflectionStatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { VoiceInterview } from '@/components/ui/VoiceInterview';
+import { LuxMentorClass } from '@/components/ui/LuxMentorClass';
+import { EvidenceCard } from '@/components/ui/EvidenceCard';
 import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
@@ -21,19 +24,39 @@ export default function ModulePage() {
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  const [interviews, setInterviews] = useState<any[]>([]);
+  const [classSessions, setClassSessions] = useState<any[]>([]);
+
+  const loadInterviews = useCallback(async () => {
+    try {
+      const res = await api.interviews.list(moduleId);
+      setInterviews((res as any).data ?? []);
+    } catch {}
+  }, [moduleId]);
+
+  const loadClassSessions = useCallback(async () => {
+    try {
+      const res = await api.classes.list(moduleId);
+      setClassSessions((res as any).data ?? []);
+    } catch {}
+  }, [moduleId]);
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
       api.courses.get(courseId),
       api.lessons.favorites(),
-    ]).then(([courseRes, favRes]) => {
+      api.interviews.list(moduleId).catch(() => ({ data: [] })),
+      api.classes.list(moduleId).catch(() => ({ data: [] })),
+    ]).then(([courseRes, favRes, intRes, classRes]) => {
       setCourse((courseRes as any).data);
       const favs: any[] = (favRes as any).data ?? [];
       setFavIds(new Set(favs.filter((f: any) => f?.type === 'lesson').map((f: any) => f?.id)));
+      setInterviews((intRes as any).data ?? []);
+      setClassSessions((classRes as any).data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [courseId, lang]);
+  }, [courseId, moduleId, lang]);
 
   const toggleLessonFav = async (e: React.MouseEvent, lesson: any) => {
     e.preventDefault();
@@ -269,6 +292,39 @@ export default function ModulePage() {
           {!module.quizPassed && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
+
+      {/* Evidence submissions — one card per EVIDENCE eval event linked to this module */}
+      {course?.evaluationEvents
+        ?.filter((e: any) => e.type === 'EVIDENCE' && e.moduleId === moduleId)
+        .map((e: any) => (
+          <EvidenceCard
+            key={e.id}
+            courseId={courseId}
+            moduleId={moduleId}
+            evalName={e.name}
+            instructions={e.instructions}
+          />
+        ))}
+
+      {/* Voice Interview — shown when course has INTERVIEW evaluation events */}
+      {course?.evaluationEvents?.some((e: any) => e.type === 'INTERVIEW') && (
+        <VoiceInterview
+          courseId={courseId}
+          moduleId={moduleId}
+          interviews={interviews}
+          onCompleted={loadInterviews}
+        />
+      )}
+
+      {/* Lux Mentor Class — shown when course has CLASS evaluation events for this module */}
+      {course?.evaluationEvents?.some((e: any) => e.type === 'CLASS' && (e.moduleId === moduleId || !e.moduleId)) && (
+        <LuxMentorClass
+          courseId={courseId}
+          moduleId={moduleId}
+          sessions={classSessions}
+          onCompleted={loadClassSessions}
+        />
+      )}
     </div>
   );
 }
