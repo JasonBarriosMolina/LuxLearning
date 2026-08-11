@@ -31,7 +31,7 @@ export function ComplianceWidget() {
     setLoading(true);
     try {
       const res: any = await api.evaluator.studyPlan.compliance();
-      setData(res);
+      setData(res.data ?? res);
     } catch { /* non-fatal */ } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export function ComplianceWidget() {
     );
   }
 
-  const count = data?.compliance.length ?? 0;
+  const count = data?.compliance?.length ?? 0;
   const hasIssues = count > 0;
 
   return (
