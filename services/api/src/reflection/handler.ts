@@ -8,16 +8,11 @@ import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, i
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
+import { getVapidKeys } from '../shared/vapid';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
-// Configure web-push VAPID
-const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? '';
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? '';
-const VAPID_EMAIL = process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com';
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
-}
+// VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -195,7 +190,9 @@ Responde ÚNICAMENTE con JSON válido:
       // Use IIFE so any synchronous throw (e.g. missing VAPID config) is also caught
       void (async () => {
         try {
-          if (!VAPID_PUBLIC || !VAPID_PRIVATE) return; // VAPID not configured — skip silently
+          const vapid = await getVapidKeys().catch(() => null);
+          if (!vapid) return; // SM unavailable — skip push silently
+          webpush.setVapidDetails(vapid.email, vapid.public, vapid.private);
           const subs = await getPushSubscriptionsByRole('EVALUATOR');
           if (!subs.length) return;
           const payload = JSON.stringify({

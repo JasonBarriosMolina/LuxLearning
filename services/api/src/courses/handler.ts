@@ -10,16 +10,13 @@ import { handleClasses } from './classes';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
+import { getVapidKeys } from '../shared/vapid';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
-const VAPID_PUBLIC_CO = process.env.VAPID_PUBLIC_KEY ?? '';
-const VAPID_PRIVATE_CO = process.env.VAPID_PRIVATE_KEY ?? '';
-if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
-  webpush.setVapidDetails(process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com', VAPID_PUBLIC_CO, VAPID_PRIVATE_CO);
-}
+// VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
 const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
@@ -375,7 +372,9 @@ export const handler = async (event: Event) => {
                 status: 'completed', transcript, messages, aiAnalysis, aiScore,
                 durationSeconds: durationSec, completedAt: new Date().toISOString(),
               });
-              if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+              const vapidCs = await getVapidKeys().catch(() => null);
+              if (vapidCs) {
+                webpush.setVapidDetails(vapidCs.email, vapidCs.public, vapidCs.private);
                 const subs = await getPushSubscriptionsByUserId(classSession.userId);
                 const payload = JSON.stringify({ title: 'Clase completada', body: 'Tu sesión con Lux Mentor ha sido procesada. Tu evaluador revisará tu resultado pronto.' });
                 await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
@@ -439,7 +438,9 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
             });
 
             // Push notification to student
-            if (VAPID_PUBLIC_CO && VAPID_PRIVATE_CO) {
+            const vapidIv = await getVapidKeys().catch(() => null);
+            if (vapidIv) {
+              webpush.setVapidDetails(vapidIv.email, vapidIv.public, vapidIv.private);
               const subs = await getPushSubscriptionsByUserId(interview.userId);
               const payload = JSON.stringify({ title: 'Entrevista completada', body: 'Tu entrevista oral ha sido procesada. El evaluador revisará tu resultado pronto.' });
               await Promise.allSettled(subs.map((sub: any) =>

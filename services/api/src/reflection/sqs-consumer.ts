@@ -5,6 +5,7 @@ import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/cli
 import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang, updateAttendanceRecord } from '../shared/db-dynamo';
+import { getVapidKeys } from '../shared/vapid';
 import { setCurrentEnv, AppEnv } from '../shared/env-context';
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from './detect-ai';
@@ -16,12 +17,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
-const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY ?? '';
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? '';
-const VAPID_EMAIL = process.env.VAPID_EMAIL ?? 'mailto:admin@luxlearning.com';
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
-}
+// VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
 // AI detection thresholds:
 // ≥ 85%  → REJECTED automatically
@@ -289,7 +285,9 @@ async function processRecord(record: SQSRecord) {
       console.warn('[AI Detection] Failed to send email to evaluator:', e);
     }
     try {
-      if (VAPID_PUBLIC && VAPID_PRIVATE) {
+      const vapid = await getVapidKeys().catch(() => null);
+      if (vapid) {
+        webpush.setVapidDetails(vapid.email, vapid.public, vapid.private);
         const subs = await getPushSubscriptionsByUserId(evaluatorId);
         if (subs.length > 0) {
           const pushTitle = evaluatorLang === 'en'
