@@ -59,10 +59,19 @@ export const handler = async (event: Event) => {
     // POST /reflection/ai-preview — must be checked BEFORE the generic POST /reflection block
     if (method === 'POST' && path === '/reflection/ai-preview') {
       const body = JSON.parse(event.body ?? '{}');
-      const { text, moduleTitle } = body as { text: string; moduleTitle?: string };
+      // Accept moduleId (preferred) or legacy moduleTitle from body
+      // moduleId is loaded from DB to prevent prompt injection via untrusted body input
+      const { text, moduleId: previewModuleId } = body as { text: string; moduleId?: string };
       if (!text || countWords(text) < 20) return badRequest('Se necesitan al menos 20 palabras para analizar');
 
-      const prompt = `Eres un evaluador pedagógico especializado en el tema de "${moduleTitle ?? 'este módulo'}". Un estudiante acaba de estudiar este módulo y está escribiendo su reflexión de aprendizaje. Quiere saber si puede mejorarla antes de enviarla.
+      // Load module title from DB — never trust user-supplied title in prompt
+      let safeModuleTitle = 'este módulo';
+      if (previewModuleId) {
+        const mod = await prisma.module.findUnique({ where: { id: previewModuleId }, select: { title: true } });
+        safeModuleTitle = mod?.title ?? 'este módulo';
+      }
+
+      const prompt = `Eres un evaluador pedagógico especializado en el tema de "${safeModuleTitle}". Un estudiante acaba de estudiar este módulo y está escribiendo su reflexión de aprendizaje. Quiere saber si puede mejorarla antes de enviarla.
 
 Una buena reflexión de aprendizaje debe:
 - Demostrar comprensión real de los conceptos del módulo (no copiarlos)
@@ -75,7 +84,7 @@ REFLEXIÓN DEL ESTUDIANTE:
 ${text.slice(0, 3000)}
 """
 
-Evalúa si esta reflexión demuestra aprendizaje genuino sobre "${moduleTitle ?? 'el módulo'}" y proporciona:
+Evalúa si esta reflexión demuestra aprendizaje genuino sobre "${safeModuleTitle}" y proporciona:
 1. Una evaluación honesta pero motivadora (1-2 oraciones)
 2. Exactamente 3 sugerencias específicas y accionables para mejorarla
 

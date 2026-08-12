@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -55,6 +55,7 @@ export const handler = async (event: Event) => {
   if (event.requestContext.http.method === 'OPTIONS') return cors();
 
   const userId = event.requestContext.authorizer?.lambda?.userId;
+  const role = event.requestContext.authorizer?.lambda?.role ?? '';
   const method = event.requestContext.http.method;
   const path = event.rawPath;
   const rawLang = event.queryStringParameters?.lang ?? 'es';
@@ -65,7 +66,6 @@ export const handler = async (event: Event) => {
     const prisma = await getPrismaClient();
     // GET /courses
     if (path === '/courses' || path === '/courses/') {
-      const role = event.requestContext.authorizer?.lambda?.role;
       let courseIdFilter: string[] | undefined;
 
       // Students see only their enrolled courses — empty list if no enrollments
@@ -168,6 +168,11 @@ export const handler = async (event: Event) => {
       ], lang) : undefined;
 
       if (userId) {
+        // Enrollment check — students can only view courses they're enrolled in
+        if (role === 'STUDENT') {
+          const enrolled = await getEnrollments(userId);
+          if (!enrolled.includes(courseId)) return forbidden('No estás inscrito en este curso');
+        }
         // Enrich with unlock status
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
         const lessonProgress = await getLessonProgress(userId, courseId);
@@ -201,7 +206,9 @@ export const handler = async (event: Event) => {
                 ...l,
                 completed: completedLessonIds.has(l.id),
               })),
-              questions: applyTranslations(mod.questions, 'question', translations ?? new Map()),
+              // Strip correctIndex for students — answers must not be exposed before quiz submission
+              questions: applyTranslations(mod.questions, 'question', translations ?? new Map())
+                .map(role === 'STUDENT' ? ({ correctIndex: _ci, ...q }: any) => q : (q: any) => q),
             };
           })
         );
@@ -231,6 +238,11 @@ export const handler = async (event: Event) => {
     const courseResourcesMatch = path.match(/^\/courses\/([^/]+)\/resources$/);
     if (courseResourcesMatch) {
       const courseId = courseResourcesMatch[1]!;
+      // Enrollment check — resources are restricted to enrolled students
+      if (userId && role === 'STUDENT') {
+        const enrolled = await getEnrollments(userId);
+        if (!enrolled.includes(courseId)) return forbidden('No estás inscrito en este curso');
+      }
       try {
         const resources = await getResourcesByCourse(courseId);
         return ok(resources);
@@ -255,6 +267,8 @@ export const handler = async (event: Event) => {
       const body = JSON.parse(event.body ?? '{}');
       const { courseId, moduleId, fileName, fileType } = body;
       if (!courseId || !moduleId || !fileName || !fileType) return badRequest('courseId, moduleId, fileName, fileType required');
+      const ALLOWED_SUBMIT_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'application/zip']);
+      if (!ALLOWED_SUBMIT_TYPES.has(fileType)) return badRequest('Tipo de archivo no permitido');
       const submissionId = randomUUID();
       const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
       const s3Key = `submissions/${courseId}/${moduleId}/${userId}/${submissionId}.${ext}`;
@@ -292,15 +306,21 @@ export const handler = async (event: Event) => {
 
     // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
     if (path === '/vapi/webhook' && method === 'POST') {
-      // Verify Vapi webhook signature if secret is configured
-      if (VAPI_WEBHOOK_SECRET) {
-        const { createHmac } = await import('crypto');
-        const rawBody = event.body ?? '';
-        const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
-        const expectedSignature = createHmac('sha256', VAPI_WEBHOOK_SECRET).update(rawBody).digest('hex');
-        if (incomingSignature !== expectedSignature) {
-          return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
-        }
+      // Fail closed: reject all webhooks if HMAC secret is not configured
+      if (!VAPI_WEBHOOK_SECRET) {
+        console.error('[vapi] VAPI_WEBHOOK_SECRET not configured — rejecting webhook');
+        return { statusCode: 401, body: JSON.stringify({ error: 'Webhook not configured' }) };
+      }
+      // Verify signature with constant-time comparison (prevents timing attacks)
+      const { createHmac } = await import('crypto');
+      const rawBody = event.body ?? '';
+      const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
+      const expectedSignature = createHmac('sha256', VAPI_WEBHOOK_SECRET).update(rawBody).digest('hex');
+      const expectedBuf = Buffer.from(expectedSignature, 'hex');
+      const incomingBuf = Buffer.from(incomingSignature, 'hex');
+      const isValidSig = expectedBuf.length > 0 && expectedBuf.length === incomingBuf.length && timingSafeEqual(expectedBuf, incomingBuf);
+      if (!isValidSig) {
+        return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
       }
 
       let body: any = {};
@@ -466,6 +486,8 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
 
       // Reuse existing pending interview to avoid duplicate DDB records per session
       const existing = await listMyInterviews(userId, moduleId);
+      // Rate limit: max 5 interviews per module (including completed)
+      if (existing.length >= 5) return badRequest('Límite de entrevistas alcanzado para este módulo');
       const reuseableInterview = existing.find((iv) => iv.status === 'pending' || iv.status === 'in_progress');
 
       const interviewId = reuseableInterview?.interviewId ?? randomUUID();

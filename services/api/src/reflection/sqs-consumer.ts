@@ -2,7 +2,7 @@ import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import webpush from 'web-push';
 import { createId } from '@paralleldrive/cuid2';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang, updateAttendanceRecord } from '../shared/db-dynamo';
 import { setCurrentEnv, AppEnv } from '../shared/env-context';
@@ -37,6 +37,14 @@ async function processAttendanceOcr(payload: {
 }): Promise<void> {
   const { courseId, sk, userId, sessionDate, documentKey, studentEmail } = payload;
   console.log(`[AttendanceOCR] Processing ${documentKey} for user ${userId}`);
+
+  // Size check before download — reject oversized files to avoid Bedrock payload limit
+  const head = await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: documentKey }));
+  if ((head.ContentLength ?? 0) > 10 * 1024 * 1024) { // 10 MB max
+    await updateAttendanceRecord(courseId, sk, { aiOcrData: {}, status: 'ERROR', aiOcrError: 'Archivo demasiado grande (máx 10MB)' });
+    console.warn(`[AttendanceOCR] File too large: ${head.ContentLength} bytes — skipping Bedrock`);
+    return;
+  }
 
   // Download document from S3
   const s3Obj = await s3.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: documentKey }));

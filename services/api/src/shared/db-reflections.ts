@@ -104,6 +104,9 @@ export async function getAllReflections(): Promise<Reflection[]> {
     const result = await ddb.send(new ScanCommand({
       TableName: TABLES.REFLECTIONS,
       ExclusiveStartKey: lastKey,
+      // Exclude 'text' (reflection body, 1000+ words) from list scan — only load on individual fetch
+      ProjectionExpression: 'userId, moduleId, #s, evaluatorId, submittedAt, deadline, aiSuspect, wordCount, studentEmail, moduleTitle, courseTitle, analyzedAt, reviewedAt, aiResult, qualityScore, reconsiderationReason',
+      ExpressionAttributeNames: { '#s': 'status' },
     }));
     (result.Items ?? []).forEach((item) => items.push(item as unknown as Reflection));
     lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;

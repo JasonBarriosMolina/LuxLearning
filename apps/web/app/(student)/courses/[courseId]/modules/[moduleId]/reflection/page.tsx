@@ -57,7 +57,7 @@ export default function ReflectionPage() {
     setAnalyzing(true);
     setAiPreview(null);
     try {
-      const res = await api.reflection.aiPreview(text, module?.title);
+      const res = await api.reflection.aiPreview(text, moduleId);
       setAiPreview((res as any).data ?? res);
       setShowAiPanel(true);
     } catch {

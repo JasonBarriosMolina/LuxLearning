@@ -92,8 +92,8 @@ export const api = {
       request('/reflection', { method: 'POST', body: JSON.stringify(body) }),
     get: (moduleId: string) =>
       request(`/reflection/${moduleId}`),
-    aiPreview: (text: string, moduleTitle?: string) =>
-      request<any>('/reflection/ai-preview', { method: 'POST', body: JSON.stringify({ text, moduleTitle }) }),
+    aiPreview: (text: string, moduleId?: string) =>
+      request<any>('/reflection/ai-preview', { method: 'POST', body: JSON.stringify({ text, moduleId }) }),
   },
 
   submissions: {

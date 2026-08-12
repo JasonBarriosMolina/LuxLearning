@@ -65,6 +65,11 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
     const reflection = await getReflection(studentId, moduleId);
     if (!reflection) return notFound('Reflection not found');
 
+    // Ownership check: evaluators can only review reflections assigned to them
+    if (!isAdminRole && reflection.evaluatorId !== userId) {
+      return forbidden('Esta reflexión no está asignada a tu evaluación');
+    }
+
     if (reflection.status !== 'PENDING_EVAL') {
       return badRequest(`Cannot review reflection with status: ${reflection.status}`);
     }

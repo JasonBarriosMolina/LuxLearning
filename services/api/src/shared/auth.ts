@@ -11,7 +11,10 @@ let JWKS: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function getJWKS() {
   if (!JWKS) {
-    JWKS = createRemoteJWKSet(new URL(JWKS_URL));
+    JWKS = createRemoteJWKSet(new URL(JWKS_URL), {
+      timeoutDuration: 5000,   // 5s max — prevents authorizer hang if Cognito slow
+      cacheMaxAge: 600_000,    // cache JWKS for 10 minutes between invocations
+    });
   }
   return JWKS;
 }

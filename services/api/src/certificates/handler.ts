@@ -2,7 +2,7 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getCertificate, getCertificatesByUser, getCertificateByUserAndCourse, saveCertificate, getReflection, getCertTemplate, saveCertTemplate, type CertTemplate } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
-import { ok, notFound, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { ok, notFound, badRequest, forbidden, serverError, cors, setRequestOrigin, getCorsOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -178,7 +178,7 @@ export const handler = async (event: Event) => {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="certificado-${certId}.pdf"`,
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': getCorsOrigin(origin),
         },
         body: pdfBuffer.toString('base64'),
         isBase64Encoded: true,

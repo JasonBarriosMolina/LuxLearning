@@ -13,7 +13,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
 ];
 
-function getCorsOrigin(requestOrigin?: string): string {
+export function getCorsOrigin(requestOrigin?: string): string {
   if (!requestOrigin) return ALLOWED_ORIGINS[0]!;
   return ALLOWED_ORIGINS.includes(requestOrigin) ? requestOrigin : ALLOWED_ORIGINS[0]!;
 }
@@ -96,7 +96,12 @@ export function notFound(error = 'Not found'): APIGatewayProxyResultV2 {
 }
 
 export function serverError(error: unknown): APIGatewayProxyResultV2 {
-  console.error('[Lambda Error]', error);
+  // Sanitize before logging — strip DB credentials that may appear in error messages
+  const raw = error instanceof Error ? error.message : String(error ?? 'Internal server error');
+  const sanitized = raw
+    .replace(/postgresql:\/\/[^@]+@/g, 'postgresql://***@')
+    .replace(/password=[^&\s"']+/gi, 'password=***');
+  console.error('[Lambda Error]', sanitized);
   return {
     statusCode: 500,
     headers: buildCorsHeaders(),
