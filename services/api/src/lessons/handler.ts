@@ -20,6 +20,7 @@ import { UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -183,6 +184,9 @@ export const handler = async (event: Event) => {
         })),
         { role: 'user', content: String(message) },
       ];
+
+      // Rate limit: 20 chat messages per user per hour
+      if (!await checkRateLimit(userId, 'bedrock-chat', 20, 3600)) return tooManyRequests();
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({

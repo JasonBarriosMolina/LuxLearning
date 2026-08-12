@@ -5,6 +5,7 @@ import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks 
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -168,6 +169,9 @@ Responde ÚNICAMENTE con JSON (sin markdown):
   "overallPattern": "1 oración sobre el patrón general de errores (o null si son errores aislados)"
 }
 Máximo ${Math.min(incorrect.length, 3)} gaps.`;
+
+      // Rate limit: 20 gap analysis calls per user per hour
+      if (!await checkRateLimit(userId, 'bedrock-gap', 20, 3600)) return tooManyRequests();
 
       try {
         const bedrockRes = await bedrock.send(new InvokeModelCommand({
