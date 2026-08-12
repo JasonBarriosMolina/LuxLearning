@@ -11,6 +11,7 @@ import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidde
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
 import { getVapidKeys } from '../shared/vapid';
+import { getVapiKeys } from '../shared/vapi-keys';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
@@ -18,9 +19,8 @@ const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ??
 
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
-const VAPI_API_KEY = process.env.VAPI_API_KEY ?? '';
-const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID ?? '';
-const VAPI_WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET ?? '';
+// Vapi credentials loaded lazily from Secrets Manager via shared/vapi-keys.ts
+// VAPI_PUBLIC_KEY stays in env — it's returned to the frontend (not sensitive)
 
 /** Applies cached/fresh translations over a list of {id, ...fields} entities, mutating nothing — returns new objects. */
 function applyTranslations<T extends { id: string }>(
@@ -303,8 +303,10 @@ export const handler = async (event: Event) => {
 
     // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
     if (path === '/vapi/webhook' && method === 'POST') {
-      // Fail closed: reject all webhooks if HMAC secret is not configured
-      if (!VAPI_WEBHOOK_SECRET) {
+      // Load webhook secret from SM — fail closed if unavailable or empty
+      const vapiSecrets = await getVapiKeys().catch(() => null);
+      const vapiWebhookSecret = vapiSecrets?.webhookSecret ?? '';
+      if (!vapiWebhookSecret) {
         console.error('[vapi] VAPI_WEBHOOK_SECRET not configured — rejecting webhook');
         return { statusCode: 401, body: JSON.stringify({ error: 'Webhook not configured' }) };
       }
@@ -312,7 +314,7 @@ export const handler = async (event: Event) => {
       const { createHmac } = await import('crypto');
       const rawBody = event.body ?? '';
       const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
-      const expectedSignature = createHmac('sha256', VAPI_WEBHOOK_SECRET).update(rawBody).digest('hex');
+      const expectedSignature = createHmac('sha256', vapiWebhookSecret).update(rawBody).digest('hex');
       const expectedBuf = Buffer.from(expectedSignature, 'hex');
       const incomingBuf = Buffer.from(incomingSignature, 'hex');
       const isValidSig = expectedBuf.length > 0 && expectedBuf.length === incomingBuf.length && timingSafeEqual(expectedBuf, incomingBuf);

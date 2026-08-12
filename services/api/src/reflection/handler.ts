@@ -59,6 +59,7 @@ export const handler = async (event: Event) => {
       // moduleId is loaded from DB to prevent prompt injection via untrusted body input
       const { text, moduleId: previewModuleId } = body as { text: string; moduleId?: string };
       if (!text || countWords(text) < 20) return badRequest('Se necesitan al menos 20 palabras para analizar');
+      if (text.length > 15000) return badRequest('Texto demasiado largo (máx 15000 caracteres)');
 
       // Load module title from DB — never trust user-supplied title in prompt
       let safeModuleTitle = 'este módulo';

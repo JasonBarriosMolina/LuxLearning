@@ -9,6 +9,7 @@ import {
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, notFound, serverError } from '../shared/response';
+import { logAudit } from '../shared/audit';
 import { createId } from '@paralleldrive/cuid2';
 
 export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
@@ -224,6 +225,15 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
       console.warn('[Evaluator] Email send failed (non-fatal):', emailErr);
     }
 
+    // Audit log — non-fatal
+    logAudit({
+      actorId: userId,
+      action: action === 'APPROVE' ? 'REFLECTION_APPROVED' : 'REFLECTION_REJECTED',
+      targetId: studentId,
+      targetType: 'reflection',
+      metadata: { moduleId, qualityScore },
+    }).catch(() => {});
+
     return ok({ status: newStatus, reviewedAt, certId });
   }
 
@@ -302,6 +312,15 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
     } catch (e) {
       console.warn('[Evaluator] Reconsider post-processing failed (non-fatal):', e);
     }
+
+    // Audit log — non-fatal
+    logAudit({
+      actorId: userId,
+      action: 'REFLECTION_RECONSIDERED',
+      targetId: studentId,
+      targetType: 'reflection',
+      metadata: { moduleId },
+    }).catch(() => {});
 
     return ok({ status: 'APPROVED', reviewedAt, certId });
   }

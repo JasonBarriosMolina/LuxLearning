@@ -167,6 +167,7 @@ export const handler = async (event: Event) => {
     if (method === 'POST' && path.includes('/chat')) {
       const { lessonId, lessonTitle, lessonContent, moduleTitle, history, message, lang } = JSON.parse(event.body ?? '{}');
       if (!message) return badRequest('message is required');
+      if (String(message).length > 2000) return badRequest('Mensaje demasiado largo (máx 2000 caracteres)');
 
       const isEn = lang === 'en';
       // Cost optimization: truncate lessonContent to 1200 chars (was 3000) — saves ~400 input tokens/msg
@@ -185,8 +186,8 @@ export const handler = async (event: Event) => {
         { role: 'user', content: String(message) },
       ];
 
-      // Rate limit: 20 chat messages per user per hour
-      if (!await checkRateLimit(userId, 'bedrock-chat', 20, 3600)) return tooManyRequests();
+      // Rate limit: 60 chat messages per user per hour (generous for study sessions)
+      if (!await checkRateLimit(userId, 'bedrock-chat', 60, 3600)) return tooManyRequests();
 
       const bedrockRes = await bedrock.send(
         new InvokeModelCommand({
