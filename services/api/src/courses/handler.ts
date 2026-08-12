@@ -14,7 +14,7 @@ import { getVapidKeys } from '../shared/vapid';
 import { getVapiKeys } from '../shared/vapi-keys';
 
 const s3 = new S3Client({ region: 'us-east-1' });
-const SUBMISSIONS_BUCKET = 'lux-learning-submissions';
+const SUBMISSIONS_BUCKET = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts

@@ -17,7 +17,7 @@ export { webpush };
 export const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 export const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const s3Ev = new S3Client({ region: 'us-east-1' });
-export const SUBMISSIONS_BUCKET_EV = 'lux-learning-submissions';
+export const SUBMISSIONS_BUCKET_EV = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';
 export const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 export const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
