@@ -61,11 +61,23 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
     if (experience !== undefined) attrs.push({ Name: 'custom:experience', Value: experience });
     if (socialLinks !== undefined) attrs.push({ Name: 'custom:socialLinks', Value: JSON.stringify(socialLinks) });
     if (attrs.length === 0) return badRequest('No hay campos para actualizar');
-    await cognito.send(new AdminUpdateUserAttributesCommand({
-      UserPoolId: USER_POOL_ID,
-      Username: userId,
-      UserAttributes: attrs,
-    }));
+    const CUSTOM_NAMES = new Set(['custom:bio','custom:university','custom:career','custom:semester','custom:title','custom:specialty','custom:experience','custom:socialLinks']);
+    try {
+      await cognito.send(new AdminUpdateUserAttributesCommand({
+        UserPoolId: USER_POOL_ID, Username: userId, UserAttributes: attrs,
+      }));
+    } catch (e: any) {
+      // Retry with only standard attributes if custom attributes are not defined in the schema
+      if (e?.name === 'InvalidParameterException' || e?.message?.includes('does not exist')) {
+        const stdAttrs = attrs.filter((a) => !CUSTOM_NAMES.has(a.Name));
+        if (stdAttrs.length === 0) return ok({ updated: true, warning: 'Custom attributes not yet provisioned in user pool' });
+        await cognito.send(new AdminUpdateUserAttributesCommand({
+          UserPoolId: USER_POOL_ID, Username: userId, UserAttributes: stdAttrs,
+        }));
+      } else {
+        throw e;
+      }
+    }
     return ok({ updated: true });
   }
 

@@ -243,7 +243,7 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
 
     if (method === 'PUT') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-      const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate, isDraft, isArchived } = body;
+      const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate, isDraft, isArchived, pilotoAutomatico } = body;
       // Only validate required fields when they're part of a full update (title/slug/description explicitly sent)
       const isFullUpdate = 'title' in body || 'slug' in body || 'description' in body;
       if (isFullUpdate && (!title || !slug || !description)) return badRequest('title, slug y description son requeridos');
@@ -259,6 +259,11 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
       if (isActive !== undefined) updateData.isActive = isActive;
       if (isDraft !== undefined) updateData.isDraft = isDraft;
       if (isArchived !== undefined) updateData.isArchived = isArchived;
+      if ('pilotoAutomatico' in body) updateData.pilotoAutomatico = pilotoAutomatico;
+      // Partial startDate/closeDate update (e.g. clearing startDate without sending full body)
+      if (!isFullUpdate && 'startDate' in body) updateData.startDate = startDate ? new Date(startDate) : null;
+      if (!isFullUpdate && 'closeDate' in body) updateData.closeDate = closeDate ? new Date(closeDate) : null;
+      if (Object.keys(updateData).length === 0) return badRequest('No hay campos para actualizar');
       const course = await prisma.course.update({ where: { id: courseId }, data: updateData });
       await invalidateTranslation('course', courseId);
       return ok(course);
