@@ -466,7 +466,7 @@ function CourseWizardInner() {
             <p className="text-sm text-blue-700 dark:text-blue-300">{s('Cargando datos del curso...', 'Loading course data...')}</p>
           </div>
         )}
-        <StepBar current={step} />
+        <StepBar current={step} onStep={(n) => setStep(n as typeof step)} />
 
         <div>
           {step === 1 && (

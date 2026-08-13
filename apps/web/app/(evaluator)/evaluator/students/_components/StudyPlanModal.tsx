@@ -173,7 +173,7 @@ export function StudyPlanModal({ student, onClose, onSuccess }: Props) {
         {/* Mentor note */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">
-            Nota del mentor (opcional)
+            Nota de Mentor (opcional)
           </label>
           <textarea
             rows={3}

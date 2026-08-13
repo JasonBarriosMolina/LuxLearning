@@ -91,7 +91,7 @@ export function ReviewPanel({ courses }: Props) {
     if (sub.grade != null) return <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">{sub.grade}%</span>;
     if (sub.status === 'completed') return <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Pendiente calificación</span>;
     if (sub.status === 'in_progress') return <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">En progreso</span>;
-    if (sub.status === 'pending') return <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">No completada</span>;
+    if (sub.status === 'pending') return <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Entrevista pendiente</span>;
     return <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{sub.status}</span>;
   };
 

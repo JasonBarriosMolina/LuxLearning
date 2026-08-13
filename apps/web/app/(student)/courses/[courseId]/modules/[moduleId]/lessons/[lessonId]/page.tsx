@@ -65,9 +65,16 @@ function renderMarkdown(text: string): React.ReactNode {
     });
   };
 
+  const parseTableRow = (line: string): string[] =>
+    line.split('|').slice(1, -1).map((c) => c.trim());
+
+  const isTableSep = (line: string): boolean => /^\|[\s|-]+\|/.test(line.trim());
+  const isTableRow = (line: string): boolean => line.trim().startsWith('|') && line.trim().endsWith('|');
+
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
   let listItems: string[] = [];
+  let tableLines: string[] = [];
 
   const flushList = () => {
     if (listItems.length > 0) {
@@ -80,19 +87,59 @@ function renderMarkdown(text: string): React.ReactNode {
     }
   };
 
+  const flushTable = () => {
+    if (tableLines.length < 2) {
+      tableLines.forEach((l, i) => elements.push(<p key={`traw-${elements.length}-${i}`} className="mb-1">{l}</p>));
+      tableLines = [];
+      return;
+    }
+    const headerCols = parseTableRow(tableLines[0]!);
+    const bodyRows = tableLines.slice(2).filter((l) => !isTableSep(l));
+    elements.push(
+      <div key={`table-${elements.length}`} className="overflow-x-auto my-2 rounded-lg border border-border">
+        <table className="w-full text-xs min-w-[400px] border-collapse">
+          <thead>
+            <tr className="bg-surface">
+              {headerCols.map((h, i) => (
+                <th key={i} className="px-3 py-2 text-left font-semibold text-charcoal border-b border-border whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyRows.map((row, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? '' : 'bg-surface/60'}>
+                {parseTableRow(row).map((cell, ci) => (
+                  <td key={ci} className="px-3 py-1.5 text-gray-700 border-b border-border/50">{formatInline(cell)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+    tableLines = [];
+  };
+
   lines.forEach((line, i) => {
-    if (/^#{1,3} /.test(line)) {
+    if (isTableRow(line)) {
       flushList();
-      elements.push(<p key={i} className="font-semibold mt-2 mb-0.5">{line.replace(/^#{1,3} /, '')}</p>);
-    } else if (/^[-*] /.test(line)) {
-      listItems.push(line.slice(2));
-    } else if (line.trim() === '') {
-      flushList();
+      tableLines.push(line);
     } else {
-      flushList();
-      elements.push(<p key={i} className="mb-1">{formatInline(line)}</p>);
+      flushTable();
+      if (/^#{1,3} /.test(line)) {
+        flushList();
+        elements.push(<p key={i} className="font-semibold mt-2 mb-0.5">{line.replace(/^#{1,3} /, '')}</p>);
+      } else if (/^[-*] /.test(line)) {
+        listItems.push(line.slice(2));
+      } else if (line.trim() === '') {
+        flushList();
+      } else {
+        flushList();
+        elements.push(<p key={i} className="mb-1">{formatInline(line)}</p>);
+      }
     }
   });
+  flushTable();
   flushList();
   return <div className="space-y-0.5">{elements}</div>;
 }

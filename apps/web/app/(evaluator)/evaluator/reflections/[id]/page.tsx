@@ -265,14 +265,15 @@ export default function ReflectionDetailPage() {
 
   useEffect(() => {
     Promise.all([
-      api.evaluator.reflections(),
+      api.evaluator.reflectionDetail(userId, moduleId),
       api.evaluator.signature.get().catch(() => ({ data: { signature: null } })),
     ]).then(([reflRes, sigRes]) => {
-      const all = (reflRes as any).data ?? [];
-      const found = all.find((r: any) => r.userId === userId && r.moduleId === moduleId);
-      setReflection(found ?? null);
+      const found = (reflRes as any).data ?? null;
+      setReflection(found);
       if (found?.priority) setPriority(true);
       setSignature((sigRes as any)?.data?.signature ?? (sigRes as any)?.signature ?? null);
+      setLoading(false);
+    }).catch(() => {
       setLoading(false);
     });
   }, [userId, moduleId]);
@@ -624,7 +625,7 @@ export default function ReflectionDetailPage() {
                     {aiLoading
                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       : <Sparkles className="w-3.5 h-3.5" />}
-                    {aiLoading ? 'Generando...' : 'Generar con IA'}
+                    {aiLoading ? 'Generando...' : 'Generar con Lux Mentor'}
                   </button>
                 </div>
 

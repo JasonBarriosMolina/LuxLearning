@@ -85,10 +85,10 @@ export default function AttendanceOverviewPage() {
           <p className="text-3xl font-bold text-gray-900 mt-1">{overview?.globalAttendanceRate ?? '—'}%</p>
           <p className="text-xs text-gray-400 mt-1">{overview?.totalCourses ?? 0} cursos activos</p>
         </div>
-        <div className="bg-red-50 rounded-2xl border border-red-100 shadow-sm p-5">
-          <p className="text-xs text-red-600 font-medium uppercase tracking-wide">Alumnos en Riesgo</p>
-          <p className="text-3xl font-bold text-red-700 mt-1">{overview?.studentsAtRisk ?? 0}</p>
-          <p className="text-xs text-red-400 mt-1">🚨 Riesgo alto</p>
+        <div className={`rounded-2xl border shadow-sm p-5 ${(overview?.studentsAtRisk ?? 0) > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
+          <p className={`text-xs font-medium uppercase tracking-wide ${(overview?.studentsAtRisk ?? 0) > 0 ? 'text-red-600' : 'text-gray-500'}`}>Alumnos en Riesgo</p>
+          <p className={`text-3xl font-bold mt-1 ${(overview?.studentsAtRisk ?? 0) > 0 ? 'text-red-700' : 'text-gray-400'}`}>{overview?.studentsAtRisk ?? 0}</p>
+          <p className={`text-xs mt-1 ${(overview?.studentsAtRisk ?? 0) > 0 ? 'text-red-400' : 'text-gray-400'}`}>{(overview?.studentsAtRisk ?? 0) > 0 ? '🚨 Riesgo alto' : 'Sin riesgo'}</p>
         </div>
         <div className="bg-yellow-50 rounded-2xl border border-yellow-100 shadow-sm p-5">
           <p className="text-xs text-yellow-700 font-medium uppercase tracking-wide">Cursos con Problemas</p>

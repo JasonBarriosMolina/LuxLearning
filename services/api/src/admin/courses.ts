@@ -244,20 +244,22 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
     if (method === 'PUT') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
       const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate, isDraft, isArchived } = body;
-      if (!title || !slug || !description) return badRequest('title, slug y description son requeridos');
-      const course = await prisma.course.update({
-        where: { id: courseId },
-        data: {
-          title, slug, description,
-          imageUrl: imageUrl || null,
-          isActive, isPilot,
-          ...(isDraft !== undefined ? { isDraft } : {}),
-          ...(isArchived !== undefined ? { isArchived } : {}),
-          tags: Array.isArray(tags) ? tags : [],
-          startDate: startDate ? new Date(startDate) : null,
-          closeDate: closeDate ? new Date(closeDate) : null,
-        },
-      });
+      // Only validate required fields when they're part of a full update (title/slug/description explicitly sent)
+      const isFullUpdate = 'title' in body || 'slug' in body || 'description' in body;
+      if (isFullUpdate && (!title || !slug || !description)) return badRequest('title, slug y description son requeridos');
+      const updateData: Record<string, any> = {};
+      if (isFullUpdate) {
+        updateData.title = title; updateData.slug = slug; updateData.description = description;
+        updateData.imageUrl = imageUrl || null;
+        updateData.isPilot = isPilot;
+        updateData.tags = Array.isArray(tags) ? tags : [];
+        updateData.startDate = startDate ? new Date(startDate) : null;
+        updateData.closeDate = closeDate ? new Date(closeDate) : null;
+      }
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (isDraft !== undefined) updateData.isDraft = isDraft;
+      if (isArchived !== undefined) updateData.isArchived = isArchived;
+      const course = await prisma.course.update({ where: { id: courseId }, data: updateData });
       await invalidateTranslation('course', courseId);
       return ok(course);
     }

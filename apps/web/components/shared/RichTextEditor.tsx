@@ -50,6 +50,7 @@ const AI_STYLES = [
   { value: 'colorful', label: 'Colorida' },
   { value: 'corporate', label: 'Corporativo' },
   { value: 'comic', label: 'Cómic' },
+  { value: 'infographic', label: 'Infografía' },
 ];
 
 function ToolbarBtn({ active, onClick, title, children }: {

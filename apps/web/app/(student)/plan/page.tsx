@@ -348,7 +348,7 @@ export default function StudyPlanPage() {
               {/* Strategies — full-width advice style */}
               {suggestions.filter((s) => s.type === 'strategy').length > 0 && (
                 <div className="mt-1 space-y-2">
-                  <p className="text-[10px] font-semibold text-[#7B2FBE] uppercase tracking-widest px-1">Consejo del mentor</p>
+                  <p className="text-[10px] font-semibold text-[#7B2FBE] uppercase tracking-widest px-1">Consejo de Mentor</p>
                   {suggestions.filter((s) => s.type === 'strategy').map((s, i) => (
                     <div key={i} className="flex items-start gap-3 bg-[#7B2FBE]/5 dark:bg-[#7B2FBE]/10 rounded-xl border border-[#7B2FBE]/15 px-4 py-3">
                       <span className="text-base shrink-0 mt-0.5">💡</span>

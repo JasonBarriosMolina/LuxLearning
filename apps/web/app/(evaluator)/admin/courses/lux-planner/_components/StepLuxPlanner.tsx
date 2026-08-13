@@ -189,8 +189,8 @@ export function StepLuxPlanner({
         </div>
         <p className="text-xs text-gray-400 leading-relaxed">
           {s(
-            'Selecciona las semanas en las que se impartirá una clase interactiva con Lux Mentor (sesión Vapi). Puedes configurar el contenido de cada sesión en ',
-            'Select the weeks that will have an interactive Lux Mentor class session (Vapi). You can configure each session\'s content in ',
+            'Selecciona las semanas en las que se impartirá una clase interactiva con Lux Mentor. Puedes configurar el contenido de cada sesión en ',
+            'Select the weeks that will have an interactive Lux Mentor class session. You can configure each session\'s content in ',
           )}
           <span className="font-medium text-indigo-600">{s('Admin → Lux Mentor — Clases', 'Admin → Lux Mentor — Classes')}</span>.
         </p>

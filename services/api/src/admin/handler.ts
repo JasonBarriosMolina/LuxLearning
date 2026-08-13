@@ -29,7 +29,9 @@ export const handler = async (event: Event) => {
 
   if (!_selfAction) {
     if (event.requestContext.http.method === 'OPTIONS') return cors();
-    if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
+    // Allow any authenticated user to manage their own profile or presign uploads
+    const isStudentAllowedRoute = event.rawPath === '/user/profile' || event.rawPath === '/admin/files/presign';
+    if (!isStudentAllowedRoute && !isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
   }
 
   const method = _selfAction ? 'WORKER' : event.requestContext.http.method;

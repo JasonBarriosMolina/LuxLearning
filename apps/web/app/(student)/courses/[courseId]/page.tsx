@@ -237,9 +237,10 @@ export default function CoursePage() {
         </button>
       </div>
 
-      {/* Resources section */}
+      {/* Resources section — anchor always rendered so scroll button works */}
+      <div id="course-resources">
       {resources.length > 0 && (
-        <div id="course-resources" className="card p-5 space-y-3">
+        <div className="card p-5 space-y-3">
           <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-indigo-500" /> {t.courseDetail.resourcesSection}
           </h3>
@@ -263,6 +264,7 @@ export default function CoursePage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Course completion banner */}
       {isCourseComplete && (

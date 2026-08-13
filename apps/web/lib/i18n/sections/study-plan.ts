@@ -64,7 +64,7 @@ export const studyPlanEs = {
     viewPlan: 'Ver plan del estudiante',
     customItems: 'Agregar actividades personalizadas',
     autoGenerate: 'Generar automáticamente desde progreso',
-    mentorNote: 'Nota del mentor (opcional)',
+    mentorNote: 'Nota de Mentor (opcional)',
     mentorNotePlaceholder: 'Ej: Enfócate en los primeros 3 módulos, el examen es el viernes…',
     lastGenerated: 'Última generación',
     basedOn: {

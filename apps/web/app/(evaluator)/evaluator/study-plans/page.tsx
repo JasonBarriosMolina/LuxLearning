@@ -398,7 +398,7 @@ export default function EvalStudyPlansPage() {
                                 autoFocus
                                 value={noteValues[row.userId] ?? ''}
                                 onChange={e => setNoteValues(prev => ({ ...prev, [row.userId]: e.target.value }))}
-                                placeholder="Nota del mentor: ej. Enfócate en módulos 1–3…"
+                                placeholder="Nota de Mentor: ej. Enfócate en módulos 1–3…"
                                 rows={2}
                                 className="w-64 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0D0D1A] text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 resize-none"
                               />

@@ -15,6 +15,32 @@ import { createId } from '@paralleldrive/cuid2';
 export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
   const { method, path, prisma, userId, isAdminRole } = ctx;
 
+  // ── GET /evaluator/reflections/detail — single reflection with full text ────
+  if (method === 'GET' && path === '/evaluator/reflections/detail') {
+    const { event } = ctx;
+    const studentId = event.queryStringParameters?.userId;
+    const moduleId = event.queryStringParameters?.moduleId;
+    if (!studentId || !moduleId) return badRequest('userId y moduleId son requeridos');
+    const reflection = await getReflection(studentId, moduleId);
+    if (!reflection) return notFound('Reflexión no encontrada');
+    // Ownership check: evaluators can only see reflections assigned to them
+    if (!isAdminRole && reflection.evaluatorId !== userId) {
+      return forbidden('Esta reflexión no está asignada a tu evaluación');
+    }
+    const mod = await prisma.module.findUnique({
+      where: { id: moduleId },
+      include: { course: { select: { id: true, title: true } } },
+    });
+    const studentName = await resolveStudentName(studentId, reflection.studentEmail);
+    return ok({
+      ...reflection,
+      moduleTitle: (mod as any)?.title ?? 'Unknown',
+      courseId: (mod as any)?.course?.id ?? null,
+      courseTitle: (mod as any)?.course?.title ?? 'Unknown',
+      studentName,
+    });
+  }
+
   // ── GET /evaluator/reflections ──────────────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/reflections') {
     const all = await getAllReflections();

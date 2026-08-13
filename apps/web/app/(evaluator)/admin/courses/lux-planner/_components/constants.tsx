@@ -74,7 +74,7 @@ export interface CalendarWeek {
 export const STEPS = [
   { n: 1, label: 'Identidad' }, { n: 2, label: 'Calendario' },
   { n: 3, label: 'Planeamiento' }, { n: 4, label: 'Evaluación' },
-  { n: 5, label: 'Resumen LP' },
+  { n: 5, label: 'Resumen' },
 ];
 
 export const COURSE_TYPES = [

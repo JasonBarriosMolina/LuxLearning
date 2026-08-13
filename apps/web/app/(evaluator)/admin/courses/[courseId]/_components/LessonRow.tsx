@@ -316,7 +316,7 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Estilo</p>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {[['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['minimal', '⬜ Minimal'], ['comic', '💥 Cómic'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa']].map(([val, label]) => (
+                      {[['realistic', '📷 Realista'], ['illustration', '🎨 Ilustración'], ['minimal', '⬜ Minimal'], ['comic', '💥 Cómic'], ['colorful', '🌈 Colorida'], ['corporate', '🏢 Corporativa'], ['infographic', '📊 Infografía']].map(([val, label]) => (
                         <button
                           key={val}
                           onClick={() => setRegenStyle(regenStyle === val ? '' : val)}

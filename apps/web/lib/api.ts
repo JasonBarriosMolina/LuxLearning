@@ -126,6 +126,8 @@ export const api = {
   evaluator: {
     myCourses: () => request<any>(`/evaluator/my-courses?lang=${getLang()}`),
     reflections: () => request('/evaluator/reflections'),
+    reflectionDetail: (userId: string, moduleId: string) =>
+      request<any>(`/evaluator/reflections/detail?userId=${encodeURIComponent(userId)}&moduleId=${encodeURIComponent(moduleId)}`),
     review: (body: ReviewReflectionRequest) =>
       request('/evaluator/reflections/review', { method: 'POST', body: JSON.stringify(body) }),
     students: (params?: { courseId?: string }) => {
