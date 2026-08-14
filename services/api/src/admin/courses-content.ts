@@ -42,19 +42,6 @@ export async function handleCoursesContent(ctx: AdminCtx): Promise<any | null> {
       },
     });
 
-    // Auto-generate Polly audio asynchronously (fire-and-forget)
-    lambdaClient.send(new LambdaInvokeCommand({
-      FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
-      InvocationType: 'Event',
-      Payload: Buffer.from(JSON.stringify({
-        _env: getCurrentEnv(),
-        requestContext: { http: { method: 'POST' }, authorizer: { lambda: { role: 'ADMIN', userId: 'system' } } },
-        rawPath: '/_internal/audio',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ _action: 'single-audio', lessonId: lesson.id, voiceId: 'Mia' }),
-      })),
-    })).catch(() => {});
-
     return created(lesson);
   }
 
@@ -83,26 +70,40 @@ Exactamente 10 lecciones y 5 preguntas de muestra. Títulos reales y específico
     // ── Async worker branch ─────────────────────────────────────────────────
     if (workerJobId) {
       try {
+        // Check if this course's evaluation plan includes a QUIZ type.
+        // Only generate quiz questions when the plan explicitly requires it.
+        const course = await prisma.course.findUnique({
+          where: { id: courseId },
+          select: { evaluationConfig: true },
+        });
+        const evalConfig = Array.isArray((course as any)?.evaluationConfig) ? (course as any).evaluationConfig : [];
+        const hasQuizInPlan = evalConfig.some((it: any) => it.type === 'QUIZ');
+
         const modMeta = await invokeBedrockForJson(
           `Eres experto en diseño instruccional. Genera título y descripción para un módulo sobre "${topic}" dentro del curso "${workerCourseTitle}".
 Responde ÚNICAMENTE con JSON: {"title":"Título real del módulo","description":"Descripción de 1-2 oraciones."}`, 400);
         const modTitle = (modMeta.title as string) || topic;
         const modDesc = (modMeta.description as string) || `Módulo sobre ${topic}`;
 
-        const [rawLessons, rawQuestions] = await Promise.all([
-          invokeBedrockForJson(`Genera exactamente 10 lecciones para el módulo "${modTitle}" del curso "${workerCourseTitle}".
+        // Generate lessons (and quiz questions only if QUIZ is in the evaluation plan)
+        const lessonPromise = invokeBedrockForJson(`Genera exactamente 10 lecciones para el módulo "${modTitle}" del curso "${workerCourseTitle}".
 Array JSON (10 elementos):
 [{"title":"Introducción — ${modTitle}","order":1,"type":"video","content":"<p>Párrafo introductorio.</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Consejo."},
 {"title":"Subtema A","order":2,"type":"text","content":"<h3>Subtema</h3><p>Párrafo.</p><ul><li>Punto A</li><li>Punto B</li></ul><p>Cierre.</p>","duration":"8 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"Tip."},
 {"title":"Resumen — ${modTitle}","order":10,"type":"video","content":"<p>Resumen.</p>","duration":"5 min","points":["Resumen 1","Resumen 2","Próximos pasos"],"tip":"Completa el quiz."}]
-Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 6000),
-          invokeBedrockForJson(`Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
+Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 6000);
+        const questionPromise = hasQuizInPlan
+          ? invokeBedrockForJson(`Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
 Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":1}]
-10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.`, 2000),
-        ]);
+10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.`, 2000)
+          : Promise.resolve([]);
+
+        const [rawLessons, rawQuestions] = await Promise.all([lessonPromise, questionPromise]);
 
         const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
-        const questions = shuffleQuestionOptions(Array.isArray(rawQuestions) ? rawQuestions.slice(0, 10) : []);
+        const questions = hasQuizInPlan
+          ? shuffleQuestionOptions(Array.isArray(rawQuestions) ? rawQuestions.slice(0, 10) : [])
+          : [];
 
         const modCount = await prisma.module.count({ where: { courseId } });
         const createdMod = await prisma.module.create({

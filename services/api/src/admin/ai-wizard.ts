@@ -93,7 +93,12 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
 
           const rawLessons = await invokeBedrockForJson(lessonPrompt, 7000);
           const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
-          if (lessons.length === 0) { failed.push(moduleId); continue; }
+          if (lessons.length === 0) {
+            // No lessons generated — delete the empty module so it doesn't appear blank to students
+            await prisma.module.delete({ where: { id: moduleId } }).catch(() => {});
+            failed.push(moduleId);
+            continue;
+          }
 
           await prisma.lesson.createMany({
             data: lessons.map((l: any, i: number) => ({
@@ -422,8 +427,10 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
 
     let lessonJobId: string | null = null;
+    const isEN_save = planLanguage === 'EN';
+
     if (!editingCourseId) {
-      const isEN_save = planLanguage === 'EN';
+      // NEW course: create all suggested modules and kick off lesson generation
       const createdModuleIds: string[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
         const mod = (suggestedModules as any[])[mi];
@@ -462,6 +469,55 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }
 
       await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+    } else {
+      // EDIT mode: create any suggested modules that don't yet exist in the DB.
+      // Match by name (case-insensitive) to avoid duplicating modules on re-save.
+      const existingModules = await prisma.module.findMany({
+        where: { courseId: course.id },
+        select: { id: true, title: true, order: true },
+      });
+      const existingTitles = new Set(existingModules.map((m: any) => m.title.toLowerCase().trim()));
+      const maxOrder = existingModules.reduce((max: number, m: any) => Math.max(max, m.order ?? 0), 0);
+
+      const newModuleIds: string[] = [];
+      let nextOrder = maxOrder;
+      for (const mod of suggestedModules as any[]) {
+        const modTitle = isEN_save ? (mod.nameEN || mod.name) : mod.name;
+        if (!modTitle || existingTitles.has(modTitle.toLowerCase().trim())) continue;
+        try {
+          nextOrder++;
+          const createdMod = await prisma.module.create({
+            data: {
+              courseId: course.id,
+              title: modTitle,
+              description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
+              duration: '80 min', passingScore: 70, order: nextOrder,
+            },
+          });
+          newModuleIds.push(createdMod.id);
+        } catch (e: any) { console.error('[wizard/save][edit] module create error:', e); }
+      }
+
+      if (newModuleIds.length > 0) {
+        lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await saveAiJob(lessonJobId, { status: 'processing', modules: newModuleIds.length });
+        try {
+          await lambdaClient.send(new LambdaInvokeCommand({
+            FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
+              courseId: course.id, moduleIds: newModuleIds,
+              courseTitle: title, language: planLanguage,
+              evaluationItems,
+            })),
+          }));
+        } catch (invokeErr: any) {
+          console.error('[wizard/save][edit] lesson bulk invoke error:', invokeErr?.message);
+          await saveAiJob(lessonJobId, { status: 'error', error: 'No se pudo iniciar la generación de lecciones' });
+          lessonJobId = null;
+        }
+      }
     }
 
     // When editing a course: if QUIZ was added to the eval plan, auto-generate questions

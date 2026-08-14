@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  PlayCircle, Eye, Volume2, RefreshCw, Pencil, RotateCcw, Trash2, GripVertical, ChevronUp, ChevronDown,
+  PlayCircle, Eye, RefreshCw, Pencil, RotateCcw, Trash2, GripVertical, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -37,10 +37,6 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
   const [regenPreviewData, setRegenPreviewData] = useState<any>(null);
   const [lessonPreviewOpen, setLessonPreviewOpen] = useState(false);
   const [regenExtraContext, setRegenExtraContext] = useState('');
-  const [audioOpen, setAudioOpen] = useState(false);
-  const [audioVoice, setAudioVoice] = useState('Mia');
-  const [audioLoading, setAudioLoading] = useState(false);
-  const [audioError, setAudioError] = useState('');
 
   // Phase 1: generate preview without saving
   const handlePreview = async () => {
@@ -92,20 +88,6 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
     setRegenExtraContext('');
   };
 
-  const handleGenerateAudio = async () => {
-    setAudioLoading(true);
-    setAudioError('');
-    try {
-      await api.admin.lessons.generateAudio(lesson.id, audioVoice);
-      setAudioOpen(false);
-      onRefresh();
-    } catch (err: any) {
-      setAudioError(err.message ?? 'Error al generar audio');
-    } finally {
-      setAudioLoading(false);
-    }
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
     try {
@@ -139,16 +121,6 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
         <div className="flex gap-1 shrink-0 items-center">
           <button onClick={() => setLessonPreviewOpen(true)} title="Vista previa de la lección" className="p-1.5 rounded-lg text-gray-400 hover:text-teal-500 hover:bg-teal-50 transition-colors">
             <Eye className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => { setAudioOpen(true); setAudioError(''); }}
-            title={lesson.audioUrl ? 'Regenerar audio Polly' : 'Generar audio Polly'}
-            className="relative p-1.5 rounded-lg text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors"
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-            {lesson.audioUrl && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-white" />
-            )}
           </button>
           <button onClick={() => { setRegenOpen(true); setRegenPhase('config'); setRegenPreviewData(null); setRegenError(''); }} title="Regenerar con IA" className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
@@ -220,50 +192,6 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
             {!lesson.youtubeId && !lesson.content && !lesson.tip && lesson.points?.filter((p: string) => p).length === 0 && (
               <p className="text-sm text-gray-400 text-center py-8">Esta lección aún no tiene contenido.</p>
             )}
-          </div>
-        </Modal>
-
-        {/* Audio Modal */}
-        <Modal open={audioOpen} onClose={() => setAudioOpen(false)} title={`Audio Polly — ${lesson.title}`} size="sm">
-          <div className="space-y-4">
-            {lesson.audioUrl && (
-              <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                <p className="text-xs text-emerald-700 dark:text-emerald-400 flex-1">Audio generado. Generar de nuevo reemplazará el existente.</p>
-              </div>
-            )}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Voz</p>
-              <div className="grid grid-cols-1 gap-1.5">
-                {[
-                  { id: 'Mia',    label: 'Mia ♀',    desc: 'Mexicana (es-MX)' },
-                  { id: 'Lupe',   label: 'Lupe ♀',   desc: 'Latina US (es-US)' },
-                  { id: 'Lucia',  label: 'Lucia ♀',  desc: 'Española (es-ES)' },
-                  { id: 'Sergio', label: 'Sergio ♂', desc: 'Español (es-ES)' },
-                  { id: 'Pedro',  label: 'Pedro ♂',  desc: 'Latino US (es-US)' },
-                ].map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setAudioVoice(v.id)}
-                    className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                      audioVoice === v.id
-                        ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
-                        : 'border-border text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    <span>{v.label}</span>
-                    <span className="text-gray-400 font-normal">{v.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            {audioError && <p className="text-xs text-red-500">{audioError}</p>}
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="secondary" size="sm" onClick={() => setAudioOpen(false)}>Cancelar</Button>
-              <Button size="sm" loading={audioLoading} onClick={handleGenerateAudio}>
-                {lesson.audioUrl ? 'Regenerar' : 'Generar'}
-              </Button>
-            </div>
           </div>
         </Modal>
 
