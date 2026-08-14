@@ -28,6 +28,48 @@ function buildEmptyDays(weekOf: string): DayPlan[] {
   return days;
 }
 
+/** Parse "12 min" → 12, "8 min" → 8, etc. Fallback to 30 if unparseable. */
+function parseDurationMin(raw?: string | null): number {
+  if (!raw) return 30;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+/** Sync lesson/quiz completion from real DDB progress into plan items (in-memory only; persists if changed). */
+async function syncPlanCompletion(userId: string, plan: StudyPlan): Promise<StudyPlan> {
+  const courseIds = [...new Set(
+    plan.days.flatMap((d) => d.items.map((i) => i.courseId).filter(Boolean) as string[])
+  )];
+  if (courseIds.length === 0) return plan;
+
+  const [progressResults, quizAttempts] = await Promise.all([
+    Promise.all(courseIds.map((cid) => getLessonProgress(userId, cid))),
+    getAllQuizAttemptsForUser(userId),
+  ]);
+  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId as string));
+  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId as string));
+
+  let changed = false;
+  const syncedDays = plan.days.map((d) => ({
+    ...d,
+    items: d.items.map((item) => {
+      let newCompleted = item.completed;
+      if (!item.completed) {
+        if (item.type === 'lesson' && item.lessonId && completedLessonIds.has(item.lessonId)) newCompleted = true;
+        else if (item.type === 'quiz' && item.moduleId && passedModuleIds.has(item.moduleId)) newCompleted = true;
+      }
+      if (newCompleted !== item.completed) { changed = true; return { ...item, completed: newCompleted }; }
+      return item;
+    }),
+  }));
+
+  if (changed) {
+    await updateStudyPlanField(userId, plan.weekOf, { days: syncedDays, updatedAt: new Date().toISOString() });
+    return { ...plan, days: syncedDays };
+  }
+  return plan;
+}
+
 /** Auto-populate a plan from course progress — used for student self-generation */
 async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; promptLines: string[] }> {
   const prisma = await getPrismaClient();
@@ -42,7 +84,7 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
 
   const courses = await prisma.course.findMany({
     where: { id: { in: courseIds } },
-    include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true }, orderBy: { order: 'asc' } } } } },
+    include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } } },
   });
 
   const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(userId, cid)));
@@ -83,7 +125,7 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
             lessonId: lesson.id,
             pinned: false,
             completed: false,
-            estimatedMinutes: 30,
+            estimatedMinutes: parseDurationMin((lesson as any).duration),
             source: 'auto',
           });
           dayIndex++;
@@ -195,15 +237,20 @@ export async function handleStudyPlans(ctx: Ctx): Promise<any | null> {
       if (promptLines.length > 0) {
         triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
       }
-    } else if (!plan.suggestionsStatus || plan.suggestionsStatus === 'error') {
-      // Plan exists but has no suggestions or previous attempt errored — trigger/retry
-      const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
-      if (totalItems > 0) {
-        const promptLines = plan.days.flatMap((d) =>
-          d.items.map((i) => `${i.type}: ${i.title}${i.description ? ` (${i.description})` : ''}`)
-        );
-        triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
-        plan = { ...plan, suggestionsStatus: 'processing' };
+    } else {
+      // Sync lesson/quiz completion from real progress
+      plan = await syncPlanCompletion(userId, plan);
+
+      if (!plan.suggestionsStatus || plan.suggestionsStatus === 'error') {
+        // Plan exists but has no suggestions or previous attempt errored — trigger/retry
+        const totalItems = plan.days.reduce((s, d) => s + d.items.length, 0);
+        if (totalItems > 0) {
+          const promptLines = plan.days.flatMap((d) =>
+            d.items.map((i) => `${i.type}: ${i.title}${i.description ? ` (${i.description})` : ''}`)
+          );
+          triggerSuggestionsJob(userId, weekOf, promptLines).catch(() => {});
+          plan = { ...plan, suggestionsStatus: 'processing' };
+        }
       }
     }
     return ok(plan);

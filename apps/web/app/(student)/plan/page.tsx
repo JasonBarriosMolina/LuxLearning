@@ -295,13 +295,23 @@ export default function StudyPlanPage() {
       )}
 
       {/* Mentor Suggestions — current week only */}
-      {isCurrentWeek && suggestionsStatus !== 'none' && (
+      {isCurrentWeek && (
         <div className="bg-gradient-to-br from-[#7B2FBE]/5 to-[#17527E]/5 border border-[#7B2FBE]/20 dark:border-[#7B2FBE]/30 rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-4 h-4 text-[#7B2FBE]" />
             <h2 className="font-semibold text-gray-900 dark:text-white text-sm">{ts.suggestions}</h2>
           </div>
-          {suggestionsStatus === 'processing' ? (
+          {suggestionsStatus === 'none' ? (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-gray-400 flex-1">{ts.suggestionsEmpty}</p>
+              <button
+                onClick={retrySuggestions}
+                className="flex items-center gap-1.5 text-xs font-medium text-[#7B2FBE] hover:underline shrink-0"
+              >
+                <RefreshCw className="w-3 h-3" /> {(ts as any).suggestionsRetry}
+              </button>
+            </div>
+          ) : suggestionsStatus === 'processing' ? (
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <Loader2 className="w-4 h-4 animate-spin text-[#7B2FBE]" /> {ts.suggestionsLoading}
             </div>

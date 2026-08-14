@@ -19,6 +19,18 @@ function buildEmptyDays(weekOf: string): DayPlan[] {
   });
 }
 
+function parseDurationMin(raw?: string | null): number {
+  if (!raw) return 30;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+interface WizardParams {
+  hoursPerDay: 1 | 2 | 3;                      // available study hours per day
+  modulePriority: 'sequential' | 'parallel';    // finish one module before next vs mix
+  pace: 'normal' | 'catchup';                   // catchup = include more, fill weekends
+}
+
 export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
   const { method, path, body, userId, prisma, isAdminRole } = ctx;
 
@@ -26,10 +38,16 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
   const genMatch = path.match(/^\/evaluator\/students\/([^/]+)\/study-plan$/);
   if (genMatch && method === 'POST') {
     const [, studentId] = genMatch;
-    const { weekOf: weekParam, items, note } = body as {
+    const { weekOf: weekParam, items, note, wizardParams } = body as {
       weekOf?: string;
       items?: Array<{ dayIndex: number; title: string; type?: string; description?: string; estimatedMinutes?: number; courseId?: string; moduleId?: string }>;
       note?: string;
+      wizardParams?: WizardParams;
+    };
+    const wp: WizardParams = {
+      hoursPerDay: wizardParams?.hoursPerDay ?? 2,
+      modulePriority: wizardParams?.modulePriority ?? 'sequential',
+      pace: wizardParams?.pace ?? 'normal',
     };
 
     const weekOf = weekParam ?? getMonday();
@@ -43,7 +61,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
     const courses = courseIds.length > 0
       ? await prisma.course.findMany({
           where: { id: { in: courseIds } },
-          include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true }, orderBy: { order: 'asc' } } } } },
+          include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } } },
         })
       : [];
 
@@ -71,53 +89,74 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
         });
       }
     } else {
-      // Auto-generate from student progress — only include accessible (unlocked) modules
-      let dayIndex = 0;
+      // Auto-generate from student progress with wizard params
+      const maxMinutesPerDay = wp.hoursPerDay * 60;
+      // catchup: include weekends (days 0-6); normal: Mon-Fri only (days 0-4)
+      const maxDayIdx = wp.pace === 'catchup' ? 6 : 4;
+
+      // Collect pending work per module (sequential guarantees one module fully scheduled before the next)
+      type PendingWork = { type: 'lesson' | 'quiz'; title: string; courseId: string; moduleId: string; lessonId?: string; estimatedMinutes: number; description: string };
+      const pendingWork: PendingWork[] = [];
+
       for (const course of courses) {
         const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
         for (const mod of (course as any).modules) {
           const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs);
-          if (!unlocked) break; // Sequential lock — all further modules are also locked
-
+          if (!unlocked) break;
           if (passedModuleIds.has(mod.id)) continue;
+
           const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
           const needsQuiz = pendingLessons.length === 0 && !passedModuleIds.has(mod.id);
 
-          for (const lesson of pendingLessons.slice(0, 5)) {
-            const targetDay = Math.min(dayIndex % 5, 4);
-            days[targetDay].items.push({
-              id: createId(),
-              type: 'lesson',
-              title: lesson.title,
+          for (const lesson of pendingLessons) {
+            pendingWork.push({
+              type: 'lesson', title: lesson.title,
+              courseId: course.id, moduleId: mod.id, lessonId: lesson.id,
+              estimatedMinutes: parseDurationMin((lesson as any).duration),
               description: `Módulo: ${mod.title} — ${course.title}`,
-              courseId: course.id,
-              moduleId: mod.id,
-              lessonId: lesson.id,
-              pinned: true,
-              completed: false,
-              estimatedMinutes: 30,
-              source: 'evaluator',
             });
-            dayIndex++;
           }
-
           if (needsQuiz) {
-            const targetDay = Math.min(dayIndex % 5, 4);
-            days[targetDay].items.push({
-              id: createId(),
-              type: 'quiz',
-              title: `Quiz — ${mod.title}`,
-              description: `Quiz pendiente en ${course.title}`,
-              courseId: course.id,
-              moduleId: mod.id,
-              pinned: true,
-              completed: false,
+            pendingWork.push({
+              type: 'quiz', title: `Quiz — ${mod.title}`,
+              courseId: course.id, moduleId: mod.id,
               estimatedMinutes: 20,
-              source: 'evaluator',
+              description: `Quiz pendiente en ${course.title}`,
             });
-            dayIndex++;
           }
+          // Sequential: if modulePriority === 'sequential', add a sentinel break (noop here — work is already ordered by module)
         }
+      }
+
+      // Distribute pending work across days respecting hoursPerDay cap
+      const minutesUsed: Record<number, number> = {};
+      let dayIdx = 0;
+      for (const work of pendingWork) {
+        // Find next day with capacity
+        while (dayIdx <= maxDayIdx) {
+          const used = minutesUsed[dayIdx] ?? 0;
+          if (used + work.estimatedMinutes <= maxMinutesPerDay) break;
+          dayIdx++;
+        }
+        if (dayIdx > maxDayIdx) break; // No more room this week
+
+        // For parallel mode: on each new module, don't advance the day (let modules share days)
+        // For sequential mode: work is already grouped per module — just fill sequentially
+
+        minutesUsed[dayIdx] = (minutesUsed[dayIdx] ?? 0) + work.estimatedMinutes;
+        days[dayIdx].items.push({
+          id: createId(),
+          type: work.type,
+          title: work.title,
+          description: work.description,
+          courseId: work.courseId,
+          moduleId: work.moduleId,
+          ...(work.lessonId ? { lessonId: work.lessonId } : {}),
+          pinned: true,
+          completed: false,
+          estimatedMinutes: work.estimatedMinutes,
+          source: 'evaluator',
+        });
       }
     }
 

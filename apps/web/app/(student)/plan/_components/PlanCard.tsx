@@ -38,12 +38,16 @@ function getItemHref(item: PlanItem): string | null {
   return `/courses/${item.courseId}/modules/${item.moduleId}`;
 }
 
+// lesson/quiz/reflection completion is controlled by real progress — manual toggle disabled
+const AUTO_COMPLETED_TYPES = new Set(['lesson', 'quiz', 'reflection']);
+
 export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const isDone = item.completed;
   const isPinned = item.pinned;
   const href = !isDone ? getItemHref(item) : null;
   const hasDescription = !!(item.description);
+  const isAutoType = AUTO_COMPLETED_TYPES.has(item.type);
   // Expand button only needed for description or removable student items (actions)
   const hasExtra = hasDescription || (!locked && item.source === 'student');
 
@@ -59,16 +63,27 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
     )}>
       {/* Row 1: done toggle + title + expand */}
       <div className="flex items-start gap-2">
-        {/* Done toggle — large tap target */}
-        <button
-          onClick={() => onToggleDone(item.id, !isDone)}
-          className="shrink-0 mt-0.5 text-gray-300 hover:text-green-500 active:text-green-600 transition-colors p-0.5 -ml-0.5 touch-manipulation"
-          title={isDone ? 'Marcar pendiente' : 'Marcar hecho'}
-        >
-          {isDone
-            ? <CheckCircle2 className="w-4 h-4 text-green-500" />
-            : <Circle className="w-4 h-4" />}
-        </button>
+        {/* Completion indicator: auto-types show read-only icon; manual types show toggle */}
+        {isAutoType ? (
+          <span
+            className="shrink-0 mt-0.5 p-0.5 -ml-0.5"
+            title={isDone ? 'Completado automáticamente' : 'Se actualizará al completar la actividad'}
+          >
+            {isDone
+              ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+              : <Circle className="w-4 h-4 text-gray-300" />}
+          </span>
+        ) : (
+          <button
+            onClick={() => onToggleDone(item.id, !isDone)}
+            className="shrink-0 mt-0.5 text-gray-300 hover:text-green-500 active:text-green-600 transition-colors p-0.5 -ml-0.5 touch-manipulation"
+            title={isDone ? 'Marcar pendiente' : 'Marcar hecho'}
+          >
+            {isDone
+              ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+              : <Circle className="w-4 h-4" />}
+          </button>
+        )}
 
         {/* Title — wraps, no truncate; clickable when linked */}
         {href ? (
