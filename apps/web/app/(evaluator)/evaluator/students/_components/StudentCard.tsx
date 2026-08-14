@@ -10,7 +10,7 @@ import { PresenceBadge, RiskBadge, ModuleStatusIcon } from './Badges';
 import { ReminderHistory } from './ReminderHistory';
 
 export function StudentCard({
-  student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, onOpenChat, openingChatId, onGeneratePlan, planGeneratingId, selectedCourseId,
+  student, courses, ts, onSendReminder, sendingReminderId, reminderSentIds, onOpenChat, openingChatId, onGeneratePlan, planGeneratingId, selectedCourseId, onViewProfile,
 }: {
   student: Student;
   courses: { id: string; title: string }[];
@@ -23,6 +23,7 @@ export function StudentCard({
   onGeneratePlan?: (student: Student) => void;
   planGeneratingId?: string | null;
   selectedCourseId?: string;
+  onViewProfile?: (student: Student) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [activeCourse, setActiveCourse] = useState(0);
@@ -46,9 +47,15 @@ export function StudentCard({
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(!expanded); }}
         className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left cursor-pointer"
       >
-        <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
+        <button
+          onClick={(e) => { e.stopPropagation(); onViewProfile?.(student); }}
+          className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0 hover:ring-2 hover:ring-[#17527E]/40 transition-all"
+          title="Ver perfil del estudiante"
+          disabled={!onViewProfile}
+          type="button"
+        >
           {(student.studentName ?? 'Sin nombre')[0]?.toUpperCase()}
-        </div>
+        </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-charcoal text-sm truncate">{student.studentName ?? 'Sin nombre'}</p>

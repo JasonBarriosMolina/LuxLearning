@@ -126,6 +126,30 @@ export async function getStudyPlansBatch(userIds: string[], weekOf: string): Pro
   return results;
 }
 
+// ── Study Plan Preferences (stored with weekOf = 'PREFS') ────────────────────
+export interface StudyPlanPrefs {
+  userId: string;
+  hoursPerDay: 1 | 2 | 3;
+}
+
+export async function getStudyPlanPrefs(userId: string): Promise<StudyPlanPrefs | null> {
+  const result = await ddb.send(new GetCommand({
+    TableName: TABLES.STUDY_PLANS,
+    Key: { userId, weekOf: 'PREFS' },
+  }));
+  const item = result.Item as (StudyPlanPrefs & { weekOf: string }) | undefined;
+  if (!item) return null;
+  const { weekOf: _w, ...prefs } = item;
+  return prefs as StudyPlanPrefs;
+}
+
+export async function saveStudyPlanPrefs(prefs: StudyPlanPrefs): Promise<void> {
+  await ddb.send(new PutCommand({
+    TableName: TABLES.STUDY_PLANS,
+    Item: { ...prefs, weekOf: 'PREFS' },
+  }));
+}
+
 export async function updateStudyPlanField(
   userId: string,
   weekOf: string,

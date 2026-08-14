@@ -13,6 +13,7 @@ import { PresenceBadge } from './_components/Badges';
 import { StudentCard } from './_components/StudentCard';
 import { AdminStudentList } from './_components/AdminStudentList';
 import { StudyPlanModal } from './_components/StudyPlanModal';
+import { StudentProfileModal } from './_components/StudentProfileModal';
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ function StudentsPageInner() {
   const [reminderSent, setReminderSent] = useState<Map<string, Date>>(new Map());
   const [openingChat, setOpeningChat] = useState<string | null>(null);
   const [planModal, setPlanModal] = useState<{ userId: string; studentName?: string } | null>(null);
+  const [profileModal, setProfileModal] = useState<Student | null>(null);
 
   const handleSendReminder = async (student: Student) => {
     setSendingReminder(student.userId);
@@ -77,6 +79,10 @@ function StudentsPageInner() {
 
   const handleGeneratePlan = (student: Student) => {
     setPlanModal({ userId: student.userId, studentName: student.studentName ?? undefined });
+  };
+
+  const handleViewProfile = (student: Student) => {
+    setProfileModal(student);
   };
 
   const handleOpenChat = async (student: Student) => {
@@ -272,6 +278,7 @@ function StudentsPageInner() {
                             onSendReminder={handleSendReminder} sendingReminderId={sendingReminder} reminderSentIds={reminderSent}
                             onOpenChat={handleOpenChat} openingChatId={openingChat}
                             onGeneratePlan={handleGeneratePlan}
+                            onViewProfile={handleViewProfile}
                             selectedCourseId={selectedCourseId || undefined}
                           />
                         </div>
@@ -337,9 +344,14 @@ function StudentsPageInner() {
                       })}
                       className="w-full flex items-center gap-4 p-4 hover:bg-surface transition-colors text-left"
                     >
-                      <div className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleViewProfile(student); }}
+                        className="w-10 h-10 rounded-full bg-cta-gradient flex items-center justify-center text-white font-bold text-sm shrink-0 hover:ring-2 hover:ring-[#17527E]/40 transition-all"
+                        title="Ver perfil del estudiante"
+                        type="button"
+                      >
                         {(student.studentName ?? 'Sin nombre')[0]?.toUpperCase()}
-                      </div>
+                      </button>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-charcoal text-sm">{student.studentName ?? 'Sin nombre'}</p>
@@ -383,6 +395,13 @@ function StudentsPageInner() {
           student={planModal}
           onClose={() => setPlanModal(null)}
           onSuccess={() => setPlanModal(null)}
+        />
+      )}
+
+      {profileModal && (
+        <StudentProfileModal
+          student={profileModal}
+          onClose={() => setProfileModal(null)}
         />
       )}
     </div>

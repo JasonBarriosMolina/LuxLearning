@@ -6,7 +6,8 @@ import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/cli
 import { ok, badRequest } from '../shared/response';
 import {
   getStudyPlan, getStudyPlans, saveStudyPlan, updateStudyPlanField,
-  getMonday, type StudyPlan, type DayPlan, type PlanItem,
+  getMonday, getStudyPlanPrefs, saveStudyPlanPrefs,
+  type StudyPlan, type DayPlan, type PlanItem,
 } from '../shared/db-study-plans';
 import { createNotification, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
 import { isModuleUnlocked } from '../shared/db-progress';
@@ -330,6 +331,54 @@ export async function handleStudyPlans(ctx: Ctx): Promise<any | null> {
     const days = plan.days.map((d) => ({ ...d, items: d.items.filter((i) => i.id !== itemId) }));
     await updateStudyPlanField(userId, weekOf!, { days, updatedAt: new Date().toISOString() });
     return ok({ deleted: true });
+  }
+
+  // GET /study-plan/preferences — return student's study preferences
+  if (method === 'GET' && path === '/study-plan/preferences') {
+    const prefs = await getStudyPlanPrefs(userId);
+    return ok(prefs ?? { hoursPerDay: 2 });
+  }
+
+  // PUT /study-plan/preferences — save study preferences
+  if (method === 'PUT' && path === '/study-plan/preferences') {
+    const { hoursPerDay } = body as { hoursPerDay?: number };
+    if (!hoursPerDay || ![1, 2, 3].includes(hoursPerDay)) return badRequest('hoursPerDay debe ser 1, 2 o 3');
+    await saveStudyPlanPrefs({ userId, hoursPerDay: hoursPerDay as 1 | 2 | 3 });
+    return ok({ saved: true, hoursPerDay });
+  }
+
+  // GET /study-plan/current/ics — export current week plan as iCalendar
+  if (method === 'GET' && path === '/study-plan/current/ics') {
+    const weekOf = getMonday();
+    const plan = await getStudyPlan(userId, weekOf);
+    if (!plan) return ok({ ics: '', filename: `plan-${weekOf}.ics` });
+
+    const typeLabel: Record<string, string> = {
+      lesson: 'Lección', quiz: 'Quiz', reflection: 'Reflexión', review: 'Repaso', custom: 'Tarea',
+    };
+    const lines: string[] = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0',
+      'PRODID:-//Lux Learning//Plan de Estudio//ES',
+      'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    ];
+
+    for (const day of plan.days) {
+      for (const item of day.items) {
+        if (item.completed) continue;
+        const start = new Date(day.date + 'T09:00:00Z');
+        const end = new Date(start.getTime() + (item.estimatedMinutes ?? 30) * 60000);
+        const fmt = (d: Date) => d.toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+        lines.push('BEGIN:VEVENT');
+        lines.push(`DTSTART:${fmt(start)}`);
+        lines.push(`DTEND:${fmt(end)}`);
+        lines.push(`SUMMARY:[${typeLabel[item.type] ?? item.type}] ${item.title}`);
+        if (item.description) lines.push(`DESCRIPTION:${item.description.replace(/[,;\n]/g, (c) => c === '\n' ? '\\n' : `\\${c}`)}`);
+        lines.push(`UID:${item.id}@luxlearning.academy`);
+        lines.push('END:VEVENT');
+      }
+    }
+    lines.push('END:VCALENDAR');
+    return ok({ ics: lines.join('\r\n'), filename: `plan-semana-${weekOf}.ics` });
   }
 
   // POST /study-plan/request-change — student requests unlock from evaluator

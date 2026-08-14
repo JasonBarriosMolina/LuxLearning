@@ -219,7 +219,7 @@ export const api = {
         request<any>(`/evaluator/classes/${sessionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
     },
     studyPlan: {
-      generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string }) =>
+      generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string; wizardParams?: { hoursPerDay: 1 | 2 | 3; modulePriority: 'sequential' | 'parallel'; pace: 'normal' | 'catchup' } }) =>
         request<any>(`/evaluator/students/${studentId}/study-plan`, { method: 'POST', body: JSON.stringify(body) }),
       get: (studentId: string, weeks = 4) =>
         request<any>(`/evaluator/students/${studentId}/study-plan?weeks=${weeks}`),
@@ -244,6 +244,12 @@ export const api = {
       request<any>('/study-plan/request-change', { method: 'POST', body: JSON.stringify({ weekOf, note }) }),
     get: () => request<any>('/my-study-plan'),
     refresh: () => request<any>('/my-study-plan/refresh', { method: 'POST' }),
+    preferences: {
+      get: () => request<{ hoursPerDay: 1 | 2 | 3 }>('/study-plan/preferences'),
+      save: (body: { hoursPerDay: 1 | 2 | 3 }) =>
+        request<any>('/study-plan/preferences', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    exportIcs: () => request<{ ics: string; filename: string }>('/study-plan/current/ics'),
   },
 
   tasks: {

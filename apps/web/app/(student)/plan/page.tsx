@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Lock, ChevronLeft, ChevronRight, Sparkles, Loader2, X, Plus, RefreshCw, AlertCircle } from 'lucide-react';
+import { Lock, ChevronLeft, ChevronRight, Sparkles, Loader2, X, Plus, RefreshCw, AlertCircle, Calendar, Settings2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import { WeeklyGrid } from './_components/WeeklyGrid';
@@ -100,7 +100,39 @@ export default function StudyPlanPage() {
   const [changeNote, setChangeNote] = useState('');
   const [requestingSent, setRequestingSent] = useState(false);
   const [addModal, setAddModal] = useState<{ weekOf: string; dayIndex: number } | null>(null);
+  const [hoursPerDay, setHoursPerDay] = useState<1 | 2 | 3>(2);
+  const [showSettings, setShowSettings] = useState(false);
+  const [exportingIcs, setExportingIcs] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Load preferences on mount
+  useEffect(() => {
+    api.studyPlan.preferences.get().then((res: any) => {
+      const h = (res as any)?.data?.hoursPerDay ?? (res as any)?.hoursPerDay;
+      if (h && [1, 2, 3].includes(h)) setHoursPerDay(h as 1 | 2 | 3);
+    }).catch(() => {});
+  }, []);
+
+  const saveHoursPerDay = async (h: 1 | 2 | 3) => {
+    setHoursPerDay(h);
+    await api.studyPlan.preferences.save({ hoursPerDay: h }).catch(() => {});
+  };
+
+  const handleExportIcs = async () => {
+    setExportingIcs(true);
+    try {
+      const res: any = await api.studyPlan.exportIcs();
+      const data = res?.data ?? res;
+      if (!data?.ics) return;
+      const blob = new Blob([data.ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.filename ?? 'plan.ics';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* non-fatal */ } finally { setExportingIcs(false); }
+  };
 
   const loadPlans = useCallback(async () => {
     setLoading(true);
@@ -247,6 +279,51 @@ export default function StudyPlanPage() {
               className="p-1.5 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-40 transition-colors">
               <ChevronRight className="w-4 h-4" />
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* Settings strip — hours per day + ICS export */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={() => setShowSettings((v) => !v)}
+          className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+          Configurar plan
+        </button>
+        <button
+          onClick={handleExportIcs}
+          disabled={exportingIcs}
+          className="flex items-center gap-1.5 text-xs font-medium text-[#17527E] dark:text-blue-300 hover:underline disabled:opacity-50 transition-colors"
+        >
+          {exportingIcs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+          Exportar a calendario (.ics)
+        </button>
+        {showSettings && (
+          <div className="w-full flex items-center gap-3 mt-1 p-3 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl">
+            <Settings2 className="w-4 h-4 text-gray-400 shrink-0" />
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+              Horas de estudio por día:
+            </label>
+            <div className="flex gap-2">
+              {([1, 2, 3] as const).map((h) => (
+                <button
+                  key={h}
+                  onClick={() => saveHoursPerDay(h)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    hoursPerDay === h
+                      ? 'bg-[#17527E] text-white'
+                      : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 ml-auto hidden sm:block">
+              Usado al generar tu plan semanal automáticamente
+            </p>
           </div>
         )}
       </div>
