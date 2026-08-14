@@ -13,6 +13,10 @@ export interface ClassSession {
   vapiCallId?: string;
   /** pending → content_viewed → qa_started → completed | error */
   status: 'pending' | 'content_viewed' | 'qa_started' | 'completed' | 'error';
+  /** true when Vapi call completed successfully (one-time flag, permanent) */
+  hasCompletedQA?: boolean;
+  /** Total non-voided attempts; max 2 allowed */
+  attempts?: number;
   transcript?: string;
   messages?: any[];
   aiAnalysis?: string;

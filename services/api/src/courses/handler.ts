@@ -371,7 +371,7 @@ export const handler = async (event: Event) => {
                 } catch { /* non-fatal */ }
               }
               await updateClassSession(classSession.userId, classSession.sessionId, {
-                status: 'completed', transcript, messages, aiAnalysis, aiScore,
+                status: 'completed', hasCompletedQA: true, transcript, messages, aiAnalysis, aiScore,
                 durationSeconds: durationSec, completedAt: new Date().toISOString(),
               });
               const vapidCs = await getVapidKeys().catch(() => null);

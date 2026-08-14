@@ -2,7 +2,7 @@
 // Student-facing routes for Lux Mentor Class sessions.
 // GET  /my-classes?moduleId=X    — list this student's sessions
 // POST /my-classes/start         — register new session + return Vapi config
-// PATCH /my-classes/:sessionId   — update vapiCallId / status
+// PATCH /my-classes/:sessionId   — update vapiCallId / status / hasCompletedQA
 import { randomUUID } from 'crypto';
 import { ok, badRequest, forbidden } from '../shared/response';
 import {
@@ -11,6 +11,8 @@ import {
   getClassSession,
   updateClassSession,
 } from '../shared/db-classes';
+
+const MAX_ATTEMPTS = 2;
 
 export async function handleClasses(
   event: any,
@@ -24,7 +26,6 @@ export async function handleClasses(
     if (!userId) return forbidden('Login required');
     const moduleId = event.queryStringParameters?.moduleId;
     if (!moduleId) return badRequest('moduleId required');
-    // Include voided sessions so frontend can show the "network failure, retry" message
     const sessions = await listMyClassSessions(userId, moduleId);
     return ok(sessions);
   }
@@ -39,22 +40,71 @@ export async function handleClasses(
 
     const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
     if (!vapiPublicKey) {
-      return ok({ sessionId: null, vapiPublicKey: '', vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null });
+      return ok({ sessionId: null, vapiPublicKey: '', hasCompletedQA: false, vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null });
     }
 
-    // Find CLASS type EvaluationEvent for this course+module
-    const evalEvent = await prisma.evaluationEvent.findFirst({
-      where: { courseId, moduleId, type: 'CLASS' },
-      orderBy: { order: 'asc' },
-    }) ?? await prisma.evaluationEvent.findFirst({
-      where: { courseId, type: 'CLASS' },
-      orderBy: { order: 'asc' },
-    });
-
-    // Reuse existing non-completed session to avoid ghost records
+    // Get all existing sessions for this module
     const existing = await listMyClassSessions(userId, moduleId);
-    const reusable = existing.find((s) => s.status === 'pending' || s.status === 'content_viewed' || s.status === 'in_progress');
 
+    // Check if already completed (permanent one-time flag)
+    const completedSession = existing.find((s) => s.hasCompletedQA || s.status === 'completed');
+    if (completedSession) {
+      // Fetch lessonScript so frontend can show it in Tab 1
+      let lessonScript: string | null = null;
+      try {
+        const ev = await prisma.evaluationEvent.findFirst({
+          where: { courseId, moduleId, type: 'CLASS' },
+          orderBy: { order: 'asc' },
+        }) ?? await prisma.evaluationEvent.findFirst({
+          where: { courseId, type: 'CLASS' },
+          orderBy: { order: 'asc' },
+        });
+        lessonScript = ev?.lessonScript ?? null;
+      } catch (err) {
+        console.warn('[my-classes/start] evaluationEvent fetch failed (completed path):', err);
+      }
+      return ok({
+        sessionId: completedSession.sessionId,
+        vapiPublicKey: '',
+        hasCompletedQA: true,
+        transcript: completedSession.transcript ?? null,
+        messages: completedSession.messages ?? [],
+        lessonScript,
+        vapiPrompt: null,
+        vapiObjectives: null,
+        lessonVideoUrl: null,
+      });
+    }
+
+    // Count real attempts: non-voided sessions that actually reached Vapi (have a callId)
+    const realAttempts = existing.filter((s) => !s.voided && s.vapiCallId).length;
+    if (realAttempts >= MAX_ATTEMPTS) {
+      return ok({
+        sessionId: null,
+        vapiPublicKey: '',
+        hasCompletedQA: false,
+        attemptsExhausted: true,
+      });
+    }
+
+    // Fetch CLASS EvaluationEvent — wrap in try-catch, non-fatal
+    let evalEvent: any = null;
+    try {
+      evalEvent = await prisma.evaluationEvent.findFirst({
+        where: { courseId, moduleId, type: 'CLASS' },
+        orderBy: { order: 'asc' },
+      }) ?? await prisma.evaluationEvent.findFirst({
+        where: { courseId, type: 'CLASS' },
+        orderBy: { order: 'asc' },
+      });
+    } catch (err) {
+      console.warn('[my-classes/start] evaluationEvent query failed (start path):', err);
+    }
+
+    // Reuse pending session (avoid ghost records on refresh)
+    const reusable = existing.find((s) =>
+      s.status === 'pending' || s.status === 'content_viewed' || s.status === 'qa_started',
+    );
     const sessionId = reusable?.sessionId ?? randomUUID();
     if (!reusable) {
       await createClassSession({
@@ -64,6 +114,7 @@ export async function handleClasses(
         moduleId,
         evaluationEventId: evalEvent?.id ?? undefined,
         status: 'pending',
+        attempts: realAttempts,
         createdAt: new Date().toISOString(),
       });
     }
@@ -71,6 +122,10 @@ export async function handleClasses(
     return ok({
       sessionId,
       vapiPublicKey,
+      hasCompletedQA: false,
+      attemptsExhausted: false,
+      attemptsUsed: realAttempts,
+      attemptsMax: MAX_ATTEMPTS,
       vapiPrompt: evalEvent?.vapiPrompt ?? null,
       vapiObjectives: evalEvent?.vapiObjectives ?? null,
       lessonVideoUrl: evalEvent?.lessonVideoUrl ?? null,
@@ -85,15 +140,19 @@ export async function handleClasses(
     const sessionId = patchMatch[1]!;
     let body: any = {};
     try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
-    const { vapiCallId, status } = body as { vapiCallId?: string; status?: string };
+    const { vapiCallId, status, hasCompletedQA } = body as {
+      vapiCallId?: string;
+      status?: string;
+      hasCompletedQA?: boolean;
+    };
 
-    // Verify ownership
     const session = await getClassSession(userId, sessionId);
     if (!session) return badRequest('Sesión no encontrada');
 
     const patch: Record<string, any> = {};
     if (vapiCallId) patch.vapiCallId = vapiCallId;
     if (status) patch.status = status;
+    if (hasCompletedQA === true) patch.hasCompletedQA = true;
     if (Object.keys(patch).length) await updateClassSession(userId, sessionId, patch as any);
     return ok({ updated: true });
   }
