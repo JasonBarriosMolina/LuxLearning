@@ -66,6 +66,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
   const systemMsgSentRef = useRef(false);
   const monoTransitionSentRef = useRef(false);
   const callStartTimeRef = useRef<number>(0);
+  const sessionCompletedRef = useRef(false); // guard: prevent double-update when timer + call-end both fire
 
   const vapiRef = useRef<Vapi | null>(null);
   const sessionIdRef = useRef<string>('');
@@ -140,8 +141,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       }
 
       if (remaining <= 0) {
-        cleanup();
-        if (sessionIdRef.current) {
+        cleanup(); // triggers call-end; guard below prevents double update
+        if (sessionIdRef.current && !sessionCompletedRef.current) {
+          sessionCompletedRef.current = true;
           api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
         }
         setPhase('ended');
@@ -201,6 +203,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       setTimerVisible(false);
       systemMsgSentRef.current = false;
       monoTransitionSentRef.current = false;
+      sessionCompletedRef.current = false;
       // Mute student mic during Fase 1 (monologue)
       try { (vapi as any).setMuted(true); } catch {}
       const callId = (vapi as any).callId ?? '';
@@ -211,7 +214,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
 
     vapi.on('call-end', async () => {
       cleanup();
-      if (sessionIdRef.current) {
+      // Guard: if timer already sent the update, skip to avoid a duplicate write
+      if (sessionIdRef.current && !sessionCompletedRef.current) {
+        sessionCompletedRef.current = true;
         await api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
       }
       setPhase('ended');

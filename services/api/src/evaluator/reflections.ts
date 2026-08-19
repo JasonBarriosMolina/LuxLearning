@@ -8,7 +8,7 @@ import {
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from '../reflection/detect-ai';
-import { ok, badRequest, notFound, serverError } from '../shared/response';
+import { ok, badRequest, notFound, forbidden, serverError } from '../shared/response';
 import { logAudit } from '../shared/audit';
 import { createId } from '@paralleldrive/cuid2';
 

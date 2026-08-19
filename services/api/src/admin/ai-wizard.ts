@@ -48,8 +48,9 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
                   })),
                 });
               }
-              continue; // Skip lesson generation for this module
             }
+            // Skip lesson generation regardless (module has no lessons, or no quiz planned)
+            continue;
           }
 
           // ── Rich lesson prompt (5-7 min read, 4-pillar structure) ───────────
