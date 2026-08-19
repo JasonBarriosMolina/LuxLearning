@@ -17,7 +17,7 @@ import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1' });
-const SES_FROM = process.env.SES_FROM_EMAIL ?? 'jason.rbm@gmail.com';
+const SES_FROM = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
