@@ -118,8 +118,9 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
           const rawLessons = await invokeBedrockForJson(lessonPrompt, 7000);
           const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
           if (lessons.length === 0) {
-            // No lessons generated — delete the empty module so it doesn't appear blank to students
-            await prisma.module.delete({ where: { id: moduleId } }).catch(() => {});
+            // Bedrock failed or returned empty — keep the module (admin can regenerate later)
+            // Do NOT delete: deleting causes modules to silently disappear when Bedrock has transient failures.
+            console.error('[wizard-lessons-bulk] no lessons generated for module', moduleId, '— keeping empty module');
             failed.push(moduleId);
             continue;
           }
