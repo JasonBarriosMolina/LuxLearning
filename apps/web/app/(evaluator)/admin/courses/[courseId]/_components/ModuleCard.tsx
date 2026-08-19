@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  GripVertical, ChevronDown, ChevronRight, BookOpen, ClipboardCheck,
+  GripVertical, ChevronDown, ChevronRight, ChevronUp, BookOpen, ClipboardCheck,
   Eye, RefreshCw, Pencil, Trash2, Loader2, Sparkles, PlayCircle, Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -18,7 +18,11 @@ import { QuestionFields } from './QuestionFields';
 import type { ModuleForm, LessonForm, QuestionForm } from './types';
 import { newLessonForm, newQuestionForm } from './types';
 
-export function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: string; onRefresh: () => void }) {
+export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isFirst, isLast }: {
+  mod: any; courseId: string; onRefresh: () => void;
+  onMoveUp?: () => Promise<void>; onMoveDown?: () => Promise<void>;
+  isFirst?: boolean; isLast?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [editingMod, setEditingMod] = useState(false);
   const [form, setForm] = useState<ModuleForm>({
@@ -186,7 +190,17 @@ export function ModuleCard({ mod, courseId, onRefresh }: { mod: any; courseId: s
     <div className="border border-border rounded-2xl overflow-hidden">
       {/* Module header */}
       <div className="flex items-center gap-3 p-4 bg-white">
-        <GripVertical className="w-4 h-4 text-gray-300 shrink-0" />
+        <div className="flex flex-col shrink-0">
+          <button onClick={onMoveUp} disabled={isFirst || !onMoveUp} title="Mover módulo arriba"
+            className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-20 transition-colors">
+            <ChevronUp className="w-3 h-3" />
+          </button>
+          <GripVertical className="w-4 h-4 text-gray-300" />
+          <button onClick={onMoveDown} disabled={isLast || !onMoveDown} title="Mover módulo abajo"
+            className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-20 transition-colors">
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        </div>
         <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
           {expanded ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
           <div className="flex-1 min-w-0">

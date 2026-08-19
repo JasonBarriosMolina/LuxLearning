@@ -277,8 +277,29 @@ export default function AdminCourseDetailPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {course.modules?.map((mod: any) => (
-            <ModuleCard key={mod.id} mod={mod} courseId={courseId} onRefresh={load} />
+          {course.modules?.map((mod: any, mi: number) => (
+            <ModuleCard
+              key={mod.id} mod={mod} courseId={courseId} onRefresh={load}
+              isFirst={mi === 0} isLast={mi === (course.modules.length - 1)}
+              onMoveUp={async () => {
+                const prev = course.modules[mi - 1];
+                if (!prev) return;
+                await Promise.all([
+                  api.admin.modules.update(mod.id, { order: prev.order }),
+                  api.admin.modules.update(prev.id, { order: mod.order }),
+                ]);
+                await load();
+              }}
+              onMoveDown={async () => {
+                const next = course.modules[mi + 1];
+                if (!next) return;
+                await Promise.all([
+                  api.admin.modules.update(mod.id, { order: next.order }),
+                  api.admin.modules.update(next.id, { order: mod.order }),
+                ]);
+                await load();
+              }}
+            />
           ))}
         </div>
       )}

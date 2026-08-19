@@ -109,6 +109,17 @@ function CourseWizardInner() {
       setScheduleStart(schStart ?? '');
       setScheduleEnd(schEnd ?? '');
 
+      // Ensure the course's academicPeriod exists in the periods list.
+      // Older courses may have been saved before the AcademicPeriod table existed.
+      if (c.academicPeriod?.trim()) {
+        setPeriods((prev) => {
+          if (prev.some((p) => p.name === c.academicPeriod.trim())) return prev;
+          // Persist it so it shows up for all admins going forward
+          api.admin.periods.create(c.academicPeriod.trim()).catch(() => {});
+          return [{ id: `_legacy_${c.academicPeriod}`, name: c.academicPeriod.trim() }, ...prev];
+        });
+      }
+
       setStep1({
         title: c.title ?? '',
         academicPeriod: c.academicPeriod ?? '',
