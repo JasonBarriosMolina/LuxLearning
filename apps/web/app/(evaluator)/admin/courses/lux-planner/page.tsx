@@ -471,7 +471,7 @@ function CourseWizardInner() {
         <div>
           {step === 1 && (
             <StepIdentidad
-              step1={step1} setStep1={setStep1} setStep3={setStep3}
+              step1={step1} setStep1={setStep1} setStep3={setStep3} editingCourseId={editingCourseId}
               periods={periods} setPeriods={setPeriods}
               newPeriodInput={newPeriodInput} setNewPeriodInput={setNewPeriodInput}
               showNewPeriod={showNewPeriod} setShowNewPeriod={setShowNewPeriod}

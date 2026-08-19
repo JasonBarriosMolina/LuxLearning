@@ -13,6 +13,29 @@ import {
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
 } from './ctx';
 
+/**
+ * Convert residual Markdown artifacts to HTML so lesson content renders cleanly.
+ * AI models sometimes ignore the "no markdown" instruction — this catches the most common cases.
+ */
+function sanitizeLessonContent(raw: string): string {
+  if (!raw || typeof raw !== 'string') return raw;
+  return raw
+    // ATX headings (##/###) → <h3>
+    .replace(/^#{2,3}\s+(.+)$/gm, '<h3>$1</h3>')
+    // H1 fallback → <h3>
+    .replace(/^#\s+(.+)$/gm, '<h3>$1</h3>')
+    // Bold **text** → <strong>
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic *text* → <em>
+    .replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<em>$1</em>')
+    // Inline code `code` → <code>
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Horizontal rules
+    .replace(/^---+$/gm, '<hr/>')
+    // Bare newlines between block elements are fine — leave them
+    ;
+}
+
 export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
 
@@ -64,9 +87,9 @@ STRUCTURE for each text lesson (lessons 2-9) — 4 mandatory pillars:
 4. REFLECTIVE CLOSE: 2-3 key takeaways as <ul><li> + 1-2 self-assessment questions.
 
 REQUIREMENTS:
-- Lessons 2-9 (type "text"): minimum 700 words each (5-7 min read time). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. NO markdown.
-- Lesson 1 (type "video"): short intro content ~100 words.
-- Lesson 10 (type "video"): summary, key recap, transition to next module.
+- Lessons 2-9 (type "text"): minimum 700 words each (5-7 min read time). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTELY NO markdown — no **, no ##, no __, no backticks, no ---. Every bold word uses <strong>, every heading uses <h3>.
+- Lesson 1 (type "video"): short intro content ~100 words, HTML only.
+- Lesson 10 (type "video"): summary, key recap, transition to next module, HTML only.
 - Neutral professional English. No filler phrases or padding.
 - duration field: "5 min" for video, "7 min" for text lessons.
 
@@ -82,9 +105,9 @@ ESTRUCTURA para cada lección tipo texto (lecciones 2-9) — 4 pilares obligator
 4. CIERRE REFLEXIVO: 2-3 puntos clave como <ul><li> + 1-2 preguntas de autoevaluación.
 
 REQUISITOS:
-- Lecciones 2-9 (tipo "text"): mínimo 700 palabras cada una (5-7 min de lectura). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. SIN markdown.
-- Lección 1 (tipo "video"): contenido introductorio breve ~100 palabras.
-- Lección 10 (tipo "video"): resumen, repaso de puntos clave, transición al siguiente módulo.
+- Lecciones 2-9 (tipo "text"): mínimo 700 palabras cada una (5-7 min de lectura). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTAMENTE SIN markdown — sin **, sin ##, sin __, sin backticks, sin ---. Todo negrilla usa <strong>, todo encabezado usa <h3>.
+- Lección 1 (tipo "video"): contenido introductorio breve ~100 palabras, solo HTML.
+- Lección 10 (tipo "video"): resumen, repaso de puntos clave, transición al siguiente módulo, solo HTML.
 - Español latino neutro, formal. Sin modismos locales. Sin frases de relleno.
 - Campo duration: "5 min" para video, "7 min" para lecciones de texto.
 
@@ -106,7 +129,7 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
               moduleId,
               title: l.title || `Lección ${i + 1}`,
               type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
-              content: l.content || null,
+              content: l.content ? sanitizeLessonContent(String(l.content)) : null,
               youtubeId: '',
               imageUrl: null,
               duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '7 min'),
@@ -167,9 +190,15 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
       const jsonFormat = isEN
         ? `{"modules":[{"name":"Module","nameEN":"Module","description":"2-3 sentences","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Specific topic"],"module":"Module","procedure":"Suggested class activity","notes":"Important observation or upcoming deadline","evalEvent":null}]}`
         : `{"modules":[{"name":"Módulo","nameEN":"Module","description":"2-3 oraciones","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Tema específico"],"module":"Módulo","procedure":"Actividad sugerida en clase","notes":"Observación importante o entrega próxima","evalEvent":null}]}`;
+      const isAsync = (modality as string).toUpperCase().includes('ASINC') || (modality as string).toUpperCase().includes('ASYNC');
+      const asyncNote = isAsync
+        ? (isEN
+          ? '\n\nASYNC COURSE RULE: Assign modules at exactly 1 module per week in strict sequential order — no skipping weeks. Example: if 4 modules and 16 weeks, assign ~4 weeks per module; every week in the plan must belong to a module.'
+          : '\n\nREGLA CURSO ASÍNCRONO: Asigna módulos a razón de exactamente 1 módulo por semana en orden secuencial estricto — sin saltar semanas. Ejemplo: si hay 4 módulos y 16 semanas, asigna ~4 semanas por módulo; cada semana del plan debe pertenecer a un módulo.')
+        : '';
       const prompt = isEN
-        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. Group topics into logical modules (3-6 modules). For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
-        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Organiza los temas en módulos lógicos (3-6 módulos). Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
+        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. Group topics into logical modules (3-6 modules). For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
+        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}${asyncNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Organiza los temas en módulos lógicos (3-6 módulos). Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
 
       const result = await invokeBedrockForJson(prompt, 6000);
       if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
@@ -307,7 +336,11 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     const courseTitle = title as string;
 
     if (editingCourseId) {
-      await prisma.evaluationEvent.deleteMany({ where: { courseId: course.id } }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
+      // Delete only planner-managed types (QUIZ, EVIDENCE, EXAM, ATTENDANCE, INTERVIEW).
+      // CLASS events are created and managed separately via admin/classes — never delete them here.
+      await prisma.evaluationEvent.deleteMany({
+        where: { courseId: course.id, type: { notIn: ['CLASS'] } },
+      }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
     }
 
     for (let i = 0; i < evaluationItems.length; i++) {
@@ -426,6 +459,14 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
         updatedAt: now,
       }).catch((e: any) => console.error('[wizard/save] saveResource error:', e));
     } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
+
+    // If DOCX generation failed but course already has a planDocumentS3Key (edit mode),
+    // return a fresh signed URL for the existing document so the download link persists.
+    if (!docPublicUrl && course.planDocumentS3Key) {
+      try {
+        docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
+      } catch { /* non-fatal — download link just won't appear */ }
+    }
 
     let lessonJobId: string | null = null;
     const isEN_save = planLanguage === 'EN';
