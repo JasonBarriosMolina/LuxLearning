@@ -7,7 +7,6 @@ import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
-import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
 import { getVapidKeys } from '../shared/vapid';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -91,9 +90,6 @@ Responde ÚNICAMENTE con JSON válido:
   "suggestions": ["Sugerencia 1", "Sugerencia 2", "Sugerencia 3"],
   "readyToSubmit": true o false
 }`;
-
-      // Rate limit: 20 AI preview calls per user per hour
-      if (!await checkRateLimit(userId, 'bedrock-preview', 20, 3600)) return tooManyRequests();
 
       try {
         const response = await bedrock.send(new InvokeModelCommand({

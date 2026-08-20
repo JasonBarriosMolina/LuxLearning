@@ -4,7 +4,6 @@ import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EvalCtx, ses, FROM_EMAIL, bedrock } from './ctx';
 import { getQuizAttempts } from '../shared/db-dynamo';
 import { ok, badRequest, notFound, serverError } from '../shared/response';
-import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
 
 export async function handleMisc(ctx: EvalCtx): Promise<any | null> {
   const { event, method, path, prisma } = ctx;
@@ -118,9 +117,6 @@ Return ONLY the translated text, no explanations or extra content.
 
 Text to translate:
 ${text.trim()}`;
-
-    // Rate limit: 20 translation calls per evaluator per hour
-    if (!await checkRateLimit(ctx.userId, 'bedrock-translate', 20, 3600)) return tooManyRequests();
 
     const translateResponse = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
