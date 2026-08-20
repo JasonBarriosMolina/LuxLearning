@@ -67,7 +67,7 @@ const securityHeaders = [
       "frame-src https://www.youtube.com https://www.youtube-nocookie.com https://youtube.com https://vercel.live",
       "connect-src 'self' https://*.amazonaws.com https://*.execute-api.us-east-1.amazonaws.com https://cognito-idp.us-east-1.amazonaws.com wss://*.execute-api.us-east-1.amazonaws.com https://fonts.googleapis.com https://fonts.gstatic.com https://api.vapi.ai wss://*.vapi.ai https://*.daily.co wss://*.daily.co https://*.sentry.io",
       "media-src 'self' blob: https://lux-learning-images.s3.amazonaws.com",
-      "worker-src 'self' blob:",
+      "worker-src 'self' blob: https://*.daily.co https://*.vapi.ai",
     ].join('; '),
   },
 ];

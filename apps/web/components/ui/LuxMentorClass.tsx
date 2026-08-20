@@ -204,8 +204,10 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       systemMsgSentRef.current = false;
       monoTransitionSentRef.current = false;
       sessionCompletedRef.current = false;
-      // Mute student mic during Fase 1 (monologue)
-      try { (vapi as any).setMuted(true); } catch {}
+      // Mute student mic during Fase 1 (monologue).
+      // Delay slightly so Vapi's audio stack (AudioWorklet) finishes initializing
+      // before we modify the mute state — avoids race with AbortError on worklet load.
+      setTimeout(() => { try { (vapi as any).setMuted(true); } catch {} }, 500);
       const callId = (vapi as any).callId ?? '';
       if (callId && sessionIdRef.current) {
         await api.classes.update(sessionIdRef.current, { vapiCallId: callId, status: 'qa_started' }).catch(() => {});
