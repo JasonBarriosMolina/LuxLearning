@@ -3,13 +3,11 @@
 // Keyed by userId + action + time window — no extra table needed.
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from './db-core';
-import { getCurrentEnv } from './env-context';
 
 /**
  * Increment a counter for (userId, action) in the current time window.
  * Returns true if the request is within the allowed limit, false if exceeded.
  * Fails open on DynamoDB error — never blocks a user due to infra failure.
- * Rate limiting is disabled in test and staging environments.
  */
 export async function checkRateLimit(
   userId: string,
@@ -17,8 +15,6 @@ export async function checkRateLimit(
   maxPerWindow: number,
   windowSecs: number
 ): Promise<boolean> {
-  // Disable rate limiting in non-production environments
-  if (getCurrentEnv() !== 'prod') return true;
   const windowId = Math.floor(Date.now() / 1000 / windowSecs);
   const pk = `rl#${userId}#${action}#${windowId}`;
   try {
