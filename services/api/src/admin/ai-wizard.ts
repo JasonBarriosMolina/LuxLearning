@@ -41,14 +41,29 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
 
   // ── Async worker: wizard bulk lesson generation ──────────────────────────────
   if (ctx.action === 'wizard-lessons-bulk') {
-    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES', evaluationItems: blEvalItems = [], _quizOnlyForExistingModules = false } = body as any;
+    const {
+      _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '',
+      language: blLang = 'ES', evaluationItems: blEvalItems = [],
+      _quizOnlyForExistingModules = false,
+      quizModuleIndices: blQuizIndices,
+      classModuleIndices: blClassIndices,
+    } = body as any;
     const isBlEN = blLang === 'EN';
-    // Only generate quiz questions if the evaluation plan explicitly includes a QUIZ type.
-    // Lux Planner is the authority — if no QUIZ was configured, don't create one.
+    // Per-module index sets. Falls back to "all modules" when indices not provided.
     const hasQuizInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'QUIZ');
+    const hasClassInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'CLASS');
+    const quizIdxSet: Set<number> = new Set(
+      Array.isArray(blQuizIndices) ? blQuizIndices :
+      hasQuizInPlan ? (moduleIds as string[]).map((_: any, i: number) => i) : []
+    );
+    const classIdxSet: Set<number> = new Set(
+      Array.isArray(blClassIndices) ? blClassIndices :
+      hasClassInPlan ? (moduleIds as string[]).map((_: any, i: number) => i) : []
+    );
     const failed: string[] = [];
     try {
-      for (const moduleId of moduleIds as string[]) {
+      for (let moduleIdx = 0; moduleIdx < (moduleIds as string[]).length; moduleIdx++) {
+        const moduleId = (moduleIds as string[])[moduleIdx]!;
         try {
           const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
           if (!mod) continue;
@@ -57,7 +72,7 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
           // skip lesson generation if the module already has lessons.
           if (_quizOnlyForExistingModules) {
             const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
-            if (existingLessonCount > 0 && hasQuizInPlan) {
+            if (existingLessonCount > 0 && quizIdxSet.has(moduleIdx)) {
               const qPrompt = isBlEN
                 ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
                 : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
@@ -76,50 +91,63 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
             continue;
           }
 
-          // ── Rich lesson prompt (5-7 min read, 4-pillar structure) ───────────
-          const lessonPrompt = isBlEN
-            ? `You are an expert e-learning instructional designer. Generate exactly 10 lessons for the module "${mod.title}" in the course "${blTitle}".
+          // ── Dynamic lesson count: ~60 min/module, ~7.5 min active reading per text lesson ──
+          // With Lux Mentor Class (sync, ~50 min): only need brief async prep/wrap — 3 lessons.
+          // Without class: full async coverage — 8 lessons.
+          const hasClass = classIdxSet.has(moduleIdx);
+          const lessonCount = hasClass ? 3 : 8;
+          const textRange = lessonCount > 3
+            ? `Lessons 2-${lessonCount - 1}`
+            : 'Lesson 2';
+          const textRangeES = lessonCount > 3
+            ? `Lecciones 2-${lessonCount - 1}`
+            : 'Lección 2';
 
-STRUCTURE for each text lesson (lessons 2-9) — 4 mandatory pillars:
+          // ── Lesson prompt (4-pillar structure, active-reading durations) ────────
+          const lessonPrompt = isBlEN
+            ? `You are an expert e-learning instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".
+${hasClass ? `\nCONTEXT: This module has a live Lux Mentor Class (~50 min synchronous). Lessons are async support material: brief pre-class prep (lesson 1) + core reading (lesson 2) + post-class reflection (lesson ${lessonCount}).` : ''}
+
+STRUCTURE for each text lesson (${textRange}) — 4 mandatory pillars:
 1. HOOK: 2-3 compelling sentences that capture attention and contextualize the topic.
 2. DEVELOPMENT: 4-6 substantive paragraphs with real examples, analogies, and practical connections. Each paragraph must have 4-6 sentences. Use <h3> for sub-headings, <blockquote> for key concepts or citations.
 3. PRACTICAL BRIDGE: A concrete real-world application or case study (1-2 paragraphs).
 4. REFLECTIVE CLOSE: 2-3 key takeaways as <ul><li> + 1-2 self-assessment questions.
 
 REQUIREMENTS:
-- Lessons 2-9 (type "text"): minimum 700 words each (5-7 min read time). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTELY NO markdown — no **, no ##, no __, no backticks, no ---. Every bold word uses <strong>, every heading uses <h3>.
-- Lesson 1 (type "video"): short intro content ~100 words, HTML only.
-- Lesson 10 (type "video"): summary, key recap, transition to next module, HTML only.
-- Neutral professional English. No filler phrases or padding.
-- duration field: "5 min" for video, "7 min" for text lessons.
+- ${textRange} (type "text"): minimum ${hasClass ? '500' : '700'} words each (${hasClass ? '6-8' : '7-9'} min active reading). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTELY NO markdown.
+- Lesson 1 (type "video"): short ${hasClass ? 'pre-class prep' : 'intro'} ~100 words, HTML only, duration "5 min".
+- Lesson ${lessonCount} (type "video"): ${hasClass ? 'post-class reflection and key takeaways' : 'module summary and transition to next topic'}, HTML only, duration "5 min".
+- Neutral professional English. No filler phrases.
+- duration field: "5 min" for video, "${hasClass ? '8' : '7'} min" for text lessons.
 
-Return ONLY a valid JSON array of exactly 10 objects:
-[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Key 1","Key 2","Key 3"],"tip":"string"},
-{"title":"string","order":2,"type":"text","content":"<h3>Hook</h3><p>...</p><h3>Development</h3><p>...</p><blockquote>...</blockquote><h3>Practical Bridge</h3><p>...</p><h3>Key Takeaways</h3><ul><li>...</li></ul>","duration":"7 min","points":["Key 1","Key 2","Key 3"],"tip":"string"}]`
-            : `Eres un experto en diseño instruccional para e-learning. Genera exactamente 10 lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+Return ONLY a valid JSON array of exactly ${lessonCount} objects:
+[{"title":"string","order":1,"type":"video","content":"<p>...</p>","duration":"5 min","points":["Key 1","Key 2","Key 3"],"tip":"string"},
+{"title":"string","order":2,"type":"text","content":"<h3>Hook</h3><p>...</p><h3>Development</h3><p>...</p><h3>Practical Bridge</h3><p>...</p><h3>Key Takeaways</h3><ul><li>...</li></ul>","duration":"${hasClass ? '8' : '7'} min","points":["Key 1","Key 2","Key 3"],"tip":"string"}]`
+            : `Eres un experto en diseño instruccional para e-learning. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+${hasClass ? `\nCONTEXTO: Este módulo tiene una Clase Magistral con Lux Mentor (~50 min sincrónica). Las lecciones son material de apoyo asíncrono: preparación breve pre-clase (lección 1) + lectura central (lección 2) + reflexión post-clase (lección ${lessonCount}).` : ''}
 
-ESTRUCTURA para cada lección tipo texto (lecciones 2-9) — 4 pilares obligatorios:
+ESTRUCTURA para cada lección tipo texto (${textRangeES}) — 4 pilares obligatorios:
 1. GANCHO: 2-3 oraciones contundentes que capturan la atención y contextualizan el tema.
 2. DESARROLLO: 4-6 párrafos sustanciales con ejemplos reales, analogías y conexiones prácticas. Cada párrafo debe tener 4-6 oraciones. Usa <h3> para sub-títulos, <blockquote> para conceptos clave o citas relevantes.
 3. PUENTE PRÁCTICO: Aplicación real o caso de estudio concreto (1-2 párrafos).
 4. CIERRE REFLEXIVO: 2-3 puntos clave como <ul><li> + 1-2 preguntas de autoevaluación.
 
 REQUISITOS:
-- Lecciones 2-9 (tipo "text"): mínimo 700 palabras cada una (5-7 min de lectura). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTAMENTE SIN markdown — sin **, sin ##, sin __, sin backticks, sin ---. Todo negrilla usa <strong>, todo encabezado usa <h3>.
-- Lección 1 (tipo "video"): contenido introductorio breve ~100 palabras, solo HTML.
-- Lección 10 (tipo "video"): resumen, repaso de puntos clave, transición al siguiente módulo, solo HTML.
+- ${textRangeES} (tipo "text"): mínimo ${hasClass ? '500' : '700'} palabras cada una (${hasClass ? '6-8' : '7-9'} min lectura activa). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. ABSOLUTAMENTE SIN markdown.
+- Lección 1 (tipo "video"): ${hasClass ? 'preparación breve pre-clase' : 'introducción breve'} ~100 palabras, solo HTML, duration "5 min".
+- Lección ${lessonCount} (tipo "video"): ${hasClass ? 'reflexión post-clase y puntos clave de repaso' : 'resumen del módulo y transición al siguiente tema'}, solo HTML, duration "5 min".
 - Español latino neutro, formal. Sin modismos locales. Sin frases de relleno.
-- Campo duration: "5 min" para video, "7 min" para lecciones de texto.
+- Campo duration: "5 min" para video, "${hasClass ? '8' : '7'} min" para lecciones de texto.
 
-Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
-[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"string"},
-{"title":"string","order":2,"type":"text","content":"<h3>Gancho</h3><p>...</p><h3>Desarrollo</h3><p>...</p><blockquote>...</blockquote><h3>Puente Práctico</h3><p>...</p><h3>Cierre Reflexivo</h3><ul><li>...</li></ul>","duration":"7 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}]`;
+Devuelve ÚNICAMENTE un array JSON válido de exactamente ${lessonCount} objetos:
+[{"title":"string","order":1,"type":"video","content":"<p>...</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"string"},
+{"title":"string","order":2,"type":"text","content":"<h3>Gancho</h3><p>...</p><h3>Desarrollo</h3><p>...</p><h3>Puente Práctico</h3><p>...</p><h3>Cierre Reflexivo</h3><ul><li>...</li></ul>","duration":"${hasClass ? '8' : '7'} min","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}]`;
 
-          const rawLessons = await invokeBedrockForJson(lessonPrompt, 7000);
-          const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
+          const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000);
+          const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, lessonCount + 2) : [];
           if (lessons.length === 0) {
             // Bedrock failed or returned empty — keep the module (admin can regenerate later)
-            // Do NOT delete: deleting causes modules to silently disappear when Bedrock has transient failures.
             console.error('[wizard-lessons-bulk] no lessons generated for module', moduleId, '— keeping empty module');
             failed.push(moduleId);
             continue;
@@ -129,19 +157,19 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
             data: lessons.map((l: any, i: number) => ({
               moduleId,
               title: l.title || `Lección ${i + 1}`,
-              type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
+              type: l.type || (i === 0 || i === lessons.length - 1 ? 'video' : 'text'),
               content: l.content ? sanitizeLessonContent(String(l.content)) : null,
               youtubeId: '',
               imageUrl: null,
-              duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '7 min'),
+              duration: l.duration ? String(l.duration) : (i === 0 || i === lessons.length - 1 ? '5 min' : (hasClass ? '8 min' : '7 min')),
               points: Array.isArray(l.points) ? l.points : [],
               tip: l.tip || '',
               order: l.order || i + 1,
             })),
           });
 
-          // Only create quiz questions if the evaluation plan includes QUIZ type
-          if (hasQuizInPlan) {
+          // Only create quiz questions for designated modules (#18 fix)
+          if (quizIdxSet.has(moduleIdx)) {
             const qPrompt = isBlEN
               ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
               : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
@@ -156,7 +184,29 @@ Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
               });
             }
           }
-          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${lessons.length * 7} min` } });
+
+          // Create/update CLASS EvaluationEvent for designated modules (#17 fix)
+          if (classIdxSet.has(moduleIdx)) {
+            const classPrompt = isBlEN
+              ? `Generate a Lux Mentor class script for module "${mod.title}". JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline with 3 key topics and activities, 200 words>"}`
+              : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase con 3 temas clave y actividades, 200 palabras>"}`;
+            const classContent = await invokeBedrockForJson(classPrompt, 1000).catch(() => null);
+            if (classContent?.vapiPrompt) {
+              const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
+              if (existingClass) {
+                await prisma.evaluationEvent.update({ where: { id: existingClass.id }, data: { vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+              } else {
+                await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type: 'CLASS', name: isBlEN ? `Lux Mentor Class — ${mod.title}` : `Clase Magistral — ${mod.title}`, weight: 0, order: moduleIdx, vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+              }
+            }
+          }
+
+          // Module duration = actual sum of lesson durations (not fixed 7×n)
+          const totalMin = lessons.reduce((sum: number, l: any) => {
+            const m = parseInt(String(l.duration ?? '7'), 10);
+            return sum + (isNaN(m) ? 7 : m);
+          }, 0);
+          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${totalMin} min` } });
         } catch (modErr: any) {
           console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
           failed.push(moduleId);
@@ -472,6 +522,20 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     let lessonJobId: string | null = null;
     const isEN_save = planLanguage === 'EN';
 
+    // Compute which module indices get quiz/class from weeklyPlan (#17/#18 fix)
+    const _modNamesNew: string[] = (suggestedModules as any[]).map((m: any) => isEN_save ? (m.nameEN || m.name) : m.name);
+    const _quizSetNew = new Set<number>(); const _classSetNew = new Set<number>();
+    for (const wk of weeklyPlan as any[]) {
+      if (!wk.evalEvent?.type) continue;
+      const mi = _modNamesNew.indexOf(wk.module as string);
+      if (mi < 0) continue;
+      const et = (wk.evalEvent.type as string).toUpperCase();
+      if (et === 'QUIZ') _quizSetNew.add(mi);
+      if (et === 'CLASS') _classSetNew.add(mi);
+    }
+    const quizModuleIndices = Array.from(_quizSetNew);
+    const classModuleIndices = Array.from(_classSetNew);
+
     if (!editingCourseId) {
       // NEW course: create all suggested modules and kick off lesson generation
       const createdModuleIds: string[] = [];
@@ -501,7 +565,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems,
+              evaluationItems, quizModuleIndices, classModuleIndices,
             })),
           }));
         } catch (invokeErr: any) {
@@ -552,7 +616,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: newModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems,
+              evaluationItems, quizModuleIndices, classModuleIndices,
             })),
           }));
         } catch (invokeErr: any) {
