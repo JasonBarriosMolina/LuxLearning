@@ -7,6 +7,7 @@ import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getClassSessionByCallId, updateClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { handleClasses } from './classes';
+import { listMyClassSessions } from '../shared/db-classes';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
@@ -479,6 +480,26 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
       const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
       if (!vapiPublicKey) {
         return ok({ interviewId: null, vapiPublicKey: '', vapiPrompt: null, vapiObjectives: null });
+      }
+
+      // ── Prerequisite: all module lessons must be completed ───────────────────
+      const [moduleLessons, userProgress] = await Promise.all([
+        prisma.lesson.findMany({ where: { moduleId }, select: { id: true } }),
+        getLessonProgress(userId, courseId),
+      ]);
+      if (moduleLessons.length > 0) {
+        const completedLessonIds = new Set(userProgress.map((p: any) => p.lessonId));
+        const allLessonsComplete = moduleLessons.every((l: any) => completedLessonIds.has(l.id));
+        if (!allLessonsComplete) {
+          return badRequest('Debes completar todas las lecciones del módulo antes de la entrevista');
+        }
+      }
+
+      // ── Prerequisite: Lux Mentor Class must be completed ────────────────────
+      const classSessions = await listMyClassSessions(userId, moduleId);
+      const mentorClassDone = classSessions.some((s: any) => s.hasCompletedQA || s.status === 'completed');
+      if (!mentorClassDone) {
+        return badRequest('Debes completar la Clase con Mentor antes de la entrevista');
       }
 
       // Find INTERVIEW type EvaluationEvent for this course

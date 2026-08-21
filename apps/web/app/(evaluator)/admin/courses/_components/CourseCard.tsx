@@ -175,7 +175,7 @@ export function CourseCard({
               )}
             </Link>
             <Link
-              href={`/evaluator/students?courseId=${course.id}`}
+              href={`/admin/assign-courses?courseId=${course.id}`}
               className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-teal-600 hover:bg-teal-50 transition-colors"
               title="Ver estudiantes de este curso"
             >

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   UserPlus, BookOpen, Search, CheckCircle, Loader2, ChevronRight, ChevronLeft,
 } from 'lucide-react';
@@ -17,6 +18,8 @@ export default function AssignCoursesPage() {
   const { t } = useLanguage();
   const { role } = useAuth();
   const isEvaluator = role === 'EVALUATOR';
+  const searchParams = useSearchParams();
+  const preselectedCourseId = searchParams.get('courseId') ?? '';
   const [mode, setMode] = useState<'by-course' | 'by-student'>('by-course');
 
   // Data
@@ -70,6 +73,11 @@ export default function AssignCoursesPage() {
           (((uRes as any).data ?? []) as Student[]).filter((u) => u.role === 'STUDENT' && u.enabled),
         );
         setLoading(false);
+        // Pre-select course from URL param (e.g. coming from CourseCard "Estudiantes" button)
+        if (preselectedCourseId) {
+          setMode('by-course');
+          setSelectedCourseId(preselectedCourseId);
+        }
       })
       .catch((err: any) => { setLoadError(err.message ?? t.admin.loadError); setLoading(false); });
   }, []);

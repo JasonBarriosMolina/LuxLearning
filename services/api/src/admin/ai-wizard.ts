@@ -9,173 +9,17 @@ import type { CalendarEvent } from '../shared/db-calendar';
 import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, serverError } from '../shared/response';
 import {
-  AdminCtx, isAuthorized, isAdmin, getCallerName, shuffleQuestionOptions,
+  AdminCtx, isAuthorized, isAdmin, getCallerName,
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
 } from './ctx';
+import { handleAIWizardWorkers } from './ai-wizard-worker';
 
 export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
 
-  // ── Async worker: wizard bulk lesson generation ──────────────────────────────
-  if (ctx.action === 'wizard-lessons-bulk') {
-    const { _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '', language: blLang = 'ES', evaluationItems: blEvalItems = [], _quizOnlyForExistingModules = false } = body as any;
-    const isBlEN = blLang === 'EN';
-    // Only generate quiz questions if the evaluation plan explicitly includes a QUIZ type.
-    // Lux Planner is the authority — if no QUIZ was configured, don't create one.
-    const hasQuizInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'QUIZ');
-    const failed: string[] = [];
-    try {
-      for (const moduleId of moduleIds as string[]) {
-        try {
-          const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
-          if (!mod) continue;
-
-          // When re-using this worker just to generate quiz questions for already-existing modules,
-          // skip lesson generation if the module already has lessons.
-          if (_quizOnlyForExistingModules) {
-            const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
-            if (existingLessonCount > 0 && hasQuizInPlan) {
-              const qPrompt = isBlEN
-                ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
-                : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
-              const rawQ = await invokeBedrockForJson(qPrompt, 2000);
-              const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
-              if (questions.length > 0) {
-                await prisma.question.createMany({
-                  data: questions.map((q: any, i: number) => ({
-                    moduleId, text: q.text, options: q.options,
-                    correctIndex: Number(q.correctIndex), order: i + 1,
-                  })),
-                });
-              }
-              continue; // Skip lesson generation for this module
-            }
-          }
-
-          // ── Rich lesson prompt (5-7 min read, 4-pillar structure) ───────────
-          const lessonPrompt = isBlEN
-            ? `You are an expert e-learning instructional designer. Generate exactly 10 lessons for the module "${mod.title}" in the course "${blTitle}".
-
-STRUCTURE for each text lesson (lessons 2-9) — 4 mandatory pillars:
-1. HOOK: 2-3 compelling sentences that capture attention and contextualize the topic.
-2. DEVELOPMENT: 4-6 substantive paragraphs with real examples, analogies, and practical connections. Each paragraph must have 4-6 sentences. Use <h3> for sub-headings, <blockquote> for key concepts or citations.
-3. PRACTICAL BRIDGE: A concrete real-world application or case study (1-2 paragraphs).
-4. REFLECTIVE CLOSE: 2-3 key takeaways as <ul><li> + 1-2 self-assessment questions.
-
-REQUIREMENTS:
-- Lessons 2-9 (type "text"): minimum 700 words each (5-7 min read time). Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. NO markdown.
-- Lesson 1 (type "video"): short intro content ~100 words.
-- Lesson 10 (type "video"): summary, key recap, transition to next module.
-- Neutral professional English. No filler phrases or padding.
-- duration field: "5 min" for video, "7 min" for text lessons.
-
-Return ONLY a valid JSON array of exactly 10 objects:
-[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Key 1","Key 2","Key 3"],"tip":"string"},
-{"title":"string","order":2,"type":"text","content":"<h3>Hook</h3><p>...</p><h3>Development</h3><p>...</p><blockquote>...</blockquote><h3>Practical Bridge</h3><p>...</p><h3>Key Takeaways</h3><ul><li>...</li></ul>","duration":"7 min","points":["Key 1","Key 2","Key 3"],"tip":"string"}]`
-            : `Eres un experto en diseño instruccional para e-learning. Genera exactamente 10 lecciones para el módulo "${mod.title}" del curso "${blTitle}".
-
-ESTRUCTURA para cada lección tipo texto (lecciones 2-9) — 4 pilares obligatorios:
-1. GANCHO: 2-3 oraciones contundentes que capturan la atención y contextualizan el tema.
-2. DESARROLLO: 4-6 párrafos sustanciales con ejemplos reales, analogías y conexiones prácticas. Cada párrafo debe tener 4-6 oraciones. Usa <h3> para sub-títulos, <blockquote> para conceptos clave o citas relevantes.
-3. PUENTE PRÁCTICO: Aplicación real o caso de estudio concreto (1-2 párrafos).
-4. CIERRE REFLEXIVO: 2-3 puntos clave como <ul><li> + 1-2 preguntas de autoevaluación.
-
-REQUISITOS:
-- Lecciones 2-9 (tipo "text"): mínimo 700 palabras cada una (5-7 min de lectura). Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. SIN markdown.
-- Lección 1 (tipo "video"): contenido introductorio breve ~100 palabras.
-- Lección 10 (tipo "video"): resumen, repaso de puntos clave, transición al siguiente módulo.
-- Español latino neutro, formal. Sin modismos locales. Sin frases de relleno.
-- Campo duration: "5 min" para video, "7 min" para lecciones de texto.
-
-Devuelve ÚNICAMENTE un array JSON válido de exactamente 10 objetos:
-[{"title":"string","order":1,"type":"video","content":"<p>Intro...</p>","duration":"5 min","points":["Punto 1","Punto 2","Punto 3"],"tip":"string"},
-{"title":"string","order":2,"type":"text","content":"<h3>Gancho</h3><p>...</p><h3>Desarrollo</h3><p>...</p><blockquote>...</blockquote><h3>Puente Práctico</h3><p>...</p><h3>Cierre Reflexivo</h3><ul><li>...</li></ul>","duration":"7 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}]`;
-
-          const rawLessons = await invokeBedrockForJson(lessonPrompt, 7000);
-          const lessons = Array.isArray(rawLessons) ? rawLessons.slice(0, 10) : [];
-          if (lessons.length === 0) { failed.push(moduleId); continue; }
-
-          await prisma.lesson.createMany({
-            data: lessons.map((l: any, i: number) => ({
-              moduleId,
-              title: l.title || `Lección ${i + 1}`,
-              type: l.type || (i === 0 || i === 9 ? 'video' : 'text'),
-              content: l.content || null,
-              youtubeId: '',
-              imageUrl: null,
-              duration: l.duration ? String(l.duration) : (i === 0 || i === 9 ? '5 min' : '7 min'),
-              points: Array.isArray(l.points) ? l.points : [],
-              tip: l.tip || '',
-              order: l.order || i + 1,
-            })),
-          });
-
-          // Only create quiz questions if the evaluation plan includes QUIZ type
-          if (hasQuizInPlan) {
-            const qPrompt = isBlEN
-              ? `Generate exactly 10 multiple-choice questions about "${mod.title}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
-              : `Genera exactamente 10 preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
-            const rawQ = await invokeBedrockForJson(qPrompt, 2000);
-            const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
-            if (questions.length > 0) {
-              await prisma.question.createMany({
-                data: questions.map((q: any, i: number) => ({
-                  moduleId, text: q.text, options: q.options,
-                  correctIndex: Number(q.correctIndex), order: i + 1,
-                })),
-              });
-            }
-          }
-          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${lessons.length * 7} min` } });
-        } catch (modErr: any) {
-          console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
-          failed.push(moduleId);
-        }
-      }
-      await saveAiJob(_jobId, { status: 'done', modulesProcessed: (moduleIds as string[]).length, failed: failed.length });
-    } catch (err: any) {
-      await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando lecciones' });
-    }
-    return ok({});
-  }
-
-  // ── Async worker: wizard copilot ─────────────────────────────────────────────
-  if (ctx.action === 'wizard-copilot') {
-    const {
-      _jobId, title, courseType, description = '', planLanguage = 'ES', modality = '',
-      totalWeeks = 16, startDate = '', classDays = [], classSchedule = '',
-      academicPeriod = '', evaluationItems = [], syllabusInput = '', exceptionWeeks = [],
-    } = body as any;
-    try {
-      const isEN = planLanguage === 'EN';
-      const effectiveWeeks = (totalWeeks as number) - (exceptionWeeks as number[]).length;
-      const evalSummary = (evaluationItems as any[])
-        .map((it: any) => {
-          const label = isEN ? (it.nameEN || it.name) : it.name;
-          const countNote = it.count > 1 ? ` (${it.count})` : '';
-          return `- ${label}${countNote}: ${it.weight}%, ${it.count} entrega(s)`;
-        }).join('\n');
-      const exceptionNote = (exceptionWeeks as number[]).length > 0
-        ? `\n${isEN ? 'Non-teaching weeks' : 'Semanas con excepciones (NO lectivas)'}: ${(exceptionWeeks as number[]).map((n) => `S${n}`).join(', ')}`
-        : '';
-      const jsonFormat = isEN
-        ? `{"modules":[{"name":"Module","nameEN":"Module","description":"2-3 sentences","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Specific topic"],"module":"Module","procedure":"Suggested class activity","notes":"Important observation or upcoming deadline","evalEvent":null}]}`
-        : `{"modules":[{"name":"Módulo","nameEN":"Module","description":"2-3 oraciones","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Tema específico"],"module":"Módulo","procedure":"Actividad sugerida en clase","notes":"Observación importante o entrega próxima","evalEvent":null}]}`;
-      const prompt = isEN
-        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. Group topics into logical modules (3-6 modules). For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
-        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Organiza los temas en módulos lógicos (3-6 módulos). Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
-
-      const result = await invokeBedrockForJson(prompt, 6000);
-      if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
-        await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
-      } else {
-        await saveAiJob(_jobId, { status: 'done', weeklyPlan: result.weeklyPlan, modules: result.modules ?? [] });
-      }
-    } catch (err: any) {
-      await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando plan' });
-    }
-    return ok({});
-  }
+  // Delegate async worker actions to separate file (keeps this file ≤ 600 lines)
+  const workerResult = await handleAIWizardWorkers(ctx);
+  if (workerResult !== null) return workerResult;
 
   // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
   if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
@@ -349,6 +193,38 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }
     }
 
+    // Sync module-start Mondays to calendar (#5 fix)
+    if (!editingCourseId && startDate && (weeklyPlan as any[]).length > 0) {
+      try {
+        const modStartEvents: CalendarEvent[] = [];
+        const nowMod = new Date().toISOString();
+        const wCreatorId = `wiz-${course.id}`;
+        const base3 = new Date(startDate + 'T12:00:00');
+        const dow3 = base3.getDay(); const monOff = dow3 === 0 ? -6 : 1 - dow3;
+        const seenMods = new Set<string>();
+        for (const wk of weeklyPlan as any[]) {
+          const mName = wk.module as string;
+          if (!mName || seenMods.has(mName)) continue;
+          seenMods.add(mName);
+          const wIdx = (wk.weekNum as number) - 1;
+          const weekMon = new Date(base3); weekMon.setDate(base3.getDate() + monOff + wIdx * 7);
+          const monIso = weekMon.toISOString().split('T')[0]!;
+          modStartEvents.push({
+            creatorId: wCreatorId,
+            eventId: `wiz-mod-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
+            title: `📚 Inicio: ${mName} — ${courseTitle}`,
+            type: 'reminder', startDate: new Date(monIso + 'T08:00:00').toISOString(),
+            endDate: new Date(monIso + 'T09:00:00').toISOString(), allDay: true,
+            visibility: 'community', creatorRole: callerRole, createdAt: nowMod,
+            targetCourseId: course.id,
+          });
+        }
+        if (modStartEvents.length > 0) {
+          await batchCreateCalendarEvents(modStartEvents).catch((e: any) => console.error('[wizard] module-start calendar error:', e));
+        }
+      } catch { /* non-fatal */ }
+    }
+
     // Generate Word document plan (non-fatal)
     let planDocumentS3Key: string | null = null;
     let docPublicUrl: string | null = null;
@@ -440,6 +316,20 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
         } catch (e: any) { console.error('[wizard/save] module create error:', e); }
       }
 
+      // Compute which module indices get quiz/class from weeklyPlan (#17/#18 fix)
+      const _modNames: string[] = (suggestedModules as any[]).map((m: any) => isEN_save ? (m.nameEN || m.name) : m.name);
+      const _quizSet = new Set<number>(); const _classSet = new Set<number>();
+      for (const wk of weeklyPlan as any[]) {
+        if (!wk.evalEvent?.type) continue;
+        const mi = _modNames.indexOf(wk.module as string);
+        if (mi < 0) continue;
+        const et = (wk.evalEvent.type as string).toUpperCase();
+        if (et === 'QUIZ') _quizSet.add(mi);
+        if (et === 'CLASS') _classSet.add(mi);
+      }
+      const quizModuleIndices = Array.from(_quizSet);
+      const classModuleIndices = Array.from(_classSet);
+
       if (createdModuleIds.length > 0) {
         lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         await saveAiJob(lessonJobId, { status: 'processing', modules: createdModuleIds.length });
@@ -451,7 +341,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems,
+              evaluationItems, quizModuleIndices, classModuleIndices,
             })),
           }));
         } catch (invokeErr: any) {
