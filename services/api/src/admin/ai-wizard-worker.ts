@@ -71,33 +71,49 @@ export async function handleAIWizardWorkers(ctx: AdminCtx): Promise<any | null> 
             }
           }
 
-          // ── Create empty lesson shells (admin regenerates content individually) ──
+          // ── Generate lesson content via Bedrock (one call per module) ──────────
           // hasClass → 3 lessons (video intro + text core + video reflection)
           // no class  → 8 lessons (video intro + 6 text + video summary)
           const hasClass = classIdxSet.has(moduleIdx);
           const lessonCount = hasClass ? 3 : 8;
           const textDuration = hasClass ? '8 min' : '7 min';
 
-          const lessonShells = Array.from({ length: lessonCount }, (_, i) => {
+          const lessonPrompt = isBlEN
+            ? `You are an expert instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".
+Lessons 1 and ${lessonCount} are video type (introductory/summary, 100-150 words content). The rest are text type (deeper content, 200-300 words each).
+Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown:
+[{"title":"Lesson title","content":"<p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|7 min"}]`
+            : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras de contenido). Las demás son tipo texto (contenido más profundo, 200-300 palabras cada una).
+Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown:
+[{"title":"Título lección","content":"<p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|7 min"}]`;
+
+          const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
+          const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
+            ? rawLessons : null;
+
+          const lessonData = Array.from({ length: lessonCount }, (_, i) => {
             const isFirst = i === 0;
             const isLast = i === lessonCount - 1;
-            const lessonType = isFirst || isLast ? 'video' : 'text';
+            const defaultType = isFirst || isLast ? 'video' : 'text';
+            const defaultDuration = defaultType === 'video' ? '5 min' : textDuration;
+            const gen = validLessons?.[i];
             return {
               moduleId,
-              title: isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`,
-              type: lessonType,
-              content: null,
+              title: gen?.title || (isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`),
+              type: gen?.type || defaultType,
+              content: gen?.content ? sanitizeLessonContent(gen.content) : null,
               youtubeId: '',
-              imageUrl: null,
-              duration: lessonType === 'video' ? '5 min' : textDuration,
-              points: [] as string[],
-              tip: '',
+              imageUrl: null as string | null,
+              duration: gen?.duration || defaultDuration,
+              points: Array.isArray(gen?.points) ? gen.points : [] as string[],
+              tip: gen?.tip || '',
               order: i + 1,
             };
           });
 
-          await prisma.lesson.createMany({ data: lessonShells });
-          const createdLessons = lessonShells.map((l) => ({ duration: l.duration }));
+          await prisma.lesson.createMany({ data: lessonData });
+          const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
 
           // Bug #18: Only create quiz questions for modules explicitly designated for QUIZ
           if (quizIdxSet.has(moduleIdx)) {
