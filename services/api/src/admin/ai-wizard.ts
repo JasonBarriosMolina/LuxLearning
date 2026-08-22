@@ -91,81 +91,33 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
             continue;
           }
 
-          // ── Dynamic lesson count: ~60 min/module target ──────────────────────
-          // With Lux Mentor Class (~50 min sync): 3 async lessons (prep + core + reflect).
-          // Without class: 8 async lessons for full coverage.
+          // ── Create empty lesson shells (admin regenerates content individually) ──
+          // hasClass → 3 lessons (video intro + text core + video reflection)
+          // no class  → 8 lessons (video intro + 6 text + video summary)
           const hasClass = classIdxSet.has(moduleIdx);
           const lessonCount = hasClass ? 3 : 8;
+          const textDuration = hasClass ? '8 min' : '7 min';
 
-          // ── Per-lesson generation loop ─────────────────────────────────────────
-          // One focused Bedrock call per lesson (≤2500 tokens text, ≤800 video).
-          // Eliminates token-limit truncation risk from batch prompts.
-          const createdLessons: Array<{ duration: string }> = [];
-          for (let lessonIdx = 0; lessonIdx < lessonCount; lessonIdx++) {
-            const lessonNum = lessonIdx + 1;
-            const isFirst = lessonIdx === 0;
-            const isLast = lessonIdx === lessonCount - 1;
+          const lessonShells = Array.from({ length: lessonCount }, (_, i) => {
+            const isFirst = i === 0;
+            const isLast = i === lessonCount - 1;
             const lessonType = isFirst || isLast ? 'video' : 'text';
-            const defaultDuration = lessonType === 'video' ? '5 min' : (hasClass ? '8 min' : '7 min');
+            return {
+              moduleId,
+              title: isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`,
+              type: lessonType,
+              content: null as string | null,
+              youtubeId: '',
+              imageUrl: null as string | null,
+              duration: lessonType === 'video' ? '5 min' : textDuration,
+              points: [] as string[],
+              tip: '',
+              order: i + 1,
+            };
+          });
 
-            const singlePrompt = isBlEN
-              ? lessonType === 'video'
-                ? `Generate lesson ${lessonNum} of ${lessonCount} for module "${mod.title}" (course: "${blTitle}"). Type: video, ~100 words HTML. Role: ${isFirst ? (hasClass ? 'brief pre-class prep' : 'intro overview') : (hasClass ? 'post-class reflection + key takeaways' : 'module summary + transition to next topic')}. Return ONLY JSON: {"title":"string","order":${lessonNum},"type":"video","content":"<p>...</p>","duration":"5 min","points":["Key 1","Key 2","Key 3"],"tip":"string"}`
-                : `You are an expert e-learning instructional designer. Generate lesson ${lessonNum} of ${lessonCount} for module "${mod.title}" (course: "${blTitle}").${hasClass ? ' This module has a live Lux Mentor Class — lessons are async reading support.' : ''}
-
-STRUCTURE — 4 sections, each with a thematic <h3> reflecting the lesson subject (NEVER generic labels like "Hook", "Development", "Practical Bridge", "Key Takeaways"):
-1. OPENING: 2-3 attention-capturing sentences. Thematic <h3>.
-2. CORE CONTENT: 4-6 substantive paragraphs (4-6 sentences each), real examples, analogies. Topic-specific <h3> sub-headings. <blockquote> for key concepts.
-3. APPLIED PRACTICE: 1-2 paragraphs, concrete real-world application. Thematic <h3>.
-4. KEY TAKEAWAYS: 2-3 <ul><li> points + 1-2 self-assessment questions. Thematic <h3>.
-
-Min ${hasClass ? '500' : '700'} words. Rich HTML ONLY: <h3>, <p>, <ul><li>, <blockquote>, <strong>. NO markdown.
-Return ONLY JSON: {"title":"string","order":${lessonNum},"type":"text","content":"<h3>...</h3><p>...</p>...","duration":"${defaultDuration}","points":["Key 1","Key 2","Key 3"],"tip":"string"}`
-              : lessonType === 'video'
-                ? `Genera la lección ${lessonNum} de ${lessonCount} para el módulo "${mod.title}" (curso: "${blTitle}"). Tipo: video, ~100 palabras HTML. Rol: ${isFirst ? (hasClass ? 'preparación breve pre-clase' : 'introducción general') : (hasClass ? 'reflexión post-clase + puntos clave de repaso' : 'resumen del módulo + transición al siguiente tema')}. Devuelve ÚNICAMENTE JSON: {"title":"string","order":${lessonNum},"type":"video","content":"<p>...</p>","duration":"5 min","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}`
-                : `Eres un experto en diseño instruccional para e-learning. Genera la lección ${lessonNum} de ${lessonCount} para el módulo "${mod.title}" (curso: "${blTitle}").${hasClass ? ' Este módulo tiene una Clase Magistral Lux Mentor — las lecciones son lectura de apoyo asíncrona.' : ''}
-
-ESTRUCTURA — 4 secciones, cada una con un <h3> temático que refleje el tema real de la lección (NUNCA etiquetas genéricas como "Gancho", "Desarrollo", "Puente Práctico", "Puntos Clave"):
-1. APERTURA: 2-3 oraciones que capturan la atención. <h3> temático.
-2. CONTENIDO CENTRAL: 4-6 párrafos sustanciales (4-6 oraciones c/u), ejemplos reales, analogías. <h3> específicos del sub-tema. <blockquote> para conceptos clave.
-3. APLICACIÓN PRÁCTICA: 1-2 párrafos, caso de estudio concreto. <h3> temático.
-4. CIERRE: 2-3 <ul><li> con puntos clave + 1-2 preguntas de autoevaluación. <h3> temático.
-
-Mín ${hasClass ? '500' : '700'} palabras. Solo HTML rico: <h3>, <p>, <ul><li>, <blockquote>, <strong>. SIN markdown.
-Devuelve ÚNICAMENTE JSON: {"title":"string","order":${lessonNum},"type":"text","content":"<h3>...</h3><p>...</p>...","duration":"${defaultDuration}","points":["Clave 1","Clave 2","Clave 3"],"tip":"string"}`;
-
-            try {
-              const rawLesson = await invokeBedrockForJson(singlePrompt, lessonType === 'video' ? 800 : 2500);
-              if (!rawLesson || typeof rawLesson !== 'object' || Array.isArray(rawLesson)) {
-                console.error(`[wizard-lessons-bulk] lesson ${lessonNum}/${lessonCount} bad response for module ${moduleId}`);
-                continue;
-              }
-              const duration = rawLesson.duration ? String(rawLesson.duration) : defaultDuration;
-              await prisma.lesson.create({
-                data: {
-                  moduleId,
-                  title: rawLesson.title || (isBlEN ? `Lesson ${lessonNum}` : `Lección ${lessonNum}`),
-                  type: rawLesson.type || lessonType,
-                  content: rawLesson.content ? sanitizeLessonContent(String(rawLesson.content)) : null,
-                  youtubeId: '',
-                  imageUrl: null,
-                  duration,
-                  points: Array.isArray(rawLesson.points) ? rawLesson.points : [],
-                  tip: rawLesson.tip || '',
-                  order: lessonNum,
-                },
-              });
-              createdLessons.push({ duration });
-            } catch (lessonErr: any) {
-              console.error(`[wizard-lessons-bulk] lesson ${lessonNum}/${lessonCount} error for module ${moduleId}:`, lessonErr?.message);
-            }
-          }
-
-          if (createdLessons.length === 0) {
-            console.error('[wizard-lessons-bulk] no lessons created for module', moduleId, '— keeping empty module');
-            failed.push(moduleId);
-            continue;
-          }
+          await prisma.lesson.createMany({ data: lessonShells });
+          const createdLessons = lessonShells.map((l) => ({ duration: l.duration }));
 
           // Only create quiz questions for designated modules (#18 fix)
           if (quizIdxSet.has(moduleIdx)) {
