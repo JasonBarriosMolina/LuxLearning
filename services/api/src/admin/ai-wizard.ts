@@ -91,33 +91,49 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
             continue;
           }
 
-          // ── Create empty lesson shells (admin regenerates content individually) ──
+          // ── Generate lesson content via Bedrock (one call per module) ──────────
           // hasClass → 3 lessons (video intro + text core + video reflection)
           // no class  → 8 lessons (video intro + 6 text + video summary)
           const hasClass = classIdxSet.has(moduleIdx);
           const lessonCount = hasClass ? 3 : 8;
           const textDuration = hasClass ? '8 min' : '7 min';
 
-          const lessonShells = Array.from({ length: lessonCount }, (_, i) => {
+          const lessonPrompt = isBlEN
+            ? `You are an expert instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".
+Lessons 1 and ${lessonCount} are video type (introductory/summary, 100-150 words content). The rest are text type (deeper content, 200-300 words each).
+Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown:
+[{"title":"Lesson title","content":"<p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|7 min"}]`
+            : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".
+La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras de contenido). Las demás son tipo texto (contenido más profundo, 200-300 palabras cada una).
+Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown:
+[{"title":"Título lección","content":"<p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|7 min"}]`;
+
+          const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
+          const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
+            ? rawLessons : null;
+
+          const lessonData = Array.from({ length: lessonCount }, (_, i) => {
             const isFirst = i === 0;
             const isLast = i === lessonCount - 1;
-            const lessonType = isFirst || isLast ? 'video' : 'text';
+            const defaultType = isFirst || isLast ? 'video' : 'text';
+            const defaultDuration = defaultType === 'video' ? '5 min' : textDuration;
+            const gen = validLessons?.[i];
             return {
               moduleId,
-              title: isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`,
-              type: lessonType,
-              content: null as string | null,
+              title: gen?.title || (isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`),
+              type: gen?.type || defaultType,
+              content: gen?.content ? sanitizeLessonContent(gen.content) : null as string | null,
               youtubeId: '',
               imageUrl: null as string | null,
-              duration: lessonType === 'video' ? '5 min' : textDuration,
-              points: [] as string[],
-              tip: '',
+              duration: gen?.duration || defaultDuration,
+              points: Array.isArray(gen?.points) ? gen.points : [] as string[],
+              tip: gen?.tip || '',
               order: i + 1,
             };
           });
 
-          await prisma.lesson.createMany({ data: lessonShells });
-          const createdLessons = lessonShells.map((l) => ({ duration: l.duration }));
+          await prisma.lesson.createMany({ data: lessonData });
+          const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
 
           // Only create quiz questions for designated modules (#18 fix)
           if (quizIdxSet.has(moduleIdx)) {
@@ -281,7 +297,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
       cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
       evaluationItems = [], weeklyPlan = [], suggestedModules = [], editingCourseId,
-      pilotoAutomatico = false, syllabusInput = '',
+      pilotoAutomatico = false, syllabusInput = '', replaceModules = false,
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
@@ -487,8 +503,12 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     const quizModuleIndices = Array.from(_quizSetNew);
     const classModuleIndices = Array.from(_classSetNew);
 
-    if (!editingCourseId) {
-      // NEW course: create all suggested modules and kick off lesson generation
+    if (!editingCourseId || replaceModules) {
+      // NEW course OR edit with replace: delete existing modules first, then create fresh
+      if (editingCourseId && replaceModules) {
+        await prisma.module.deleteMany({ where: { courseId: course.id } });
+        await prisma.courseSession.deleteMany({ where: { courseId: course.id } });
+      }
       const createdModuleIds: string[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
         const mod = (suggestedModules as any[])[mi];
@@ -526,9 +546,11 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
         }
       }
 
-      await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+      if (!editingCourseId) {
+        await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+      }
     } else {
-      // EDIT mode: create any suggested modules that don't yet exist in the DB.
+      // EDIT mode (add-only): create any suggested modules that don't yet exist in the DB.
       // Match by name (case-insensitive) to avoid duplicating modules on re-save.
       const existingModules = await prisma.module.findMany({
         where: { courseId: course.id },
