@@ -92,21 +92,38 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
           }
 
           // ── Generate lesson content via Bedrock (one call per module) ──────────
-          // hasClass → 3 lessons (video intro + text core + video reflection)
-          // no class  → 8 lessons (video intro + 6 text + video summary)
+          // Dynamic lesson count based on ~60 min async target per module.
+          // 2 video lessons (intro + outro, 5 min each) + text lessons at 10 min
+          // active comprehension each (reading + assimilation, not raw WPM).
+          // Modules WITH a synchronous class still get the same async content —
+          // the class is supplementary, not a replacement for study material.
           const hasClass = classIdxSet.has(moduleIdx);
-          const lessonCount = hasClass ? 3 : 8;
-          const textDuration = hasClass ? '8 min' : '7 min';
+          const TARGET_ASYNC_MIN = 60;
+          const VIDEO_LESSON_MIN = 5;
+          const TEXT_COMPREHENSION_MIN = 10; // active comprehension, not superficial WPM
+          const textLessonCount = Math.max(4, Math.min(8,
+            Math.round((TARGET_ASYNC_MIN - 2 * VIDEO_LESSON_MIN) / TEXT_COMPREHENSION_MIN)
+          )); // default: 5 → lessonCount = 7 (≈ 60 min async)
+          const lessonCount = 2 + textLessonCount;
+          const textDuration = `${TEXT_COMPREHENSION_MIN} min`;
+
+          const classContextNote = hasClass
+            ? (isBlEN
+              ? `\nThis module includes a 50-minute synchronous Lux Mentor class. The async lessons are the study material students use before and after the class.`
+              : `\nEste módulo incluye una sesión sincrónica de 50 minutos en Lux Mentor. Las lecciones asíncronas son el material de estudio que los estudiantes usan antes y después de esa sesión.`)
+            : '';
 
           const lessonPrompt = isBlEN
-            ? `You are an expert instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".
-Lessons 1 and ${lessonCount} are video type (introductory/summary, 100-150 words content). The rest are text type (deeper content, 200-300 words each).
+            ? `You are an expert instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".${classContextNote}
+Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module. Durations reflect comprehension time (reading + assimilation), not superficial reading speed.
+Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (200-300 words deep content, ~${TEXT_COMPREHENSION_MIN} min active comprehension each).
 Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown:
-[{"title":"Lesson title","content":"<p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|7 min"}]`
-            : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".
-La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras de contenido). Las demás son tipo texto (contenido más profundo, 200-300 palabras cada una).
+[{"title":"Lesson title","content":"<p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|10 min"}]`
+            : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
+Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo. Las duraciones reflejan tiempo de comprensión real (lectura + asimilación de conceptos), no velocidad de lectura superficial.
+La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (contenido profundo, 200-300 palabras, ~${TEXT_COMPREHENSION_MIN} min de comprensión activa cada una).
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown:
-[{"title":"Título lección","content":"<p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|7 min"}]`;
+[{"title":"Título lección","content":"<p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|10 min"}]`;
 
           const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
           const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
