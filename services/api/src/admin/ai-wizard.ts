@@ -88,7 +88,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
       cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
       evaluationItems = [], weeklyPlan = [], suggestedModules = [], editingCourseId,
-      pilotoAutomatico = false, syllabusInput = '',
+      pilotoAutomatico = false, syllabusInput = '', replaceModules = false,
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
@@ -298,7 +298,11 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
 
     let lessonJobId: string | null = null;
-    if (!editingCourseId) {
+    if (!editingCourseId || replaceModules) {
+      if (editingCourseId && replaceModules) {
+        await prisma.module.deleteMany({ where: { courseId: course.id } });
+        await prisma.courseSession.deleteMany({ where: { courseId: course.id } });
+      }
       const isEN_save = planLanguage === 'EN';
       const createdModuleIds: string[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
@@ -351,7 +355,9 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
         }
       }
 
-      await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+      if (!editingCourseId) {
+        await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+      }
     }
 
     // When editing a course: if QUIZ was added to the eval plan, auto-generate questions
