@@ -118,6 +118,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
       evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
       pilotoAutomatico: Boolean(pilotoAutomatico),
+      isAutoevaluated: modality === 'ASINCRONICA',
       planWeeklyPlan: weeklyPlan.length > 0 ? weeklyPlan : undefined,
       planSyllabusInput: syllabusInput || undefined,
     };

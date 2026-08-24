@@ -7,7 +7,6 @@ import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
-import { checkRateLimit, tooManyRequests } from '../shared/rate-limit';
 import { getVapidKeys } from '../shared/vapid';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -92,9 +91,6 @@ Responde ÚNICAMENTE con JSON válido:
   "readyToSubmit": true o false
 }`;
 
-      // Rate limit: 20 AI preview calls per user per hour
-      if (!await checkRateLimit(userId, 'bedrock-preview', 20, 3600)) return tooManyRequests();
-
       try {
         const response = await bedrock.send(new InvokeModelCommand({
           modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -165,6 +161,9 @@ Responde ÚNICAMENTE con JSON válido:
           moduleTitle: module.title,
           courseTitle: module.course.title,
         } : {}),
+        isAutoevaluated: (module.course as any).isAutoevaluated === true,
+        moduleTitle: module.title,
+        courseTitle: module.course.title,
       };
 
       // Guard: do not allow overwriting an approved or in-review reflection
@@ -183,7 +182,7 @@ Responde ÚNICAMENTE con JSON válido:
       // Send to SQS for AI processing
       await sqs.send(new SendMessageCommand({
         QueueUrl: process.env.SQS_REFLECTION_QUEUE_URL!,
-        MessageBody: JSON.stringify({ userId, moduleId, env: getCurrentEnv() }),
+        MessageBody: JSON.stringify({ userId, moduleId, env: getCurrentEnv(), isAutoevaluated: (module.course as any).isAutoevaluated === true }),
         // Standard queue — MessageGroupId is not used (only valid for FIFO queues)
       }));
 

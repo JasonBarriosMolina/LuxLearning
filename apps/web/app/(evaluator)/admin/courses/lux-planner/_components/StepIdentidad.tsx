@@ -14,6 +14,7 @@ interface StepIdentidadProps {
   step1: Step1Data;
   setStep1: React.Dispatch<React.SetStateAction<Step1Data>>;
   setStep3: React.Dispatch<React.SetStateAction<Step3Data>>;
+  editingCourseId: string | null;
   periods: { id: string; name: string }[];
   setPeriods: React.Dispatch<React.SetStateAction<{ id: string; name: string }[]>>;
   newPeriodInput: string;
@@ -38,7 +39,7 @@ interface StepIdentidadProps {
 }
 
 export function StepIdentidad({
-  step1, setStep1, setStep3,
+  step1, setStep1, setStep3, editingCourseId,
   periods, setPeriods,
   newPeriodInput, setNewPeriodInput,
   showNewPeriod, setShowNewPeriod,
@@ -73,7 +74,7 @@ export function StepIdentidad({
         <SectionLabel>{s('Tipo de curso', 'Course type')}</SectionLabel>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {COURSE_TYPES.map((ct) => (
-            <button key={ct.id} onClick={() => { setStep1((p) => ({ ...p, courseType: ct.id })); setStep3({ items: [], luxMentorWeeks: [] }); }}
+            <button key={ct.id} onClick={() => { const changing = step1.courseType !== ct.id; setStep1((p) => ({ ...p, courseType: ct.id })); if (changing && !editingCourseId) setStep3({ items: [], luxMentorWeeks: [] }); }}
               className={`text-left p-4 rounded-xl border-2 transition-all ${step1.courseType === ct.id ? 'border-cta-from bg-blue-50 dark:bg-blue-900/20' : 'border-border hover:border-gray-300 hover:bg-surface'}`}>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${step1.courseType === ct.id ? 'bg-cta-from text-white' : 'bg-gray-100 text-gray-500'}`}>{ct.icon}</div>
               <p className="font-semibold text-charcoal text-sm">{planEN ? ct.labelEN : ct.label}</p>
@@ -164,6 +165,22 @@ export function StepIdentidad({
               ))}
             </div>
           </div>
+          {isAsync && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 flex items-start gap-3">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  {s('Curso Asincrónico Autogestionado — IA Driven', 'Asynchronous Self-Managed Course — AI Driven')}
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
+                  {s(
+                    'No requiere evaluador humano. Bedrock AI evaluará reflexiones y entregas automáticamente. Los días y horarios de clase no aplican.',
+                    'No human evaluator required. Bedrock AI evaluates reflections and submissions automatically. Class days and schedule do not apply.',
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
           {!isAsync && (
             <>
               <div className="space-y-2">
