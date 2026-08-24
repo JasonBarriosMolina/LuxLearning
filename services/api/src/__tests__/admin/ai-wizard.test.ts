@@ -2,8 +2,12 @@
  * Tests for admin/ai-wizard.ts
  * Focus: dynamic lesson count + comprehension-based durations (bug fix)
  *
- * Bug: lessonCount was hardcoded (hasClass ? 3 : 8) with superficial WPM durations (7 min).
- * Fix: dynamic count targeting ~60 min async per module, text lessons at 10 min comprehension time.
+ * Bug (original): lessonCount was hardcoded (hasClass ? 3 : 8) with superficial WPM durations (7 min).
+ * Fix (7311391): dynamic count targeting ~60 min async per module, text lessons at 10 min comprehension time.
+ *
+ * Bug (2026-08-24, Trello DmPpbrff): 10 min/lesson produced fewer, denser lessons than requested.
+ * Fix: text lessons target 5-7 min each (6 min), scaffolded, with subtitle/bullet chunking and a
+ * reflective close — still totaling ~60 min per module, now via more/shorter lessons (10 total).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeAdminCtx, makePrisma, bodyOf } from '../helpers/ctx';
@@ -96,16 +100,19 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     const ctx = await import('../../admin/ctx');
     vi.spyOn(ctx, 'invokeBedrockForJson').mockResolvedValue([
       { title: 'Lección 1', content: '<p>Intro</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
-      { title: 'Lección 2', content: '<p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '10 min' },
-      { title: 'Lección 3', content: '<p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '10 min' },
-      { title: 'Lección 4', content: '<p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '10 min' },
-      { title: 'Lección 5', content: '<p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '10 min' },
-      { title: 'Lección 6', content: '<p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '10 min' },
-      { title: 'Lección 7', content: '<p>Resumen</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 2', content: '<h3>Tema A</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 3', content: '<h3>Tema B</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 4', content: '<h3>Tema C</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 5', content: '<h3>Tema D</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 6', content: '<h3>Tema E</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 7', content: '<h3>Tema F</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 8', content: '<h3>Tema G</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 9', content: '<h3>Cierre reflexivo</h3><p>Resumen</p><ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+      { title: 'Lección 10', content: '<p>Resumen</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
     ]);
   });
 
-  it('genera 7 lecciones sin clase (2 video + 5 texto = ~60 min)', async () => {
+  it('genera 10 lecciones sin clase (2 video + 8 texto = ~60 min)', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -113,15 +120,15 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    expect(capturedLessons).toHaveLength(7);
+    expect(capturedLessons).toHaveLength(10);
 
     const videos = capturedLessons.filter((l: any) => l.type === 'video');
     const texts  = capturedLessons.filter((l: any) => l.type === 'text');
     expect(videos).toHaveLength(2);
-    expect(texts).toHaveLength(5);
+    expect(texts).toHaveLength(8);
   });
 
-  it('lecciones de texto usan duración de comprensión activa (10 min), no 7 min superficial', async () => {
+  it('lecciones de texto usan duración corta de 5-7 min (andamiaje), no 10 min densos', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -130,13 +137,14 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     await handleAIWizard(ctx as any);
 
     const texts = capturedLessons.filter((l: any) => l.type === 'text');
-    const wrongDuration = texts.filter((l: any) => l.duration === '7 min');
+    const wrongDuration = texts.filter((l: any) => l.duration === '7 min' || l.duration === '10 min');
     expect(wrongDuration).toHaveLength(0);
 
-    // Cada lección texto debe durar 10 min (comprensión activa)
+    // Cada lección texto debe durar entre 5 y 7 min (andamiaje progresivo)
     texts.forEach((l: any) => {
       const mins = parseInt(l.duration, 10);
-      expect(mins).toBeGreaterThanOrEqual(8);
+      expect(mins).toBeGreaterThanOrEqual(5);
+      expect(mins).toBeLessThanOrEqual(7);
     });
   });
 
@@ -172,14 +180,14 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    // 2 video × 5 min + 5 text × 10 min = 60 min
+    // 2 video × 5 min + 8 text × 6 min = 58 min
     const updateCall = updateSpy.mock.calls.find((c: any[]) =>
       c[0]?.data?.duration != null
     );
     expect(updateCall).toBeDefined();
     const durationStr: string = updateCall![0].data.duration;
     const totalMin = parseInt(durationStr, 10);
-    expect(totalMin).toBeGreaterThanOrEqual(55);
+    expect(totalMin).toBeGreaterThanOrEqual(50);
     expect(totalMin).toBeLessThanOrEqual(65);
   });
 
@@ -192,5 +200,23 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     await handleAIWizard(ctx as any);
 
     expect(capturedLessons.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('sanitiza viñetas markdown ("- item") a <ul><li> para chunking visual', async () => {
+    const ctxModule = await import('../../admin/ctx');
+    (ctxModule.invokeBedrockForJson as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { title: 'Lección 1', content: '<p>Intro</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 2', content: '## Concepto clave\n- Punto uno\n- Punto dos\n<p>Cuerpo</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
+    ]);
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const prisma = buildPrismaWithLessonCapture();
+    const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    const textLesson = capturedLessons.find((l: any) => l.type === 'text');
+    expect(textLesson.content).toContain('<h3>Concepto clave</h3>');
+    expect(textLesson.content).toContain('<ul><li>Punto uno</li><li>Punto dos</li></ul>');
   });
 });
