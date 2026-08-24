@@ -165,6 +165,22 @@ export function StepIdentidad({
               ))}
             </div>
           </div>
+          {isAsync && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 flex items-start gap-3">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  {s('Curso Asincrónico Autogestionado — IA Driven', 'Asynchronous Self-Managed Course — AI Driven')}
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
+                  {s(
+                    'No requiere evaluador humano. Bedrock AI evaluará reflexiones y entregas automáticamente. Los días y horarios de clase no aplican.',
+                    'No human evaluator required. Bedrock AI evaluates reflections and submissions automatically. Class days and schedule do not apply.',
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
           {!isAsync && (
             <>
               <div className="space-y-2">

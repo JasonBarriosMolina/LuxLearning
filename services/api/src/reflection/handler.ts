@@ -161,6 +161,9 @@ Responde ÚNICAMENTE con JSON válido:
           moduleTitle: module.title,
           courseTitle: module.course.title,
         } : {}),
+        isAutoevaluated: (module.course as any).isAutoevaluated === true,
+        moduleTitle: module.title,
+        courseTitle: module.course.title,
       };
 
       // Guard: do not allow overwriting an approved or in-review reflection
@@ -179,7 +182,7 @@ Responde ÚNICAMENTE con JSON válido:
       // Send to SQS for AI processing
       await sqs.send(new SendMessageCommand({
         QueueUrl: process.env.SQS_REFLECTION_QUEUE_URL!,
-        MessageBody: JSON.stringify({ userId, moduleId, env: getCurrentEnv() }),
+        MessageBody: JSON.stringify({ userId, moduleId, env: getCurrentEnv(), isAutoevaluated: (module.course as any).isAutoevaluated === true }),
         // Standard queue — MessageGroupId is not used (only valid for FIFO queues)
       }));
 

@@ -1,17 +1,17 @@
 // AI wizard domain handler for lux-admin.
 // Handles: wizard/copilot (plan generation), wizard/save, and their async workers.
-import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
-import { saveAiJob, batchCreateCalendarEvents, deleteWizardCalendarEvents, saveResource } from '../shared/db-dynamo';
+import { saveAiJob } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
-import type { CalendarEvent } from '../shared/db-calendar';
 import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, serverError } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName, shuffleQuestionOptions,
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
 } from './ctx';
+import { generateWizardPlanDocument, createWizardCourseSessions, syncWizardCalendarEvents } from './ai-wizard-docx';
 
 /**
  * Convert residual Markdown artifacts to HTML so lesson content renders cleanly.
@@ -19,8 +19,8 @@ import {
  */
 function sanitizeLessonContent(raw: string): string {
   if (!raw || typeof raw !== 'string') return raw;
-  return raw
-    // ATX headings (##/###) → <h3>
+  let out = raw
+    // ATX headings (##/###) → <h3> — visual chunking / subtítulos
     .replace(/^#{2,3}\s+(.+)$/gm, '<h3>$1</h3>')
     // H1 fallback → <h3>
     .replace(/^#\s+(.+)$/gm, '<h3>$1</h3>')
@@ -31,9 +31,13 @@ function sanitizeLessonContent(raw: string): string {
     // Inline code `code` → <code>
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Horizontal rules
-    .replace(/^---+$/gm, '<hr/>')
-    // Bare newlines between block elements are fine — leave them
-    ;
+    .replace(/^---+$/gm, '<hr/>');
+  // Bullet lists (viñetas): group consecutive "- item" / "* item" lines into <ul><li>
+  out = out.replace(/(?:^[-*]\s+.+$\n?)+/gm, (block) => {
+    const items = block.trim().split(/\n/).map((line) => line.replace(/^[-*]\s+/, '').trim());
+    return `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+  });
+  return out;
 }
 
 export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
@@ -100,10 +104,10 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
           const hasClass = classIdxSet.has(moduleIdx);
           const TARGET_ASYNC_MIN = 60;
           const VIDEO_LESSON_MIN = 5;
-          const TEXT_COMPREHENSION_MIN = 10; // active comprehension, not superficial WPM
+          const TEXT_COMPREHENSION_MIN = 6; // 5-7 min per lesson — scaffolded chunks, not long monologues
           const textLessonCount = Math.max(4, Math.min(8,
             Math.round((TARGET_ASYNC_MIN - 2 * VIDEO_LESSON_MIN) / TEXT_COMPREHENSION_MIN)
-          )); // default: 5 → lessonCount = 7 (≈ 60 min async)
+          )); // default: 6 → lessonCount = 10 (≈ 60 min async)
           const lessonCount = 2 + textLessonCount;
           const textDuration = `${TEXT_COMPREHENSION_MIN} min`;
 
@@ -115,15 +119,29 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
 
           const lessonPrompt = isBlEN
             ? `You are an expert instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".${classContextNote}
-Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module. Durations reflect comprehension time (reading + assimilation), not superficial reading speed.
-Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (200-300 words deep content, ~${TEXT_COMPREHENSION_MIN} min active comprehension each).
-Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown:
-[{"title":"Lesson title","content":"<p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|10 min"}]`
+Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module, split into short scaffolded lessons (${TEXT_COMPREHENSION_MIN} min each) — each lesson builds on the previous one's concepts.
+Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (150-220 words each, ~${TEXT_COMPREHENSION_MIN} min active comprehension).
+STRUCTURE for every text lesson's "content" field (HTML, no full markdown):
+- One specific subtitle (<h3>) naming the concept covered — never generic labels like "Introducción" or "Resumen".
+- Short paragraphs of at most 4-5 lines each — no dense walls of text.
+- At least one <strong> bolded key term and one bullet list (use "- item" lines, they get converted to <ul><li>) to break up the reading.
+- One brief practical/real-world case connecting the theory to actual application (puente práctico).
+- The LAST text lesson of the module must close with a reflective wrap-up: a bullet list summarizing key points plus 1-2 self-check questions for the student.
+Write in neutral, formal Latin American Spanish — no local slang or regionalisms — even when writing in English use plain international phrasing.
+Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown fencing:
+[{"title":"Lesson title","content":"<h3>Specific subtitle</h3><p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
             : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
-Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo. Las duraciones reflejan tiempo de comprensión real (lectura + asimilación de conceptos), no velocidad de lectura superficial.
-La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (contenido profundo, 200-300 palabras, ~${TEXT_COMPREHENSION_MIN} min de comprensión activa cada una).
-Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown:
-[{"title":"Título lección","content":"<p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|10 min"}]`;
+Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo, repartidos en lecciones cortas con andamiaje progresivo (${TEXT_COMPREHENSION_MIN} min cada una) — cada lección construye sobre los conceptos de la anterior.
+La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (150-220 palabras cada una, ~${TEXT_COMPREHENSION_MIN} min de comprensión activa).
+ESTRUCTURA obligatoria para el campo "content" de cada lección de texto (HTML, sin markdown completo):
+- Un subtítulo específico (<h3>) que nombre el concepto tratado — nunca genéricos como "Introducción" o "Resumen".
+- Párrafos cortos de máximo 4-5 líneas — evitar bloques densos de texto.
+- Al menos un término clave en <strong> y una lista con viñetas (usa líneas "- item", se convierten a <ul><li>) para facilitar la lectura (chunking visual).
+- Un caso práctico breve que conecte la teoría con la aplicación real (puente práctico).
+- La ÚLTIMA lección de texto del módulo debe cerrar con un cierre reflexivo: una lista de viñetas con el resumen de puntos clave más 1-2 preguntas de autoevaluación para el estudiante.
+Redacta en español latino neutro y formal — sin modismos ni jerga local de ningún país.
+Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
+[{"title":"Título lección","content":"<h3>Subtítulo específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
 
           const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
           const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
@@ -344,6 +362,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
       evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
       pilotoAutomatico: Boolean(pilotoAutomatico),
+      isAutoevaluated: modality === 'ASINCRONICA',
       planWeeklyPlan: weeklyPlan.length > 0 ? weeklyPlan : undefined,
       planSyllabusInput: syllabusInput || undefined,
     };
@@ -394,114 +413,14 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       } catch (evalErr: any) { console.error('[wizard/save] evaluationEvent create error:', evalErr?.message); }
     }
 
-    // Sync evaluation due dates to calendar
-    {
-      if (editingCourseId) {
-        await deleteWizardCalendarEvents(course.id).catch((e: any) => console.error('[wizard] calendar delete error:', e));
-      }
-      const calendarEventsToCreate: CalendarEvent[] = [];
-      const now = new Date().toISOString();
-      const wizCreatorId = `wiz-${course.id}`;
-      for (const item of (evaluationItems as any[])) {
-        const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
-        for (const dueDate of dueDates) {
-          const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
-          const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
-          calendarEventsToCreate.push({
-            creatorId: wizCreatorId,
-            eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
-            title: `${item.name || item.nameEN} — ${title}`,
-            description: item.instructions || undefined,
-            type: 'deadline', startDate: dayStart, endDate: dayEnd, allDay: true,
-            visibility: 'community', creatorRole: callerRole, createdAt: now,
-            targetCourseId: course.id,
-          });
-        }
-      }
-      if (calendarEventsToCreate.length > 0) {
-        await batchCreateCalendarEvents(calendarEventsToCreate).catch((e: any) => console.error('[wizard] calendar sync error:', e));
-      }
-    }
+    // Sync evaluation due dates to calendar (helper in ai-wizard-docx.ts)
+    await syncWizardCalendarEvents({ courseId: course.id, courseTitle: title, editingCourseId, evaluationItems, callerRole });
 
-    // Generate Word document plan (non-fatal)
-    let planDocumentS3Key: string | null = null;
-    let docPublicUrl: string | null = null;
-    try {
-      const { default: docxPkg } = await import('docx') as any;
-      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, HeadingLevel } = docxPkg;
-      const isEN = planLanguage === 'EN';
-      const L = (es: string, en: string) => isEN ? en : es;
-      const border = { style: BorderStyle.SINGLE, size: 1, color: '999999' };
-      const cellBorders = { top: border, bottom: border, left: border, right: border };
-      const hCell = (text: string, shade = 'DBEAFE') => new TableCell({ shading: { fill: shade }, borders: cellBorders, children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 18 })] })] });
-      const dCell = (text: string) => new TableCell({ borders: cellBorders, children: [new Paragraph({ children: [new TextRun({ text, size: 18 })] })] });
-      const startDateFmt = startDate ? new Date(startDate).toLocaleDateString(isEN ? 'en-US' : 'es-CR') : '—';
-      const COURSE_TYPE_LABELS: Record<string, string> = { TEORICO: L('Teórico','Theoretical'), TEORICO_PRACTICO: L('Teórico-Práctico','Theoretical-Practical'), PROYECTOS: L('Taller / Proyectos','Workshop / Projects'), PROGRAMA_ESPECIAL: L('Programa Especial','Special Program'), CURSO_CORTO: L('Curso Corto','Short Course'), LIBRE: L('Curso Libre / Tutoría','Free Course / Tutoring') };
-      const MODALITY_LABELS: Record<string, string> = { PRESENCIAL: L('Presencial','In-Person'), SINCRONICA: L('Sincrónica','Synchronous'), ASINCRONICA: L('Asincrónica','Asynchronous'), HIBRIDA: L('Híbrida','Hybrid') };
-      const EVAL_TYPE_LABELS: Record<string, string> = { QUIZ: 'Quiz', EVIDENCE: L('Entrega','Submission'), EXAM: L('Examen','Exam'), ATTENDANCE: L('Asistencia','Attendance') };
-      const infoRows = [[L('Nombre del curso','Course name'), title],[L('Tipo de curso','Course type'), COURSE_TYPE_LABELS[courseType] ?? courseType ?? '—'],[L('Modalidad','Modality'), MODALITY_LABELS[modality] ?? modality ?? '—'],[L('Período académico','Academic period'), academicPeriod || '—'],[L('Fecha de inicio','Start date'), startDateFmt],[L('Horario','Schedule'), classSchedule || '—'],[L('Días de clase','Class days'), (classDays as string[]).join(', ') || '—'],[L('Semanas lectivas','Teaching weeks'), String(totalWeeks || '—')]];
-      const infoTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: infoRows.map(([k, v]) => new TableRow({ children: [hCell(k, 'EFF6FF'), dCell(v)] })) });
-      const DAY_TO_JS: Record<string, number> = { 'Lunes':1,'Martes':2,'Miércoles':3,'Jueves':4,'Viernes':5,'Sábado':6,'Domingo':0 };
-      const getClassDates = (weekIdx: number): string => {
-        if (!startDate || !(classDays as string[]).length) return '';
-        const base = new Date(startDate + 'T12:00:00'); const dow = base.getDay();
-        const mondayOffset = dow === 0 ? -6 : 1 - dow;
-        const weekMonday = new Date(base); weekMonday.setDate(base.getDate() + mondayOffset + weekIdx * 7);
-        return (classDays as string[]).map((day: string) => { const offset = ((DAY_TO_JS[day] ?? 1) - 1 + 7) % 7; const d = new Date(weekMonday); d.setDate(weekMonday.getDate() + offset); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }).join(', ');
-      };
-      let bibliography: string[] = []; let guidelines: string[] = [];
-      try {
-        const moduleNames = (suggestedModules as any[]).map((m: any) => isEN ? (m.nameEN || m.name) : m.name).slice(0, 5);
-        const extra = await invokeBedrockForJson(isEN ? `For a course titled "${title}" with modules: ${moduleNames.join(', ')}. Generate: 1) 4 academic bibliography references in APA format. 2) 4 general course guidelines. Respond ONLY with JSON: {"bibliography":["APA ref 1","APA ref 2","APA ref 3","APA ref 4"],"guidelines":["Rule 1.","Rule 2.","Rule 3.","Rule 4."]}` : `Para el curso "${title}" con módulos: ${moduleNames.join(', ')}. Genera: 1) 4 referencias bibliográficas en formato APA. 2) 4 indicaciones generales para estudiantes. Responde ÚNICAMENTE con JSON: {"bibliography":["Ref APA 1","Ref APA 2","Ref APA 3","Ref APA 4"],"guidelines":["Indicación 1.","Indicación 2.","Indicación 3.","Indicación 4."]}`, 1000);
-        if (Array.isArray(extra?.bibliography)) bibliography = extra.bibliography;
-        if (Array.isArray(extra?.guidelines)) guidelines = extra.guidelines;
-      } catch { /* non-fatal */ }
-      const evalRows = [new TableRow({ children: [hCell(L('Evaluación','Evaluation')), hCell(L('Tipo','Type')), hCell(L('Porcentaje','Percentage')), hCell(L('Habilidades por evaluar','Skills to Evaluate'))] }), ...(evaluationItems as any[]).map((it: any) => { const nameFmt = `${isEN ? (it.nameEN || it.name) : it.name}${(it.count ?? 1) > 1 ? ` (${it.count})` : ''}`; return new TableRow({ children: [dCell(nameFmt), dCell(EVAL_TYPE_LABELS[it.type] ?? it.type), dCell(`${it.weight ?? 0}%`), dCell(it.instructions || '')] }); }), new TableRow({ children: [hCell(L('TOTAL','TOTAL'), 'FEF9C3'), dCell(''), hCell(`${(evaluationItems as any[]).reduce((s: number, i: any) => s + (parseFloat(i.weight) || 0), 0)}%`, 'FEF9C3'), dCell('')] })];
-      const evalTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: evalRows });
-      const planRows = [new TableRow({ children: [hCell(L('Nº Semana','Wk#')), hCell(L('Fecha de clases','Class dates')), hCell(L('Habilidades (tópicos y subtópicos)','Skills (topics & subtopics)')), hCell(L('Módulo','Module')), hCell(L('Procedimiento','Procedure')), hCell(L('Observaciones','Notes'))] }), ...(weeklyPlan as any[]).map((wk: any) => { const classDatesStr = getClassDates(wk.weekNum - 1); const obsText = wk.evalEvent ? `${L('Entrega','Delivery')}: ${wk.evalEvent.name}` : (wk.notes || ''); return new TableRow({ children: [dCell(`${L('S','W')}${wk.weekNum}`), dCell(classDatesStr), dCell((wk.topics as string[]).join('; ')), dCell(wk.module || '—'), dCell(wk.procedure || ''), dCell(obsText)] }); })];
-      const planTable = weeklyPlan.length > 0 ? new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: planRows }) : null;
-      const h1 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text, bold: true, size: 32, color: '17527E' })] });
-      const h2 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text, bold: true, size: 24, color: '17527E' })] });
-      const spacer = () => new Paragraph({ children: [] });
-      const docChildren: any[] = [h1(L('PLAN DE ESTUDIOS','COURSE PLAN')), new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 28 })] }), spacer(), h2(L('1. Datos Generales','1. General Information')), infoTable, spacer(), h2(L('2. Sistema de Evaluación','2. Evaluation System')), evalTable, spacer()];
-      let sec = 2;
-      if (planTable) { sec++; docChildren.push(h2(L(`${sec}. Cronograma Mensual de Habilidades`,`${sec}. Monthly Skills Schedule`))); docChildren.push(planTable); docChildren.push(spacer()); }
-      if ((suggestedModules as any[]).length > 0) { sec++; docChildren.push(h2(L(`${sec}. Módulos del Curso`,`${sec}. Course Modules`))); for (const mod of suggestedModules as any[]) { docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })] })); docChildren.push(spacer()); } }
-      if (bibliography.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Bibliografía`,`${sec}. Bibliography`))); for (const ref of bibliography) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${ref}`, size: 18 })] })); docChildren.push(spacer()); }
-      if (guidelines.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Indicaciones Generales`,`${sec}. General Guidelines`))); for (const rule of guidelines) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${rule}`, size: 18 })] })); docChildren.push(spacer()); }
-      docChildren.push(h2(L('Revisado y Aprobado:','Reviewed and Approved:'))); docChildren.push(spacer()); docChildren.push(new Paragraph({ children: [new TextRun({ text: '_____________________      _____________________', size: 18 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: L('Docente                                  Director Académico','Instructor                         Academic Director'), size: 18 })] })); docChildren.push(spacer());
-      const doc = new Document({ sections: [{ children: docChildren }] });
-      const buffer = await Packer.toBuffer(doc);
-      const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
-      await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="plan-${course.id}.docx"` }));
-      planDocumentS3Key = s3Key;
-      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
-      await prisma.course.update({ where: { id: course.id }, data: { planDocumentS3Key: s3Key } });
-      const now = new Date().toISOString();
-      await saveResource({
-        evaluatorId: ctx.userId ?? 'system',
-        resourceId: `res-plan-${course.id}-${planLanguage.toLowerCase()}`,
-        title: `Plan de Estudios — ${title}`,
-        description: `Generado por Lux Planner (${planLanguage})`,
-        fileUrl: `plan://${course.id}`,
-        fileName: `plan-${course.id}.docx`,
-        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        fileSize: buffer.byteLength,
-        folder: 'Planes de Estudio',
-        courseIds: [course.id],
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      }).catch((e: any) => console.error('[wizard/save] saveResource error:', e));
-    } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
-
-    // If DOCX generation failed but course already has a planDocumentS3Key (edit mode),
-    // return a fresh signed URL for the existing document so the download link persists.
-    if (!docPublicUrl && course.planDocumentS3Key) {
-      try {
-        docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
-      } catch { /* non-fatal — download link just won't appear */ }
-    }
+    // Generate Word document plan (non-fatal) — logic lives in ai-wizard-docx.ts (file-size limit)
+    const { docPublicUrl } = await generateWizardPlanDocument(ctx, {
+      course, title, courseType, academicPeriod, classDays, classSchedule, modality,
+      startDate, totalWeeks, planLanguage, evaluationItems, suggestedModules, weeklyPlan,
+    });
 
     let lessonJobId: string | null = null;
     const isEN_save = planLanguage === 'EN';
@@ -653,28 +572,9 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }
     }
 
-    // Generate CourseSession records from schedule
+    // Generate CourseSession records from schedule (helper in ai-wizard-docx.ts)
     if (!editingCourseId && startDate && Array.isArray(classDays) && classDays.length > 0 && totalWeeks) {
-      try {
-        const dayNameToIndex: Record<string, number> = { Domingo:0, Lunes:1, Martes:2, Miércoles:3, Jueves:4, Viernes:5, Sábado:6, Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
-        const classDayIndices = (classDays as string[]).map((d: string) => dayNameToIndex[d]).filter((n) => n !== undefined) as number[];
-        const exceptionDates = new Set((calendarExceptions as any[]).filter((ex: any) => ex.type === 'day' && ex.date).map((ex: any) => ex.date.split('T')[0]));
-        const exceptionWeekIdxs = new Set((calendarExceptions as any[]).filter((ex: any) => ex.type === 'week' && ex.weekIndex != null).map((ex: any) => ex.weekIndex as number));
-        const sessions: Array<{ courseId: string; sessionDate: Date; weekIndex: number; order: number }> = [];
-        let order = 1;
-        for (let w = 0; w < (totalWeeks as number); w++) {
-          if (exceptionWeekIdxs.has(w)) continue;
-          for (const dayIdx of classDayIndices) {
-            const weekStart = new Date(startDate); weekStart.setDate(weekStart.getDate() + w * 7);
-            const diff = (dayIdx - weekStart.getDay() + 7) % 7;
-            const sessionDate = new Date(weekStart); sessionDate.setDate(weekStart.getDate() + diff);
-            const isoDate = sessionDate.toISOString().split('T')[0]!;
-            if (exceptionDates.has(isoDate)) continue;
-            sessions.push({ courseId: course.id, sessionDate, weekIndex: w, order: order++ });
-          }
-        }
-        if (sessions.length > 0) await prisma.courseSession.createMany({ data: sessions });
-      } catch (sessErr) { console.error('[wizard/save] courseSession error:', sessErr); }
+      await createWizardCourseSessions({ prisma, courseId: course.id, startDate, classDays, totalWeeks: totalWeeks as number, calendarExceptions });
     }
 
     return editingCourseId

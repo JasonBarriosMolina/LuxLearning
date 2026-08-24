@@ -41,6 +41,7 @@ model Course {
   planLanguage       String?           @default("ES")
   totalWeeks         Int?
   pilotoAutomatico   Boolean           @default(false)
+  isAutoevaluated    Boolean           @default(false)
   planSyllabusInput  String?
   planWeeklyPlan     Json?
   sessions           CourseSession[]

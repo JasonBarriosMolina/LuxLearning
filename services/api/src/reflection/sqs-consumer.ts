@@ -126,7 +126,7 @@ async function processRecord(record: SQSRecord) {
   }
 
   // REFLECTION_AI (default)
-  const { userId, moduleId, env } = parsed as { userId: string; moduleId: string; env?: string };
+  const { userId, moduleId, env, isAutoevaluated = false } = parsed as { userId: string; moduleId: string; env?: string; isAutoevaluated?: boolean };
   setCurrentEnv((env as AppEnv | undefined) ?? 'prod');
 
   console.log(`[AI Detection] Processing reflection userId=${userId} moduleId=${moduleId} env=${env ?? 'prod'}`);
@@ -179,11 +179,15 @@ async function processRecord(record: SQSRecord) {
   console.log(`[AI Detection] Result: ${JSON.stringify(aiResult)}`);
 
   // Tri-level decision
-  let newStatus: 'REJECTED' | 'PENDING_EVAL';
+  let newStatus: 'REJECTED' | 'PENDING_EVAL' | 'APPROVED';
   let aiSuspect = false;
 
   if (aiResult.isAI && aiResult.confidence >= AI_REJECT_THRESHOLD) {
+    // Auto-reject regardless of course modality
     newStatus = 'REJECTED';
+  } else if (isAutoevaluated || (reflection as any).isAutoevaluated) {
+    // Async self-evaluated course: skip human review, auto-approve
+    newStatus = 'APPROVED';
   } else if (aiResult.isAI && aiResult.confidence >= AI_SUSPECT_THRESHOLD) {
     newStatus = 'PENDING_EVAL';
     aiSuspect = true;
@@ -198,10 +202,31 @@ async function processRecord(record: SQSRecord) {
     aiSuspect,
   });
 
-  console.log(`[AI Detection] Updated status to ${newStatus}${aiSuspect ? ' (aiSuspect)' : ''}`);
+  console.log(`[AI Detection] Updated status to ${newStatus}${aiSuspect ? ' (aiSuspect)' : ''}${newStatus === 'APPROVED' ? ' (isAutoevaluated bypass)' : ''}`);
 
   const moduleTitle = (reflection.moduleTitle as string | undefined) ?? moduleId;
   const courseTitle = (reflection.courseTitle as string | undefined) ?? '';
+
+  // When auto-approved (async isAutoevaluated course): notify student
+  if (newStatus === 'APPROVED') {
+    const studentLang = await getUserLang(userId).catch(() => 'es');
+    try {
+      await createNotification({
+        userId,
+        notifId: createId(),
+        type: 'GENERAL',
+        message: studentLang === 'en'
+          ? `✅ Your reflection for "${moduleTitle}" was automatically approved.`
+          : `✅ Tu reflexión del módulo "${moduleTitle}" fue aprobada automáticamente.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        actionUrl: '/courses',
+      });
+    } catch (e) {
+      console.warn('[AI Detection] Failed to create auto-approval notification:', e);
+    }
+    return;
+  }
 
   // When AI auto-rejects: notify student via in-app + email
   if (newStatus === 'REJECTED') {
