@@ -336,8 +336,21 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
-    const finalLabels: string[] = Array.isArray(cardLabels) ? [...cardLabels] : [];
+    // Modality → display tag mapping
+    const MODALITY_LABEL_MAP: Record<string, string> = {
+      PRESENCIAL: 'Presencial',
+      SINCRONICA: 'Sincrónico',
+      ASINCRONICA: 'Asincrónico',
+      HIBRIDA: 'Híbrido',
+    };
+    const allModalityTags = Object.values(MODALITY_LABEL_MAP);
+    // On edit: strip old modality tag so it gets replaced with the current one
+    const finalLabels: string[] = Array.isArray(cardLabels)
+      ? cardLabels.filter((l: string) => !allModalityTags.includes(l))
+      : [];
     if (academicPeriod && !finalLabels.includes(academicPeriod)) finalLabels.unshift(academicPeriod);
+    const modalityTag = modality ? MODALITY_LABEL_MAP[modality as string] : undefined;
+    if (modalityTag && !finalLabels.includes(modalityTag)) finalLabels.push(modalityTag);
 
     const callerName = await getCallerName(event);
 
