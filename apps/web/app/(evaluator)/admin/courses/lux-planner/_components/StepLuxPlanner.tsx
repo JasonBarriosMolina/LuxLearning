@@ -134,13 +134,13 @@ export function StepLuxPlanner({
         <div className="space-y-3">
           <SectionLabel>{s('Plan semanal — haz clic en una celda para editar', 'Weekly plan — click to edit any cell')}</SectionLabel>
           <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-xs min-w-[700px]">
+            <table className="w-full text-xs min-w-[860px]">
               <thead>
                 <tr className="bg-surface border-b border-border">
                   <th className="text-left px-2 py-2 font-semibold text-gray-500 w-10">{s('Sem.', 'Wk.')}</th>
                   <th className="text-left px-2 py-2 font-semibold text-gray-500 w-[90px]">{s('Fecha clases', 'Class dates')}</th>
                   <th className="text-left px-2 py-2 font-semibold text-gray-500">{s('Habilidades / Tópicos', 'Skills / Topics')}</th>
-                  <th className="text-left px-2 py-2 font-semibold text-gray-500 w-24">{s('Módulo', 'Module')}</th>
+                  <th className="text-left px-2 py-2 font-semibold text-gray-500 w-24 max-w-[96px]">{s('Módulo', 'Module')}</th>
                   <th className="text-left px-2 py-2 font-semibold text-gray-500 w-36">{s('Procedimiento', 'Procedure')}</th>
                   <th className="text-left px-2 py-2 font-semibold text-gray-500 w-28">{s('Observaciones', 'Notes')}</th>
                 </tr>
@@ -153,7 +153,7 @@ export function StepLuxPlanner({
                       <td className="px-2 py-1.5 font-semibold text-gray-500 whitespace-nowrap">{s('S', 'W')}{wk.weekNum}</td>
                       <td className="px-2 py-1.5 text-gray-400 text-[11px]">{weekDates(wk.weekNum)}</td>
                       <EditableCell value={wk.topics.join('\n')} onChange={(v) => updateWeekTopics(wk.weekNum, v)} placeholder={s('Tópicos...', 'Topics...')} />
-                      <td className="px-2 py-1.5 text-gray-500">
+                      <td className="px-2 py-1.5 text-gray-500 max-w-[96px]">
                         <span className="block truncate text-[11px]">{wk.module}</span>
                       </td>
                       <EditableCell value={wk.procedure ?? ''} onChange={(v) => updateWeekProcedure(wk.weekNum, v)} placeholder={s('Cómo se abordará...', 'How to address...')} />

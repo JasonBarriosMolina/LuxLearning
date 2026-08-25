@@ -170,12 +170,12 @@ export function StepIdentidad({
               <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                  {s('Curso Asincrónico Autogestionado — IA Driven', 'Asynchronous Self-Managed Course — AI Driven')}
+                  {s('Curso Asincrónico Autogestionado — Generado y Administrado por Lux Mentor', 'Asynchronous Self-Managed Course — Generated and Managed by Lux Mentor')}
                 </p>
                 <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
                   {s(
-                    'No requiere evaluador humano. Bedrock AI evaluará reflexiones y entregas automáticamente. Los días y horarios de clase no aplican.',
-                    'No human evaluator required. Bedrock AI evaluates reflections and submissions automatically. Class days and schedule do not apply.',
+                    'No requiere evaluador humano. Lux Mentor evaluará reflexiones y entregas automáticamente. Los días y horarios de clase no aplican.',
+                    'No human evaluator required. Lux Mentor will evaluate reflections and submissions automatically. Class days and schedule do not apply.',
                   )}
                 </p>
               </div>
