@@ -122,26 +122,26 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
 Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module, split into short scaffolded lessons (${TEXT_COMPREHENSION_MIN} min each) — each lesson builds on the previous one's concepts.
 Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (150-220 words each, ~${TEXT_COMPREHENSION_MIN} min active comprehension).
 STRUCTURE for every text lesson's "content" field (HTML, no full markdown):
-- One specific subtitle (<h3>) naming the concept covered — never generic labels like "Introducción" or "Resumen".
+- One specific <h3> subtitle naming the exact concept covered — never generic labels like "Introduction", "Summary", "Hook", "Practical Bridge", or "Reflective Close". The subtitle must name the concept itself (e.g. "<h3>Time Complexity in Sorting Algorithms</h3>").
 - Short paragraphs of at most 4-5 lines each — no dense walls of text.
 - At least one <strong> bolded key term and one bullet list (use "- item" lines, they get converted to <ul><li>) to break up the reading.
-- One brief practical/real-world case connecting the theory to actual application (puente práctico).
-- The LAST text lesson of the module must close with a reflective wrap-up: a bullet list summarizing key points plus 1-2 self-check questions for the student.
-Write in neutral, formal Latin American Spanish — no local slang or regionalisms — even when writing in English use plain international phrasing.
+- One brief practical/real-world case connecting the theory to actual application — the <h3> for this section must name the specific example (e.g. "<h3>Application in E-commerce Systems</h3>"), NEVER the generic "Practical Bridge".
+- The LAST text lesson of the module must close with a reflective summary — the <h3> must name the module topic (e.g. "<h3>Key Takeaways: Data Structures Fundamentals</h3>"), NEVER the generic "Reflective Close".
+Write in neutral, formal international English — no slang or regionalisms.
 Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown fencing:
-[{"title":"Lesson title","content":"<h3>Specific subtitle</h3><p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
+[{"title":"Lesson title","content":"<h3>Specific concept subtitle</h3><p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
             : `Eres un experto en diseño instruccional. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
 Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo, repartidos en lecciones cortas con andamiaje progresivo (${TEXT_COMPREHENSION_MIN} min cada una) — cada lección construye sobre los conceptos de la anterior.
 La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (150-220 palabras cada una, ~${TEXT_COMPREHENSION_MIN} min de comprensión activa).
 ESTRUCTURA obligatoria para el campo "content" de cada lección de texto (HTML, sin markdown completo):
-- Un subtítulo específico (<h3>) que nombre el concepto tratado — nunca genéricos como "Introducción" o "Resumen".
+- Un <h3> subtítulo específico que nombre el concepto exacto que se trata — NUNCA genéricos como "Introducción", "Resumen", "Gancho", "Desarrollo", "Puente Práctico" ni "Cierre Reflexivo". El subtítulo debe nombrar el concepto en sí (ej. "<h3>Complejidad Temporal en Algoritmos de Ordenamiento</h3>").
 - Párrafos cortos de máximo 4-5 líneas — evitar bloques densos de texto.
 - Al menos un término clave en <strong> y una lista con viñetas (usa líneas "- item", se convierten a <ul><li>) para facilitar la lectura (chunking visual).
-- Un caso práctico breve que conecte la teoría con la aplicación real (puente práctico).
-- La ÚLTIMA lección de texto del módulo debe cerrar con un cierre reflexivo: una lista de viñetas con el resumen de puntos clave más 1-2 preguntas de autoevaluación para el estudiante.
+- Un caso práctico breve que conecte la teoría con la aplicación real — el <h3> de esa sección debe nombrar el ejemplo concreto (ej. "<h3>Aplicación en Sistemas de E-commerce</h3>"), NUNCA el genérico "Puente Práctico".
+- La ÚLTIMA lección de texto del módulo cierra con un resumen de puntos clave más 1-2 preguntas de autoevaluación — el <h3> debe nombrar el tema del módulo (ej. "<h3>Síntesis: Fundamentos de Estructuras de Datos</h3>"), NUNCA el genérico "Cierre Reflexivo".
 Redacta en español latino neutro y formal — sin modismos ni jerga local de ningún país.
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
-[{"title":"Título lección","content":"<h3>Subtítulo específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
+[{"title":"Título lección","content":"<h3>Subtítulo del concepto específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
 
           const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
           const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
@@ -249,9 +249,15 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
           ? '\n\nASYNC COURSE RULE: Assign modules at exactly 1 module per week in strict sequential order — no skipping weeks. Example: if 4 modules and 16 weeks, assign ~4 weeks per module; every week in the plan must belong to a module.'
           : '\n\nREGLA CURSO ASÍNCRONO: Asigna módulos a razón de exactamente 1 módulo por semana en orden secuencial estricto — sin saltar semanas. Ejemplo: si hay 4 módulos y 16 semanas, asigna ~4 semanas por módulo; cada semana del plan debe pertenecer a un módulo.')
         : '';
+      // For sync/lecture courses: one distinct topic per teaching week — no topic spans multiple weeks.
+      const syncNote = !isAsync
+        ? (isEN
+          ? `\n\nSYNC/LECTURE COURSE RULE: Generate exactly ${effectiveWeeks} modules — one per teaching week. Each module covers a completely distinct topic developed fully in that single week. Do NOT repeat or span one topic across multiple weeks. If the syllabus has fewer topics than weeks, subdivide topics into subtopics to fill each week.`
+          : `\n\nREGLA CURSO SINCRÓNICO/TEÓRICO: Genera exactamente ${effectiveWeeks} módulos — uno por semana lectiva. Cada módulo cubre un tema completamente distinto que se desarrolla en esa sola semana. NO repitas ni distribuyas el mismo tema en múltiples semanas. Si el temario tiene menos temas que semanas, subdivide los temas en subtemas para completar cada semana.`)
+        : '';
       const prompt = isEN
-        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. Group topics into logical modules (3-6 modules). For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
-        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}${asyncNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Organiza los temas en módulos lógicos (3-6 módulos). Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
+        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
+        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
 
       const result = await invokeBedrockForJson(prompt, 6000);
       if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
@@ -485,7 +491,11 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems, quizModuleIndices, classModuleIndices,
+              evaluationItems,
+              // Only pass indices when non-empty — otherwise the worker falls back to
+              // hasQuizInPlan / hasClassInPlan which correctly covers all modules.
+              ...(quizModuleIndices.length > 0 ? { quizModuleIndices } : {}),
+              ...(classModuleIndices.length > 0 ? { classModuleIndices } : {}),
             })),
           }));
         } catch (invokeErr: any) {
@@ -538,7 +548,9 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: newModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems, quizModuleIndices, classModuleIndices,
+              evaluationItems,
+              ...(quizModuleIndices.length > 0 ? { quizModuleIndices } : {}),
+              ...(classModuleIndices.length > 0 ? { classModuleIndices } : {}),
             })),
           }));
         } catch (invokeErr: any) {
