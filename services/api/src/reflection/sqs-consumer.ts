@@ -155,8 +155,10 @@ async function processRecord(record: SQSRecord) {
     aiResult = await detectAI(reflection.text);
   } catch (err) {
     console.error('[AI Detection] Bedrock error:', err);
-    // On Bedrock failure, forward to evaluator instead of blocking student
-    await updateReflectionStatus(userId, moduleId, { status: 'PENDING_EVAL', analyzedAt });
+    // On Bedrock failure: async self-evaluated courses auto-approve; others forward to evaluator
+    const failStatus = (isAutoevaluated || (reflection as any).isAutoevaluated) ? 'APPROVED' : 'PENDING_EVAL';
+    await updateReflectionStatus(userId, moduleId, { status: failStatus, analyzedAt });
+    if (failStatus === 'APPROVED') return; // no evaluator to notify
     // Still notify evaluator
     if (reflection.evaluatorId) {
       const evaluatorId = reflection.evaluatorId as string;
