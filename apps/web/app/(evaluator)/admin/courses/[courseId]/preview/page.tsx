@@ -68,10 +68,10 @@ export default function CoursePreviewPage() {
             <Pencil className="w-3.5 h-3.5" /> Editar contenido
           </Link>
           <button
-            onClick={() => router.push('/evaluator/my-courses')}
+            onClick={() => (window.history.length > 1 ? router.back() : router.push('/evaluator/my-courses'))}
             className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-900 transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> Volver a Mis Cursos
+            <ArrowLeft className="w-3.5 h-3.5" /> Volver Atrás
           </button>
         </div>
       </div>

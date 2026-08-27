@@ -204,7 +204,7 @@ export function StepEvaluacion({
                   <div className="space-y-2 text-xs border-t border-border pt-3 mt-1">
                     <div className="flex items-center gap-1.5 text-rose-600 mb-2">
                       <Mic className="w-3 h-3" />
-                      <span className="font-semibold">{s('Configuración de Mentor (Vapi)', 'Mentor Configuration (Vapi)')}</span>
+                      <span className="font-semibold">{s('Configuración del Lux Mentor para la entrevista', 'Lux Mentor configuration for the interview')}</span>
                     </div>
 
                     {/* Topic selector */}
