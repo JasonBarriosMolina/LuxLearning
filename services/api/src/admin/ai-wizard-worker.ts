@@ -148,17 +148,32 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
           const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
             ? rawLessons : null;
 
+          // Warn if Bedrock returned fewer lessons than requested (truncated JSON response)
+          if (validLessons && validLessons.length < lessonCount) {
+            console.warn(`[wizard-lessons-bulk] module ${moduleId}: expected ${lessonCount} lessons, got ${validLessons.length} — truncated Bedrock response`);
+          }
+
+          const PLACEHOLDER_CONTENT = isBlEN
+            ? '<p><strong>⚠ Content generation incomplete.</strong> This lesson was not generated due to a truncated AI response. Please use the regenerate button to retry content generation for this module.</p>'
+            : '<p><strong>⚠ Generación incompleta.</strong> Esta lección no se generó correctamente debido a una respuesta truncada de la IA. Usa el botón de regenerar para volver a generar el contenido de este módulo.</p>';
+
           const lessonData = Array.from({ length: lessonCount }, (_, i) => {
             const isFirst = i === 0;
             const isLast = i === lessonCount - 1;
             const defaultType = isFirst || isLast ? 'video' : 'text';
             const defaultDuration = defaultType === 'video' ? '5 min' : textDuration;
             const gen = validLessons?.[i];
+            // Per-lesson content validation: if this specific lesson has no content (truncated array
+            // or missing field), use a visible placeholder so the lesson is never silently empty.
+            const rawContent = gen?.content ?? null;
+            const lessonContent = rawContent
+              ? sanitizeLessonContent(rawContent)
+              : PLACEHOLDER_CONTENT;
             return {
               moduleId,
               title: gen?.title || (isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`),
               type: gen?.type || defaultType,
-              content: gen?.content ? sanitizeLessonContent(gen.content) : null as string | null,
+              content: lessonContent,
               youtubeId: '',
               imageUrl: null as string | null,
               duration: gen?.duration || defaultDuration,

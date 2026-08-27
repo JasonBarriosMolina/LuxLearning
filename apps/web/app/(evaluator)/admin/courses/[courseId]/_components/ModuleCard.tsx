@@ -54,6 +54,8 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
   const [aiQuestionsCount, setAiQuestionsCount] = useState(5);
   const [aiQuestionsLoading, setAiQuestionsLoading] = useState(false);
   const [aiQuestionsError, setAiQuestionsError] = useState('');
+  // Quiz section collapsed by default when empty (no questions from AI plan or manual)
+  const [quizExpanded, setQuizExpanded] = useState((mod.questions?.length ?? 0) > 0);
 
   // Cleanup polling intervals on unmount
   useEffect(() => {
@@ -295,43 +297,55 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
             ))}
           </div>
 
-          {/* Questions section */}
+          {/* Questions section — collapsed by default when empty */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-charcoal flex items-center gap-1.5">
+              <button
+                className="flex items-center gap-1.5 text-sm font-semibold text-charcoal hover:text-cta-from transition-colors"
+                onClick={() => setQuizExpanded((v) => !v)}
+              >
                 <ClipboardCheck className="w-4 h-4 text-amber-500" />
-                Preguntas del quiz ({mod.questions?.length ?? 0}) — Selección única
-              </h4>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
-                  onClick={() => {
-                    const preloaded = (mod.lessons ?? []).map((l: any, i: number) => {
-                      const parts = [`Lección ${i + 1}: ${l.title}`];
-                      if (l.content) parts.push(l.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-                      if (Array.isArray(l.points) && l.points.filter(Boolean).length > 0) parts.push('Puntos clave: ' + l.points.filter(Boolean).join('. '));
-                      if (l.tip) parts.push('Consejo: ' + l.tip);
-                      return parts.join('\n');
-                    }).join('\n\n');
-                    setAiQuestionsContent(preloaded);
-                    setAiQuestionsError('');
-                    setAiQuestionsOpen(true);
-                  }}>
-                  IA
-                </Button>
-                <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
-                  onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
-                  Agregar pregunta
-                </Button>
-              </div>
+                Preguntas del quiz ({mod.questions?.length ?? 0})
+                {quizExpanded
+                  ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                  : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+              </button>
+              {quizExpanded && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" leftIcon={<Sparkles className="w-3.5 h-3.5 text-purple-500" />}
+                    onClick={() => {
+                      const preloaded = (mod.lessons ?? []).map((l: any, i: number) => {
+                        const parts = [`Lección ${i + 1}: ${l.title}`];
+                        if (l.content) parts.push(l.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+                        if (Array.isArray(l.points) && l.points.filter(Boolean).length > 0) parts.push('Puntos clave: ' + l.points.filter(Boolean).join('. '));
+                        if (l.tip) parts.push('Consejo: ' + l.tip);
+                        return parts.join('\n');
+                      }).join('\n\n');
+                      setAiQuestionsContent(preloaded);
+                      setAiQuestionsError('');
+                      setAiQuestionsOpen(true);
+                    }}>
+                    IA
+                  </Button>
+                  <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
+                    onClick={() => { setQuestionForm(newQuestionForm((mod.questions?.length ?? 0) + 1)); setQuestionModal(true); }}>
+                    Agregar pregunta
+                  </Button>
+                </div>
+              )}
             </div>
-            {(mod.questions?.length ?? 0) === 0 && (
-              <p className="text-xs text-gray-400 text-center py-4 bg-white rounded-xl border border-dashed border-border">
-                Sin preguntas. Agrega la primera con el botón de arriba.
-              </p>
+            {quizExpanded && (
+              <>
+                {(mod.questions?.length ?? 0) === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-4 bg-white dark:bg-gray-900/20 rounded-xl border border-dashed border-border">
+                    Sin preguntas. Agrega la primera con el botón de arriba.
+                  </p>
+                )}
+                {mod.questions?.map((q: any) => (
+                  <QuestionRow key={q.id} question={q} onRefresh={onRefresh} />
+                ))}
+              </>
             )}
-            {mod.questions?.map((q: any) => (
-              <QuestionRow key={q.id} question={q} onRefresh={onRefresh} />
-            ))}
           </div>
         </div>
       )}

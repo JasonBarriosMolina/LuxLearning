@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Loader2, Info, CheckCircle, RefreshCw, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Step4Data, CalendarWeek } from './constants';
@@ -25,23 +25,74 @@ interface StepLuxPlannerProps {
 
 function EditableCell({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const openEditor = () => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const popW = 300;
+    // Position below the cell, shifted left if it would overflow the viewport
+    const left = Math.min(r.left, window.innerWidth - popW - 12);
+    const top = r.bottom + 6;
+    setPopoverStyle({ position: 'fixed', top, left, width: popW, zIndex: 9999 });
+    setDraft(value);
+    setEditing(true);
+  };
+
+  const save = () => { onChange(draft); setEditing(false); };
+
+  // Close on outside click
+  useEffect(() => {
+    if (!editing) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // Popover div gets ref via data attribute approach — use backdrop click instead
+      if ((target as Element).closest('[data-editable-popover]')) return;
+      setEditing(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [editing]);
+
   return (
     <td className="px-2 py-1.5 max-w-[140px]">
-      {editing ? (
-        <textarea
-          autoFocus
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={() => setEditing(false)}
-          className="input-field w-full text-xs py-0.5 min-h-[48px] resize-y"
-        />
-      ) : (
-        <button
-          className="text-left w-full text-charcoal hover:text-cta-from transition-colors line-clamp-3 text-[11px] leading-snug"
-          onClick={() => setEditing(true)}
+      <button
+        ref={btnRef}
+        className="text-left w-full text-charcoal hover:text-cta-from transition-colors line-clamp-3 text-[11px] leading-snug"
+        onClick={openEditor}
+      >
+        {value || <span className="text-gray-300 italic">{placeholder}</span>}
+      </button>
+
+      {editing && (
+        <div
+          data-editable-popover
+          style={popoverStyle}
+          className="bg-white dark:bg-gray-800 shadow-2xl rounded-xl border border-border p-3 space-y-2"
         >
-          {value || <span className="text-gray-300 italic">{placeholder}</span>}
-        </button>
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="input-field w-full text-sm resize-y min-h-[100px]"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              className="text-xs px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-white text-charcoal transition-colors"
+              onClick={() => setEditing(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="text-xs px-3 py-1 rounded-lg bg-cta-from text-white hover:opacity-90 transition-opacity"
+              onClick={save}
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
       )}
     </td>
   );

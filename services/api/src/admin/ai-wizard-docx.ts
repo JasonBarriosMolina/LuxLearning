@@ -4,7 +4,8 @@ import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { saveResource, batchCreateCalendarEvents, deleteWizardCalendarEvents } from '../shared/db-dynamo';
 import type { CalendarEvent } from '../shared/db-calendar';
-import { AdminCtx, S3_IMAGES_BUCKET, s3Client, invokeBedrockForJson } from './ctx';
+import { AdminCtx, S3_IMAGES_BUCKET, s3Client, invokeBedrockForJson, cognito, USER_POOL_ID } from './ctx';
+import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 
 interface WizardCalendarSyncParams {
   courseId: string;
@@ -67,10 +68,23 @@ interface WizardDocParams {
 export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocParams): Promise<{ docPublicUrl: string | null }> {
   const { prisma } = ctx;
   const { course, title, courseType, academicPeriod, classDays, classSchedule, modality, startDate, totalWeeks, planLanguage, evaluationItems, suggestedModules, weeklyPlan } = p;
+  // Fetch teacher profile from Cognito (non-fatal — document generated without profile on failure)
+  let teacherName = ''; let teacherTitle = ''; let teacherSpecialty = ''; let teacherUniversity = '';
+  if (ctx.userId && ctx.userId !== 'system') {
+    try {
+      const profRes = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: ctx.userId }));
+      const pAttr = (n: string) => profRes.UserAttributes?.find((a: any) => a.Name === n)?.Value ?? '';
+      teacherName = pAttr('name');
+      teacherTitle = pAttr('custom:title');
+      teacherSpecialty = pAttr('custom:specialty');
+      teacherUniversity = pAttr('custom:university');
+    } catch (e) { console.warn('[wizard/docx] profile fetch failed, continuing without teacher info:', e); }
+  }
+
   let docPublicUrl: string | null = null;
   try {
     const { default: docxPkg } = await import('docx') as any;
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, HeadingLevel } = docxPkg;
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, HeadingLevel, Header, Footer } = docxPkg;
     const isEN = planLanguage === 'EN';
     const L = (es: string, en: string) => isEN ? en : es;
     const border = { style: BorderStyle.SINGLE, size: 1, color: '999999' };
@@ -83,6 +97,13 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
     const EVAL_TYPE_LABELS: Record<string, string> = { QUIZ: 'Quiz', EVIDENCE: L('Entrega','Submission'), EXAM: L('Examen','Exam'), ATTENDANCE: L('Asistencia','Attendance') };
     const infoRows = [[L('Nombre del curso','Course name'), title],[L('Tipo de curso','Course type'), COURSE_TYPE_LABELS[courseType ?? ''] ?? courseType ?? '—'],[L('Modalidad','Modality'), MODALITY_LABELS[modality ?? ''] ?? modality ?? '—'],[L('Período académico','Academic period'), academicPeriod || '—'],[L('Fecha de inicio','Start date'), startDateFmt],[L('Horario','Schedule'), classSchedule || '—'],[L('Días de clase','Class days'), (classDays as string[]).join(', ') || '—'],[L('Semanas lectivas','Teaching weeks'), String(totalWeeks || '—')]];
     const infoTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: infoRows.map(([k, v]) => new TableRow({ children: [hCell(k, 'EFF6FF'), dCell(v)] })) });
+    // Teacher / instructor info table
+    const teacherRows: any[] = [];
+    if (teacherName) teacherRows.push(new TableRow({ children: [hCell(L('Docente','Instructor'), 'EFF6FF'), dCell(teacherName)] }));
+    if (teacherTitle) teacherRows.push(new TableRow({ children: [hCell(L('Título académico','Academic degree'), 'EFF6FF'), dCell(teacherTitle)] }));
+    if (teacherSpecialty) teacherRows.push(new TableRow({ children: [hCell(L('Especialidad','Specialty'), 'EFF6FF'), dCell(teacherSpecialty)] }));
+    if (teacherUniversity) teacherRows.push(new TableRow({ children: [hCell(L('Institución','Institution'), 'EFF6FF'), dCell(teacherUniversity)] }));
+    const teacherTable = teacherRows.length > 0 ? new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: teacherRows }) : null;
     const DAY_TO_JS: Record<string, number> = { 'Lunes':1,'Martes':2,'Miércoles':3,'Jueves':4,'Viernes':5,'Sábado':6,'Domingo':0 };
     const getClassDates = (weekIdx: number): string => {
       if (!startDate || !(classDays as string[]).length) return '';
@@ -105,14 +126,39 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
     const h1 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text, bold: true, size: 32, color: '17527E' })] });
     const h2 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text, bold: true, size: 24, color: '17527E' })] });
     const spacer = () => new Paragraph({ children: [] });
-    const docChildren: any[] = [h1(L('PLAN DE ESTUDIOS','COURSE PLAN')), new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 28 })] }), spacer(), h2(L('1. Datos Generales','1. General Information')), infoTable, spacer(), h2(L('2. Sistema de Evaluación','2. Evaluation System')), evalTable, spacer()];
-    let sec = 2;
+    // Page header with LuxLearning branding
+    const pageHeader = new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `LuxLearning — ${title}`, size: 16, color: '17527E', italics: true })] })] });
+    // Page footer with generation date and page number
+    const genDate = new Date().toLocaleDateString(isEN ? 'en-US' : 'es-CR');
+    const pageFooter = new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `LuxLearning · Generado con IA · ${genDate}`, size: 16, color: '999999' })] })] });
+    const docChildren: any[] = [
+      h1(L('PLAN DE ESTUDIOS','COURSE PLAN')),
+      new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 28 })] }),
+      spacer(),
+      h2(L('1. Datos Generales','1. General Information')),
+      infoTable,
+      spacer(),
+    ];
+    if (teacherTable) {
+      docChildren.push(h2(L('2. Datos del Docente','2. Instructor Information')));
+      docChildren.push(teacherTable);
+      docChildren.push(spacer());
+    }
+    let sec = teacherTable ? 2 : 1;
+    sec++; docChildren.push(h2(L(`${sec}. Sistema de Evaluación`,`${sec}. Evaluation System`))); docChildren.push(evalTable); docChildren.push(spacer());
     if (planTable) { sec++; docChildren.push(h2(L(`${sec}. Cronograma Mensual de Habilidades`,`${sec}. Monthly Skills Schedule`))); docChildren.push(planTable); docChildren.push(spacer()); }
     if ((suggestedModules as any[]).length > 0) { sec++; docChildren.push(h2(L(`${sec}. Módulos del Curso`,`${sec}. Course Modules`))); for (const mod of suggestedModules as any[]) { docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })] })); docChildren.push(spacer()); } }
     if (bibliography.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Bibliografía`,`${sec}. Bibliography`))); for (const ref of bibliography) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${ref}`, size: 18 })] })); docChildren.push(spacer()); }
     if (guidelines.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Indicaciones Generales`,`${sec}. General Guidelines`))); for (const rule of guidelines) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${rule}`, size: 18 })] })); docChildren.push(spacer()); }
-    docChildren.push(h2(L('Revisado y Aprobado:','Reviewed and Approved:'))); docChildren.push(spacer()); docChildren.push(new Paragraph({ children: [new TextRun({ text: '_____________________      _____________________', size: 18 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: L('Docente                                  Director Académico','Instructor                         Academic Director'), size: 18 })] })); docChildren.push(spacer());
-    const doc = new Document({ sections: [{ children: docChildren }] });
+    // Signature block with teacher name if available
+    docChildren.push(h2(L('Firma del Docente','Instructor Signature')));
+    docChildren.push(spacer());
+    docChildren.push(new Paragraph({ children: [new TextRun({ text: '_____________________', size: 18 })] }));
+    if (teacherName) docChildren.push(new Paragraph({ children: [new TextRun({ text: teacherName, bold: true, size: 18 })] }));
+    if (teacherTitle) docChildren.push(new Paragraph({ children: [new TextRun({ text: teacherTitle, size: 18, italics: true })] }));
+    docChildren.push(new Paragraph({ children: [new TextRun({ text: L('Docente Lux Learning','Lux Learning Instructor'), size: 18 })] }));
+    docChildren.push(spacer());
+    const doc = new Document({ sections: [{ headers: { default: pageHeader }, footers: { default: pageFooter }, children: docChildren }] });
     const buffer = await Packer.toBuffer(doc);
     const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
     await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="plan-${course.id}.docx"` }));
