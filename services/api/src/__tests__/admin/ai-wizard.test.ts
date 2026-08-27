@@ -30,6 +30,10 @@ vi.mock('@aws-sdk/client-s3', () => ({
 vi.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: vi.fn().mockResolvedValue('https://s3.example.com/presigned'),
 }));
+vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
+  CognitoIdentityProviderClient: function() { return { send: vi.fn() }; },
+  AdminGetUserCommand:           function(x: any) { return x; },
+}));
 vi.mock('../../shared/db-dynamo', () => ({
   saveAiJob:                  vi.fn().mockResolvedValue(undefined),
   batchCreateCalendarEvents:  vi.fn().mockResolvedValue(undefined),
@@ -218,5 +222,231 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     const textLesson = capturedLessons.find((l: any) => l.type === 'text');
     expect(textLesson.content).toContain('<h3>Concepto clave</h3>');
     expect(textLesson.content).toContain('<ul><li>Punto uno</li><li>Punto dos</li></ul>');
+  });
+});
+
+// ── Fix 1: quizModuleIndices / classModuleIndices fallback (bug 2026-08-25) ──────
+// When the dispatch omits quizModuleIndices (not even an empty array), the worker
+// must fall back to hasQuizInPlan to decide which modules get quiz questions.
+// Passing [] explicitly must block quiz creation (caller said "none").
+describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
+  function makePrismaWithQuizCapture() {
+    const prisma = makePrisma({
+      module: {
+        findUnique: vi.fn().mockResolvedValue({ title: 'Módulo Test', description: 'Desc' }),
+        update:     vi.fn().mockResolvedValue({ id: 'mod-1' }),
+      },
+      lesson: {
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+        count:      vi.fn().mockResolvedValue(0),
+      },
+      question: {
+        createMany: vi.fn().mockResolvedValue({ count: 10 }),
+      },
+      evaluationEvent: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create:    vi.fn().mockResolvedValue({ id: 'ev-1' }),
+      },
+    });
+    return prisma;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('cuando quizModuleIndices está ausente y evaluationItems tiene QUIZ, genera preguntas para todos los módulos', async () => {
+    const ctxModule = await import('../../admin/ctx');
+    vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue([
+      { text: '¿Pregunta 1?', options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: 1 },
+    ]);
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const prisma = makePrismaWithQuizCapture();
+
+    // Body sin quizModuleIndices (undefined) — el worker debe usar hasQuizInPlan
+    const ctx = makeAdminCtx({
+      action: 'wizard-lessons-bulk',
+      body: {
+        _jobId: 'job-fallback-1',
+        courseId: 'course-1',
+        courseTitle: 'Curso Test',
+        moduleIds: ['mod-1'],
+        language: 'ES',
+        evaluationItems: [{ type: 'QUIZ', name: 'Quiz', weight: 10, count: 1 }],
+        // quizModuleIndices ausente — NO pasar el campo
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    // question.createMany debe haberse llamado (QUIZ se creó para mod-1)
+    expect(prisma.question.createMany).toHaveBeenCalled();
+  });
+
+  it('cuando quizModuleIndices = [] explícito, NO genera preguntas aunque evaluationItems tenga QUIZ', async () => {
+    const ctxModule = await import('../../admin/ctx');
+    vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue([]);
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const prisma = makePrismaWithQuizCapture();
+
+    // Dispatch pasa [] explícito — worker debe respetar "ningún módulo"
+    const ctx = makeAdminCtx({
+      action: 'wizard-lessons-bulk',
+      body: {
+        _jobId: 'job-explicit-empty-1',
+        courseId: 'course-1',
+        courseTitle: 'Curso Test',
+        moduleIds: ['mod-1'],
+        language: 'ES',
+        evaluationItems: [{ type: 'QUIZ', name: 'Quiz', weight: 10, count: 1 }],
+        quizModuleIndices: [], // explícito: el dispatch dijo "ninguno"
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    // question.createMany NO debe haberse llamado
+    expect(prisma.question.createMany).not.toHaveBeenCalled();
+  });
+
+  it('cuando classModuleIndices está ausente y evaluationItems tiene CLASS, crea EvaluationEvent para todos los módulos', async () => {
+    const ctxModule = await import('../../admin/ctx');
+    vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({
+      vapiPrompt: 'Pregunta guía sobre el módulo',
+      lessonScript: 'Actividades de clase',
+    });
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const prisma = makePrismaWithQuizCapture();
+
+    const ctx = makeAdminCtx({
+      action: 'wizard-lessons-bulk',
+      body: {
+        _jobId: 'job-class-fallback-1',
+        courseId: 'course-1',
+        courseTitle: 'Curso Test',
+        moduleIds: ['mod-1'],
+        language: 'ES',
+        evaluationItems: [{ type: 'CLASS', name: 'Clase Lux Mentor', weight: 0, count: 1 }],
+        // classModuleIndices ausente — NO pasar el campo
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    // evaluationEvent.create debe haberse llamado para el módulo
+    expect(prisma.evaluationEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'CLASS', moduleId: 'mod-1' }),
+      }),
+    );
+  });
+});
+
+// ── Fix 2: quizModuleIndices/classModuleIndices desync in wizard/save (2026-08-27) ──
+// Bug: indices were computed as positions in suggestedModules, but createdModuleIds
+// (new-course path) skips modules whose create failed, and newModuleIds (edit add-only
+// path) skips modules that already exist — so the index space no longer matched the
+// array actually sent to the lesson-bulk worker, misassigning quiz/class to the wrong module.
+describe('ai-wizard/save — quiz/class index desync (Fix 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('nuevo curso: si un module.create falla a mitad de la lista, quizModuleIndices apunta a la posición correcta en createdModuleIds (no en suggestedModules)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const { lambdaClient } = await import('../../admin/ctx');
+
+    let moduleCreateCalls = 0;
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: {
+        create: vi.fn().mockImplementation(async () => {
+          moduleCreateCalls++;
+          if (moduleCreateCalls === 1) throw new Error('DB transient error'); // module 0 (Módulo A) fails
+          return { id: `mod-${moduleCreateCalls}` };
+        }),
+      },
+    });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba',
+        planLanguage: 'ES',
+        suggestedModules: [
+          { name: 'Módulo A' }, // index 0 — create fails, never occupies a createdModuleIds slot
+          { name: 'Módulo B' }, // index 1 — flagged QUIZ below; should land at createdModuleIds[0]
+          { name: 'Módulo C' }, // index 2 — should land at createdModuleIds[1]
+        ],
+        weeklyPlan: [
+          { weekNum: 1, module: 'Módulo B', evalEvent: { type: 'QUIZ' } },
+        ],
+        evaluationItems: [],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    const bulkCall = (lambdaClient.send as any).mock.calls
+      .map((c: any[]) => c[0])
+      .find((cmd: any) => JSON.parse(cmd.Payload.toString())._action === 'wizard-lessons-bulk');
+    expect(bulkCall).toBeDefined();
+    const payload = JSON.parse(bulkCall.Payload.toString());
+
+    expect(payload.moduleIds).toEqual(['mod-2', 'mod-3']); // only the 2 successfully created modules
+    // Módulo B (originally suggestedModules[1]) is now at position 0 of moduleIds —
+    // quizModuleIndices must point to 0, NOT 1 (which would now wrongly hit Módulo C).
+    expect(payload.quizModuleIndices).toEqual([0]);
+  });
+
+  it('editar curso (add-only): si un módulo ya existe y se salta, quizModuleIndices apunta a la posición correcta en newModuleIds (no en suggestedModules)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const { lambdaClient } = await import('../../admin/ctx');
+
+    const prisma = makePrisma({
+      course: { update: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'mod-existing', title: 'Módulo A', order: 1 }]),
+        create: vi.fn().mockImplementation(async ({ data }: any) => ({ id: `mod-new-${data.title}` })),
+      },
+    });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba',
+        planLanguage: 'ES',
+        editingCourseId: 'course-1',
+        suggestedModules: [
+          { name: 'Módulo A' }, // index 0 — already exists, skipped entirely (not in newModuleIds)
+          { name: 'Módulo B' }, // index 1 — flagged QUIZ below; should land at newModuleIds[0]
+          { name: 'Módulo C' }, // index 2 — should land at newModuleIds[1]
+        ],
+        weeklyPlan: [
+          { weekNum: 1, module: 'Módulo B', evalEvent: { type: 'QUIZ' } },
+        ],
+        evaluationItems: [],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    const bulkCall = (lambdaClient.send as any).mock.calls
+      .map((c: any[]) => c[0])
+      .find((cmd: any) => JSON.parse(cmd.Payload.toString())._action === 'wizard-lessons-bulk');
+    expect(bulkCall).toBeDefined();
+    const payload = JSON.parse(bulkCall.Payload.toString());
+
+    expect(payload.moduleIds).toEqual(['mod-new-Módulo B', 'mod-new-Módulo C']);
+    // Módulo B (originally suggestedModules[1]) is now at position 0 of newModuleIds —
+    // quizModuleIndices must point to 0, NOT 1 (which would now wrongly hit Módulo C).
+    expect(payload.quizModuleIndices).toEqual([0]);
   });
 });
