@@ -114,9 +114,10 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       },
       voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: 'auto' } as any,
       name: 'Lux Mentor',
+      maxDurationSeconds: 600,
       firstMessage: lang === 'en'
-        ? `Hello${greeting}! I'm Mentor. Today we're going to talk about what you've learned in this module. I'll start with a brief introduction to the topic, and then ask you 3 questions at the end. Take your time — there's no rush. Shall we begin?`
-        : `¡Hola${greeting}! Soy Mentor. Hoy vamos a conversar sobre lo que aprendiste en este módulo. Comenzaré con una breve introducción al tema y luego te haré 3 preguntas al final. Tómate tu tiempo, sin prisa. ¿Comenzamos?`,
+        ? `Hello${greeting}! I'm Mentor. I'll ask you 3 questions about this module. Take your time and answer freely. Let's begin — first question:`
+        : `¡Hola${greeting}! Soy Mentor. Te haré 3 preguntas sobre este módulo. Tómate tu tiempo y responde con libertad. Comenzamos — primera pregunta:`,
       endCallMessage: lang === 'en'
         ? 'Thank you for your responses. The interview is now complete. Your evaluator will review your results shortly.'
         : 'Gracias por tus respuestas. La entrevista ha concluido. Tu evaluador revisará tu resultado en breve.',
@@ -242,7 +243,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
             </div>
             <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
               {isSpeaking
-                ? <><Volume2 className="w-3.5 h-3.5 text-rose-500" />{s('La IA está hablando…', 'AI is speaking…')}</>
+                ? <><Volume2 className="w-3.5 h-3.5 text-rose-500" />{s('Mentor está hablando…', 'Mentor is speaking…')}</>
                 : <><MicOff className="w-3.5 h-3.5" />{s('Escuchando tu respuesta…', 'Listening to your response…')}</>
               }
             </div>
@@ -301,20 +302,16 @@ function buildSystemPrompt(
   const nameRef = studentName || (lang === 'en' ? 'the student' : 'el/la estudiante');
 
   const structureRules = lang === 'en'
-    ? `REQUIRED CONVERSATION STRUCTURE — follow this order strictly:
-1. GREETING: Greet ${nameRef} warmly by name. Be gentle and welcoming.
-2. TOPIC INTRODUCTION: Briefly introduce the topic of today's session (2-3 sentences giving context and relevance).
-3. TOPIC DEVELOPMENT: Develop the main ideas of the topic — key concepts, why they matter, a brief overview (not a full lecture, just enough to contextualize the evaluation).
-4. TRANSITION: Say something like "Now I'd like to ask you a few questions to check your understanding..."
-5. QUESTIONS: Ask exactly 3 questions, ONE AT A TIME, strictly about the objectives listed below. Wait for the full response before the next.
-6. CLOSING: After the 3rd answer, warmly thank ${nameRef} and end the call using the endCall function.`
-    : `ESTRUCTURA DE CONVERSACIÓN OBLIGATORIA — sigue este orden estrictamente:
-1. SALUDO: Saluda a ${nameRef} con calidez y por su nombre. Sé gentil y acogedor/a.
-2. INTRODUCCIÓN AL TEMA: Presenta brevemente el tema de la sesión de hoy (2-3 oraciones dando contexto y relevancia).
-3. DESARROLLO DEL TEMA: Desarrolla las ideas principales del tema — conceptos clave, por qué importan, un panorama breve (no una conferencia larga, solo suficiente para contextualizar la evaluación).
-4. TRANSICIÓN: Di algo como "Ahora me gustaría hacerte algunas preguntas para verificar tu comprensión..."
-5. PREGUNTAS: Haz exactamente 3 preguntas, UNA A LA VEZ, estrictamente sobre los objetivos indicados. Espera la respuesta completa antes de la siguiente.
-6. CIERRE: Tras la 3ª respuesta, agradece a ${nameRef} con calidez y cierra la llamada con la función endCall.`;
+    ? `REQUIRED CONVERSATION STRUCTURE — follow this order STRICTLY and QUICKLY (total session ≤ 10 min):
+1. GREETING: One sentence. Greet ${nameRef} by name and say you'll ask 3 questions about the module.
+2. QUESTIONS: Ask exactly 3 questions, ONE AT A TIME, strictly about the objectives below. Wait for the full response before the next. Do NOT lecture or introduce the topic — go straight to the questions.
+3. CLOSING: After the 3rd answer, thank ${nameRef} warmly in one sentence and end the call using the endCall function.
+CRITICAL: Do NOT give topic introductions, explanations, or summaries before the questions. Start question 1 within the first 30 seconds.`
+    : `ESTRUCTURA DE CONVERSACIÓN OBLIGATORIA — sigue este orden ESTRICTAMENTE y con AGILIDAD (sesión total ≤ 10 min):
+1. SALUDO: Una oración. Saluda a ${nameRef} por su nombre y di que le harás 3 preguntas sobre el módulo.
+2. PREGUNTAS: Haz exactamente 3 preguntas, UNA A LA VEZ, estrictamente sobre los objetivos indicados. Espera la respuesta completa antes de la siguiente. NO des clases ni introduzcas el tema — ve directo a las preguntas.
+3. CIERRE: Tras la 3ª respuesta, agradece a ${nameRef} con calidez en una oración y cierra la llamada con la función endCall.
+CRÍTICO: NO hagas introducciones, explicaciones ni resúmenes antes de las preguntas. Comienza la pregunta 1 dentro de los primeros 30 segundos.`;
 
   if (vapiPrompt) {
     return `${structureRules}\n\nInstrucciones del evaluador:\n${vapiPrompt}\n\nObjetivos de las preguntas:\n${objectives}`;

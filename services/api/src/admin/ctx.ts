@@ -284,24 +284,42 @@ export function s3KeyFromUrl(url: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** Lightweight Bedrock / Claude Haiku JSON caller — used in synchronous routes */
+/** Lightweight Bedrock / Claude Haiku JSON caller — used in synchronous routes.
+ *  Retries up to 3 times with exponential backoff on throttling / transient errors. */
 export async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Promise<any> {
-  const res = await bedrock.send(new InvokeModelCommand({
-    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  }));
-  const parsed = JSON.parse(new TextDecoder().decode(res.body));
-  const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
-  const match = raw.match(/[\[{][\s\S]*/);
-  const jsonStr = match?.[0] ?? '{}';
-  try { return JSON.parse(jsonStr); }
-  catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
+  const RETRIES = 3;
+  const THROTTLE_CODES = new Set(['ThrottlingException', 'TooManyRequestsException', 'ServiceUnavailableException', 'InternalServerException']);
+  let lastErr: any;
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        // Exponential backoff: 5s, 15s
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+      const res = await bedrock.send(new InvokeModelCommand({
+        modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: maxTokens,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      }));
+      const parsed = JSON.parse(new TextDecoder().decode(res.body));
+      const raw = (parsed.content?.[0]?.text ?? '{}').replace(/```json\s*|```/g, '').trim();
+      const match = raw.match(/[\[{][\s\S]*/);
+      const jsonStr = match?.[0] ?? '{}';
+      try { return JSON.parse(jsonStr); }
+      catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
+    } catch (err: any) {
+      lastErr = err;
+      const isThrottle = THROTTLE_CODES.has(err?.name) || THROTTLE_CODES.has(err?.__type) || String(err?.message).includes('throttl');
+      if (!isThrottle || attempt === RETRIES - 1) throw err;
+      console.warn(`[invokeBedrockForJson] throttled, retry ${attempt + 1}/${RETRIES - 1} in ${5 * (attempt + 1)}s`);
+    }
+  }
+  throw lastErr;
 }
 
 // ── Email HTML builders ──────────────────────────────────────────────────────

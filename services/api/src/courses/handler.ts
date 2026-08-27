@@ -6,8 +6,8 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getClassSessionByCallId, updateClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
-import { handleClasses } from './classes';
 import { listMyClassSessions } from '../shared/db-classes';
+import { handleClasses } from './classes';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
@@ -482,25 +482,29 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
         return ok({ interviewId: null, vapiPublicKey: '', vapiPrompt: null, vapiObjectives: null });
       }
 
-      // ── Prerequisite: all module lessons must be completed ───────────────────
-      const [moduleLessons, userProgress] = await Promise.all([
-        prisma.lesson.findMany({ where: { moduleId }, select: { id: true } }),
-        getLessonProgress(userId, courseId),
-      ]);
-      if (moduleLessons.length > 0) {
-        const completedLessonIds = new Set(userProgress.map((p: any) => p.lessonId));
-        const allLessonsComplete = moduleLessons.every((l: any) => completedLessonIds.has(l.id));
-        if (!allLessonsComplete) {
-          return badRequest('Debes completar todas las lecciones del módulo antes de la entrevista');
+      // ── Prerequisite checks ──────────────────────────────────────────────────
+      // 1. All lessons in the module must be completed
+      const moduleForInterview = await prisma.module.findUnique({
+        where: { id: moduleId },
+        select: { lessons: { select: { id: true } } },
+      });
+      if (moduleForInterview) {
+        const lessonIds = moduleForInterview.lessons.map((l: any) => l.id);
+        if (lessonIds.length > 0) {
+          const lessonProgress = await getLessonProgress(userId, courseId);
+          const completedIds = new Set(lessonProgress.map((p) => p.lessonId));
+          const allDone = lessonIds.every((id: string) => completedIds.has(id));
+          if (!allDone) return badRequest('Debes completar todas las lecciones del módulo antes de la entrevista');
         }
       }
-
-      // ── Prerequisite: Lux Mentor Class must be completed ────────────────────
-      const classSessions = await listMyClassSessions(userId, moduleId);
-      const mentorClassDone = classSessions.some((s: any) => s.hasCompletedQA || s.status === 'completed');
-      if (!mentorClassDone) {
-        return badRequest('Debes completar la Clase con Mentor antes de la entrevista');
+      // 2. If the course has a CLASS evaluation event, the student must have completed the class session
+      const hasClassEvent = await prisma.evaluationEvent.count({ where: { courseId, type: 'CLASS' } });
+      if (hasClassEvent > 0) {
+        const classSessions = await listMyClassSessions(userId, moduleId);
+        const hasCompletedClass = classSessions.some((s) => s.hasCompletedQA);
+        if (!hasCompletedClass) return badRequest('Debes completar la sesión de clase antes de la entrevista');
       }
+      // ── End prerequisite checks ──────────────────────────────────────────────
 
       // Find INTERVIEW type EvaluationEvent for this course
       const evalEvent = await prisma.evaluationEvent.findFirst({

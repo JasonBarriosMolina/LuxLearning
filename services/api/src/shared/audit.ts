@@ -15,7 +15,12 @@ export type AuditAction =
   | 'STUDENT_ENROLLED'
   | 'STUDENT_UNENROLLED'
   | 'CERT_TEMPLATE_UPDATED'
-  | 'USER_ROLE_CHANGED';
+  | 'USER_ROLE_CHANGED'
+  | 'AI_CONTENT_GENERATED'
+  | 'REPORT_EXPORTED'
+  | 'CERTIFICATE_GENERATED'
+  | 'AI_PREVIEW_CALLED'
+  | 'BULK_ENROLL';
 
 export interface AuditEntry {
   actorId: string;       // who performed the action
@@ -27,7 +32,7 @@ export interface AuditEntry {
 
 export async function logAudit(entry: AuditEntry): Promise<void> {
   const now = new Date().toISOString();
-  const sk = `${now}#${Math.random().toString(36).slice(2, 8)}`;
+  const sk = `${now}#${crypto.randomUUID().slice(0, 8)}`;
   try {
     await ddb.send(new PutCommand({
       TableName: TABLES.ACTIVITY,

@@ -19,6 +19,7 @@ import { StepCalendario } from './_components/StepCalendario';
 import { StepEvaluacion } from './_components/StepEvaluacion';
 import { StepLuxPlanner } from './_components/StepLuxPlanner';
 import { StepPlaneamiento } from './_components/StepPlaneamiento';
+import { ReplaceModulesDialog } from './_components/ReplaceModulesDialog';
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,9 @@ function CourseWizardInner() {
   const [exitConfirm, setExitConfirm] = useState(false);
   const [backConfirm, setBackConfirm] = useState(false);
   const [pendingNavDest, setPendingNavDest] = useState<string | null>(null);
+
+  // ── Replace-modules dialog (edit mode) ─────────────────────────────────────
+  const [showReplaceDialog, setShowReplaceDialog] = useState(false);
 
   const DRAFT_KEY = 'lux-planner-draft';
 
@@ -108,6 +112,17 @@ function CourseWizardInner() {
       const [schStart, schEnd] = (c.classSchedule ?? '').split(' – ');
       setScheduleStart(schStart ?? '');
       setScheduleEnd(schEnd ?? '');
+
+      // Ensure the course's academicPeriod exists in the periods list.
+      // Older courses may have been saved before the AcademicPeriod table existed.
+      if (c.academicPeriod?.trim()) {
+        setPeriods((prev) => {
+          if (prev.some((p) => p.name === c.academicPeriod.trim())) return prev;
+          // Persist it so it shows up for all admins going forward
+          api.admin.periods.create(c.academicPeriod.trim()).catch(() => {});
+          return [{ id: `_legacy_${c.academicPeriod}`, name: c.academicPeriod.trim() }, ...prev];
+        });
+      }
 
       setStep1({
         title: c.title ?? '',
@@ -368,7 +383,7 @@ function CourseWizardInner() {
     setStep3((p) => ({ ...p, luxMentorWeeks: luxWeeks }));
 
   // ── Step 5 — Save ──────────────────────────────────────────────────────────
-  const saveCourse = async () => {
+  const saveCourse = async (replaceModules = false, skipModules = false) => {
     setStep5({ status: 'saving', error: '' });
     try {
       const resp = await api.admin.courses.wizardSave({
@@ -381,14 +396,14 @@ function CourseWizardInner() {
         cardColor: step1.cardColor || undefined, cardBorderColor: step1.cardBorderColor || undefined,
         cardLabels: step1.cardLabels, calendarExceptions: step2.exceptions,
         evaluationItems: step3.items, weeklyPlan: step4.weeklyPlan,
-        suggestedModules: step4.modules.map((m) => ({
+        suggestedModules: skipModules ? [] : step4.modules.map((m) => ({
           ...m,
           quizWeek: m.quizWeek ?? null,
           reflexWeek: m.reflexWeek ?? null,
         })),
         pilotoAutomatico: step1.pilotoAutomatico ?? false,
         syllabusInput: step4.syllabusInput,
-        ...(editingCourseId ? { editingCourseId } : {}),
+        ...(editingCourseId ? { editingCourseId, replaceModules } : {}),
       }) as any;
       const data = resp?.data ?? resp;
       if (!data?.courseId) throw new Error('No se recibió courseId');
@@ -396,6 +411,15 @@ function CourseWizardInner() {
       setStep5({ status: 'done', courseId: data.courseId, docUrl: data.docUrl ?? null, lessonJobId: data.lessonJobId ?? null, error: '' });
     } catch (err: any) {
       setStep5({ status: 'error', error: err?.message ?? 'Error al guardar' });
+    }
+  };
+
+  // Show replace-dialog when editing and there are modules; otherwise save directly
+  const handleSaveClick = async () => {
+    if (editingCourseId && step4.modules.length > 0) {
+      setShowReplaceDialog(true);
+    } else {
+      await saveCourse();
     }
   };
 
@@ -471,7 +495,7 @@ function CourseWizardInner() {
         <div>
           {step === 1 && (
             <StepIdentidad
-              step1={step1} setStep1={setStep1} setStep3={setStep3}
+              step1={step1} setStep1={setStep1} setStep3={setStep3} editingCourseId={editingCourseId}
               periods={periods} setPeriods={setPeriods}
               newPeriodInput={newPeriodInput} setNewPeriodInput={setNewPeriodInput}
               showNewPeriod={showNewPeriod} setShowNewPeriod={setShowNewPeriod}
@@ -530,7 +554,7 @@ function CourseWizardInner() {
               step1={step1} step2={step2} step3={step3} step4={step4} step5={step5}
               effectiveWeeks={effectiveWeeks}
               editingCourseId={editingCourseId}
-              saveCourse={saveCourse}
+              saveCourse={handleSaveClick}
               onGoToCourse={(courseId) => router.push(`/admin/courses/${courseId}`)}
               onGoToEval={() => setStep(4)}
               onRemoveEval={removeItem}
@@ -587,6 +611,15 @@ function CourseWizardInner() {
             </div>
           </div>
         )}
+
+        <ReplaceModulesDialog
+          isOpen={showReplaceDialog}
+          onClose={() => setShowReplaceDialog(false)}
+          onReplace={() => { setShowReplaceDialog(false); saveCourse(true, false); }}
+          onAddOnly={() => { setShowReplaceDialog(false); saveCourse(false, false); }}
+          onSkipModules={() => { setShowReplaceDialog(false); saveCourse(false, true); }}
+          isEN={isEN}
+        />
       </div>
     </div>
   );

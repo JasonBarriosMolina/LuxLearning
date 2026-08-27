@@ -1,25 +1,37 @@
 // AI wizard domain handler for lux-admin.
-// Handles: wizard/copilot (plan generation), wizard/save, and their async workers.
-import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+// Handles: wizard/copilot (plan generation), wizard/save, and dispatches their
+// async workers (implemented in ai-wizard-worker.ts — kept separate for the
+// domain-module line limit, CLAUDE.md: ≤600 lines).
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
-import { saveAiJob, batchCreateCalendarEvents, deleteWizardCalendarEvents, saveResource } from '../shared/db-dynamo';
+import { saveAiJob } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
-import type { CalendarEvent } from '../shared/db-calendar';
 import { upsertChat } from '../shared/db-messages';
 import { ok, created, badRequest, forbidden, serverError } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName,
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
 } from './ctx';
-import { handleAIWizardWorkers } from './ai-wizard-worker';
+import { generateWizardPlanDocument, createWizardCourseSessions, syncWizardCalendarEvents } from './ai-wizard-docx';
+import { handleAIWizardWorker } from './ai-wizard-worker';
+
+/** Builds the optional index fields for the wizard-lessons-bulk payload — only
+ *  include a key when its index list is non-empty, otherwise the worker falls
+ *  back to hasQuizInPlan / hasClassInPlan which correctly covers all modules. */
+function buildIndicesPayload(quizIndices: number[], classIndices: number[]) {
+  return {
+    ...(quizIndices.length > 0 ? { quizModuleIndices: quizIndices } : {}),
+    ...(classIndices.length > 0 ? { classModuleIndices: classIndices } : {}),
+  };
+}
 
 export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
 
-  // Delegate async worker actions to separate file (keeps this file ≤ 600 lines)
-  const workerResult = await handleAIWizardWorkers(ctx);
-  if (workerResult !== null) return workerResult;
+  if (ctx.action === 'wizard-lessons-bulk' || ctx.action === 'wizard-copilot') {
+    return handleAIWizardWorker(ctx);
+  }
 
   // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
   if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
@@ -159,7 +171,11 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     const courseTitle = title as string;
 
     if (editingCourseId) {
-      await prisma.evaluationEvent.deleteMany({ where: { courseId: course.id } }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
+      // Delete only planner-managed types (QUIZ, EVIDENCE, EXAM, ATTENDANCE, INTERVIEW).
+      // CLASS events are created and managed separately via admin/classes — never delete them here.
+      await prisma.evaluationEvent.deleteMany({
+        where: { courseId: course.id, type: { notIn: ['CLASS'] } },
+      }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
     }
 
     for (let i = 0; i < evaluationItems.length; i++) {
@@ -178,147 +194,42 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       } catch (evalErr: any) { console.error('[wizard/save] evaluationEvent create error:', evalErr?.message); }
     }
 
-    // Sync evaluation due dates to calendar
-    {
-      if (editingCourseId) {
-        await deleteWizardCalendarEvents(course.id).catch((e: any) => console.error('[wizard] calendar delete error:', e));
-      }
-      const calendarEventsToCreate: CalendarEvent[] = [];
-      const now = new Date().toISOString();
-      const wizCreatorId = `wiz-${course.id}`;
-      for (const item of (evaluationItems as any[])) {
-        const dueDates: string[] = Array.isArray(item.dueDates) ? item.dueDates.filter(Boolean) : [];
-        for (const dueDate of dueDates) {
-          const dayStart = new Date(dueDate + 'T08:00:00').toISOString();
-          const dayEnd   = new Date(dueDate + 'T09:00:00').toISOString();
-          calendarEventsToCreate.push({
-            creatorId: wizCreatorId,
-            eventId: `wiz-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
-            title: `${item.name || item.nameEN} — ${title}`,
-            description: item.instructions || undefined,
-            type: 'deadline', startDate: dayStart, endDate: dayEnd, allDay: true,
-            visibility: 'community', creatorRole: callerRole, createdAt: now,
-            targetCourseId: course.id,
-          });
-        }
-      }
-      if (calendarEventsToCreate.length > 0) {
-        await batchCreateCalendarEvents(calendarEventsToCreate).catch((e: any) => console.error('[wizard] calendar sync error:', e));
-      }
-    }
+    // Sync evaluation due dates to calendar (helper in ai-wizard-docx.ts)
+    await syncWizardCalendarEvents({ courseId: course.id, courseTitle: title, editingCourseId, evaluationItems, callerRole });
 
-    // Sync module-start Mondays to calendar (#5 fix)
-    if (!editingCourseId && startDate && (weeklyPlan as any[]).length > 0) {
-      try {
-        const modStartEvents: CalendarEvent[] = [];
-        const nowMod = new Date().toISOString();
-        const wCreatorId = `wiz-${course.id}`;
-        const base3 = new Date(startDate + 'T12:00:00');
-        const dow3 = base3.getDay(); const monOff = dow3 === 0 ? -6 : 1 - dow3;
-        const seenMods = new Set<string>();
-        for (const wk of weeklyPlan as any[]) {
-          const mName = wk.module as string;
-          if (!mName || seenMods.has(mName)) continue;
-          seenMods.add(mName);
-          const wIdx = (wk.weekNum as number) - 1;
-          const weekMon = new Date(base3); weekMon.setDate(base3.getDate() + monOff + wIdx * 7);
-          const monIso = weekMon.toISOString().split('T')[0]!;
-          modStartEvents.push({
-            creatorId: wCreatorId,
-            eventId: `wiz-mod-${course.id}-${Math.random().toString(36).slice(2, 8)}`,
-            title: `📚 Inicio: ${mName} — ${courseTitle}`,
-            type: 'reminder', startDate: new Date(monIso + 'T08:00:00').toISOString(),
-            endDate: new Date(monIso + 'T09:00:00').toISOString(), allDay: true,
-            visibility: 'community', creatorRole: callerRole, createdAt: nowMod,
-            targetCourseId: course.id,
-          });
-        }
-        if (modStartEvents.length > 0) {
-          await batchCreateCalendarEvents(modStartEvents).catch((e: any) => console.error('[wizard] module-start calendar error:', e));
-        }
-      } catch { /* non-fatal */ }
-    }
-
-    // Generate Word document plan (non-fatal)
-    let planDocumentS3Key: string | null = null;
-    let docPublicUrl: string | null = null;
-    try {
-      const { default: docxPkg } = await import('docx') as any;
-      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, HeadingLevel } = docxPkg;
-      const isEN = planLanguage === 'EN';
-      const L = (es: string, en: string) => isEN ? en : es;
-      const border = { style: BorderStyle.SINGLE, size: 1, color: '999999' };
-      const cellBorders = { top: border, bottom: border, left: border, right: border };
-      const hCell = (text: string, shade = 'DBEAFE') => new TableCell({ shading: { fill: shade }, borders: cellBorders, children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 18 })] })] });
-      const dCell = (text: string) => new TableCell({ borders: cellBorders, children: [new Paragraph({ children: [new TextRun({ text, size: 18 })] })] });
-      const startDateFmt = startDate ? new Date(startDate).toLocaleDateString(isEN ? 'en-US' : 'es-CR') : '—';
-      const COURSE_TYPE_LABELS: Record<string, string> = { TEORICO: L('Teórico','Theoretical'), TEORICO_PRACTICO: L('Teórico-Práctico','Theoretical-Practical'), PROYECTOS: L('Taller / Proyectos','Workshop / Projects'), PROGRAMA_ESPECIAL: L('Programa Especial','Special Program'), CURSO_CORTO: L('Curso Corto','Short Course'), LIBRE: L('Curso Libre / Tutoría','Free Course / Tutoring') };
-      const MODALITY_LABELS: Record<string, string> = { PRESENCIAL: L('Presencial','In-Person'), SINCRONICA: L('Sincrónica','Synchronous'), ASINCRONICA: L('Asincrónica','Asynchronous'), HIBRIDA: L('Híbrida','Hybrid') };
-      const EVAL_TYPE_LABELS: Record<string, string> = { QUIZ: 'Quiz', EVIDENCE: L('Entrega','Submission'), EXAM: L('Examen','Exam'), ATTENDANCE: L('Asistencia','Attendance') };
-      const infoRows = [[L('Nombre del curso','Course name'), title],[L('Tipo de curso','Course type'), COURSE_TYPE_LABELS[courseType] ?? courseType ?? '—'],[L('Modalidad','Modality'), MODALITY_LABELS[modality] ?? modality ?? '—'],[L('Período académico','Academic period'), academicPeriod || '—'],[L('Fecha de inicio','Start date'), startDateFmt],[L('Horario','Schedule'), classSchedule || '—'],[L('Días de clase','Class days'), (classDays as string[]).join(', ') || '—'],[L('Semanas lectivas','Teaching weeks'), String(totalWeeks || '—')]];
-      const infoTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: infoRows.map(([k, v]) => new TableRow({ children: [hCell(k, 'EFF6FF'), dCell(v)] })) });
-      const DAY_TO_JS: Record<string, number> = { 'Lunes':1,'Martes':2,'Miércoles':3,'Jueves':4,'Viernes':5,'Sábado':6,'Domingo':0 };
-      const getClassDates = (weekIdx: number): string => {
-        if (!startDate || !(classDays as string[]).length) return '';
-        const base = new Date(startDate + 'T12:00:00'); const dow = base.getDay();
-        const mondayOffset = dow === 0 ? -6 : 1 - dow;
-        const weekMonday = new Date(base); weekMonday.setDate(base.getDate() + mondayOffset + weekIdx * 7);
-        return (classDays as string[]).map((day: string) => { const offset = ((DAY_TO_JS[day] ?? 1) - 1 + 7) % 7; const d = new Date(weekMonday); d.setDate(weekMonday.getDate() + offset); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }).join(', ');
-      };
-      let bibliography: string[] = []; let guidelines: string[] = [];
-      try {
-        const moduleNames = (suggestedModules as any[]).map((m: any) => isEN ? (m.nameEN || m.name) : m.name).slice(0, 5);
-        const extra = await invokeBedrockForJson(isEN ? `For a course titled "${title}" with modules: ${moduleNames.join(', ')}. Generate: 1) 4 academic bibliography references in APA format. 2) 4 general course guidelines. Respond ONLY with JSON: {"bibliography":["APA ref 1","APA ref 2","APA ref 3","APA ref 4"],"guidelines":["Rule 1.","Rule 2.","Rule 3.","Rule 4."]}` : `Para el curso "${title}" con módulos: ${moduleNames.join(', ')}. Genera: 1) 4 referencias bibliográficas en formato APA. 2) 4 indicaciones generales para estudiantes. Responde ÚNICAMENTE con JSON: {"bibliography":["Ref APA 1","Ref APA 2","Ref APA 3","Ref APA 4"],"guidelines":["Indicación 1.","Indicación 2.","Indicación 3.","Indicación 4."]}`, 1000);
-        if (Array.isArray(extra?.bibliography)) bibliography = extra.bibliography;
-        if (Array.isArray(extra?.guidelines)) guidelines = extra.guidelines;
-      } catch { /* non-fatal */ }
-      const evalRows = [new TableRow({ children: [hCell(L('Evaluación','Evaluation')), hCell(L('Tipo','Type')), hCell(L('Porcentaje','Percentage')), hCell(L('Habilidades por evaluar','Skills to Evaluate'))] }), ...(evaluationItems as any[]).map((it: any) => { const nameFmt = `${isEN ? (it.nameEN || it.name) : it.name}${(it.count ?? 1) > 1 ? ` (${it.count})` : ''}`; return new TableRow({ children: [dCell(nameFmt), dCell(EVAL_TYPE_LABELS[it.type] ?? it.type), dCell(`${it.weight ?? 0}%`), dCell(it.instructions || '')] }); }), new TableRow({ children: [hCell(L('TOTAL','TOTAL'), 'FEF9C3'), dCell(''), hCell(`${(evaluationItems as any[]).reduce((s: number, i: any) => s + (parseFloat(i.weight) || 0), 0)}%`, 'FEF9C3'), dCell('')] })];
-      const evalTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: evalRows });
-      const planRows = [new TableRow({ children: [hCell(L('Nº Semana','Wk#')), hCell(L('Fecha de clases','Class dates')), hCell(L('Habilidades (tópicos y subtópicos)','Skills (topics & subtopics)')), hCell(L('Módulo','Module')), hCell(L('Procedimiento','Procedure')), hCell(L('Observaciones','Notes'))] }), ...(weeklyPlan as any[]).map((wk: any) => { const classDatesStr = getClassDates(wk.weekNum - 1); const obsText = wk.evalEvent ? `${L('Entrega','Delivery')}: ${wk.evalEvent.name}` : (wk.notes || ''); return new TableRow({ children: [dCell(`${L('S','W')}${wk.weekNum}`), dCell(classDatesStr), dCell((wk.topics as string[]).join('; ')), dCell(wk.module || '—'), dCell(wk.procedure || ''), dCell(obsText)] }); })];
-      const planTable = weeklyPlan.length > 0 ? new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: planRows }) : null;
-      const h1 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text, bold: true, size: 32, color: '17527E' })] });
-      const h2 = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text, bold: true, size: 24, color: '17527E' })] });
-      const spacer = () => new Paragraph({ children: [] });
-      const docChildren: any[] = [h1(L('PLAN DE ESTUDIOS','COURSE PLAN')), new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 28 })] }), spacer(), h2(L('1. Datos Generales','1. General Information')), infoTable, spacer(), h2(L('2. Sistema de Evaluación','2. Evaluation System')), evalTable, spacer()];
-      let sec = 2;
-      if (planTable) { sec++; docChildren.push(h2(L(`${sec}. Cronograma Mensual de Habilidades`,`${sec}. Monthly Skills Schedule`))); docChildren.push(planTable); docChildren.push(spacer()); }
-      if ((suggestedModules as any[]).length > 0) { sec++; docChildren.push(h2(L(`${sec}. Módulos del Curso`,`${sec}. Course Modules`))); for (const mod of suggestedModules as any[]) { docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.nameEN || mod.name) : mod.name, bold: true, size: 22 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: isEN ? (mod.descriptionEN || mod.description) : mod.description, size: 18 })] })); docChildren.push(spacer()); } }
-      if (bibliography.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Bibliografía`,`${sec}. Bibliography`))); for (const ref of bibliography) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${ref}`, size: 18 })] })); docChildren.push(spacer()); }
-      if (guidelines.length > 0) { sec++; docChildren.push(h2(L(`${sec}. Indicaciones Generales`,`${sec}. General Guidelines`))); for (const rule of guidelines) docChildren.push(new Paragraph({ children: [new TextRun({ text: `• ${rule}`, size: 18 })] })); docChildren.push(spacer()); }
-      docChildren.push(h2(L('Revisado y Aprobado:','Reviewed and Approved:'))); docChildren.push(spacer()); docChildren.push(new Paragraph({ children: [new TextRun({ text: '_____________________      _____________________', size: 18 })] })); docChildren.push(new Paragraph({ children: [new TextRun({ text: L('Docente                                  Director Académico','Instructor                         Academic Director'), size: 18 })] })); docChildren.push(spacer());
-      const doc = new Document({ sections: [{ children: docChildren }] });
-      const buffer = await Packer.toBuffer(doc);
-      const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
-      await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="plan-${course.id}.docx"` }));
-      planDocumentS3Key = s3Key;
-      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
-      await prisma.course.update({ where: { id: course.id }, data: { planDocumentS3Key: s3Key } });
-      const now = new Date().toISOString();
-      await saveResource({
-        evaluatorId: ctx.userId ?? 'system',
-        resourceId: `res-plan-${course.id}-${planLanguage.toLowerCase()}`,
-        title: `Plan de Estudios — ${title}`,
-        description: `Generado por Lux Planner (${planLanguage})`,
-        fileUrl: `plan://${course.id}`,
-        fileName: `plan-${course.id}.docx`,
-        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        fileSize: buffer.byteLength,
-        folder: 'Planes de Estudio',
-        courseIds: [course.id],
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      }).catch((e: any) => console.error('[wizard/save] saveResource error:', e));
-    } catch (docErr) { console.error('[wizard/save] DOCX generation error:', docErr); }
+    // Generate Word document plan (non-fatal) — logic lives in ai-wizard-docx.ts (file-size limit)
+    const { docPublicUrl } = await generateWizardPlanDocument(ctx, {
+      course, title, courseType, academicPeriod, classDays, classSchedule, modality,
+      startDate, totalWeeks, planLanguage, evaluationItems, suggestedModules, weeklyPlan,
+    });
 
     let lessonJobId: string | null = null;
+    const isEN_save = planLanguage === 'EN';
+
+    // Compute which module indices get quiz/class from weeklyPlan (#17/#18 fix)
+    const _modNamesNew: string[] = (suggestedModules as any[]).map((m: any) => isEN_save ? (m.nameEN || m.name) : m.name);
+    const _quizSetNew = new Set<number>(); const _classSetNew = new Set<number>();
+    for (const wk of weeklyPlan as any[]) {
+      if (!wk.evalEvent?.type) continue;
+      const mi = _modNamesNew.indexOf(wk.module as string);
+      if (mi < 0) continue;
+      const et = (wk.evalEvent.type as string).toUpperCase();
+      if (et === 'QUIZ') _quizSetNew.add(mi);
+      if (et === 'CLASS') _classSetNew.add(mi);
+    }
     if (!editingCourseId || replaceModules) {
+      // NEW course OR edit with replace: delete existing modules first, then create fresh
       if (editingCourseId && replaceModules) {
         await prisma.module.deleteMany({ where: { courseId: course.id } });
         await prisma.courseSession.deleteMany({ where: { courseId: course.id } });
       }
-      const isEN_save = planLanguage === 'EN';
+      // Indices below are positions in createdModuleIds (NOT in suggestedModules) —
+      // a failed prisma.module.create mid-loop shifts createdModuleIds shorter than
+      // suggestedModules, so we translate _quizSetNew/_classSetNew (suggestedModules
+      // positions) into createdModuleIds positions as each module is actually created.
       const createdModuleIds: string[] = [];
+      const createdQuizIndices: number[] = [];
+      const createdClassIndices: number[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
         const mod = (suggestedModules as any[])[mi];
         try {
@@ -330,23 +241,12 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               duration: '80 min', passingScore: 70, order: mi + 1,
             },
           });
+          const createdIdx = createdModuleIds.length;
           createdModuleIds.push(createdMod.id);
+          if (_quizSetNew.has(mi)) createdQuizIndices.push(createdIdx);
+          if (_classSetNew.has(mi)) createdClassIndices.push(createdIdx);
         } catch (e: any) { console.error('[wizard/save] module create error:', e); }
       }
-
-      // Compute which module indices get quiz/class from weeklyPlan (#17/#18 fix)
-      const _modNames: string[] = (suggestedModules as any[]).map((m: any) => isEN_save ? (m.nameEN || m.name) : m.name);
-      const _quizSet = new Set<number>(); const _classSet = new Set<number>();
-      for (const wk of weeklyPlan as any[]) {
-        if (!wk.evalEvent?.type) continue;
-        const mi = _modNames.indexOf(wk.module as string);
-        if (mi < 0) continue;
-        const et = (wk.evalEvent.type as string).toUpperCase();
-        if (et === 'QUIZ') _quizSet.add(mi);
-        if (et === 'CLASS') _classSet.add(mi);
-      }
-      const quizModuleIndices = Array.from(_quizSet);
-      const classModuleIndices = Array.from(_classSet);
 
       if (createdModuleIds.length > 0) {
         lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -359,7 +259,8 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems, quizModuleIndices, classModuleIndices,
+              evaluationItems,
+              ...buildIndicesPayload(createdQuizIndices, createdClassIndices),
             })),
           }));
         } catch (invokeErr: any) {
@@ -371,6 +272,65 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
 
       if (!editingCourseId) {
         await upsertChat(`group_${course.id}`, { type: 'GROUP', name: `Curso: ${courseTitle}`, participants: [] }).catch(() => {});
+      }
+    } else {
+      // EDIT mode (add-only): create any suggested modules that don't yet exist in the DB.
+      // Match by name (case-insensitive) to avoid duplicating modules on re-save.
+      const existingModules = await prisma.module.findMany({
+        where: { courseId: course.id },
+        select: { id: true, title: true, order: true },
+      });
+      const existingTitles = new Set(existingModules.map((m: any) => m.title.toLowerCase().trim()));
+      const maxOrder = existingModules.reduce((max: number, m: any) => Math.max(max, m.order ?? 0), 0);
+
+      // Indices below are positions in newModuleIds (NOT in suggestedModules) — this
+      // loop skips modules that already exist, so suggestedModules index si no longer
+      // matches newModuleIds position; translate _quizSetNew/_classSetNew as we go.
+      const newModuleIds: string[] = [];
+      const newQuizIndices: number[] = [];
+      const newClassIndices: number[] = [];
+      let nextOrder = maxOrder;
+      for (let si = 0; si < (suggestedModules as any[]).length; si++) {
+        const mod = (suggestedModules as any[])[si];
+        const modTitle = isEN_save ? (mod.nameEN || mod.name) : mod.name;
+        if (!modTitle || existingTitles.has(modTitle.toLowerCase().trim())) continue;
+        try {
+          nextOrder++;
+          const createdMod = await prisma.module.create({
+            data: {
+              courseId: course.id,
+              title: modTitle,
+              description: isEN_save ? (mod.descriptionEN || mod.description) : (mod.description || mod.descriptionEN || ''),
+              duration: '80 min', passingScore: 70, order: nextOrder,
+            },
+          });
+          const newIdx = newModuleIds.length;
+          newModuleIds.push(createdMod.id);
+          if (_quizSetNew.has(si)) newQuizIndices.push(newIdx);
+          if (_classSetNew.has(si)) newClassIndices.push(newIdx);
+        } catch (e: any) { console.error('[wizard/save][edit] module create error:', e); }
+      }
+
+      if (newModuleIds.length > 0) {
+        lessonJobId = `wiz-lessons-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await saveAiJob(lessonJobId, { status: 'processing', modules: newModuleIds.length });
+        try {
+          await lambdaClient.send(new LambdaInvokeCommand({
+            FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
+              courseId: course.id, moduleIds: newModuleIds,
+              courseTitle: title, language: planLanguage,
+              evaluationItems,
+              ...buildIndicesPayload(newQuizIndices, newClassIndices),
+            })),
+          }));
+        } catch (invokeErr: any) {
+          console.error('[wizard/save][edit] lesson bulk invoke error:', invokeErr?.message);
+          await saveAiJob(lessonJobId, { status: 'error', error: 'No se pudo iniciar la generación de lecciones' });
+          lessonJobId = null;
+        }
       }
     }
 
@@ -404,34 +364,18 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
                 evaluationItems,
                 _quizOnlyForExistingModules: true,
               })),
-            })).catch(() => {});
+            })).catch(async (invokeErr: any) => {
+              console.error('[wizard/save][quiz-catchup] invoke error:', invokeErr?.message);
+              await saveAiJob(jobId, { status: 'error', error: 'No se pudo iniciar la generación de preguntas' });
+            });
           }
         } catch { /* non-fatal */ }
       }
     }
 
-    // Generate CourseSession records from schedule
+    // Generate CourseSession records from schedule (helper in ai-wizard-docx.ts)
     if (!editingCourseId && startDate && Array.isArray(classDays) && classDays.length > 0 && totalWeeks) {
-      try {
-        const dayNameToIndex: Record<string, number> = { Domingo:0, Lunes:1, Martes:2, Miércoles:3, Jueves:4, Viernes:5, Sábado:6, Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
-        const classDayIndices = (classDays as string[]).map((d: string) => dayNameToIndex[d]).filter((n) => n !== undefined) as number[];
-        const exceptionDates = new Set((calendarExceptions as any[]).filter((ex: any) => ex.type === 'day' && ex.date).map((ex: any) => ex.date.split('T')[0]));
-        const exceptionWeekIdxs = new Set((calendarExceptions as any[]).filter((ex: any) => ex.type === 'week' && ex.weekIndex != null).map((ex: any) => ex.weekIndex as number));
-        const sessions: Array<{ courseId: string; sessionDate: Date; weekIndex: number; order: number }> = [];
-        let order = 1;
-        for (let w = 0; w < (totalWeeks as number); w++) {
-          if (exceptionWeekIdxs.has(w)) continue;
-          for (const dayIdx of classDayIndices) {
-            const weekStart = new Date(startDate); weekStart.setDate(weekStart.getDate() + w * 7);
-            const diff = (dayIdx - weekStart.getDay() + 7) % 7;
-            const sessionDate = new Date(weekStart); sessionDate.setDate(weekStart.getDate() + diff);
-            const isoDate = sessionDate.toISOString().split('T')[0]!;
-            if (exceptionDates.has(isoDate)) continue;
-            sessions.push({ courseId: course.id, sessionDate, weekIndex: w, order: order++ });
-          }
-        }
-        if (sessions.length > 0) await prisma.courseSession.createMany({ data: sessions });
-      } catch (sessErr) { console.error('[wizard/save] courseSession error:', sessErr); }
+      await createWizardCourseSessions({ prisma, courseId: course.id, startDate, classDays, totalWeeks: totalWeeks as number, calendarExceptions });
     }
 
     return editingCourseId
