@@ -296,6 +296,22 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
     return created(mod);
   }
 
+  // ── PUT /admin/courses/:courseId/modules/reorder ─────────────────────────────
+  const reorderMatch = path.match(/^\/admin\/courses\/([^/]+)\/modules\/reorder$/);
+  if (reorderMatch && method === 'PUT') {
+    if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+    const courseId = reorderMatch[1]!;
+    // body.order: [{ id: moduleId, order: number }, ...]
+    const { order } = body as { order?: Array<{ id: string; order: number }> };
+    if (!Array.isArray(order) || order.length === 0) return badRequest('order array required');
+    await Promise.all(
+      order.map(({ id, order: newOrder }) =>
+        prisma.module.update({ where: { id, courseId }, data: { order: Number(newOrder) } })
+      )
+    );
+    return ok({ reordered: order.length });
+  }
+
   // ── /admin/modules/:moduleId ────────────────────────────────────────────────
   const moduleMatch = path.match(/^\/admin\/modules\/([^/]+)$/);
   if (moduleMatch) {
