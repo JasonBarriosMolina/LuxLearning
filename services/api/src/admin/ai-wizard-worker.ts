@@ -144,7 +144,15 @@ Redacta en español latino neutro y formal — sin modismos ni jerga local de ni
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
 [{"title":"Título lección","content":"<h3>Subtítulo del concepto específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
 
-          const rawLessons = await invokeBedrockForJson(lessonPrompt, 8000).catch(() => null);
+          // Parallelize: lesson content + module resources (bibliography + YouTube suggestions)
+          const resourcesPrompt = isBlEN
+            ? `For the module "${mod.title}" in the course "${blTitle}": generate 2 APA bibliography references and 2 YouTube search queries for relevant educational videos. JSON only: {"references":["APA ref 1","APA ref 2"],"youtubeQueries":["search query 1","search query 2"]}`
+            : `Para el módulo "${mod.title}" del curso "${blTitle}": genera 2 referencias bibliográficas APA y 2 consultas de búsqueda YouTube para videos educativos relevantes. Solo JSON: {"references":["Ref APA 1","Ref APA 2"],"youtubeQueries":["búsqueda 1","búsqueda 2"]}`;
+
+          const [rawLessons, moduleResources] = await Promise.all([
+            invokeBedrockForJson(lessonPrompt, 8000).catch(() => null),
+            invokeBedrockForJson(resourcesPrompt, 400).catch(() => null),
+          ]);
           const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
             ? rawLessons : null;
 
@@ -182,6 +190,34 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
               order: i + 1,
             };
           });
+
+          // Append bibliography + YouTube links to the last text lesson (Bug 1)
+          if (moduleResources) {
+            const refs: string[] = Array.isArray(moduleResources.references) ? moduleResources.references.filter(Boolean) : [];
+            const ytQueries: string[] = Array.isArray(moduleResources.youtubeQueries) ? moduleResources.youtubeQueries.filter(Boolean) : [];
+            if (refs.length > 0 || ytQueries.length > 0) {
+              // Find last text lesson (not video) to append resources
+              let targetIdx = lessonData.findLastIndex((l) => l.type === 'text');
+              if (targetIdx < 0) targetIdx = lessonData.length - 1; // fallback to last lesson
+              if (targetIdx >= 0 && lessonData[targetIdx]) {
+                let resourcesHtml = '<section class="lesson-resources" style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">';
+                if (refs.length > 0) {
+                  resourcesHtml += isBlEN
+                    ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`
+                    : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`;
+                }
+                if (ytQueries.length > 0) {
+                  const ytLinks = ytQueries.map((q) => `<li><a href="https://youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">${q}</a></li>`).join('');
+                  resourcesHtml += isBlEN
+                    ? `<h3>🎥 Suggested Videos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`
+                    : `<h3>🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`;
+                }
+                resourcesHtml += '</section>';
+                const existing = lessonData[targetIdx].content ?? '';
+                lessonData[targetIdx] = { ...lessonData[targetIdx], content: existing + resourcesHtml };
+              }
+            }
+          }
 
           await prisma.lesson.createMany({ data: lessonData });
           const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
