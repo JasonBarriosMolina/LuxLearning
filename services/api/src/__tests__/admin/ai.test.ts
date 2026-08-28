@@ -326,6 +326,38 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     const doneCalls = vi.mocked(saveAiJob).mock.calls.filter((c) => (c[1] as any)?.status === 'done');
     expect(doneCalls.length).toBeGreaterThan(0);
   });
+
+  it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {
+    const { saveAiJob } = await import('../../shared/db-dynamo');
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    vi.mocked(saveAiJob).mockClear();
+    // Simulate Bedrock ignoring the async "1 module per week" rule — same module name in weeks 1 and 2
+    vi.mocked(invokeBedrockForJson).mockResolvedValueOnce({
+      weeklyPlan: [
+        { weekNum: 1, topics: ['Topic A'], module: 'Módulo Repetido' },
+        { weekNum: 2, topics: ['Topic B'], module: 'Módulo Repetido' },
+      ],
+      modules: [{ name: 'Módulo Repetido', nameEN: 'Repeated Module', description: '', descriptionEN: '', weeks: [1, 2] }],
+    });
+
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '',
+      action: 'wizard-copilot',
+      body: {
+        _action: 'wizard-copilot', _jobId: 'job-789', title: 'Curso Async', courseType: 'TEORICO',
+        modality: 'ASINCRONICO', planLanguage: 'ES', totalWeeks: 2, evaluationItems: [], syllabusInput: 'Temario...',
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
+    const weeklyPlan = (doneCall?.[1] as any)?.weeklyPlan;
+    // Week 2 must have been renamed to a unique module — never sharing the same name as week 1
+    expect(weeklyPlan[0].module).toBe('Módulo Repetido');
+    expect(weeklyPlan[1].module).not.toBe('Módulo Repetido');
+    expect(weeklyPlan[1].module).toContain('Parte 2');
+  });
 });
 
 describe('Non-AI routes return null (pass to next domain)', () => {

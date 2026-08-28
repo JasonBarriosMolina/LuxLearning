@@ -304,8 +304,18 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       const isAsync = (modality as string).toUpperCase().includes('ASINC') || (modality as string).toUpperCase().includes('ASYNC');
       const asyncNote = isAsync
         ? (isEN
-          ? '\n\nASYNC COURSE RULE: Assign modules at exactly 1 module per week in strict sequential order — no skipping weeks. Example: if 4 modules and 16 weeks, assign ~4 weeks per module; every week in the plan must belong to a module.'
-          : '\n\nREGLA CURSO ASÍNCRONO: Asigna módulos a razón de exactamente 1 módulo por semana en orden secuencial estricto — sin saltar semanas. Ejemplo: si hay 4 módulos y 16 semanas, asigna ~4 semanas por módulo; cada semana del plan debe pertenecer a un módulo.')
+          ? `\n\nASYNC COURSE RULE — NON-NEGOTIABLE:
+1. Generate EXACTLY ${effectiveWeeks} modules — one per teaching week. No more, no less.
+2. EVERY weeklyPlan entry MUST have a UNIQUE "module" value. The same module name MUST NOT appear in more than one week under ANY circumstance — a module must never span 2 weeks.
+3. Each module in the "modules" array MUST have "weeks" as a single-element array, e.g. "weeks":[3].
+4. If the syllabus has fewer topics than ${effectiveWeeks} weeks, SUBDIVIDE each topic into specific subtopics. Every week must have its own uniquely named module.
+5. VERIFY before responding: count the unique "module" values in weeklyPlan — it must equal ${effectiveWeeks}.`
+          : `\n\nREGLA CURSO ASÍNCRONO — NO NEGOCIABLE:
+1. Genera EXACTAMENTE ${effectiveWeeks} módulos — uno por semana lectiva. Ni más, ni menos.
+2. CADA entrada de weeklyPlan DEBE tener un valor "module" ÚNICO. El mismo nombre de módulo NO DEBE aparecer en más de una semana BAJO NINGUNA CIRCUNSTANCIA — un módulo nunca debe repartirse entre 2 semanas.
+3. Cada módulo en el array "modules" DEBE tener "weeks" como array de UN SOLO elemento, ej: "weeks":[3].
+4. Si el temario tiene menos temas que ${effectiveWeeks} semanas, SUBDIVIDE cada tema en subtemas específicos. Cada semana debe tener su propio módulo con nombre único.
+5. VERIFICA antes de responder: cuenta los valores "module" únicos en weeklyPlan — debe ser igual a ${effectiveWeeks}.`)
         : '';
       // For sync/lecture courses: one distinct module per teaching week — no module spans multiple weeks.
       const syncNote = !isAsync
@@ -331,9 +341,10 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
         await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
       } else {
-        // Post-process: enforce unique module per week for sync courses.
-        // Even with the strict prompt, Bedrock sometimes reuses module names.
-        if (!isAsync) {
+        // Post-process: enforce unique module per week (sync AND async — a module must
+        // never span 2 weeks in either modality). Even with the strict prompt, Bedrock
+        // sometimes reuses module names across weeks.
+        {
           const seenModules = new Map<string, number>();
           const newModules: any[] = Array.isArray(result.modules) ? [...result.modules] : [];
           for (const wk of result.weeklyPlan) {
@@ -357,7 +368,7 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
               } else {
                 newModules.push({ name: newName, nameEN: newName, description: '', descriptionEN: '', weeks: [wk.weekNum] });
               }
-              console.warn(`[wizard-copilot] sync dedup: week ${wk.weekNum} had duplicate module "${orig}" → renamed "${newName}"`);
+              console.warn(`[wizard-copilot] dedup (${isAsync ? 'async' : 'sync'}): week ${wk.weekNum} had duplicate module "${orig}" → renamed "${newName}"`);
             }
             seenModules.set(orig, seen + 1);
           }
