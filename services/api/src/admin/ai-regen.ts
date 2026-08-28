@@ -186,11 +186,12 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
     try {
       const targetCount: number = Number(_lessonCount) || 10;
 
-      // Check if the course has a QUIZ evaluation event configured — only then generate questions
-      const modRecord = await prisma.module.findUnique({ where: { id: _moduleId }, select: { courseId: true } });
-      const hasQuizInCourse = modRecord?.courseId
-        ? await prisma.evaluationEvent.count({ where: { courseId: modRecord.courseId, type: 'QUIZ' } }) > 0
-        : false;
+      // Check if THIS module has a QUIZ evaluation event planned — only then regenerate
+      // questions. Was course-wide before (any QUIZ anywhere in the course), which could
+      // add/skip quiz questions on the wrong modules in a course mixing quiz and non-quiz
+      // modules (Trello DmPpbrff comment 6a91f73f — same root cause class as the
+      // "Preguntas del quiz (0)" visibility bug: no per-module planned signal was used).
+      const hasQuizInCourse = await prisma.evaluationEvent.count({ where: { moduleId: _moduleId, type: 'QUIZ' } }) > 0;
 
       const descContext = _moduleDesc ? ` Descripción del módulo: "${_moduleDesc}".` : '';
       const newLessons = await invokeBedrockForJson(

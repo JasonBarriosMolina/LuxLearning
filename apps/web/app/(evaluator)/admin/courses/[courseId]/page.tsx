@@ -280,6 +280,7 @@ export default function AdminCourseDetailPage() {
           {course.modules?.map((mod: any, mi: number) => (
             <ModuleCard
               key={mod.id} mod={mod} courseId={courseId} onRefresh={load}
+              hasQuizPlanned={(course.evaluationEvents ?? []).some((e: any) => e.type === 'QUIZ' && e.moduleId === mod.id)}
               isFirst={mi === 0} isLast={mi === (course.modules.length - 1)}
               onMoveUp={async () => {
                 const prev = course.modules[mi - 1];

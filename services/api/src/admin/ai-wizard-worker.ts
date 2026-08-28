@@ -92,11 +92,26 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
       const moduleId = (moduleIds as string[])[moduleIdx]!;
       try {
         const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
-          if (!mod) return;
+        if (!mod) return;
 
-          // When re-using this worker just to generate quiz questions for already-existing modules,
-          // skip lesson generation if the module already has lessons.
-          if (_quizOnlyForExistingModules) {
+        // Record quiz INTENT immediately via an EvaluationEvent(type=QUIZ) row, independent
+        // of whether the Bedrock question generation below succeeds. This is the durable
+        // "was a quiz planned for this module" signal the frontend needs (Trello DmPpbrff
+        // comment 6a91f73f) — mod.questions.length===0 alone can't distinguish "never
+        // planned" from "planned but failed to generate", so the UI can't safely hide the
+        // quiz section based on question count alone.
+        if (quizIdxSet.has(moduleIdx)) {
+          const existingQuizEvent = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'QUIZ' } });
+          if (!existingQuizEvent) {
+            await prisma.evaluationEvent.create({
+              data: { courseId: blCourseId, moduleId, type: 'QUIZ', name: isBlEN ? 'Quiz' : 'Cuestionario', weight: 0, order: moduleIdx },
+            });
+          }
+        }
+
+        // When re-using this worker just to generate quiz questions for already-existing modules,
+        // skip lesson generation if the module already has lessons.
+        if (_quizOnlyForExistingModules) {
             const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
             if (existingLessonCount > 0 && quizIdxSet.has(moduleIdx)) {
               await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isBlEN);

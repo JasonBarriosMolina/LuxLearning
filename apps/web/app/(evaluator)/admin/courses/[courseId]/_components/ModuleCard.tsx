@@ -18,10 +18,15 @@ import { QuestionFields } from './QuestionFields';
 import type { ModuleForm, LessonForm, QuestionForm } from './types';
 import { newLessonForm, newQuestionForm } from './types';
 
-export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isFirst, isLast }: {
+export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isFirst, isLast, hasQuizPlanned = true }: {
   mod: any; courseId: string; onRefresh: () => void;
   onMoveUp?: () => Promise<void>; onMoveDown?: () => Promise<void>;
   isFirst?: boolean; isLast?: boolean;
+  /** Was a quiz explicitly planned for this module (EvaluationEvent type=QUIZ)? Distinct from
+   *  mod.questions.length===0, which can't tell "never planned" from "planned but not generated
+   *  yet" — Trello DmPpbrff comment 6a91f73f. Defaults true when omitted (legacy callers / tests)
+   *  so existing behavior is preserved unless the caller explicitly opts into the new signal. */
+  hasQuizPlanned?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingMod, setEditingMod] = useState(false);
@@ -297,7 +302,11 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
             ))}
           </div>
 
-          {/* Questions section — collapsed by default when empty */}
+          {/* Questions section — only rendered when a quiz was actually planned for this
+              module (or it already has questions, e.g. added manually before this fix).
+              Never created/shown for modules with no quiz in the plan (Trello DmPpbrff
+              comment 6a91f73f) — collapsed by default when planned but still empty. */}
+          {(hasQuizPlanned || (mod.questions?.length ?? 0) > 0) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <button
@@ -338,7 +347,9 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
               <>
                 {(mod.questions?.length ?? 0) === 0 && (
                   <p className="text-xs text-gray-400 text-center py-4 bg-white dark:bg-gray-900/20 rounded-xl border border-dashed border-border">
-                    Sin preguntas. Agrega la primera con el botón de arriba.
+                    {hasQuizPlanned
+                      ? 'Cuestionario planificado pero aún sin generar. Usa "IA" o "Agregar pregunta" arriba.'
+                      : 'Sin preguntas. Agrega la primera con el botón de arriba.'}
                   </p>
                 )}
                 {mod.questions?.map((q: any) => (
@@ -347,6 +358,7 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
               </>
             )}
           </div>
+          )}
         </div>
       )}
 

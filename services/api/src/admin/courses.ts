@@ -235,6 +235,9 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
               questions: { orderBy: { order: 'asc' } },
             },
           },
+          // Needed so the frontend can tell "quiz never planned for this module" apart
+          // from "planned but not generated yet" — questions.length===0 alone is ambiguous.
+          evaluationEvents: { select: { moduleId: true, type: true } },
         },
       });
       if (!course) return notFound('Curso no encontrado');
