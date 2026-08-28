@@ -153,12 +153,29 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
             invokeBedrockForJson(lessonPrompt, 8000).catch(() => null),
             invokeBedrockForJson(resourcesPrompt, 400).catch(() => null),
           ]);
-          const validLessons = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
+          let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
             ? rawLessons : null;
 
-          // Warn if Bedrock returned fewer lessons than requested (truncated JSON response)
+          // Retry for missing lessons when Bedrock truncated the response (Bug B fix)
           if (validLessons && validLessons.length < lessonCount) {
-            console.warn(`[wizard-lessons-bulk] module ${moduleId}: expected ${lessonCount} lessons, got ${validLessons.length} — truncated Bedrock response`);
+            const missing = lessonCount - validLessons.length;
+            console.warn(`[wizard-lessons-bulk] module ${moduleId}: got ${validLessons.length}/${lessonCount} — retrying for ${missing} missing lessons`);
+            const retryPrompt = isBlEN
+              ? `Continue generating the remaining ${missing} lessons (lessons ${validLessons.length + 1} to ${lessonCount}) for module "${mod.title}" in course "${blTitle}".
+These are the LAST ${missing} lessons of a ${lessonCount}-lesson module. Lesson ${lessonCount} is video type (summary, 100-150 words, ~5 min). All others in this batch are text type (400-500 words each).
+Return ONLY a JSON array of exactly ${missing} lesson objects with no markdown fencing:
+[{"title":"Lesson title","content":"<h3>subtitle</h3><p>HTML content</p>","points":["point 1","point 2","point 3"],"tip":"practical tip","type":"video|text","duration":"5 min|${textDuration}"}]`
+              : `Continúa generando las ${missing} lecciones faltantes (lecciones ${validLessons.length + 1} a ${lessonCount}) para el módulo "${mod.title}" del curso "${blTitle}".
+Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (400-500 palabras cada una).
+Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdown de cercado:
+[{"title":"Título","content":"<h3>subtítulo</h3><p>Contenido HTML</p>","points":["punto 1","punto 2","punto 3"],"tip":"consejo práctico","type":"video|text","duration":"5 min|${textDuration}"}]`;
+            const retryRaw = await invokeBedrockForJson(retryPrompt, 5000).catch(() => null);
+            if (Array.isArray(retryRaw) && retryRaw.length > 0 && retryRaw[0]?.title) {
+              validLessons = [...validLessons, ...retryRaw.slice(0, missing)];
+              console.log(`[wizard-lessons-bulk] retry recovered ${retryRaw.slice(0, missing).length} lessons — total now ${validLessons.length}/${lessonCount}`);
+            } else {
+              console.warn(`[wizard-lessons-bulk] retry failed for module ${moduleId} — placeholder will be used for missing lessons`);
+            }
           }
 
           const PLACEHOLDER_CONTENT = isBlEN
@@ -289,11 +306,21 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
           ? '\n\nASYNC COURSE RULE: Assign modules at exactly 1 module per week in strict sequential order — no skipping weeks. Example: if 4 modules and 16 weeks, assign ~4 weeks per module; every week in the plan must belong to a module.'
           : '\n\nREGLA CURSO ASÍNCRONO: Asigna módulos a razón de exactamente 1 módulo por semana en orden secuencial estricto — sin saltar semanas. Ejemplo: si hay 4 módulos y 16 semanas, asigna ~4 semanas por módulo; cada semana del plan debe pertenecer a un módulo.')
         : '';
-      // For sync/lecture courses: one distinct topic per teaching week — no topic spans multiple weeks.
+      // For sync/lecture courses: one distinct module per teaching week — no module spans multiple weeks.
       const syncNote = !isAsync
         ? (isEN
-          ? `\n\nSYNC/LECTURE COURSE RULE: Generate exactly ${effectiveWeeks} modules — one per teaching week. Each module covers a completely distinct topic developed fully in that single week. Do NOT repeat or span one topic across multiple weeks. If the syllabus has fewer topics than weeks, subdivide topics into subtopics to fill each week.`
-          : `\n\nREGLA CURSO SINCRÓNICO/TEÓRICO: Genera exactamente ${effectiveWeeks} módulos — uno por semana lectiva. Cada módulo cubre un tema completamente distinto que se desarrolla en esa sola semana. NO repitas ni distribuyas el mismo tema en múltiples semanas. Si el temario tiene menos temas que semanas, subdivide los temas en subtemas para completar cada semana.`)
+          ? `\n\nSYNC/LECTURE COURSE RULE — NON-NEGOTIABLE:
+1. Generate EXACTLY ${effectiveWeeks} modules — one per teaching week. No more, no less.
+2. EVERY weeklyPlan entry MUST have a UNIQUE "module" value. The same module name MUST NOT appear in more than one week under ANY circumstance.
+3. Each module in the "modules" array MUST have "weeks" as a single-element array, e.g. "weeks":[3].
+4. If the syllabus has fewer topics than ${effectiveWeeks} weeks, SUBDIVIDE each topic into specific subtopics (e.g. "Linear Algebra" → "Linear Algebra: Vectors", "Linear Algebra: Matrix Operations", "Linear Algebra: Eigenvalues"). Every week must have its own uniquely named module.
+5. VERIFY before responding: count the unique "module" values in weeklyPlan — it must equal ${effectiveWeeks}.`
+          : `\n\nREGLA ABSOLUTA CURSO SINCRÓNICO — NO NEGOCIABLE:
+1. Genera EXACTAMENTE ${effectiveWeeks} módulos — uno por semana lectiva. Ni más, ni menos.
+2. CADA entrada de weeklyPlan DEBE tener un valor "module" ÚNICO. El mismo nombre de módulo NO DEBE aparecer en más de una semana BAJO NINGUNA CIRCUNSTANCIA.
+3. Cada módulo en el array "modules" DEBE tener "weeks" como array de UN SOLO elemento, ej: "weeks":[3].
+4. Si el temario tiene menos temas que ${effectiveWeeks} semanas, SUBDIVIDE cada tema en subtemas específicos (ej: "Álgebra Lineal" → "Álgebra Lineal: Vectores", "Álgebra Lineal: Operaciones con Matrices", "Álgebra Lineal: Valores Propios"). Cada semana debe tener su propio módulo con nombre único.
+5. VERIFICA antes de responder: cuenta los valores "module" únicos en weeklyPlan — debe ser igual a ${effectiveWeeks}.`)
         : '';
       const prompt = isEN
         ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
@@ -303,6 +330,38 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
       if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
         await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
       } else {
+        // Post-process: enforce unique module per week for sync courses.
+        // Even with the strict prompt, Bedrock sometimes reuses module names.
+        if (!isAsync) {
+          const seenModules = new Map<string, number>();
+          const newModules: any[] = Array.isArray(result.modules) ? [...result.modules] : [];
+          for (const wk of result.weeklyPlan) {
+            const orig: string = wk.module ?? '';
+            if (!orig) continue;
+            const seen = seenModules.get(orig) ?? 0;
+            if (seen > 0) {
+              // Duplicate — create a unique sub-module name
+              const suffix = isEN ? ` — Part ${seen + 1}` : ` — Parte ${seen + 1}`;
+              const newName = `${orig}${suffix}`;
+              wk.module = newName;
+              // Clone the original module entry with the new name
+              const parentMod = newModules.find((m: any) => m.name === orig || m.nameEN === orig);
+              if (parentMod) {
+                newModules.push({
+                  ...parentMod,
+                  name: parentMod.name ? `${parentMod.name}${suffix}` : newName,
+                  nameEN: parentMod.nameEN ? `${parentMod.nameEN}${isEN ? ` — Part ${seen + 1}` : ` — Part ${seen + 1}`}` : newName,
+                  weeks: [wk.weekNum],
+                });
+              } else {
+                newModules.push({ name: newName, nameEN: newName, description: '', descriptionEN: '', weeks: [wk.weekNum] });
+              }
+              console.warn(`[wizard-copilot] sync dedup: week ${wk.weekNum} had duplicate module "${orig}" → renamed "${newName}"`);
+            }
+            seenModules.set(orig, seen + 1);
+          }
+          result.modules = newModules;
+        }
         await saveAiJob(_jobId, { status: 'done', weeklyPlan: result.weeklyPlan, modules: result.modules ?? [] });
       }
     } catch (err: any) {
