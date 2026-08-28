@@ -150,7 +150,8 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
             : `Para el módulo "${mod.title}" del curso "${blTitle}": genera 2 referencias bibliográficas APA y 2 consultas de búsqueda YouTube para videos educativos relevantes. Solo JSON: {"references":["Ref APA 1","Ref APA 2"],"youtubeQueries":["búsqueda 1","búsqueda 2"]}`;
 
           const [rawLessons, moduleResources] = await Promise.all([
-            invokeBedrockForJson(lessonPrompt, 8000).catch(() => null),
+            // 64000 = max output tokens for global.anthropic.claude-haiku-4-5-20251001-v1:0 (raised from 8000 — truncation fix)
+            invokeBedrockForJson(lessonPrompt, 64000).catch(() => null),
             invokeBedrockForJson(resourcesPrompt, 400).catch(() => null),
           ]);
           let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
@@ -169,7 +170,7 @@ Return ONLY a JSON array of exactly ${missing} lesson objects with no markdown f
 Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (400-500 palabras cada una).
 Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdown de cercado:
 [{"title":"Título","content":"<h3>subtítulo</h3><p>Contenido HTML</p>","points":["punto 1","punto 2","punto 3"],"tip":"consejo práctico","type":"video|text","duration":"5 min|${textDuration}"}]`;
-            const retryRaw = await invokeBedrockForJson(retryPrompt, 5000).catch(() => null);
+            const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch(() => null);
             if (Array.isArray(retryRaw) && retryRaw.length > 0 && retryRaw[0]?.title) {
               validLessons = [...validLessons, ...retryRaw.slice(0, missing)];
               console.log(`[wizard-lessons-bulk] retry recovered ${retryRaw.slice(0, missing).length} lessons — total now ${validLessons.length}/${lessonCount}`);
@@ -326,7 +327,7 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
         : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
 
-      const result = await invokeBedrockForJson(prompt, 6000);
+      const result = await invokeBedrockForJson(prompt, 64000);
       if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
         await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
       } else {
