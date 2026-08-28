@@ -327,6 +327,32 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect(doneCalls.length).toBeGreaterThan(0);
   });
 
+  it('wizard-lessons-bulk processes ALL modules even beyond the concurrency batch size (regression: Trello DmPpbrff comment 6a91f73f — sequential loop used to blow past the Lambda timeout and skip trailing modules entirely)', async () => {
+    const { saveAiJob } = await import('../../shared/db-dynamo');
+    vi.mocked(saveAiJob).mockClear();
+
+    const moduleIds = ['m1', 'm2', 'm3', 'm4', 'm5']; // 5 modules > MODULE_CONCURRENCY (3)
+    const createManyMock = vi.fn().mockResolvedValue({ count: 10 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: createManyMock },
+      question: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-concurrency', courseId: 'c1', moduleIds, courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    // Every module must have been reached — not just the first batch of 3
+    expect(createManyMock).toHaveBeenCalledTimes(moduleIds.length);
+    const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
+    expect((doneCall?.[1] as any)?.modulesProcessed).toBe(moduleIds.length);
+    expect((doneCall?.[1] as any)?.failed).toBe(0);
+  });
+
   it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {
     const { saveAiJob } = await import('../../shared/db-dynamo');
     const { invokeBedrockForJson } = await import('../../admin/ctx');

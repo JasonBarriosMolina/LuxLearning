@@ -80,12 +80,19 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
       hasClassInPlan ? (moduleIds as string[]).map((_: any, i: number) => i) : []
     );
     const failed: string[] = [];
-    try {
-      for (let moduleIdx = 0; moduleIdx < (moduleIds as string[]).length; moduleIdx++) {
-        const moduleId = (moduleIds as string[])[moduleIdx]!;
-        try {
-          const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
-          if (!mod) continue;
+    // Process one module (all its Bedrock calls + DB writes). Extracted from the old
+    // sequential `for` loop so modules can run CONCURRENTLY in bounded batches below —
+    // sequential processing of all modules in one Lambda invocation was blowing past the
+    // function timeout on courses with several modules, silently killing the invocation
+    // mid-loop and leaving the remaining modules with ZERO lessons (not even the
+    // placeholder fallback, since that code path was never reached). Confirmed via
+    // CloudWatch: lux-admin-staging REPORT line "Duration: 600000.00 ms ... Status: timeout"
+    // (Trello DmPpbrff comment 6a91f73f, course cmtdfn06w0001f82rbt2ni2ta, modules 7-8 empty).
+    const processModule = async (moduleIdx: number): Promise<void> => {
+      const moduleId = (moduleIds as string[])[moduleIdx]!;
+      try {
+        const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
+          if (!mod) return;
 
           // When re-using this worker just to generate quiz questions for already-existing modules,
           // skip lesson generation if the module already has lessons.
@@ -95,7 +102,7 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
               await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isBlEN);
             }
             // Skip lesson generation regardless (module has no lessons, or no quiz planned)
-            continue;
+            return;
           }
 
           // ── Generate lesson content via Bedrock (one call per module) ──────────
@@ -267,10 +274,22 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             return sum + (isNaN(m) ? 7 : m);
           }, 0);
           await prisma.module.update({ where: { id: moduleId }, data: { duration: `${totalMin} min` } });
-        } catch (modErr: any) {
-          console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
-          failed.push(moduleId);
-        }
+      } catch (modErr: any) {
+        console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
+        failed.push(moduleId);
+      }
+    };
+
+    try {
+      // Bounded concurrency: 3 modules at a time. Wall-clock time is now driven by
+      // ceil(N/3) batches instead of N sequential modules — a 16-module course that
+      // used to risk a ~10min timeout now finishes in roughly 1/3 of that time, with
+      // enough Bedrock request headroom to avoid tripping throttling in a burst.
+      const MODULE_CONCURRENCY = 3;
+      const allIdx = (moduleIds as string[]).map((_, i) => i);
+      for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
+        const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
+        await Promise.all(batch.map((idx) => processModule(idx)));
       }
       await saveAiJob(_jobId, { status: 'done', modulesProcessed: (moduleIds as string[]).length, failed: failed.length });
     } catch (err: any) {
