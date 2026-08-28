@@ -5,6 +5,7 @@ export function makePrisma(overrides: Record<string, Partial<ReturnType<typeof m
   function mockModel() {
     return {
       findUnique: vi.fn().mockResolvedValue(null),
+      findFirst:  vi.fn().mockResolvedValue(null),
       findMany:   vi.fn().mockResolvedValue([]),
       create:     vi.fn().mockResolvedValue({ id: 'obj-id' }),
       createMany: vi.fn().mockResolvedValue({ count: 0 }),

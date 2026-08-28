@@ -83,8 +83,15 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
 
   let docPublicUrl: string | null = null;
   try {
-    const { default: docxPkg } = await import('docx') as any;
+    // esbuild's CJS interop for a dynamic import() of a pure-CJS package (docx) doesn't
+    // reliably put the exports under `.default` in the bundled Lambda output — sometimes
+    // it does, sometimes the module's properties land on the awaited object itself. Try
+    // both shapes instead of assuming one (bug found while investigating Trello DmPpbrff
+    // comment 6a91f73f: "Cannot destructure property 'Document' of 'A' as it is undefined").
+    const importedDocx = await import('docx') as any;
+    const docxPkg = importedDocx.default ?? importedDocx;
     const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, HeadingLevel, Header, Footer } = docxPkg;
+    if (!Document || !Packer) throw new Error('docx module did not resolve Document/Packer exports');
     const isEN = planLanguage === 'EN';
     const L = (es: string, en: string) => isEN ? en : es;
     const border = { style: BorderStyle.SINGLE, size: 1, color: '999999' };

@@ -353,6 +353,37 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect((doneCall?.[1] as any)?.failed).toBe(0);
   });
 
+  it('wizard-lessons-bulk records quiz INTENT via EvaluationEvent even when the module ends up with 0 questions (regression: Trello DmPpbrff comment 6a91f73f — "Preguntas del quiz (0)" section can\'t be hidden without a durable planned-vs-not signal)', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    // Simulate quiz question generation returning nothing usable — module ends up with
+    // 0 questions, but the quiz WAS planned (moduleIdx 0 is in quizModuleIndices below).
+    vi.mocked(invokeBedrockForJson).mockResolvedValue(null);
+
+    const evalEventCreate = vi.fn().mockResolvedValue({ id: 'ee-1' });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
+      question: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      evaluationEvent: { findFirst: vi.fn().mockResolvedValue(null), create: evalEventCreate },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-quiz-intent', courseId: 'c1',
+        moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES',
+        quizModuleIndices: [0], // module 0 IS planned to have a quiz
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    // The EvaluationEvent(type=QUIZ) row must exist regardless of question-generation outcome
+    expect(evalEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ courseId: 'c1', moduleId: 'm1', type: 'QUIZ' }),
+    }));
+  });
+
   it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {
     const { saveAiJob } = await import('../../shared/db-dynamo');
     const { invokeBedrockForJson } = await import('../../admin/ctx');
