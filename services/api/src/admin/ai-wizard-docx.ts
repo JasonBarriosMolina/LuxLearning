@@ -7,6 +7,22 @@ import type { CalendarEvent } from '../shared/db-calendar';
 import { AdminCtx, S3_IMAGES_BUCKET, s3Client, invokeBedrockForJson, cognito, USER_POOL_ID } from './ctx';
 import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 
+// Placeholder until real multi-tenant institution data exists (Trello DmPpbrff comment
+// 6a92658b). Single institution today — move to an env var or DB field once there's more
+// than one and the filename needs to vary per tenant.
+const INSTITUTION_ACRONYM = process.env.INSTITUTION_ACRONYM ?? 'LUX';
+
+/** Builds "Plan de Estudios - Curso - Periodo - INSTITUCION - Docente.docx" instead of the
+ *  raw courseId ("plan-cmtdwh...docx") — Trello DmPpbrff comment 6a92658b. Strips characters
+ *  invalid in filenames and collapses whitespace; falls back gracefully when a piece (period,
+ *  teacher name) isn't available. */
+function buildPlanFileName(courseTitle: string, academicPeriod: string | undefined, teacherName: string): string {
+  const parts = ['Plan de Estudios', courseTitle, academicPeriod, INSTITUTION_ACRONYM, teacherName]
+    .filter((p): p is string => !!p && p.trim().length > 0)
+    .map((p) => p.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' '));
+  return `${parts.join(' - ')}.docx`;
+}
+
 interface WizardCalendarSyncParams {
   courseId: string;
   courseTitle: string;
@@ -167,9 +183,13 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
     docChildren.push(spacer());
     const doc = new Document({ sections: [{ headers: { default: pageHeader }, footers: { default: pageFooter }, children: docChildren }] });
     const buffer = await Packer.toBuffer(doc);
+    // Descriptive download filename (Trello DmPpbrff comment 6a92658b) — the S3 KEY stays
+    // ID-based (internal storage detail, never shown to users); only what downloads as is
+    // human-readable now.
+    const downloadFileName = buildPlanFileName(title, academicPeriod, teacherName);
     const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
-    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="plan-${course.id}.docx"` }));
-    docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
+    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="${downloadFileName}"` }));
+    docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="${downloadFileName}"` }), { expiresIn: 604800 });
     await prisma.course.update({ where: { id: course.id }, data: { planDocumentS3Key: s3Key } });
     const now = new Date().toISOString();
     await saveResource({
@@ -178,7 +198,7 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
       title: `Plan de Estudios — ${title}`,
       description: `Generado por Lux Planner (${planLanguage})`,
       fileUrl: `plan://${course.id}`,
-      fileName: `plan-${course.id}.docx`,
+      fileName: downloadFileName,
       fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       fileSize: buffer.byteLength,
       folder: 'Planes de Estudio',

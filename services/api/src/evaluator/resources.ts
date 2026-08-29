@@ -1,10 +1,37 @@
 // Resources, signature, and certificates domain handler for lux-evaluator.
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { EvalCtx } from './ctx';
 import {
   getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse,
   getSignature, saveSignature, getCertificatesByUser,
 } from '../shared/db-dynamo';
 import { ok, badRequest } from '../shared/response';
+
+const s3 = new S3Client({ region: 'us-east-1' });
+const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
+
+/** Wizard-generated study plans are saved with a placeholder fileUrl (`plan://${courseId}`)
+ *  since a real signed S3 URL would go stale in DynamoDB — resolve it fresh on every read
+ *  instead (Trello DmPpbrff comment 6a926c61: dead "plan://..." link in Mis Recursos). */
+async function resolvePlanLinks(resources: any[], prisma: any): Promise<any[]> {
+  const planResources = resources.filter((r) => typeof r.fileUrl === 'string' && r.fileUrl.startsWith('plan://'));
+  if (planResources.length === 0) return resources;
+  await Promise.all(planResources.map(async (r) => {
+    const courseId = r.fileUrl.replace('plan://', '');
+    try {
+      const course = await prisma.course.findUnique({ where: { id: courseId }, select: { planDocumentS3Key: true } });
+      if (course?.planDocumentS3Key) {
+        r.fileUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${r.fileName || `plan-${courseId}.docx`}"` }),
+          { expiresIn: 3600 },
+        );
+      }
+    } catch { /* leave fileUrl as-is — resource still shows, link just won't work */ }
+  }));
+  return resources;
+}
 
 export async function handleResources(ctx: EvalCtx): Promise<any | null> {
   const { event, method, path, userId } = ctx;
@@ -36,7 +63,7 @@ export async function handleResources(ctx: EvalCtx): Promise<any | null> {
   // ── GET /evaluator/resources ─────────────────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/resources') {
     const resources = await getResourcesByEvaluator(userId);
-    return ok(resources);
+    return ok(await resolvePlanLinks(resources, ctx.prisma));
   }
 
   // ── POST /evaluator/resources ────────────────────────────────────────────────
@@ -99,7 +126,7 @@ export async function handleResources(ctx: EvalCtx): Promise<any | null> {
   if (courseResourcesEvalMatch && method === 'GET') {
     const courseId = courseResourcesEvalMatch[1]!;
     const resources = await getResourcesByCourse(courseId);
-    return ok(resources);
+    return ok(await resolvePlanLinks(resources, ctx.prisma));
   }
 
   return null; // not handled by this domain

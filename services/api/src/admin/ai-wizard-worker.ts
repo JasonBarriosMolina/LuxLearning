@@ -192,8 +192,17 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
 
           const [rawLessons, moduleResources] = await Promise.all([
             // 64000 = max output tokens for global.anthropic.claude-haiku-4-5-20251001-v1:0 (raised from 8000 — truncation fix)
-            invokeBedrockForJson(lessonPrompt, 64000).catch(() => null),
-            invokeBedrockForJson(resourcesPrompt, 400).catch(() => null),
+            // Logged now instead of a bare `.catch(() => null)` — that silent swallow left
+            // zero trace in CloudWatch for a run that clearly had failures (Trello DmPpbrff
+            // comment 6a926775 investigation).
+            invokeBedrockForJson(lessonPrompt, 64000).catch((e: any) => {
+              console.error(`[wizard-lessons-bulk] module ${moduleId} lessonPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+              return null;
+            }),
+            invokeBedrockForJson(resourcesPrompt, 400).catch((e: any) => {
+              console.error(`[wizard-lessons-bulk] module ${moduleId} resourcesPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+              return null;
+            }),
           ]);
           let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
             ? rawLessons : null;
@@ -211,7 +220,10 @@ Return ONLY a JSON array of exactly ${missing} lesson objects with no markdown f
 Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (700-900 palabras cada una) — misma estructura de 5 secciones que el set principal (pregunta de apertura, desarrollo, un ejemplo real trabajado a fondo, un ejercicio de práctica propia, y cierre-resumen solo en la última lección de texto).
 Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdown de cercado:
 [{"title":"Título","content":"<h3>subtítulo</h3><p>Contenido HTML</p>","points":["punto 1","punto 2","punto 3"],"tip":"consejo práctico","type":"video|text","duration":"5 min|${textDuration}"}]`;
-            const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch(() => null);
+            const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch((e: any) => {
+              console.error(`[wizard-lessons-bulk] module ${moduleId} retryPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+              return null;
+            });
             if (Array.isArray(retryRaw) && retryRaw.length > 0 && retryRaw[0]?.title) {
               validLessons = [...validLessons, ...retryRaw.slice(0, missing)];
               console.log(`[wizard-lessons-bulk] retry recovered ${retryRaw.slice(0, missing).length} lessons — total now ${validLessons.length}/${lessonCount}`);
