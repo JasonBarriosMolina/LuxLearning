@@ -379,6 +379,9 @@ function CourseWizardInner() {
   const updateModuleReflexWeek = (moduleIdx: number, reflexWeek: number | null) =>
     setStep4((p) => ({ ...p, modules: p.modules.map((m, i) => i === moduleIdx ? { ...m, reflexWeek } : m) }));
 
+  const updateModuleInterviewWeek = (moduleIdx: number, interviewWeek: number | null) =>
+    setStep4((p) => ({ ...p, modules: p.modules.map((m, i) => i === moduleIdx ? { ...m, interviewWeek } : m) }));
+
   const updateLuxMentorWeeks = (luxWeeks: number[]) =>
     setStep3((p) => ({ ...p, luxMentorWeeks: luxWeeks }));
 
@@ -396,10 +399,16 @@ function CourseWizardInner() {
         cardColor: step1.cardColor || undefined, cardBorderColor: step1.cardBorderColor || undefined,
         cardLabels: step1.cardLabels, calendarExceptions: step2.exceptions,
         evaluationItems: step3.items, weeklyPlan: step4.weeklyPlan,
+        // luxMentorWeeks was tracked in UI state but never actually sent to the backend —
+        // Trello DmPpbrff comment 6a9269e2 (classes/reflection/interview appearing for
+        // modules never selected in Lux Planner). Now sent so the backend can compute which
+        // modules fall in a Lux Mentor class week.
+        luxMentorWeeks: step3.luxMentorWeeks,
         suggestedModules: skipModules ? [] : step4.modules.map((m) => ({
           ...m,
           quizWeek: m.quizWeek ?? null,
           reflexWeek: m.reflexWeek ?? null,
+          interviewWeek: m.interviewWeek ?? null,
         })),
         pilotoAutomatico: step1.pilotoAutomatico ?? false,
         syllabusInput: step4.syllabusInput,
@@ -542,7 +551,7 @@ function CourseWizardInner() {
               dateWarningDismissed={dateWarningDismissed} setDateWarningDismissed={setDateWarningDismissed}
               updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
               addEvalItem={addEvalItem} removeItem={removeItem}
-              updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek}
+              updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek} updateModuleInterviewWeek={updateModuleInterviewWeek}
               isEN={isEN}
               onPilotoToggle={(val) => setStep1((p) => ({ ...p, pilotoAutomatico: val }))}
               step5Error={''}

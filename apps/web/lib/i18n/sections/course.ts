@@ -89,6 +89,8 @@ export const courseEs = {
     passQuizFirst: 'Aprueba el quiz primero',
     writeReflectionHint: 'Escribe tu reflexión para completar el módulo',
     lockedHint: 'Completa la reflexión del módulo anterior para desbloquear este módulo.',
+    interviewLuxMentor: 'Entrevista con Lux Mentor',
+    interviewLockedHint: 'Se desbloquea al completar los pasos anteriores del módulo.',
     backToCourse: 'Volver al curso',
   },
   quizPage: {
@@ -234,6 +236,8 @@ export const courseEn = {
     passQuizFirst: 'Pass the quiz first',
     writeReflectionHint: 'Write your reflection to complete the module',
     lockedHint: "Complete the previous module's reflection to unlock this module.",
+    interviewLuxMentor: 'Interview with Lux Mentor',
+    interviewLockedHint: 'Unlocks once the previous module steps are complete.',
     backToCourse: 'Back to course',
   },
   quizPage: {

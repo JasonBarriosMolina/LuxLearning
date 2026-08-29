@@ -42,7 +42,7 @@ export interface WeekPlanItem {
 
 export interface SuggestedModule {
   name: string; nameEN: string; description: string; descriptionEN: string; weeks: number[];
-  quizWeek?: number | null; reflexWeek?: number | null;
+  quizWeek?: number | null; reflexWeek?: number | null; interviewWeek?: number | null;
 }
 
 export interface Step4Data {

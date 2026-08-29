@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft, PlayCircle, CheckCircle, Lock, Clock,
-  BookOpen, ClipboardCheck, FileText, Star,
+  BookOpen, ClipboardCheck, FileText, Star, Mic,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -124,15 +124,32 @@ export default function ModulePage() {
 
   const reflectionStatus = module.reflectionStatus as ReflectionStatus | null;
 
-  // Was a quiz actually planned for this module (EvaluationEvent type=QUIZ)? A module
-  // with no quiz can never have module.quizPassed===true (hasPassedQuiz() checks for a
-  // passed QuizAttempts record, which can never exist if no quiz was ever generated) —
-  // without this check, reflection stays PERMANENTLY locked on modules without a quiz.
-  // Trello DmPpbrff comment 6a9232ef.
-  const hasQuizPlanned = (course?.evaluationEvents ?? []).some((e: any) => e.type === 'QUIZ' && e.moduleId === moduleId);
-  // Effective gate for "may the student write a reflection now": if no quiz was planned,
-  // finishing the lessons is enough — there's no quiz step to wait for.
-  const quizGatePassed = hasQuizPlanned ? module.quizPassed : allLessonsDone;
+  // Per-module planned flags — each feature only appears/gates when the evaluator
+  // explicitly assigned it in Lux Planner (quizWeek/reflexWeek/interviewWeek selectors,
+  // luxMentorWeeks checkboxes). Trello DmPpbrff comment 6a9269e2: "yo le seleccioné a ese
+  // módulo un quiz y una clase... sin embargo el sistema asignó una reflexión y una
+  // entrevista" — none of these used to be conditional on anything.
+  const evEvents = course?.evaluationEvents ?? [];
+  const hasClassPlanned = evEvents.some((e: any) => e.type === 'CLASS' && e.moduleId === moduleId);
+  const hasQuizPlanned = evEvents.some((e: any) => e.type === 'QUIZ' && e.moduleId === moduleId);
+  const hasReflectionPlanned = evEvents.some((e: any) => e.type === 'REFLECTION' && e.moduleId === moduleId);
+  const hasInterviewPlanned = evEvents.some((e: any) => e.type === 'INTERVIEW' && e.moduleId === moduleId);
+
+  const classCompleted = classSessions.some((s: any) => s.hasCompletedQA || s.status === 'completed');
+
+  // Strict unlock chain requested in the same comment: Lecciones escritas → Clase Lux
+  // Mentor → Quiz → Reflexión del módulo → Entrevista — but only counting the steps that
+  // were actually planned for THIS module; an unplanned step is skipped, not required.
+  // classGate: finishing lessons is enough if no class was planned.
+  const classGate = hasClassPlanned ? (allLessonsDone && classCompleted) : allLessonsDone;
+  // quizGatePassed: finishing the (possible) class step is enough if no quiz was planned.
+  const quizGatePassed = hasQuizPlanned ? (classGate && module.quizPassed) : classGate;
+  // Writing a reflection is unlocked once the prior planned steps clear — same gate
+  // whether or not reflection itself was planned (quizGatePassed already accounts for it
+  // being shown at all via hasReflectionPlanned below).
+  const reflectionApproved = reflectionStatus === 'APPROVED';
+  // interviewGate: passing the (possible) reflection step unlocks the (possible) interview.
+  const interviewGate = hasReflectionPlanned ? reflectionApproved : quizGatePassed;
 
   const getModuleStatus = () => {
     if (reflectionStatus === 'APPROVED') return { label: t.moduleView.statusCompleted, variant: 'success' as const };
@@ -269,7 +286,10 @@ export default function ModulePage() {
       {/* Reflection CTA — gated on quizGatePassed, NOT raw module.quizPassed: a module
           with no quiz planned can never have quizPassed===true, which used to lock
           reflection forever. quizGatePassed falls back to allLessonsDone when no quiz
-          was planned. Trello DmPpbrff comment 6a9232ef. */}
+          was planned. Trello DmPpbrff comment 6a9232ef.
+          Only rendered at all when reflection was actually planned for this module —
+          was unconditional before (Trello DmPpbrff comment 6a9269e2). */}
+      {hasReflectionPlanned && (
       <div className={`card ${!quizGatePassed ? 'opacity-60' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -309,6 +329,7 @@ export default function ModulePage() {
           {!quizGatePassed && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
+      )}
 
       {/* Evidence submissions — one card per EVIDENCE eval event linked to this module */}
       {course?.evaluationEvents
@@ -323,21 +344,60 @@ export default function ModulePage() {
           />
         ))}
 
-      {/* Voice Interview — shown when course has INTERVIEW evaluation events */}
-      {course?.evaluationEvents?.some((e: any) => e.type === 'INTERVIEW') && (
-        <VoiceInterview
-          courseId={courseId}
-          moduleId={moduleId}
-          interviews={interviews}
-          onCompleted={loadInterviews}
-        />
+      {/* Interview with Lux Mentor — shown ONLY when planned for THIS exact module and
+          only unlocked once the prior planned steps clear (lessons → class → quiz →
+          reflection approved → interview). Was showing on EVERY module whenever ANY
+          interview existed anywhere in the course (no moduleId check at all), and with
+          no lock/order at all — Trello DmPpbrff comment 6a9269e2. */}
+      {hasInterviewPlanned && (
+        interviewGate ? (
+          <VoiceInterview
+            courseId={courseId}
+            moduleId={moduleId}
+            interviews={interviews}
+            onCompleted={loadInterviews}
+          />
+        ) : (
+          <div className="card opacity-60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gray-100">
+                  <Mic className="w-5 h-5 text-gray-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-charcoal text-sm">{t.moduleView.interviewLuxMentor}</p>
+                  <p className="text-xs text-gray-500">{t.moduleView.interviewLockedHint}</p>
+                </div>
+              </div>
+              <Lock className="w-5 h-5 text-gray-300" />
+            </div>
+          </div>
+        )
       )}
 
       {/* Lux Mentor Class — shown ONLY when a CLASS evaluation event is tied to THIS exact
           module. The old `|| !e.moduleId` fallback made a course-wide class (moduleId=null,
           e.g. one created manually with no module chosen) appear on EVERY module page — not
-          just modules explicitly planned to have one. Trello DmPpbrff comment 6a9232ef. */}
-      {course?.evaluationEvents?.some((e: any) => e.type === 'CLASS' && e.moduleId === moduleId) && (
+          just modules explicitly planned to have one. Trello DmPpbrff comment 6a9232ef.
+          Also now gated on allLessonsDone — first step in Mack's requested order (lessons →
+          class → quiz → reflection → interview), comment 6a9269e2. */}
+      {hasClassPlanned && !allLessonsDone && (
+        <div className="card opacity-60">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gray-100">
+                <PlayCircle className="w-5 h-5 text-gray-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-charcoal text-sm">{t.moduleView.luxMentorClass ?? 'Lux Mentor'}</p>
+                <p className="text-xs text-gray-500">{t.moduleView.interviewLockedHint}</p>
+              </div>
+            </div>
+            <Lock className="w-5 h-5 text-gray-300" />
+          </div>
+        </div>
+      )}
+      {hasClassPlanned && allLessonsDone && (
         <LuxMentorClass
           courseId={courseId}
           moduleId={moduleId}
