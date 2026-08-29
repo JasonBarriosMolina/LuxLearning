@@ -194,10 +194,14 @@ Genera contenido auténtico sobre el tema, diferente al existente. Voz activa en
       const hasQuizInCourse = await prisma.evaluationEvent.count({ where: { moduleId: _moduleId, type: 'QUIZ' } }) > 0;
 
       const descContext = _moduleDesc ? ` Descripción del módulo: "${_moduleDesc}".` : '';
+      // Same depth standard as the main wizard lesson generation (Trello DmPpbrff comment
+      // 6a9232ef — top-tier e-learning design, 700-900 words with a fully worked example
+      // and a self-practice section, not a shallow list). max_tokens raised 6000->32000
+      // to match (10-16 lessons at 700-900 words each no longer fits in 6000).
       const newLessons = await invokeBedrockForJson(
-        `Eres experto en diseño instruccional. Regenera exactamente ${targetCount} lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".${descContext}
+        `Eres un diseñador instruccional de e-learning de primer nivel. Regenera exactamente ${targetCount} lecciones del módulo "${_moduleTitle}" del curso "${_courseTitle}".${descContext}
 Responde ÚNICAMENTE con array JSON válido de exactamente ${targetCount} elementos. Cada lección: title, order, type, content, duration, points (array 3 frases), tip.
-Lección 1 y ${targetCount}: type "video". Lecciones intermedias: type "text" con HTML rico (<h3>,<ul><li>,<blockquote>,<p>). Voz activa 2ª persona. Sin markdown.`, 6000);
+Lección 1 y ${targetCount}: type "video" (100-150 palabras). Lecciones intermedias: type "text", 700-900 palabras cada una, con HTML rico (<h3>,<ul><li>,<blockquote>,<p>) y esta estructura: apertura con pregunta real, desarrollo a fondo del concepto (el por qué y el cómo), un ejemplo real trabajado paso a paso (no solo nombrado), y un ejercicio de práctica propia. Voz activa 2ª persona. Sin markdown.`, 32000);
 
       // Validate BEFORE touching DB — never delete if Bedrock failed
       const lessons = Array.isArray(newLessons) ? newLessons.slice(0, targetCount) : [];
