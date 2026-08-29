@@ -16,13 +16,18 @@ import {
 import { generateWizardPlanDocument, createWizardCourseSessions, syncWizardCalendarEvents } from './ai-wizard-docx';
 import { handleAIWizardWorker } from './ai-wizard-worker';
 
-/** Builds the optional index fields for the wizard-lessons-bulk payload — only
- *  include a key when its index list is non-empty, otherwise the worker falls
- *  back to hasQuizInPlan / hasClassInPlan which correctly covers all modules. */
-function buildIndicesPayload(quizIndices: number[], classIndices: number[]) {
+/** Builds the index fields for the wizard-lessons-bulk payload. Always includes all 4
+ *  keys (even when empty) — an empty array means "explicitly none", which must NOT fall
+ *  back to "all modules" (that fallback was the root cause of quiz/reflection/interview/
+ *  class showing up on modules the evaluator never selected in Lux Planner — Trello
+ *  DmPpbrff comment 6a9269e2). See the matching change in ai-wizard-worker.ts that removes
+ *  the hasQuizInPlan-style "assign to every module" fallback. */
+function buildIndicesPayload(quizIndices: number[], classIndices: number[], reflexIndices: number[], interviewIndices: number[]) {
   return {
-    ...(quizIndices.length > 0 ? { quizModuleIndices: quizIndices } : {}),
-    ...(classIndices.length > 0 ? { classModuleIndices: classIndices } : {}),
+    quizModuleIndices: quizIndices,
+    classModuleIndices: classIndices,
+    reflexModuleIndices: reflexIndices,
+    interviewModuleIndices: interviewIndices,
   };
 }
 
@@ -101,6 +106,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
       evaluationItems = [], weeklyPlan = [], suggestedModules = [], editingCourseId,
       pilotoAutomatico = false, syllabusInput = '', replaceModules = false,
+      luxMentorWeeks = [],
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
@@ -206,17 +212,20 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     let lessonJobId: string | null = null;
     const isEN_save = planLanguage === 'EN';
 
-    // Compute which module indices get quiz/class from weeklyPlan (#17/#18 fix)
-    const _modNamesNew: string[] = (suggestedModules as any[]).map((m: any) => isEN_save ? (m.nameEN || m.name) : m.name);
+    // Which module indices get quiz/reflection/interview/class — driven by the explicit
+    // per-module selectors in Lux Planner (quizWeek/reflexWeek/interviewWeek dropdowns +
+    // luxMentorWeeks checkboxes), NOT by weeklyPlan[].evalEvent (AI-suggested, not
+    // user-controlled, and the source of "system asignó reflexión/entrevista sin que yo
+    // los seleccionara" — Trello DmPpbrff comment 6a9269e2). A module gets each feature
+    // ONLY when the evaluator explicitly assigned it here — never a course-wide fallback.
     const _quizSetNew = new Set<number>(); const _classSetNew = new Set<number>();
-    for (const wk of weeklyPlan as any[]) {
-      if (!wk.evalEvent?.type) continue;
-      const mi = _modNamesNew.indexOf(wk.module as string);
-      if (mi < 0) continue;
-      const et = (wk.evalEvent.type as string).toUpperCase();
-      if (et === 'QUIZ') _quizSetNew.add(mi);
-      if (et === 'CLASS') _classSetNew.add(mi);
-    }
+    const _reflexSetNew = new Set<number>(); const _interviewSetNew = new Set<number>();
+    (suggestedModules as any[]).forEach((m: any, mi: number) => {
+      if (m.quizWeek != null) _quizSetNew.add(mi);
+      if (m.reflexWeek != null) _reflexSetNew.add(mi);
+      if (m.interviewWeek != null) _interviewSetNew.add(mi);
+      if (Array.isArray(m.weeks) && (luxMentorWeeks as number[]).some((w) => m.weeks.includes(w))) _classSetNew.add(mi);
+    });
     if (!editingCourseId || replaceModules) {
       // NEW course OR edit with replace: delete existing modules first, then create fresh
       if (editingCourseId && replaceModules) {
@@ -230,6 +239,8 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       const createdModuleIds: string[] = [];
       const createdQuizIndices: number[] = [];
       const createdClassIndices: number[] = [];
+      const createdReflexIndices: number[] = [];
+      const createdInterviewIndices: number[] = [];
       for (let mi = 0; mi < (suggestedModules as any[]).length; mi++) {
         const mod = (suggestedModules as any[])[mi];
         try {
@@ -245,6 +256,8 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
           createdModuleIds.push(createdMod.id);
           if (_quizSetNew.has(mi)) createdQuizIndices.push(createdIdx);
           if (_classSetNew.has(mi)) createdClassIndices.push(createdIdx);
+          if (_reflexSetNew.has(mi)) createdReflexIndices.push(createdIdx);
+          if (_interviewSetNew.has(mi)) createdInterviewIndices.push(createdIdx);
         } catch (e: any) { console.error('[wizard/save] module create error:', e); }
       }
 
@@ -260,7 +273,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
               evaluationItems,
-              ...buildIndicesPayload(createdQuizIndices, createdClassIndices),
+              ...buildIndicesPayload(createdQuizIndices, createdClassIndices, createdReflexIndices, createdInterviewIndices),
             })),
           }));
         } catch (invokeErr: any) {
@@ -289,6 +302,8 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       const newModuleIds: string[] = [];
       const newQuizIndices: number[] = [];
       const newClassIndices: number[] = [];
+      const newReflexIndices: number[] = [];
+      const newInterviewIndices: number[] = [];
       let nextOrder = maxOrder;
       for (let si = 0; si < (suggestedModules as any[]).length; si++) {
         const mod = (suggestedModules as any[])[si];
@@ -308,6 +323,8 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
           newModuleIds.push(createdMod.id);
           if (_quizSetNew.has(si)) newQuizIndices.push(newIdx);
           if (_classSetNew.has(si)) newClassIndices.push(newIdx);
+          if (_reflexSetNew.has(si)) newReflexIndices.push(newIdx);
+          if (_interviewSetNew.has(si)) newInterviewIndices.push(newIdx);
         } catch (e: any) { console.error('[wizard/save][edit] module create error:', e); }
       }
 
@@ -323,7 +340,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               courseId: course.id, moduleIds: newModuleIds,
               courseTitle: title, language: planLanguage,
               evaluationItems,
-              ...buildIndicesPayload(newQuizIndices, newClassIndices),
+              ...buildIndicesPayload(newQuizIndices, newClassIndices, newReflexIndices, newInterviewIndices),
             })),
           }));
         } catch (invokeErr: any) {
@@ -334,21 +351,32 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }
     }
 
-    // When editing a course: if QUIZ was added to the eval plan, auto-generate questions
-    // for modules that currently have no questions.
+    // When editing a course: for modules explicitly assigned a quiz (quizWeek) in THIS
+    // save that currently have no questions, auto-generate them. Used to trigger off
+    // hasQuizInNewPlan (ANY quiz anywhere in the whole eval plan) and catch up EVERY
+    // module missing questions — course-wide, not per-module, which is exactly the
+    // "quizzes apareciendo sin que yo los seleccionara" bug (Trello DmPpbrff comment
+    // 6a9269e2). Now scoped to modules whose title matches a suggestedModules entry
+    // with quizWeek set.
     if (editingCourseId) {
-      const hasQuizInNewPlan = (evaluationItems as any[]).some((it: any) => it.type === 'QUIZ');
-      if (hasQuizInNewPlan) {
+      const quizPlannedTitles = new Set(
+        (suggestedModules as any[])
+          .filter((m: any) => m.quizWeek != null)
+          .map((m: any) => String(isEN_save ? (m.nameEN || m.name) : m.name).toLowerCase().trim())
+      );
+      if (quizPlannedTitles.size > 0) {
         try {
           const courseModules = await prisma.module.findMany({
             where: { courseId: course.id },
             select: { id: true, title: true },
           });
           const modulesWithoutQuiz = await Promise.all(
-            courseModules.map(async (mod: any) => {
-              const count = await prisma.question.count({ where: { moduleId: mod.id } });
-              return count === 0 ? mod : null;
-            })
+            courseModules
+              .filter((mod: any) => quizPlannedTitles.has(String(mod.title).toLowerCase().trim()))
+              .map(async (mod: any) => {
+                const count = await prisma.question.count({ where: { moduleId: mod.id } });
+                return count === 0 ? mod : null;
+              })
           );
           const missingQuizModules = modulesWithoutQuiz.filter(Boolean) as { id: string; title: string }[];
           for (const mod of missingQuizModules) {
@@ -363,6 +391,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
                 courseTitle: title, language: planLanguage,
                 evaluationItems,
                 _quizOnlyForExistingModules: true,
+                quizModuleIndices: [0], // already filtered to quizPlannedTitles — explicit, no fallback needed
               })),
             })).catch(async (invokeErr: any) => {
               console.error('[wizard/save][quiz-catchup] invoke error:', invokeErr?.message);

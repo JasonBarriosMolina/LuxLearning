@@ -251,7 +251,7 @@ describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
     vi.clearAllMocks();
   });
 
-  it('cuando quizModuleIndices está ausente y evaluationItems tiene QUIZ, genera preguntas para todos los módulos', async () => {
+  it('cuando quizModuleIndices está ausente, NO genera preguntas — ya no hay fallback a "todos los módulos" (Trello DmPpbrff 6a9269e2)', async () => {
     const ctxModule = await import('../../admin/ctx');
     vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue([
       { text: '¿Pregunta 1?', options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: 1 },
@@ -259,7 +259,9 @@ describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = makePrismaWithQuizCapture();
 
-    // Body sin quizModuleIndices (undefined) — el worker debe usar hasQuizInPlan
+    // Body sin quizModuleIndices (undefined) — ya NO cae al viejo fallback hasQuizInPlan;
+    // el dispatch (ai-wizard.ts) siempre manda índices explícitos ahora, así que "ausente"
+    // debe comportarse igual que "[]" — ningún módulo.
     const ctx = makeAdminCtx({
       action: 'wizard-lessons-bulk',
       body: {
@@ -276,8 +278,8 @@ describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
 
     await handleAIWizard(ctx as any);
 
-    // question.createMany debe haberse llamado (QUIZ se creó para mod-1)
-    expect(prisma.question.createMany).toHaveBeenCalled();
+    // question.createMany NO debe haberse llamado — sin índice explícito, sin quiz
+    expect(prisma.question.createMany).not.toHaveBeenCalled();
   });
 
   it('cuando quizModuleIndices = [] explícito, NO genera preguntas aunque evaluationItems tenga QUIZ', async () => {
@@ -307,7 +309,7 @@ describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
     expect(prisma.question.createMany).not.toHaveBeenCalled();
   });
 
-  it('cuando classModuleIndices está ausente y evaluationItems tiene CLASS, crea EvaluationEvent para todos los módulos', async () => {
+  it('cuando classModuleIndices está ausente, NO crea EvaluationEvent CLASS — ya no hay fallback a "todos los módulos" (Trello DmPpbrff 6a9269e2)', async () => {
     const ctxModule = await import('../../admin/ctx');
     vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({
       vapiPrompt: 'Pregunta guía sobre el módulo',
@@ -332,8 +334,8 @@ describe('ai-wizard — quiz/class index fallback (Fix 1)', () => {
 
     await handleAIWizard(ctx as any);
 
-    // evaluationEvent.create debe haberse llamado para el módulo
-    expect(prisma.evaluationEvent.create).toHaveBeenCalledWith(
+    // Sin índice explícito, ninguna EvaluationEvent CLASS se crea para este módulo
+    expect(prisma.evaluationEvent.create).not.toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ type: 'CLASS', moduleId: 'mod-1' }),
       }),
@@ -375,12 +377,10 @@ describe('ai-wizard/save — quiz/class index desync (Fix 2)', () => {
         planLanguage: 'ES',
         suggestedModules: [
           { name: 'Módulo A' }, // index 0 — create fails, never occupies a createdModuleIds slot
-          { name: 'Módulo B' }, // index 1 — flagged QUIZ below; should land at createdModuleIds[0]
+          { name: 'Módulo B', quizWeek: 1 }, // index 1 — quiz planned; should land at createdModuleIds[0]
           { name: 'Módulo C' }, // index 2 — should land at createdModuleIds[1]
         ],
-        weeklyPlan: [
-          { weekNum: 1, module: 'Módulo B', evalEvent: { type: 'QUIZ' } },
-        ],
+        weeklyPlan: [{ weekNum: 1, module: 'Módulo B' }],
         evaluationItems: [],
       },
     });
@@ -421,12 +421,10 @@ describe('ai-wizard/save — quiz/class index desync (Fix 2)', () => {
         editingCourseId: 'course-1',
         suggestedModules: [
           { name: 'Módulo A' }, // index 0 — already exists, skipped entirely (not in newModuleIds)
-          { name: 'Módulo B' }, // index 1 — flagged QUIZ below; should land at newModuleIds[0]
+          { name: 'Módulo B', quizWeek: 1 }, // index 1 — quiz planned; should land at newModuleIds[0]
           { name: 'Módulo C' }, // index 2 — should land at newModuleIds[1]
         ],
-        weeklyPlan: [
-          { weekNum: 1, module: 'Módulo B', evalEvent: { type: 'QUIZ' } },
-        ],
+        weeklyPlan: [{ weekNum: 1, module: 'Módulo B' }],
         evaluationItems: [],
       },
     });

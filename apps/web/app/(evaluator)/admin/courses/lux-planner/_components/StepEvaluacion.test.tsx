@@ -29,7 +29,7 @@ const baseProps = {
   totalWeight: 10, weightOk: false,
   outOfRangeItems: [], dateWarningDismissed: false, setDateWarningDismissed: vi.fn(),
   updateItem: vi.fn(), updateDueDate: vi.fn(), setCount: vi.fn(), addEvalItem: vi.fn(), removeItem: vi.fn(),
-  updateModuleQuizWeek: vi.fn(), updateModuleReflexWeek: vi.fn(),
+  updateModuleQuizWeek: vi.fn(), updateModuleReflexWeek: vi.fn(), updateModuleInterviewWeek: vi.fn(),
   isEN: false, step5Error: '', editingCourseId: null,
 };
 
@@ -38,5 +38,22 @@ describe('StepEvaluacion — sección INTERVIEW', () => {
     render(<StepEvaluacion {...baseProps} />);
     expect(screen.getByText('Configuración del Lux Mentor para la entrevista')).toBeInTheDocument();
     expect(screen.queryByText(/Vapi/i)).not.toBeInTheDocument();
+  });
+});
+
+// Trello DmPpbrff comment 6a9269e2 — interview should be an optional per-module selector
+// in Lux Planner, same UX pattern as the quiz/reflection week dropdowns (not tied to the
+// Lux Mentor CLASS mechanism).
+describe('StepEvaluacion — selector de Entrevista por módulo', () => {
+  const step4WithModule: Step4Data = {
+    ...step4,
+    weeklyPlan: [{ weekNum: 1, topics: ['Tema 1'] } as any],
+    modules: [{ name: 'Módulo 1', nameEN: 'Module 1', description: '', descriptionEN: '', weeks: [1] }],
+  };
+
+  it('muestra el selector de semana de Entrevista junto a Quiz y Reflexión, por módulo', () => {
+    render(<StepEvaluacion {...baseProps} step4={step4WithModule} />);
+    expect(screen.getByText('Módulos — Quiz, Reflexión y Entrevista')).toBeInTheDocument();
+    expect(screen.getByText('Entrevista')).toBeInTheDocument();
   });
 });

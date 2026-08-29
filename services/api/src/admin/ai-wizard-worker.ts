@@ -73,23 +73,25 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
   if (ctx.action === 'wizard-lessons-bulk') {
     const {
       _jobId, courseId: blCourseId, moduleIds = [], courseTitle: blTitle = '',
-      language: blLang = 'ES', evaluationItems: blEvalItems = [],
+      language: blLang = 'ES',
       _quizOnlyForExistingModules = false,
       quizModuleIndices: blQuizIndices,
       classModuleIndices: blClassIndices,
+      reflexModuleIndices: blReflexIndices,
+      interviewModuleIndices: blInterviewIndices,
     } = body as any;
     const isBlEN = blLang === 'EN';
-    // Per-module index sets. Falls back to "all modules" when indices not provided.
-    const hasQuizInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'QUIZ');
-    const hasClassInPlan = (blEvalItems as any[]).some((it: any) => it.type === 'CLASS');
-    const quizIdxSet: Set<number> = new Set(
-      Array.isArray(blQuizIndices) ? blQuizIndices :
-      hasQuizInPlan ? (moduleIds as string[]).map((_: any, i: number) => i) : []
-    );
-    const classIdxSet: Set<number> = new Set(
-      Array.isArray(blClassIndices) ? blClassIndices :
-      hasClassInPlan ? (moduleIds as string[]).map((_: any, i: number) => i) : []
-    );
+    // Per-module index sets — explicit ONLY, no "assign to all modules" fallback. That
+    // fallback (hasQuizInPlan/hasClassInPlan ? every module : none) was the root cause of
+    // quiz/class/reflection/interview appearing on modules the evaluator never selected in
+    // Lux Planner (Trello DmPpbrff comment 6a9269e2). ai-wizard.ts now always sends
+    // explicit indices computed from the per-module quizWeek/reflexWeek/interviewWeek
+    // selectors and luxMentorWeeks — an empty array here means "genuinely none", not
+    // "wasn't told, guess everyone".
+    const quizIdxSet: Set<number> = new Set(Array.isArray(blQuizIndices) ? blQuizIndices : []);
+    const classIdxSet: Set<number> = new Set(Array.isArray(blClassIndices) ? blClassIndices : []);
+    const reflexIdxSet: Set<number> = new Set(Array.isArray(blReflexIndices) ? blReflexIndices : []);
+    const interviewIdxSet: Set<number> = new Set(Array.isArray(blInterviewIndices) ? blInterviewIndices : []);
     const failed: string[] = [];
     // Process one module (all its Bedrock calls + DB writes). Extracted from the old
     // sequential `for` loop so modules can run CONCURRENTLY in bounded batches below —
@@ -105,20 +107,24 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
         const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
         if (!mod) return;
 
-        // Record quiz INTENT immediately via an EvaluationEvent(type=QUIZ) row, independent
-        // of whether the Bedrock question generation below succeeds. This is the durable
-        // "was a quiz planned for this module" signal the frontend needs (Trello DmPpbrff
-        // comment 6a91f73f) — mod.questions.length===0 alone can't distinguish "never
-        // planned" from "planned but failed to generate", so the UI can't safely hide the
-        // quiz section based on question count alone.
-        if (quizIdxSet.has(moduleIdx)) {
-          const existingQuizEvent = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'QUIZ' } });
-          if (!existingQuizEvent) {
+        // Record INTENT immediately via EvaluationEvent rows, independent of whether the
+        // Bedrock generation below succeeds. This is the durable "was X planned for this
+        // module" signal the frontend needs (Trello DmPpbrff comments 6a91f73f, 6a9269e2)
+        // — mod.questions.length===0 alone can't distinguish "never planned" from "planned
+        // but failed to generate", so the UI can't safely hide a section on count alone.
+        // Same pattern for QUIZ, REFLECTION, and INTERVIEW — CLASS has its own creation
+        // block further down since it also carries generated vapiPrompt/lessonScript content.
+        const recordIntent = async (type: 'QUIZ' | 'REFLECTION' | 'INTERVIEW', name: string) => {
+          const existing = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type } });
+          if (!existing) {
             await prisma.evaluationEvent.create({
-              data: { courseId: blCourseId, moduleId, type: 'QUIZ', name: isBlEN ? 'Quiz' : 'Cuestionario', weight: 0, order: moduleIdx },
+              data: { courseId: blCourseId, moduleId, type, name, weight: 0, order: moduleIdx },
             });
           }
-        }
+        };
+        if (quizIdxSet.has(moduleIdx)) await recordIntent('QUIZ', isBlEN ? 'Quiz' : 'Cuestionario');
+        if (reflexIdxSet.has(moduleIdx)) await recordIntent('REFLECTION', isBlEN ? 'Reflection' : 'Reflexión');
+        if (interviewIdxSet.has(moduleIdx)) await recordIntent('INTERVIEW', isBlEN ? 'Lux Mentor Interview' : 'Entrevista con Lux Mentor');
 
         // When re-using this worker just to generate quiz questions for already-existing modules,
         // skip lesson generation if the module already has lessons.

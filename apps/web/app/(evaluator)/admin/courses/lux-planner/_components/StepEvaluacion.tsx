@@ -27,6 +27,7 @@ interface StepEvaluacionProps {
   removeItem: (id: string) => void;
   updateModuleQuizWeek: (moduleIdx: number, quizWeek: number | null) => void;
   updateModuleReflexWeek: (moduleIdx: number, reflexWeek: number | null) => void;
+  updateModuleInterviewWeek: (moduleIdx: number, interviewWeek: number | null) => void;
   isEN: boolean;
   onPilotoToggle?: (val: boolean) => void;
   step5Error: string;
@@ -38,7 +39,7 @@ export function StepEvaluacion({
   totalWeight, weightOk,
   outOfRangeItems, dateWarningDismissed, setDateWarningDismissed,
   updateItem, updateDueDate, setCount, addEvalItem, removeItem,
-  updateModuleQuizWeek, updateModuleReflexWeek,
+  updateModuleQuizWeek, updateModuleReflexWeek, updateModuleInterviewWeek,
   isEN, onPilotoToggle,
   step5Error, editingCourseId,
 }: StepEvaluacionProps) {
@@ -378,9 +379,9 @@ export function StepEvaluacion({
         <div className="space-y-3 border-t border-border pt-6">
           <div className="flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-cta-from" />
-            <p className="text-sm font-semibold text-charcoal">{s('Módulos — Quiz y Reflexión', 'Modules — Quiz & Reflection')}</p>
+            <p className="text-sm font-semibold text-charcoal">{s('Módulos — Quiz, Reflexión y Entrevista', 'Modules — Quiz, Reflection & Interview')}</p>
           </div>
-          <p className="text-xs text-gray-400">{s('Asigna en qué semana se realizará el quiz y la reflexión de cada módulo (opcional).', 'Assign which week the quiz and reflection for each module will take place (optional).')}</p>
+          <p className="text-xs text-gray-400">{s('Asigna en qué semana se realizará el quiz, la reflexión y/o la entrevista de cada módulo (todo opcional). Si no se asigna, el estudiante no verá esa sección en ese módulo.', 'Assign which week the quiz, reflection and/or interview for each module will take place (all optional). If not assigned, the student won\'t see that section for that module.')}</p>
           <div className="space-y-2">
             {step4.modules.map((mod, i) => {
               const allWeekNums = step4.weeklyPlan.map((w) => w.weekNum);
@@ -405,6 +406,15 @@ export function StepEvaluacion({
                     <select
                       value={mod.reflexWeek ?? ''}
                       onChange={(e) => updateModuleReflexWeek(i, e.target.value ? parseInt(e.target.value) : null)}
+                      className="input-field py-0.5 text-xs w-16"
+                    >
+                      <option value="">—</option>
+                      {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
+                    </select>
+                    <span className="text-[11px] text-gray-400 flex items-center gap-0.5"><Mic className="w-2.5 h-2.5" />{s('Entrevista', 'Interview')}</span>
+                    <select
+                      value={mod.interviewWeek ?? ''}
+                      onChange={(e) => updateModuleInterviewWeek(i, e.target.value ? parseInt(e.target.value) : null)}
                       className="input-field py-0.5 text-xs w-16"
                     >
                       <option value="">—</option>
