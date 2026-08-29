@@ -5,6 +5,7 @@ import { getAiJob, createNotification } from '../shared/db-dynamo';
 import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
 import { upsertChat } from '../shared/db-messages';
+import { extractYoutubeId, isYoutubeVideoAvailable } from '../shared/youtube';
 import { ok, created, badRequest, forbidden, notFound } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName,
@@ -139,15 +140,14 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
 
     const results = await Promise.allSettled(
       allLessons.map(async (l: any) => {
-        try {
-          const res = await fetch(
-            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${l.youtubeId}&format=json`,
-            { signal: AbortSignal.timeout(5000) }
-          );
-          return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: res.ok, status: res.status };
-        } catch {
-          return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: false, status: 0 };
-        }
+        // Normalize before checking — a full URL pasted into the "YouTube ID" field
+        // (instead of just the ID) used to hit oEmbed with a malformed lookup URL and
+        // always fail, reporting a perfectly fine video as "unavailable" (Trello
+        // Nk0XDBvJ comment 6a926aaa).
+        const videoId = extractYoutubeId(l.youtubeId);
+        if (!videoId) return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: false, status: 0 };
+        const ok = await isYoutubeVideoAvailable(videoId);
+        return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok, status: ok ? 200 : 0 };
       })
     );
 

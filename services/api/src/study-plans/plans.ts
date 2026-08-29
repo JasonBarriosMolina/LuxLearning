@@ -12,6 +12,7 @@ import {
 import { createNotification, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser } from '../shared/db-dynamo';
 import { isModuleUnlocked } from '../shared/db-progress';
 import { getPrismaClient } from '../shared/db-neon';
+import { extractYoutubeId, isYoutubeVideoAvailable } from '../shared/youtube';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 const lambda = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -197,8 +198,24 @@ export async function runSuggestionsWorker(userId: string, weekOf: string, promp
       ? JSON.parse(raw.slice(jsonStart, jsonEnd + 1))
       : [];
 
+    // The prompt tells the model not to invent URLs, but an LLM has no way to actually
+    // know whether a specific video is still live — it can hallucinate a well-formed,
+    // plausible YouTube link to a video that's removed/private/never existed. Verify every
+    // YouTube link before showing it to the student instead of trusting it blindly (Trello
+    // Nk0XDBvJ comment 6a926aaa: "me está llevando a enlaces... válidos, pero el video no
+    // se encuentra disponible"). A dead link just loses its url — the title/description
+    // still stands as guidance, so nothing is silently dropped.
+    const verifiedSuggestions = Array.isArray(suggestions)
+      ? await Promise.all((suggestions as any[]).slice(0, 5).map(async (s) => {
+          if (s?.type !== 'video' || !s?.url) return s;
+          const videoId = extractYoutubeId(s.url);
+          const available = videoId ? await isYoutubeVideoAvailable(videoId) : false;
+          return available ? s : { ...s, url: undefined };
+        }))
+      : [];
+
     await updateStudyPlanField(userId, weekOf, {
-      bedrockSuggestions: Array.isArray(suggestions) ? suggestions.slice(0, 5) : [],
+      bedrockSuggestions: verifiedSuggestions,
       suggestionsStatus: 'done',
       updatedAt: new Date().toISOString(),
     });

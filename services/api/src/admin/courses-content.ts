@@ -5,6 +5,7 @@ import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
 import { invalidateTranslation } from '../shared/translate';
+import { extractYoutubeId } from '../shared/youtube';
 import { ok, created, badRequest, forbidden, notFound, serverError } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, shuffleQuestionOptions, s3KeyFromUrl,
@@ -29,10 +30,14 @@ export async function handleCoursesContent(ctx: AdminCtx): Promise<any | null> {
       const count = await prisma.lesson.count({ where: { moduleId } });
       lessonOrder = count + 1;
     }
+    // The field is labeled "YouTube ID" but pasting the full URL is completely ordinary
+    // admin behavior — normalize it instead of storing a full URL verbatim, which used to
+    // break the oEmbed availability check downstream (Trello Nk0XDBvJ comment 6a926aaa).
+    const normalizedYoutubeId = youtubeId ? (extractYoutubeId(youtubeId) ?? youtubeId) : '';
     const lesson = await prisma.lesson.create({
       data: {
         moduleId, title, duration,
-        youtubeId: youtubeId ?? '',
+        youtubeId: normalizedYoutubeId,
         type: lessonType,
         content: content ?? null,
         imageUrl: imageUrl || null,
@@ -258,10 +263,12 @@ HTML rico obligatorio: <h3>, <ul><li>, <blockquote>. Sin markdown.`, 1500);
         content: currentLesson.content, points: currentLesson.points,
         tip: currentLesson.tip, order: currentLesson.order,
       }) : null;
+      // Same normalization as create — see comment there (Trello Nk0XDBvJ comment 6a926aaa).
+      const normalizedYoutubeId = youtubeId ? (extractYoutubeId(youtubeId) ?? youtubeId) : '';
       const lesson = await prisma.lesson.update({
         where: { id: lessonId },
         data: {
-          title, duration, youtubeId: youtubeId || '',
+          title, duration, youtubeId: normalizedYoutubeId,
           imageUrl: imageUrl || null,
           content: content || null,
           points: Array.isArray(points) ? points : [],
