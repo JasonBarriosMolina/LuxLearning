@@ -104,19 +104,17 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     const ctx = await import('../../admin/ctx');
     vi.spyOn(ctx, 'invokeBedrockForJson').mockResolvedValue([
       { title: 'Lección 1', content: '<p>Intro</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
-      { title: 'Lección 2', content: '<h3>Tema A</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 3', content: '<h3>Tema B</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 4', content: '<h3>Tema C</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 5', content: '<h3>Tema D</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 6', content: '<h3>Tema E</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 7', content: '<h3>Tema F</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 8', content: '<h3>Tema G</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 9', content: '<h3>Cierre reflexivo</h3><p>Resumen</p><ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '6 min' },
-      { title: 'Lección 10', content: '<p>Resumen</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 2', content: '<h3>Tema A</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 3', content: '<h3>Tema B</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 4', content: '<h3>Tema C</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 5', content: '<h3>Tema D</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 6', content: '<h3>Tema E</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 7', content: '<h3>Cierre reflexivo</h3><p>Resumen</p><ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 8', content: '<p>Resumen</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
     ]);
   });
 
-  it('genera 10 lecciones sin clase (2 video + 8 texto = ~60 min)', async () => {
+  it('genera 8 lecciones sin clase (2 video + 6 texto = ~60 min, andamiaje de 9 min/lección)', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -124,15 +122,15 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    expect(capturedLessons).toHaveLength(10);
+    expect(capturedLessons).toHaveLength(8);
 
     const videos = capturedLessons.filter((l: any) => l.type === 'video');
     const texts  = capturedLessons.filter((l: any) => l.type === 'text');
     expect(videos).toHaveLength(2);
-    expect(texts).toHaveLength(8);
+    expect(texts).toHaveLength(6);
   });
 
-  it('lecciones de texto usan duración corta de 5-7 min (andamiaje), no 10 min densos', async () => {
+  it('lecciones de texto usan duración de 8-10 min (700-900 palabras, más profundas), no 5-7 min', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -141,14 +139,12 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     await handleAIWizard(ctx as any);
 
     const texts = capturedLessons.filter((l: any) => l.type === 'text');
-    const wrongDuration = texts.filter((l: any) => l.duration === '7 min' || l.duration === '10 min');
-    expect(wrongDuration).toHaveLength(0);
-
-    // Cada lección texto debe durar entre 5 y 7 min (andamiaje progresivo)
+    // Cada lección texto debe durar entre 8 y 10 min (contenido de mayor profundidad —
+    // Trello DmPpbrff comment 6a9232ef, ya no el andamiaje corto de 5-7 min anterior)
     texts.forEach((l: any) => {
       const mins = parseInt(l.duration, 10);
-      expect(mins).toBeGreaterThanOrEqual(5);
-      expect(mins).toBeLessThanOrEqual(7);
+      expect(mins).toBeGreaterThanOrEqual(8);
+      expect(mins).toBeLessThanOrEqual(10);
     });
   });
 
@@ -184,15 +180,15 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    // 2 video × 5 min + 8 text × 6 min = 58 min
+    // 2 video × 5 min + 6 text × 9 min = 64 min
     const updateCall = updateSpy.mock.calls.find((c: any[]) =>
       c[0]?.data?.duration != null
     );
     expect(updateCall).toBeDefined();
     const durationStr: string = updateCall![0].data.duration;
     const totalMin = parseInt(durationStr, 10);
-    expect(totalMin).toBeGreaterThanOrEqual(50);
-    expect(totalMin).toBeLessThanOrEqual(65);
+    expect(totalMin).toBeGreaterThanOrEqual(55);
+    expect(totalMin).toBeLessThanOrEqual(70);
   });
 
   it('no genera menos de 6 lecciones por módulo', async () => {
