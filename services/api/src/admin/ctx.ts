@@ -285,10 +285,21 @@ export function s3KeyFromUrl(url: string): string | null {
 }
 
 /** Lightweight Bedrock / Claude Haiku JSON caller — used in synchronous routes.
- *  Retries up to 3 times with exponential backoff on throttling / transient errors. */
+ *  Retries up to 3 times with exponential backoff.
+ *
+ *  Retries EVERY error, not just throttle-coded ones — was throttle-only before, which
+ *  meant a non-throttle transient error (network blip, a Bedrock 5xx not carrying one of
+ *  the exact THROTTLE_CODES names, etc.) got ZERO retries and failed on the very first
+ *  attempt. Found investigating Trello DmPpbrff comment 6a926775: a course generated
+ *  under the new concurrent-modules + longer-lesson-prompt combo had 5 of 8 modules come
+ *  back with placeholder-only content — plausible if some modules hit a non-throttle
+ *  error under the heavier concurrent load. Also always logs the final failure now: the
+ *  call sites in ai-wizard-worker.ts swallow this with a bare `.catch(() => null)`, so
+ *  without a log line HERE, a real failure leaves zero trace in CloudWatch — which is
+ *  exactly what happened investigating that comment: the run clearly had failures but
+ *  produced no diagnostic output at all. */
 export async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Promise<any> {
   const RETRIES = 3;
-  const THROTTLE_CODES = new Set(['ThrottlingException', 'TooManyRequestsException', 'ServiceUnavailableException', 'InternalServerException']);
   let lastErr: any;
   for (let attempt = 0; attempt < RETRIES; attempt++) {
     try {
@@ -314,9 +325,11 @@ export async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Pr
       catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
     } catch (err: any) {
       lastErr = err;
-      const isThrottle = THROTTLE_CODES.has(err?.name) || THROTTLE_CODES.has(err?.__type) || String(err?.message).includes('throttl');
-      if (!isThrottle || attempt === RETRIES - 1) throw err;
-      console.warn(`[invokeBedrockForJson] throttled, retry ${attempt + 1}/${RETRIES - 1} in ${5 * (attempt + 1)}s`);
+      if (attempt === RETRIES - 1) {
+        console.error(`[invokeBedrockForJson] giving up after ${RETRIES} attempts — ${err?.name ?? 'UnknownError'}: ${err?.message ?? err}`);
+        throw err;
+      }
+      console.warn(`[invokeBedrockForJson] attempt ${attempt + 1}/${RETRIES} failed (${err?.name ?? 'UnknownError'}: ${err?.message ?? err}), retrying in ${5 * (attempt + 1)}s`);
     }
   }
   throw lastErr;

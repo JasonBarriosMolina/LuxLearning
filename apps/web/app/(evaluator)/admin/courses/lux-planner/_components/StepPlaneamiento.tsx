@@ -151,14 +151,22 @@ export function StepPlaneamiento({
                         <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">{it.instructions}</p>
                       </div>
                     )}
-                    {/* Interview dates */}
-                    {it.type === 'INTERVIEW' && (it.interviewStartDate || it.interviewEndDate) && (
+                    {/* Interview topic/objectives — was only showing interviewStartDate/
+                        interviewEndDate here, but those fields are never actually populated
+                        anywhere; the real configured content (topic weeks or free-text,
+                        set via "Configuración del Lux Mentor" in StepEvaluacion) is stored
+                        in vapiPrompt/vapiObjectives and was never displayed here at all —
+                        Trello DmPpbrff comment 6a92645a ("en entrevista oral no está
+                        generando nada... ¿te queda claro?"). Now mirrors how EVIDENCE
+                        shows it.instructions above. */}
+                    {it.type === 'INTERVIEW' && (
                       <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1"><Mic className="w-3 h-3" />{s('Entrevistas', 'Interviews')}</p>
-                        <p className="text-xs text-gray-500">
-                          {it.interviewStartDate ? it.interviewStartDate : '?'} → {it.interviewEndDate ? it.interviewEndDate : '?'}
-                          {it.interviewTimeSlot ? ` · ${s('Hasta', 'Until')} ${it.interviewTimeSlot}` : ''}
-                        </p>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1"><Mic className="w-3 h-3" />{s('Tema(s) a evaluar', 'Topic(s) to evaluate')}</p>
+                        {it.vapiObjectives ? (
+                          <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">{it.vapiObjectives}</p>
+                        ) : (
+                          <p className="text-xs text-amber-600">{s('Sin tema configurado — edita esta evaluación para elegirlo.', 'No topic configured yet — edit this evaluation to set one.')}</p>
+                        )}
                       </div>
                     )}
                     {/* Actions */}

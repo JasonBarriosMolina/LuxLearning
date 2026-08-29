@@ -18,7 +18,7 @@ import { QuestionFields } from './QuestionFields';
 import type { ModuleForm, LessonForm, QuestionForm } from './types';
 import { newLessonForm, newQuestionForm } from './types';
 
-export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isFirst, isLast, hasQuizPlanned = true }: {
+export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isFirst, isLast, hasQuizPlanned = true, hasClassPlanned = false }: {
   mod: any; courseId: string; onRefresh: () => void;
   onMoveUp?: () => Promise<void>; onMoveDown?: () => Promise<void>;
   isFirst?: boolean; isLast?: boolean;
@@ -27,6 +27,11 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
    *  yet" — Trello DmPpbrff comment 6a91f73f. Defaults true when omitted (legacy callers / tests)
    *  so existing behavior is preserved unless the caller explicitly opts into the new signal. */
   hasQuizPlanned?: boolean;
+  /** Was a Lux Mentor class planned for this module (EvaluationEvent type=CLASS)? Shown as a
+   *  badge so the admin/evaluator can see it without leaving this edit view — was only
+   *  visible to students before (Trello DmPpbrff comment 6a926775: "esa información debe
+   *  ser visible para mí como administrador o editor del curso"). */
+  hasClassPlanned?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingMod, setEditingMod] = useState(false);
@@ -220,6 +225,20 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
               <span className="font-medium">{mod.lessons?.length ?? 0} lecciones</span> •{' '}
               <span className="font-medium">{mod.questions?.length ?? 0} preguntas</span>
             </p>
+            {(hasQuizPlanned || hasClassPlanned) && (
+              <div className="flex items-center gap-1.5 mt-1">
+                {hasQuizPlanned && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    <ClipboardCheck className="w-2.5 h-2.5" />Quiz planificado
+                  </span>
+                )}
+                {hasClassPlanned && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                    <PlayCircle className="w-2.5 h-2.5" />Clase Lux Mentor
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </button>
         <div className="flex gap-1 shrink-0">

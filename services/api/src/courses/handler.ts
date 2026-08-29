@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
@@ -16,6 +16,7 @@ import { getVapiKeys } from '../shared/vapi-keys';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';
+const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
@@ -243,6 +244,24 @@ export const handler = async (event: Event) => {
       }
       try {
         const resources = await getResourcesByCourse(courseId);
+        // The wizard-generated study plan is stored with a placeholder fileUrl
+        // (`plan://${courseId}`) since the real download needs a signed S3 URL that
+        // expires — storing a signed URL directly in DynamoDB would go stale. Resolve
+        // it to a fresh signed URL on every read instead (Trello DmPpbrff comment
+        // 6a926c61: clicking the resource led to a dead "plan://..." link).
+        const planResources = (resources as any[]).filter((r) => typeof r.fileUrl === 'string' && r.fileUrl.startsWith('plan://'));
+        if (planResources.length > 0) {
+          const course = await prisma.course.findUnique({ where: { id: courseId }, select: { planDocumentS3Key: true } });
+          if (course?.planDocumentS3Key) {
+            await Promise.all(planResources.map(async (r) => {
+              r.fileUrl = await getSignedUrl(
+                s3,
+                new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key!, ResponseContentDisposition: `attachment; filename="${r.fileName || `plan-${courseId}.docx`}"` }),
+                { expiresIn: 3600 },
+              ).catch(() => r.fileUrl);
+            }));
+          }
+        }
         return ok(resources);
       } catch (err) {
         console.error('[Resources] Failed to fetch resources for course', courseId, err);
