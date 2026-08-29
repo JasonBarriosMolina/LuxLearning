@@ -18,6 +18,11 @@ export default function AssignCoursesPage() {
   const { t } = useLanguage();
   const { role } = useAuth();
   const isEvaluator = role === 'EVALUATOR';
+  const isAdminRole = role === 'ADMIN' || role === 'SUPER_ADMIN';
+  // Group filter + bulk-select was evaluator-only before, and admins couldn't see it at all —
+  // Trello DmPpbrff comment 6a9268a9 ("esa opción... debido a una reversión del sistema,
+  // actualmente no está"). Now available to both roles, each hitting their own groups endpoint.
+  const canFilterByGroup = isEvaluator || isAdminRole;
   const searchParams = useSearchParams();
   const preselectedCourseId = searchParams.get('courseId') ?? '';
   const [mode, setMode] = useState<'by-course' | 'by-student'>('by-course');
@@ -83,20 +88,22 @@ export default function AssignCoursesPage() {
   }, []);
 
   useEffect(() => {
-    if (!isEvaluator) return;
-    api.evaluator.groups.list().then((res: any) => {
+    if (!canFilterByGroup) return;
+    const req = isAdminRole ? api.admin.groups.list() : api.evaluator.groups.list();
+    req.then((res: any) => {
       const list: any[] = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : (res?.data?.groups ?? res?.groups ?? []);
       setMyGroups(list.map((g: any) => ({ id: g.id, name: g.name, color: g.color })));
     }).catch(() => {});
-  }, [isEvaluator]);
+  }, [canFilterByGroup, isAdminRole]);
 
   useEffect(() => {
-    if (!isEvaluator || selectedGroupId === 'all') { setGroupMemberIds(null); return; }
-    api.evaluator.groups.members(selectedGroupId).then((res: any) => {
+    if (!canFilterByGroup || selectedGroupId === 'all') { setGroupMemberIds(null); return; }
+    const req = isAdminRole ? api.admin.groups.members(selectedGroupId) : api.evaluator.groups.members(selectedGroupId);
+    req.then((res: any) => {
       const members: any[] = Array.isArray(res.data) ? res.data : (res.data?.members ?? res.members ?? []);
       setGroupMemberIds(new Set(members.map((m: any) => m.userId)));
     }).catch(() => setGroupMemberIds(null));
-  }, [isEvaluator, selectedGroupId]);
+  }, [canFilterByGroup, isAdminRole, selectedGroupId]);
 
   useEffect(() => {
     if (!selectedCourseId) return;
@@ -224,9 +231,22 @@ export default function AssignCoursesPage() {
 
   const matchesSearch = (text: string, q: string) => !q || text.toLowerCase().includes(q.toLowerCase());
 
-  const visibleStudents = isEvaluator && groupMemberIds !== null
+  const visibleStudents = canFilterByGroup && groupMemberIds !== null
     ? students.filter((s) => groupMemberIds.has(s.username))
     : students;
+
+  // Bulk-add every member of the currently selected group directly to pendingCourse —
+  // was missing entirely before (Trello DmPpbrff comment 6a9268a9): the group filter only
+  // narrowed the visible list, there was no one-click "add the whole group" action.
+  const addGroupToPending = () => {
+    if (!groupMemberIds) return;
+    setSaved(false);
+    setPendingCourse((prev) => {
+      const next = new Set(prev);
+      groupMemberIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
 
   const availableStudents = visibleStudents.filter((s) =>
     !pendingCourse.has(s.username) && matchesSearch(s.name || s.email, searchLeft),
@@ -320,9 +340,9 @@ export default function AssignCoursesPage() {
         </div>
       )}
 
-      {/* Group filter — evaluator only, by-course mode */}
-      {isEvaluator && mode === 'by-course' && myGroups.length > 0 && (
-        <div className="flex items-center gap-3">
+      {/* Group filter — admin + evaluator, by-course mode */}
+      {canFilterByGroup && mode === 'by-course' && myGroups.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">Filtrar por grupo:</span>
           <div className="flex flex-wrap gap-2">
             <button
@@ -342,6 +362,11 @@ export default function AssignCoursesPage() {
               </button>
             ))}
           </div>
+          {selectedGroupId !== 'all' && selectedCourseId && groupMemberIds && groupMemberIds.size > 0 && (
+            <Button size="sm" variant="secondary" onClick={addGroupToPending}>
+              Agregar los {groupMemberIds.size} estudiantes del grupo
+            </Button>
+          )}
         </div>
       )}
 
