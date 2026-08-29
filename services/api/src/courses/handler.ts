@@ -497,8 +497,12 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
           if (!allDone) return badRequest('Debes completar todas las lecciones del módulo antes de la entrevista');
         }
       }
-      // 2. If the course has a CLASS evaluation event, the student must have completed the class session
-      const hasClassEvent = await prisma.evaluationEvent.count({ where: { courseId, type: 'CLASS' } });
+      // 2. If THIS module has a CLASS evaluation event, the student must have completed the
+      //    class session — was courseId-only before (Trello DmPpbrff comment 6a9232ef, same
+      //    root cause class as the frontend class-card bug), which incorrectly blocked
+      //    interviews in modules with no class planned just because SOME OTHER module in
+      //    the course had one.
+      const hasClassEvent = await prisma.evaluationEvent.count({ where: { courseId, moduleId, type: 'CLASS' } });
       if (hasClassEvent > 0) {
         const classSessions = await listMyClassSessions(userId, moduleId);
         const hasCompletedClass = classSessions.some((s) => s.hasCompletedQA);

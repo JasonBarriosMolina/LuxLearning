@@ -69,7 +69,7 @@ export function StepPlaneamiento({
           </Button>
           {step5.docUrl && (
             <a href={step5.docUrl} target="_blank" rel="noopener noreferrer" download className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-border text-sm font-semibold text-charcoal hover:bg-surface transition-colors">
-              <Download className="w-4 h-4 text-cta-from" />{s('Descargar plan Word', 'Download Word plan')}
+              <Download className="w-4 h-4 text-cta-from" />{s('Descargar documento editable', 'Download editable document')}
             </a>
           )}
         </div>
@@ -232,7 +232,7 @@ export function StepPlaneamiento({
         <div className="p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 rounded-xl flex items-center gap-3">
           <Sparkles className="w-4 h-4 text-purple-500 shrink-0" />
           <p className="text-xs text-purple-700 dark:text-purple-300">
-            {s(`Plan de ${step4.weeklyPlan.length} semanas con Lux Planner listo para incluir en el Word.`, `${step4.weeklyPlan.length}-week Lux Planner plan ready to include in Word.`)}
+            {s(`Plan de ${step4.weeklyPlan.length} semanas con Lux Planner listo para incluir en el documento editable.`, `${step4.weeklyPlan.length}-week Lux Planner plan ready to include in the editable document.`)}
           </p>
         </div>
       )}
@@ -240,7 +240,7 @@ export function StepPlaneamiento({
       <div className="p-4 rounded-xl border border-border bg-surface space-y-2">
         <div className="flex items-center gap-2">
           <Download className="w-4 h-4 text-cta-from" />
-          <p className="text-sm font-semibold text-charcoal">{s('Documento Word', 'Word Document')}</p>
+          <p className="text-sm font-semibold text-charcoal">{s('Documento editable', 'Editable document')}</p>
         </div>
         <p className="text-xs text-gray-400">{s(`Machote: "${ct?.machote}" · Idioma: ${step1.planLanguage}`, `Template: "${ct?.machote}" · Language: ${step1.planLanguage}`)}</p>
         <p className="text-xs text-gray-400">{s('Se generará automáticamente y quedará disponible para descarga.', 'Auto-generated and available for download.')}</p>

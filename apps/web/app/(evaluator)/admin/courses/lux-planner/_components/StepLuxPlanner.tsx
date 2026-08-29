@@ -204,8 +204,12 @@ export function StepLuxPlanner({
                       <td className="px-2 py-1.5 font-semibold text-gray-500 whitespace-nowrap">{s('S', 'W')}{wk.weekNum}</td>
                       <td className="px-2 py-1.5 text-gray-400 text-[11px]">{weekDates(wk.weekNum)}</td>
                       <EditableCell value={wk.topics.join('\n')} onChange={(v) => updateWeekTopics(wk.weekNum, v)} placeholder={s('Tópicos...', 'Topics...')} />
-                      <td className="px-2 py-1.5 text-gray-500 max-w-[96px]">
-                        <span className="block truncate text-[11px]">{wk.module}</span>
+                      {/* Not editable by design, but must be fully readable — was truncated
+                          with an ellipsis and no way to see the rest (Trello DmPpbrff
+                          comment 6a9232ef: "no puedo leer... dice Introducción a...").
+                          Wraps instead of truncating; title attr adds a hover tooltip too. */}
+                      <td className="px-2 py-1.5 text-gray-500 max-w-[160px]" title={wk.module}>
+                        <span className="block whitespace-normal break-words leading-tight text-[11px]">{wk.module}</span>
                       </td>
                       <EditableCell value={wk.procedure ?? ''} onChange={(v) => updateWeekProcedure(wk.weekNum, v)} placeholder={s('Cómo se abordará...', 'How to address...')} />
                       <EditableCell

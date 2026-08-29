@@ -384,6 +384,39 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     }));
   });
 
+  it('generateAndSaveQuizQuestions retries once when the first Bedrock response is empty/invalid (regression: Trello DmPpbrff comment 6a9232ef — planned quizzes silently ending up with 0 questions)', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    const goodQuestions = Array.from({ length: 10 }, (_, i) => ({
+      text: `Q${i + 1}?`, options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: i + 1,
+    }));
+    // First call returns garbage/empty, second (retry) succeeds
+    vi.mocked(invokeBedrockForJson)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(goodQuestions);
+
+    const questionCreateMany = vi.fn().mockResolvedValue({ count: 10 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }) },
+      lesson: { count: vi.fn().mockResolvedValue(5) }, // module already has lessons
+      question: { createMany: questionCreateMany },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-quiz-retry', courseId: 'c1',
+        moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES',
+        _quizOnlyForExistingModules: true, quizModuleIndices: [0],
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    // Retry recovered — questions got saved despite the first call failing
+    expect(questionCreateMany).toHaveBeenCalledTimes(1);
+    expect((questionCreateMany.mock.calls[0]![0] as any).data).toHaveLength(10);
+  });
+
   it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {
     const { saveAiJob } = await import('../../shared/db-dynamo');
     const { invokeBedrockForJson } = await import('../../admin/ctx');
