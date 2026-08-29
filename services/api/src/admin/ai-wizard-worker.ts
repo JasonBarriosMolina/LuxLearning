@@ -43,8 +43,19 @@ async function generateAndSaveQuizQuestions(
   const qPrompt = isEN
     ? `Generate exactly 10 multiple-choice questions about "${moduleTitle}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
     : `Genera exactamente 10 preguntas de opción múltiple sobre "${moduleTitle}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
-  const rawQ = await invokeBedrockForJson(qPrompt, 2000);
+  let rawQ = await invokeBedrockForJson(qPrompt, 4000);
+  // Retry once if the model returned nothing usable — a planned quiz silently ending up
+  // with 0 questions was one of the reliability complaints in Trello DmPpbrff comment
+  // 6a9232ef ("se están creando quizzes automáticos... sin preguntas"). Mirrors the
+  // retry-on-truncation safety net already used for lesson generation (Bug B fix).
+  if (!Array.isArray(rawQ) || rawQ.length === 0) {
+    console.warn(`[generateAndSaveQuizQuestions] module ${moduleId}: empty/invalid response, retrying once`);
+    rawQ = await invokeBedrockForJson(qPrompt, 4000).catch(() => null);
+  }
   const questions = shuffleQuestionOptions(Array.isArray(rawQ) ? rawQ.slice(0, 10) : []);
+  if (questions.length === 0) {
+    console.error(`[generateAndSaveQuizQuestions] module ${moduleId}: failed to generate questions after retry`);
+  }
   if (questions.length > 0) {
     await prisma.question.createMany({
       data: questions.map((q: any, i: number) => ({

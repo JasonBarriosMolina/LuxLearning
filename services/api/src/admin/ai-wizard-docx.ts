@@ -137,7 +137,7 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
     const pageHeader = new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `LuxLearning — ${title}`, size: 16, color: '17527E', italics: true })] })] });
     // Page footer with generation date and page number
     const genDate = new Date().toLocaleDateString(isEN ? 'en-US' : 'es-CR');
-    const pageFooter = new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `LuxLearning · Generado con IA · ${genDate}`, size: 16, color: '999999' })] })] });
+    const pageFooter = new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: `LuxLearning · Generado con Lux Mentor IA · ${genDate}`, size: 16, color: '999999' })] })] });
     const docChildren: any[] = [
       h1(L('PLAN DE ESTUDIOS','COURSE PLAN')),
       new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 28 })] }),

@@ -30,7 +30,7 @@ export function ChoiceModal({ open, onClose, onWizard, onManual, onTopic, onUrl,
             <div>
               <p className="font-semibold text-charcoal text-sm">Lux Planner</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                Calendario, tipo de evaluación, plan IA semanal y generación del plan de estudios oficial (Word)
+                Calendario, tipo de evaluación, plan IA semanal y generación del plan de estudios oficial (documento editable)
               </p>
             </div>
           </div>

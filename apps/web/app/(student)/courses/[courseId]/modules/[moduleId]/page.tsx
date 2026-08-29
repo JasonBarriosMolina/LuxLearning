@@ -124,12 +124,22 @@ export default function ModulePage() {
 
   const reflectionStatus = module.reflectionStatus as ReflectionStatus | null;
 
+  // Was a quiz actually planned for this module (EvaluationEvent type=QUIZ)? A module
+  // with no quiz can never have module.quizPassed===true (hasPassedQuiz() checks for a
+  // passed QuizAttempts record, which can never exist if no quiz was ever generated) —
+  // without this check, reflection stays PERMANENTLY locked on modules without a quiz.
+  // Trello DmPpbrff comment 6a9232ef.
+  const hasQuizPlanned = (course?.evaluationEvents ?? []).some((e: any) => e.type === 'QUIZ' && e.moduleId === moduleId);
+  // Effective gate for "may the student write a reflection now": if no quiz was planned,
+  // finishing the lessons is enough — there's no quiz step to wait for.
+  const quizGatePassed = hasQuizPlanned ? module.quizPassed : allLessonsDone;
+
   const getModuleStatus = () => {
     if (reflectionStatus === 'APPROVED') return { label: t.moduleView.statusCompleted, variant: 'success' as const };
     if (reflectionStatus === 'PENDING_EVAL') return { label: t.moduleView.statusInReview, variant: 'pending' as const };
     if (reflectionStatus === 'PENDING_AI') return { label: t.moduleView.reflectionStatusPendingAi, variant: 'info' as const };
     if (reflectionStatus === 'REJECTED') return { label: t.moduleView.reflectionStatusRejected, variant: 'error' as const };
-    if (module.quizPassed) return { label: t.moduleView.quizPassed, variant: 'success' as const };
+    if (quizGatePassed) return { label: t.moduleView.quizPassed, variant: 'success' as const };
     if (allLessonsDone) return { label: t.moduleView.statusPendingReflection, variant: 'warning' as const };
     return { label: t.moduleView.statusPendingQuiz, variant: 'default' as const };
   };
@@ -216,7 +226,10 @@ export default function ModulePage() {
         })}
       </div>
 
-      {/* Quiz CTA */}
+      {/* Quiz CTA — only rendered when a quiz was actually planned for this module
+          (Trello DmPpbrff comment 6a9232ef: was showing "complete lessons first" +
+          lock icon even for modules where no quiz was ever configured). */}
+      {hasQuizPlanned && (
       <div className={`card ${!allLessonsDone ? 'opacity-60' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -251,21 +264,25 @@ export default function ModulePage() {
           {!allLessonsDone && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
+      )}
 
-      {/* Reflection CTA */}
-      <div className={`card ${!module.quizPassed ? 'opacity-60' : ''}`}>
+      {/* Reflection CTA — gated on quizGatePassed, NOT raw module.quizPassed: a module
+          with no quiz planned can never have quizPassed===true, which used to lock
+          reflection forever. quizGatePassed falls back to allLessonsDone when no quiz
+          was planned. Trello DmPpbrff comment 6a9232ef. */}
+      <div className={`card ${!quizGatePassed ? 'opacity-60' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
               reflectionStatus === 'APPROVED' ? 'bg-emerald-100'
                 : reflectionStatus ? 'bg-purple-100'
-                : module.quizPassed ? 'bg-blue-100'
+                : quizGatePassed ? 'bg-blue-100'
                 : 'bg-gray-100'
             }`}>
               {reflectionStatus === 'APPROVED' ? (
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
               ) : (
-                <FileText className={`w-5 h-5 ${module.quizPassed ? 'text-blue-600' : 'text-gray-400'}`} />
+                <FileText className={`w-5 h-5 ${quizGatePassed ? 'text-blue-600' : 'text-gray-400'}`} />
               )}
             </div>
             <div>
@@ -273,13 +290,13 @@ export default function ModulePage() {
               <p className="text-xs text-gray-500">
                 {reflectionStatus
                   ? { PENDING_AI: t.moduleView.reflectionPendingAi, PENDING_EVAL: t.moduleView.reflectionPendingEval, APPROVED: t.moduleView.reflectionApproved, REJECTED: t.moduleView.reflectionRejected }[reflectionStatus]
-                  : module.quizPassed
+                  : quizGatePassed
                   ? t.moduleView.writeReflectionHint
                   : t.moduleView.passQuizFirst}
               </p>
             </div>
           </div>
-          {module.quizPassed && (!reflectionStatus || reflectionStatus === 'REJECTED') && (
+          {quizGatePassed && (!reflectionStatus || reflectionStatus === 'REJECTED') && (
             <Link href={`/courses/${courseId}/modules/${moduleId}/reflection`}>
               <Button size="sm" variant={reflectionStatus === 'REJECTED' ? 'secondary' : 'primary'}>
                 {reflectionStatus === 'REJECTED' ? t.moduleView.rewrite : t.moduleView.write}
@@ -289,7 +306,7 @@ export default function ModulePage() {
           {reflectionStatus && reflectionStatus !== 'REJECTED' && (
             <ReflectionStatusBadge status={reflectionStatus} />
           )}
-          {!module.quizPassed && <Lock className="w-5 h-5 text-gray-300" />}
+          {!quizGatePassed && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
 
@@ -316,8 +333,11 @@ export default function ModulePage() {
         />
       )}
 
-      {/* Lux Mentor Class — shown when course has CLASS evaluation events for this module */}
-      {course?.evaluationEvents?.some((e: any) => e.type === 'CLASS' && (e.moduleId === moduleId || !e.moduleId)) && (
+      {/* Lux Mentor Class — shown ONLY when a CLASS evaluation event is tied to THIS exact
+          module. The old `|| !e.moduleId` fallback made a course-wide class (moduleId=null,
+          e.g. one created manually with no module chosen) appear on EVERY module page — not
+          just modules explicitly planned to have one. Trello DmPpbrff comment 6a9232ef. */}
+      {course?.evaluationEvents?.some((e: any) => e.type === 'CLASS' && e.moduleId === moduleId) && (
         <LuxMentorClass
           courseId={courseId}
           moduleId={moduleId}
