@@ -12,6 +12,7 @@ import { initEnvFromFunctionName } from '../shared/env-context';
 import { sendTemplatedEmail } from '../shared/email';
 import { createId } from '@paralleldrive/cuid2';
 import { sendWeeklyEvaluatorSummaries, sendWeeklyStudentDigests } from './digest';
+import { sendCourseStartNotifications, sendWeeklyCourseTopicNotifications } from './course-notifications';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
@@ -56,44 +57,6 @@ function reminderEmailHtml(name: string, daysInactive: number, emailNum: number)
         <p style="margin:0;color:#0077A8;font-style:italic;">"La consistencia supera a la intensidad. Un módulo a la vez."</p>
       </div>` : ''}
       ${cta}
-      <p style="color:#aaa;font-size:12px;margin-top:32px;">
-        Recibes este email porque estás inscrito en Lux Learning.
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-function courseStartEmailHtml(name: string, courseTitle: string): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="font-family:'Roboto',Arial,sans-serif;background:#F8F8F8;padding:40px;">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#00B4D8,#7B2FBE);padding:32px 40px;">
-      <h1 style="color:#fff;margin:0;font-family:Montserrat,sans-serif;font-size:24px;">Lux Learning</h1>
-      <p style="color:rgba(255,255,255,.85);margin:8px 0 0;font-size:14px;">Claridad que transforma.</p>
-    </div>
-    <div style="padding:40px;">
-      <h2 style="color:#2C2C2C;font-family:Montserrat,sans-serif;margin-top:0;">
-        ¡Tu curso comienza mañana! 🚀
-      </h2>
-      <p style="color:#555;line-height:1.6;">Hola ${name},</p>
-      <p style="color:#555;line-height:1.6;">
-        Mañana comienza oficialmente el curso en el que estás inscrito:
-      </p>
-      <div style="background:#F0F7FF;border-left:4px solid #7B2FBE;padding:16px 20px;border-radius:4px;margin:24px 0;">
-        <p style="margin:0;color:#2C2C2C;font-size:18px;font-weight:700;">📚 ${courseTitle}</p>
-      </div>
-      <p style="color:#555;line-height:1.6;">
-        Asegúrate de estar listo. Prepara un espacio tranquilo y tus ganas de aprender.
-      </p>
-      <a href="${FRONTEND_URL}/courses"
-         style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#7B2FBE);color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-family:Montserrat,sans-serif;font-weight:600;margin-top:8px;">
-        Ver mis cursos
-      </a>
       <p style="color:#aaa;font-size:12px;margin-top:32px;">
         Recibes este email porque estás inscrito en Lux Learning.
       </p>
@@ -305,51 +268,15 @@ export const handler = async () => {
 
     console.log(`[Reminders] Done — sent: ${sent}, skipped: ${skipped}`);
 
-    // ── Course-start notifications (1 day before startDate) ──────────────────
-    let startSent = 0;
-    try {
-      const prisma = await getPrismaClient();
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStart = new Date(tomorrow); tomorrowStart.setHours(0, 0, 0, 0);
-      const tomorrowEnd   = new Date(tomorrow); tomorrowEnd.setHours(23, 59, 59, 999);
-
-      const coursesStartingTomorrow = await prisma.course.findMany({
-        where: { startDate: { gte: tomorrowStart, lte: tomorrowEnd }, isActive: true },
-        select: { id: true, title: true },
-      });
-
-      for (const course of coursesStartingTomorrow) {
-        // Get all enrolled students for this course
-        const enrolled = allEnrollments.filter((e) => e.courseId === course.id);
-        for (const enrollment of enrolled) {
-          try {
-            const res = await cognito.send(new AdminGetUserCommand({
-              UserPoolId: USER_POOL_ID,
-              Username: enrollment.userId,
-            }));
-            const attr = (n: string) => res.UserAttributes?.find((a) => a.Name === n)?.Value ?? '';
-            const email = attr('email');
-            const name  = attr('name') || email.split('@')[0] || '';
-            if (!email) continue;
-
-            await ses.send(new SendEmailCommand({
-              Source: FROM_EMAIL,
-              Destination: { ToAddresses: [email] },
-              Message: {
-                Subject: { Data: `¡Tu curso "${course.title}" comienza mañana! 🚀`, Charset: 'UTF-8' },
-                Body: { Html: { Data: courseStartEmailHtml(name, course.title), Charset: 'UTF-8' } },
-              },
-            }));
-            startSent++;
-            console.log(`[Reminders] Course-start sent to ${email} for "${course.title}"`);
-          } catch (e) { console.warn('[Reminders] Course-start email failed:', e); }
-        }
-      }
-      console.log(`[Reminders] Course-start notifications sent: ${startSent}`);
-    } catch (e) {
-      console.warn('[Reminders] Course-start check failed:', e);
-    }
+    // ── Course-start + weekly-topic notifications ────────────────────────────
+    // Moved to course-notifications.ts (Trello DmPpbrff item 2, 2026-08-30): now fires
+    // the day the course/week actually starts (was "tomorrow" email-only before), on
+    // all 3 channels (email + push + in-app).
+    const notifDeps = { ses, cognito, fromEmail: FROM_EMAIL, frontendUrl: FRONTEND_URL, allEnrollments };
+    const startSent = await sendCourseStartNotifications(notifDeps);
+    console.log(`[Reminders] Course-start notifications sent: ${startSent}`);
+    const weekTopicSent = await sendWeeklyCourseTopicNotifications(notifDeps);
+    console.log(`[Reminders] Weekly course-topic notifications sent: ${weekTopicSent}`);
 
     // ── Task due-date reminders (5 and 3 days before) ──────────────────────────
     let taskReminderSent = 0;
@@ -517,7 +444,7 @@ export const handler = async () => {
       console.warn('[Reminders] Calendar reminder block failed:', e);
     }
 
-    return { sent, skipped, startSent, taskReminderSent, weeklySent, studentDigestSent, calReminderSent };
+    return { sent, skipped, startSent, weekTopicSent, taskReminderSent, weeklySent, studentDigestSent, calReminderSent };
   } catch (err) {
     console.error('[Reminders] Fatal error:', err);
     throw err;
