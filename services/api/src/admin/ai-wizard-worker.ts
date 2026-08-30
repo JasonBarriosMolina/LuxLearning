@@ -2,11 +2,53 @@
 // stay under the domain-module line limit (CLAUDE.md: ≤600 lines).
 // Handles: wizard-lessons-bulk (lesson + quiz + class generation) and wizard-copilot
 // (weekly plan generation). Both run as self-invoked Lambda background jobs.
-import { saveAiJob } from '../shared/db-dynamo';
+import webpush from 'web-push';
+import { createId } from '@paralleldrive/cuid2';
+import { saveAiJob, createNotification, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
 } from './ctx';
+
+/** Notifies the course creator (in-app + push) once course generation truly finishes —
+ *  Jason, 2026-08-30: no completion signal exists today, the wizard just shows a static
+ *  "ready in a few minutes" message forever. Non-fatal: a notification failure must never
+ *  fail the job itself, which already succeeded or gave an honest partial result. */
+async function notifyCourseGenerationDone(
+  creatorUserId: string | undefined, courseId: string, courseTitle: string, isEN: boolean, incomplete: boolean,
+): Promise<void> {
+  if (!creatorUserId) return;
+  try {
+    const message = incomplete
+      ? (isEN
+        ? `⚠️ "${courseTitle}" is ready, but some modules need manual review (generation attempts exhausted).`
+        : `⚠️ "${courseTitle}" está listo, pero algunos módulos necesitan revisión manual (se agotaron los intentos de generación).`)
+      : (isEN
+        ? `✅ "${courseTitle}" is 100% ready — all lessons and quizzes were generated successfully.`
+        : `✅ "${courseTitle}" está 100% listo — todas las lecciones y quices se generaron correctamente.`);
+    await createNotification({
+      userId: creatorUserId,
+      notifId: createId(),
+      type: 'GENERAL',
+      message,
+      read: false,
+      createdAt: new Date().toISOString(),
+      actionUrl: `/admin/courses/${courseId}`,
+    });
+    // lux-admin's VAPID keys are plain Lambda env vars (not Secrets Manager) — see CLAUDE.md.
+    const vapidPublic = process.env.VAPID_PUBLIC_KEY;
+    const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
+    const vapidEmail = process.env.VAPID_EMAIL;
+    if (!vapidPublic || !vapidPrivate || !vapidEmail) return; // env vars unset — in-app notification above still landed
+    webpush.setVapidDetails(vapidEmail, vapidPublic, vapidPrivate);
+    const subs = await getPushSubscriptionsByUserId(creatorUserId);
+    if (!subs.length) return;
+    const payload = JSON.stringify({ title: 'Lux Learning', body: message, url: `/admin/courses/${courseId}` });
+    await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
+  } catch (e) {
+    console.error('[wizard-lessons-bulk] completion notification failed (non-fatal):', e);
+  }
+}
 
 /**
  * Convert residual Markdown artifacts to HTML so lesson content renders cleanly.
@@ -66,6 +108,92 @@ async function generateAndSaveQuizQuestions(
   }
 }
 
+/** True only for the exact placeholder text used when a lesson's content couldn't be
+ *  generated — real lesson content never legitimately contains this emoji, so it's a
+ *  reliable, language-agnostic marker for "this lesson still needs repair". */
+function isPlaceholderContent(content: string | null | undefined): boolean {
+  return !!content && content.includes('⚠');
+}
+
+/** Verifies a module's lessons + (if planned) quiz are genuinely complete, and repairs
+ *  whatever isn't — targeted regeneration of just the placeholder lesson slots (by
+ *  position, updated in place; never re-creates rows that are already fine) and a quiz
+ *  retry if one was planned but still has 0 questions. Returns true once the module is
+ *  verified complete (either it already was, or the repair succeeded).
+ *
+ *  This is the "sí o sí" completeness guarantee requested after Jason's report (2026-08-30):
+ *  the in-line retry-once inside processModule() gives up after a single extra attempt and
+ *  leaves the placeholder/empty-quiz state permanently if that also fails. This function is
+ *  called in bounded sweep rounds AFTER the main batch loop finishes, so a module that still
+ *  needed help gets more real attempts before the job is ever reported "done". */
+async function verifyAndRepairModule(
+  prisma: AdminCtx['prisma'], moduleId: string, courseTitle: string, isEN: boolean, quizPlanned: boolean,
+  regenerateFromScratch: () => Promise<void>,
+): Promise<boolean> {
+  const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
+  if (!mod) return true; // module was deleted/never created — nothing to verify
+
+  let lessons = await prisma.lesson.findMany({ where: { moduleId }, orderBy: { order: 'asc' } });
+  // No lesson rows at all means the module's processModule() call threw before ever
+  // reaching createMany (e.g. a transient error on the very first Bedrock call) — there's
+  // nothing to target-repair, so re-run the whole per-module generation from scratch.
+  if (lessons.length === 0) {
+    await regenerateFromScratch();
+    lessons = await prisma.lesson.findMany({ where: { moduleId }, orderBy: { order: 'asc' } });
+  }
+  const placeholders = lessons.filter((l: any) => isPlaceholderContent(l.content));
+
+  if (placeholders.length > 0) {
+    const lessonCount = lessons.length;
+    const slotDescriptions = placeholders.map((l: any) => {
+      const type = l.order === 1 || l.order === lessonCount ? 'video' : 'text';
+      return isEN ? `Lesson ${l.order} (type ${type})` : `Lección ${l.order} (tipo ${type})`;
+    }).join(', ');
+    const repairPrompt = isEN
+      ? `You are a top-tier e-learning instructional designer. Regenerate the content for these ${placeholders.length} specific lessons of module "${mod.title}" in course "${courseTitle}" (module has ${lessonCount} lessons total): ${slotDescriptions}.
+Text lessons: 700-900 words, 5-section structure (opening question, development, a fully worked real example, a self-practice exercise, and — only if this is the module's last lesson — a closing summary). Video lessons: 100-150 word summary.
+Return ONLY a JSON array of exactly ${placeholders.length} objects, IN THE SAME ORDER as listed above:
+[{"title":"...","content":"<h3>...</h3><p>...</p>","points":["...","...","..."],"tip":"...","duration":"5 min|9 min"}]`
+      : `Eres un diseñador instruccional de e-learning de primer nivel. Regenera el contenido de estas ${placeholders.length} lecciones específicas del módulo "${mod.title}" del curso "${courseTitle}" (el módulo tiene ${lessonCount} lecciones en total): ${slotDescriptions}.
+Lecciones de texto: 700-900 palabras, estructura de 5 secciones (pregunta de apertura, desarrollo, un ejemplo real trabajado a fondo, un ejercicio de práctica propia, y — solo si es la última lección del módulo — un cierre-resumen). Lecciones de video: resumen de 100-150 palabras.
+Devuelve ÚNICAMENTE un array JSON de exactamente ${placeholders.length} objetos, EN EL MISMO ORDEN listado arriba:
+[{"title":"...","content":"<h3>...</h3><p>...</p>","points":["...","...","..."],"tip":"...","duration":"5 min|9 min"}]`;
+
+    const repaired = await invokeBedrockForJson(repairPrompt, 64000).catch((e: any) => {
+      console.error(`[verifyAndRepairModule] module ${moduleId} lesson repair failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+      return null;
+    });
+    if (Array.isArray(repaired)) {
+      await Promise.all(placeholders.map(async (l: any, j: number) => {
+        const gen = repaired[j];
+        if (!gen?.content) return;
+        await prisma.lesson.update({
+          where: { id: l.id },
+          data: {
+            title: gen.title || l.title,
+            content: sanitizeLessonContent(gen.content),
+            points: Array.isArray(gen.points) ? gen.points : l.points,
+            tip: gen.tip || l.tip,
+          },
+        });
+      }));
+    }
+  }
+
+  if (quizPlanned) {
+    const questionCount = await prisma.question.count({ where: { moduleId } });
+    if (questionCount === 0) {
+      await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isEN);
+    }
+  }
+
+  // Re-check from the DB (not in-memory) — this is the actual verification.
+  const freshLessons = await prisma.lesson.findMany({ where: { moduleId }, select: { content: true } });
+  const lessonsOk = freshLessons.length > 0 && freshLessons.every((l: any) => !isPlaceholderContent(l.content));
+  const quizOk = !quizPlanned || (await prisma.question.count({ where: { moduleId } })) > 0;
+  return lessonsOk && quizOk;
+}
+
 export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
   const { prisma, body } = ctx;
 
@@ -79,6 +207,7 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
       classModuleIndices: blClassIndices,
       reflexModuleIndices: blReflexIndices,
       interviewModuleIndices: blInterviewIndices,
+      creatorUserId: blCreatorUserId,
     } = body as any;
     const isBlEN = blLang === 'EN';
     // Per-module index sets — explicit ONLY, no "assign to all modules" fallback. That
@@ -339,11 +468,49 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       // enough Bedrock request headroom to avoid tripping throttling in a burst.
       const MODULE_CONCURRENCY = 3;
       const allIdx = (moduleIds as string[]).map((_, i) => i);
+      const totalModules = allIdx.length;
       for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
         const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
         await Promise.all(batch.map((idx) => processModule(idx)));
+        // Incremental progress — lets the wizard UI poll real "N/total módulos listos"
+        // instead of a static "ready in a few minutes" message that never updates
+        // (Jason, 2026-08-30: no completion indicator in the wizard at all).
+        await saveAiJob(_jobId, { status: 'processing', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
       }
-      await saveAiJob(_jobId, { status: 'done', modulesProcessed: (moduleIds as string[]).length, failed: failed.length });
+
+      // ── Completeness sweep — the "sí o sí" guarantee (Jason, 2026-08-30) ────────
+      // The in-line retry-once inside processModule() gives up after one extra attempt
+      // and leaves a placeholder / empty-quiz permanently if that also fails. Verify every
+      // module against the DB (not in-memory state) and give genuinely incomplete ones
+      // MORE real attempts — bounded, so a persistently-broken module (real network/
+      // Bedrock outage) can't loop forever — before ever reporting the job "done".
+      const MAX_SWEEPS = 3; // up to 3 real repair passes after the main loop's own attempt
+      let incompleteIdx: number[] = [];
+      if (!_quizOnlyForExistingModules) {
+        for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
+          incompleteIdx = [];
+          for (const idx of allIdx) {
+            const moduleId = (moduleIds as string[])[idx]!;
+            const complete = await verifyAndRepairModule(
+              prisma, moduleId, blTitle, isBlEN, quizIdxSet.has(idx), () => processModule(idx),
+            );
+            if (!complete) incompleteIdx.push(idx);
+          }
+          if (incompleteIdx.length === 0) break;
+          console.warn(`[wizard-lessons-bulk] sweep ${sweep + 1}/${MAX_SWEEPS}: ${incompleteIdx.length}/${totalModules} module(s) still incomplete, repairing`);
+        }
+      }
+
+      const incompleteModuleIds = incompleteIdx.map((idx) => (moduleIds as string[])[idx]);
+      if (incompleteModuleIds.length > 0) {
+        console.error(`[wizard-lessons-bulk] job ${_jobId}: gave up after ${MAX_SWEEPS} repair sweeps — still incomplete: ${incompleteModuleIds.join(', ')}`);
+      }
+      await saveAiJob(_jobId, {
+        status: incompleteModuleIds.length > 0 ? 'done_incomplete' : 'done',
+        modulesProcessed: totalModules, totalModules, failed: failed.length,
+        incompleteModuleIds,
+      });
+      await notifyCourseGenerationDone(blCreatorUserId, blCourseId, blTitle, isBlEN, incompleteModuleIds.length > 0);
     } catch (err: any) {
       await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando lecciones' });
     }
