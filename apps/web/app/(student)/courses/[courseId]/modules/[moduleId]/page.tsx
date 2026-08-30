@@ -254,18 +254,24 @@ export default function ModulePage() {
 
       {/* Quiz CTA — only rendered when a quiz was actually planned for this module
           (Trello DmPpbrff comment 6a9232ef: was showing "complete lessons first" +
-          lock icon even for modules where no quiz was ever configured). */}
-      {hasQuizPlanned && (
-      <div className={`card ${!allLessonsDone ? 'opacity-60' : ''}`}>
+          lock icon even for modules where no quiz was ever configured).
+          Gated on quizReady (blockingStep), not bare allLessonsDone — this card used
+          to let you jump to the quiz before finishing the module's Lux Mentor class,
+          contradicting the hierarchy itself (lessons → class → quiz) and the gate
+          already enforced further down for reflection (item 3, 2026-08-30 20:18). */}
+      {hasQuizPlanned && (() => {
+        const quizReady = blockingStep === 'quiz' || blockingStep === null;
+        return (
+      <div className={`card ${!quizReady ? 'opacity-60' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-              module.quizPassed ? 'bg-emerald-100' : allLessonsDone ? 'bg-amber-100' : 'bg-gray-100'
+              module.quizPassed ? 'bg-emerald-100' : quizReady ? 'bg-amber-100' : 'bg-gray-100'
             }`}>
               {module.quizPassed ? (
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
               ) : (
-                <ClipboardCheck className={`w-5 h-5 ${allLessonsDone ? 'text-amber-600' : 'text-gray-400'}`} />
+                <ClipboardCheck className={`w-5 h-5 ${quizReady ? 'text-amber-600' : 'text-gray-400'}`} />
               )}
             </div>
             <div>
@@ -273,13 +279,15 @@ export default function ModulePage() {
               <p className="text-xs text-gray-500">
                 {module.quizPassed
                   ? t.moduleView.quizPassed
-                  : allLessonsDone
+                  : quizReady
                   ? t.moduleView.quizAvailable
+                  : blockingStep === 'class'
+                  ? t.moduleView.finishClassFirst
                   : t.moduleView.quizLocked}
               </p>
             </div>
           </div>
-          {allLessonsDone && !module.quizPassed && (
+          {quizReady && !module.quizPassed && (
             <Link href={`/courses/${courseId}/modules/${moduleId}/quiz`}>
               <Button size="sm">{t.moduleView.takeQuiz}</Button>
             </Link>
@@ -287,10 +295,11 @@ export default function ModulePage() {
           {module.quizPassed && (
             <Badge variant="success">{t.moduleView.quizPassed}</Badge>
           )}
-          {!allLessonsDone && <Lock className="w-5 h-5 text-gray-300" />}
+          {!quizReady && <Lock className="w-5 h-5 text-gray-300" />}
         </div>
       </div>
-      )}
+        );
+      })()}
 
       {/* Reflection CTA — gated on quizGatePassed, NOT raw module.quizPassed: a module
           with no quiz planned can never have quizPassed===true, which used to lock

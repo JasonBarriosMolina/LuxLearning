@@ -90,6 +90,21 @@ export async function listMyClassSessions(userId: string, moduleId: string): Pro
   return (result.Items ?? []) as ClassSession[];
 }
 
+// One Query per user for the whole course, instead of one per module — used by
+// GET /courses/:courseId to compute per-module classCompleted server-side so the
+// dashboard's evaluation-plan table can gate quiz/interview buttons without an
+// extra round-trip per module (Trello DmPpbrff item 3, 2026-08-30 20:18).
+export async function listMyClassSessionsForCourse(userId: string, courseId: string): Promise<ClassSession[]> {
+  const result = await ddb.send(new QueryCommand({
+    TableName: TABLES.CLASSES,
+    KeyConditionExpression: 'userId = :uid',
+    FilterExpression: 'courseId = :cid',
+    ExpressionAttributeValues: { ':uid': userId, ':cid': courseId },
+    ScanIndexForward: false,
+  }));
+  return (result.Items ?? []) as ClassSession[];
+}
+
 export async function listClassSessionsForModule(moduleId: string): Promise<ClassSession[]> {
   const result = await ddb.send(new QueryCommand({
     TableName: TABLES.CLASSES,
