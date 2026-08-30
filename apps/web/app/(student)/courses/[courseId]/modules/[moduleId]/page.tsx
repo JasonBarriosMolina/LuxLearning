@@ -137,16 +137,22 @@ export default function ModulePage() {
 
   const classCompleted = classSessions.some((s: any) => s.hasCompletedQA || s.status === 'completed');
 
-  // Strict unlock chain requested in the same comment: Lecciones escritas → Clase Lux
-  // Mentor → Quiz → Reflexión del módulo → Entrevista — but only counting the steps that
-  // were actually planned for THIS module; an unplanned step is skipped, not required.
-  // classGate: finishing lessons is enough if no class was planned.
-  const classGate = hasClassPlanned ? (allLessonsDone && classCompleted) : allLessonsDone;
-  // quizGatePassed: finishing the (possible) class step is enough if no quiz was planned.
-  const quizGatePassed = hasQuizPlanned ? (classGate && module.quizPassed) : classGate;
-  // Writing a reflection is unlocked once the prior planned steps clear — same gate
-  // whether or not reflection itself was planned (quizGatePassed already accounts for it
-  // being shown at all via hasReflectionPlanned below).
+  // Strict unlock chain requested (Trello DmPpbrff comments 6a9269e2, and the follow-up
+  // 2026-08-30 clarifying the full hierarchy): Lecciones escritas → Clase Lux Mentor →
+  // Quiz → Reflexión del módulo → Entrevista — only counting the steps actually planned
+  // for THIS module; an unplanned step is skipped, not required.
+  //
+  // blockingStep names WHICH step is actually holding things up, so the UI can say the
+  // right thing. Before this, the reflection card always said "aprueba el quiz primero"
+  // even on modules with no quiz at all whose real blocker was the class — the gate
+  // itself was correct (class before reflection, as requested), but the message lied
+  // about why (Mack: "dice que me falta el quiz, pero no hay ningún quiz asociado").
+  const blockingStep: 'lessons' | 'class' | 'quiz' | null =
+    !allLessonsDone ? 'lessons'
+    : (hasClassPlanned && !classCompleted) ? 'class'
+    : (hasQuizPlanned && !module.quizPassed) ? 'quiz'
+    : null;
+  const quizGatePassed = blockingStep === null;
   const reflectionApproved = reflectionStatus === 'APPROVED';
   // interviewGate: passing the (possible) reflection step unlocks the (possible) interview.
   const interviewGate = hasReflectionPlanned ? reflectionApproved : quizGatePassed;
@@ -156,9 +162,12 @@ export default function ModulePage() {
     if (reflectionStatus === 'PENDING_EVAL') return { label: t.moduleView.statusInReview, variant: 'pending' as const };
     if (reflectionStatus === 'PENDING_AI') return { label: t.moduleView.reflectionStatusPendingAi, variant: 'info' as const };
     if (reflectionStatus === 'REJECTED') return { label: t.moduleView.reflectionStatusRejected, variant: 'error' as const };
-    if (quizGatePassed) return { label: t.moduleView.quizPassed, variant: 'success' as const };
-    if (allLessonsDone) return { label: t.moduleView.statusPendingReflection, variant: 'warning' as const };
-    return { label: t.moduleView.statusPendingQuiz, variant: 'default' as const };
+    if (blockingStep === 'lessons') return { label: t.moduleView.statusPendingLessons, variant: 'default' as const };
+    if (blockingStep === 'class') return { label: t.moduleView.statusPendingClass, variant: 'default' as const };
+    if (blockingStep === 'quiz') return { label: t.moduleView.statusPendingQuiz, variant: 'default' as const };
+    // blockingStep === null — every planned prerequisite cleared
+    if (hasReflectionPlanned) return { label: t.moduleView.statusPendingReflection, variant: 'warning' as const };
+    return { label: t.moduleView.statusCompleted, variant: 'success' as const };
   };
 
   const status = getModuleStatus();
@@ -312,6 +321,10 @@ export default function ModulePage() {
                   ? { PENDING_AI: t.moduleView.reflectionPendingAi, PENDING_EVAL: t.moduleView.reflectionPendingEval, APPROVED: t.moduleView.reflectionApproved, REJECTED: t.moduleView.reflectionRejected }[reflectionStatus]
                   : quizGatePassed
                   ? t.moduleView.writeReflectionHint
+                  : blockingStep === 'lessons'
+                  ? t.moduleView.finishLessonsFirst
+                  : blockingStep === 'class'
+                  ? t.moduleView.finishClassFirst
                   : t.moduleView.passQuizFirst}
               </p>
             </div>
