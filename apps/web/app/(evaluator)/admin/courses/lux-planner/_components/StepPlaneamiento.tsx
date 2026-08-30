@@ -1,8 +1,9 @@
 'use client';
 
-import { CheckCircle, Download, Loader2, Info, Sparkles, BookOpen, Save, ChevronDown, ChevronRight, Pencil, Trash2, Mic } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle, Download, Loader2, Info, Sparkles, BookOpen, Save, ChevronDown, ChevronRight, Pencil, Trash2, Mic, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
+import { api } from '@/lib/api';
 import {
   Step1Data, Step2Data, Step3Data, Step4Data, Step5Data,
   COURSE_TYPES, EVAL_TYPE_META,
@@ -35,6 +36,10 @@ export function StepPlaneamiento({
   const ct = COURSE_TYPES.find((c) => c.id === step1.courseType);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // Real polling of the lesson-generation job — was a static "ready in a few minutes"
+  // message that never updated, no matter how long generation actually took (Jason,
+  // 2026-08-30). null = still loading first status; jobStatus.status drives the UI below.
+  const [jobStatus, setJobStatus] = useState<{ status: string; modulesProcessed?: number; totalModules?: number; incompleteModuleIds?: string[] } | null>(null);
 
   const toggleExpand = (id: string) =>
     setExpanded((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -43,6 +48,25 @@ export function StepPlaneamiento({
     if (confirmDelete === id) { onRemoveEval(id); setConfirmDelete(null); }
     else setConfirmDelete(id);
   };
+
+  useEffect(() => {
+    if (!step5.lessonJobId || step5.status !== 'done') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await api.admin.courses.aiJob(step5.lessonJobId!);
+        const data = (res as any)?.data ?? res;
+        if (!cancelled && data) setJobStatus(data);
+        return data?.status;
+      } catch { return undefined; }
+    };
+    poll(); // immediate first check, then every 3s
+    const interval = setInterval(async () => {
+      const status = await poll();
+      if (status === 'done' || status === 'done_incomplete' || status === 'error') clearInterval(interval);
+    }, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [step5.lessonJobId, step5.status]);
 
   if (step5.status === 'done') {
     return (
@@ -54,15 +78,54 @@ export function StepPlaneamiento({
           <p className="font-heading font-bold text-charcoal text-xl">{editingCourseId ? s('¡Curso actualizado exitosamente!', 'Course updated successfully!') : s('¡Curso creado exitosamente!', 'Course created successfully!')}</p>
           <p className="text-sm text-gray-400 mt-1">{step1.title}</p>
         </div>
-        {step5.lessonJobId && (
-          <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 rounded-xl flex items-center gap-3 text-left">
-            <Loader2 className="w-4 h-4 text-blue-500 shrink-0 animate-spin" />
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              {s('Lux Planner está generando las lecciones de cada módulo en segundo plano. Estarán listas en unos minutos al abrir el curso.',
-                 'Lux Planner is generating lessons for each module in the background. They will be ready in a few minutes when you open the course.')}
-            </p>
-          </div>
-        )}
+        {step5.lessonJobId && (() => {
+          const total = jobStatus?.totalModules;
+          const processed = jobStatus?.modulesProcessed ?? 0;
+          const jStatus = jobStatus?.status;
+          if (jStatus === 'done') {
+            return (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 rounded-xl flex items-center gap-3 text-left">
+                <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                  {s(`Listo — ${total ?? processed} de ${total ?? processed} módulos generados con lecciones y evaluaciones completas.`,
+                     `Done — ${total ?? processed} of ${total ?? processed} modules generated with complete lessons and assessments.`)}
+                </p>
+              </div>
+            );
+          }
+          if (jStatus === 'done_incomplete') {
+            return (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 rounded-xl flex items-center gap-3 text-left">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  {s(`Listo, pero ${jobStatus?.incompleteModuleIds?.length ?? 0} módulo(s) necesitan revisión manual — se agotaron los intentos automáticos de generación. Usa el botón de regenerar en esos módulos.`,
+                     `Done, but ${jobStatus?.incompleteModuleIds?.length ?? 0} module(s) need manual review — automatic generation attempts were exhausted. Use the regenerate button on those modules.`)}
+                </p>
+              </div>
+            );
+          }
+          if (jStatus === 'error') {
+            return (
+              <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-xl flex items-center gap-3 text-left">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  {s('Ocurrió un error generando el contenido. Revisa los módulos manualmente.', 'An error occurred generating content. Please review the modules manually.')}
+                </p>
+              </div>
+            );
+          }
+          // Still processing — real progress instead of a static message
+          return (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 rounded-xl flex items-center gap-3 text-left">
+              <Loader2 className="w-4 h-4 text-blue-500 shrink-0 animate-spin" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                {total
+                  ? s(`Generando lecciones y evaluaciones: ${processed}/${total} módulos listos...`, `Generating lessons and assessments: ${processed}/${total} modules ready...`)
+                  : s('Lux Planner está generando las lecciones de cada módulo en segundo plano...', 'Lux Planner is generating lessons for each module in the background...')}
+              </p>
+            </div>
+          );
+        })()}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button onClick={() => onGoToCourse(step5.courseId!)} leftIcon={<BookOpen className="w-4 h-4" />}>
             {s('Ir al curso', 'Go to course')}

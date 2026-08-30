@@ -32,7 +32,7 @@ function buildIndicesPayload(quizIndices: number[], classIndices: number[], refl
 }
 
 export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
-  const { event, method, path, prisma, body } = ctx;
+  const { event, method, path, prisma, body, userId: creatorUserId } = ctx;
 
   if (ctx.action === 'wizard-lessons-bulk' || ctx.action === 'wizard-copilot') {
     return handleAIWizardWorker(ctx);
@@ -272,7 +272,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: createdModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems,
+              evaluationItems, creatorUserId,
               ...buildIndicesPayload(createdQuizIndices, createdClassIndices, createdReflexIndices, createdInterviewIndices),
             })),
           }));
@@ -339,7 +339,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               _action: 'wizard-lessons-bulk', _jobId: lessonJobId, _env: getCurrentEnv(),
               courseId: course.id, moduleIds: newModuleIds,
               courseTitle: title, language: planLanguage,
-              evaluationItems,
+              evaluationItems, creatorUserId,
               ...buildIndicesPayload(newQuizIndices, newClassIndices, newReflexIndices, newInterviewIndices),
             })),
           }));

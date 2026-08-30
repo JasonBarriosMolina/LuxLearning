@@ -37,6 +37,10 @@ vi.mock('../../shared/db-dynamo', () => ({
   batchCreateCalendarEvents:  vi.fn().mockResolvedValue(undefined),
   deleteWizardCalendarEvents: vi.fn().mockResolvedValue(undefined),
   createNotification:         vi.fn().mockResolvedValue(undefined),
+  getPushSubscriptionsByUserId: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('web-push', () => ({
+  default: { setVapidDetails: vi.fn(), sendNotification: vi.fn().mockResolvedValue(undefined) },
 }));
 vi.mock('../../shared/db-calendar', () => ({
   batchCreateCalendarEvents:  vi.fn().mockResolvedValue(undefined),
@@ -292,9 +296,14 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     const { saveAiJob } = await import('../../shared/db-dynamo');
     vi.mocked(saveAiJob).mockClear();
 
+    // 8 fake lessons with real (non-placeholder) content — the completeness sweep added
+    // after Jason's 2026-08-30 report re-reads lessons from the DB via findMany() to
+    // verify the module is actually complete; the mock has no real persistence, so without
+    // this the sweep would see "0 lessons" every time and loop through all 3 repair sweeps.
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
-      lesson: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 10 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
       question: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
     });
     const ctx = makeAdminCtx({
@@ -333,9 +342,13 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
 
     const moduleIds = ['m1', 'm2', 'm3', 'm4', 'm5']; // 5 modules > MODULE_CONCURRENCY (3)
     const createManyMock = vi.fn().mockResolvedValue({ count: 10 });
+    // See comment in the previous test — the completeness sweep re-reads lessons from the
+    // DB, so the mock needs to look "already complete" or every module gets reprocessed
+    // through all 3 repair sweeps too.
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
-      lesson: { createMany: createManyMock },
+      lesson: { createMany: createManyMock, findMany: vi.fn().mockResolvedValue(fakeLessons) },
       question: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
     });
     const ctx = makeAdminCtx({
@@ -382,6 +395,126 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect(evalEventCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ courseId: 'c1', moduleId: 'm1', type: 'QUIZ' }),
     }));
+  });
+
+  it('completeness sweep repairs a module whose lessons were ALL placeholders after the main pass (regression: Jason 2026-08-30 — "sí o sí" completeness guarantee)', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    // 1st call = lessonPrompt (main pass) -> total failure. 2nd = resourcesPrompt -> null.
+    // 3rd = the sweep's targeted repair prompt -> succeeds this time.
+    vi.mocked(invokeBedrockForJson)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(Array.from({ length: 8 }, (_, i) => ({
+        title: `Repaired ${i + 1}`, content: `<h3>Fixed</h3><p>Real content ${i + 1}.</p>`, points: [], tip: '', duration: '9 min',
+      })));
+
+    const placeholderLessons = Array.from({ length: 8 }, (_, i) => ({
+      id: `l${i + 1}`, order: i + 1, title: `Lección ${i + 1}`,
+      content: '<p><strong>⚠ Generación incompleta.</strong> ...</p>', points: [], tip: '',
+    }));
+    const repairedLessons = Array.from({ length: 8 }, (_, i) => ({
+      id: `l${i + 1}`, order: i + 1, title: `Repaired ${i + 1}`,
+      content: `<h3>Fixed</h3><p>Real content ${i + 1}.</p>`, points: [], tip: '',
+    }));
+    const lessonUpdateMock = vi.fn().mockResolvedValue({});
+    const findManyMock = vi.fn()
+      .mockResolvedValueOnce(placeholderLessons) // verifyAndRepairModule's initial read
+      .mockResolvedValueOnce(repairedLessons);   // its post-repair re-check
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: findManyMock, update: lessonUpdateMock },
+    });
+    const { saveAiJob } = await import('../../shared/db-dynamo');
+    vi.mocked(saveAiJob).mockClear();
+
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-repair', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    // All 8 placeholder lessons got a targeted update — not a blind re-createMany
+    expect(lessonUpdateMock).toHaveBeenCalledTimes(8);
+    const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
+    expect(doneCall).toBeDefined();
+    expect((doneCall?.[1] as any)?.incompleteModuleIds).toEqual([]);
+  });
+
+  it('completeness sweep reports done_incomplete + which modules after exhausting all repair attempts (regression: Jason 2026-08-30)', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    // Every attempt — main pass AND every sweep's repair prompt — keeps failing.
+    vi.mocked(invokeBedrockForJson).mockResolvedValue(null);
+
+    const placeholderLessons = Array.from({ length: 8 }, (_, i) => ({
+      id: `l${i + 1}`, order: i + 1, title: `Lección ${i + 1}`,
+      content: '<p><strong>⚠ Generación incompleta.</strong> ...</p>', points: [], tip: '',
+    }));
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(placeholderLessons), update: vi.fn().mockResolvedValue({}) },
+    });
+    const { saveAiJob } = await import('../../shared/db-dynamo');
+    vi.mocked(saveAiJob).mockClear();
+
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-give-up', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    const finalCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done_incomplete');
+    expect(finalCall).toBeDefined();
+    expect((finalCall?.[1] as any)?.incompleteModuleIds).toEqual(['m1']);
+  });
+
+  it('notifies the course creator in-app once the job reaches its final status, only when creatorUserId was provided (regression: Jason 2026-08-30 — no completion signal existed at all)', async () => {
+    const { saveAiJob, createNotification } = await import('../../shared/db-dynamo');
+    vi.mocked(saveAiJob).mockClear();
+    vi.mocked(createNotification).mockClear();
+
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-notify', courseId: 'c1', moduleIds: ['m1'],
+        courseTitle: 'Curso Notif', language: 'ES', creatorUserId: 'evaluator-1',
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'evaluator-1',
+      message: expect.stringContaining('Curso Notif'),
+    }));
+  });
+
+  it('does NOT try to notify when creatorUserId is absent (legacy callers / no auth context on the async worker)', async () => {
+    const { createNotification } = await import('../../shared/db-dynamo');
+    vi.mocked(createNotification).mockClear();
+
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content.</p>', points: [], tip: '' }));
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-no-notify', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+    expect(createNotification).not.toHaveBeenCalled();
   });
 
   it('generateAndSaveQuizQuestions retries once when the first Bedrock response is empty/invalid (regression: Trello DmPpbrff comment 6a9232ef — planned quizzes silently ending up with 0 questions)', async () => {
