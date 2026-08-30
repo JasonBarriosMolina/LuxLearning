@@ -402,7 +402,7 @@ export default function ModulePage() {
                 <PlayCircle className="w-5 h-5 text-gray-400" />
               </div>
               <div>
-                <p className="font-semibold text-charcoal text-sm">{t.moduleView.luxMentorClass ?? 'Lux Mentor'}</p>
+                <p className="font-semibold text-charcoal text-sm">{t.moduleView.luxMentorClass}</p>
                 <p className="text-xs text-gray-500">{t.moduleView.interviewLockedHint}</p>
               </div>
             </div>

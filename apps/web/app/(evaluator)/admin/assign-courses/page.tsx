@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { GroupFilterPanel } from './_components/GroupFilterPanel';
 
 type Student = { username: string; email: string; name: string; role: string; enabled: boolean };
 type Course  = { id: string; title: string; isActive: boolean; modules?: any[] };
@@ -36,7 +37,13 @@ export default function AssignCoursesPage() {
   // Group filter (evaluator only)
   const [myGroups, setMyGroups] = useState<{ id: string; name: string; color?: string }[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
-  const [groupMemberIds, setGroupMemberIds] = useState<Set<string> | null>(null);
+  // Full member records (name/email), not just ids — Trello DmPpbrff comment 2026-08-30
+  // 20:13: picking a group only showed a bare count + "add all" button, never who was
+  // actually in it. groupSelectedMemberIds is which of those members are checked in the
+  // preview dropdown (defaults to all, lets Mack deselect individuals before adding).
+  const [groupMembers, setGroupMembers] = useState<{ userId: string; name: string; email: string }[] | null>(null);
+  const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<Set<string>>(new Set());
+  const groupMemberIds = groupMembers ? new Set(groupMembers.map((m) => m.userId)) : null;
 
   // By-course mode
   const [selectedCourseId, setSelectedCourseId]     = useState('');
@@ -97,12 +104,14 @@ export default function AssignCoursesPage() {
   }, [canFilterByGroup, isAdminRole]);
 
   useEffect(() => {
-    if (!canFilterByGroup || selectedGroupId === 'all') { setGroupMemberIds(null); return; }
+    if (!canFilterByGroup || selectedGroupId === 'all') { setGroupMembers(null); setGroupSelectedMemberIds(new Set()); return; }
     const req = isAdminRole ? api.admin.groups.members(selectedGroupId) : api.evaluator.groups.members(selectedGroupId);
     req.then((res: any) => {
-      const members: any[] = Array.isArray(res.data) ? res.data : (res.data?.members ?? res.members ?? []);
-      setGroupMemberIds(new Set(members.map((m: any) => m.userId)));
-    }).catch(() => setGroupMemberIds(null));
+      const raw: any[] = Array.isArray(res.data) ? res.data : (res.data?.members ?? res.members ?? []);
+      const members = raw.map((m: any) => ({ userId: m.userId, name: m.name || m.email || m.userId, email: m.email || '' }));
+      setGroupMembers(members);
+      setGroupSelectedMemberIds(new Set(members.map((m) => m.userId)));
+    }).catch(() => { setGroupMembers(null); setGroupSelectedMemberIds(new Set()); });
   }, [canFilterByGroup, isAdminRole, selectedGroupId]);
 
   useEffect(() => {
@@ -239,11 +248,19 @@ export default function AssignCoursesPage() {
   // was missing entirely before (Trello DmPpbrff comment 6a9268a9): the group filter only
   // narrowed the visible list, there was no one-click "add the whole group" action.
   const addGroupToPending = () => {
-    if (!groupMemberIds) return;
+    if (groupSelectedMemberIds.size === 0) return;
     setSaved(false);
     setPendingCourse((prev) => {
       const next = new Set(prev);
-      groupMemberIds.forEach((id) => next.add(id));
+      groupSelectedMemberIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const toggleGroupMember = (userId: string) => {
+    setGroupSelectedMemberIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
       return next;
     });
   };
@@ -342,32 +359,18 @@ export default function AssignCoursesPage() {
 
       {/* Group filter — admin + evaluator, by-course mode */}
       {canFilterByGroup && mode === 'by-course' && myGroups.length > 0 && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">Filtrar por grupo:</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setSelectedGroupId('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${selectedGroupId === 'all' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
-            >
-              Todos
-            </button>
-            {myGroups.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => setSelectedGroupId(g.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${selectedGroupId === g.id ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}
-              >
-                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: g.color ?? '#17527E' }} />
-                {g.name}
-              </button>
-            ))}
-          </div>
-          {selectedGroupId !== 'all' && selectedCourseId && groupMemberIds && groupMemberIds.size > 0 && (
-            <Button size="sm" variant="secondary" onClick={addGroupToPending}>
-              Agregar los {groupMemberIds.size} estudiantes del grupo
-            </Button>
-          )}
-        </div>
+        <GroupFilterPanel
+          groups={myGroups}
+          selectedGroupId={selectedGroupId}
+          onSelectGroup={setSelectedGroupId}
+          members={groupMembers}
+          selectedMemberIds={groupSelectedMemberIds}
+          onToggleMember={toggleGroupMember}
+          onSelectAllMembers={() => setGroupSelectedMemberIds(new Set((groupMembers ?? []).map((m) => m.userId)))}
+          onSelectNoMembers={() => setGroupSelectedMemberIds(new Set())}
+          canAdd={!!selectedCourseId}
+          onAddSelected={addGroupToPending}
+        />
       )}
 
       {/* Mode toggle */}
