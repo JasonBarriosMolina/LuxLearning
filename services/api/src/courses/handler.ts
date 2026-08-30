@@ -6,7 +6,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getClassSessionByCallId, updateClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
-import { listMyClassSessions } from '../shared/db-classes';
+import { listMyClassSessions, listMyClassSessionsForCourse } from '../shared/db-classes';
 import { handleClasses } from './classes';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
@@ -176,6 +176,10 @@ export const handler = async (event: Event) => {
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
         const lessonProgress = await getLessonProgress(userId, courseId);
         const completedLessonIds = new Set(lessonProgress.map((p) => p.lessonId));
+        // One Query for every class session in the course (not one per module) — used to
+        // gate the dashboard's "Presentar"/"Ir al quiz" buttons on the class actually being
+        // done, same as the module page's blockingStep (Trello DmPpbrff item 3).
+        const myClassSessions = await listMyClassSessionsForCourse(userId, courseId).catch(() => []);
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
@@ -184,12 +188,14 @@ export const handler = async (event: Event) => {
             const mt = translations?.get(`module#${mod.id}`);
 
             const mySubmissions = await listMySubmissions(userId, mod.id);
+            const classCompleted = myClassSessions.some((s) => s.moduleId === mod.id && (s.hasCompletedQA || s.status === 'completed'));
 
             return {
               ...mod,
               ...(mt ?? {}),
               unlocked,
               quizPassed,
+              classCompleted,
               reflectionStatus: reflection?.status ?? null,
               qualityScore: (reflection as any)?.qualityScore ?? null,
               submissions: mySubmissions.map((s) => ({
