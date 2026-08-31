@@ -56,6 +56,7 @@ describe('handleCarousel — POST /admin/modules/:id/carousel/draft', () => {
     const body = JSON.parse(res.body);
     expect(body.data.slides).toHaveLength(9);
     expect(body.data.slides[0].onScreenText.title).toBe('Título 1');
+    expect(invokeBedrockForJsonMock).toHaveBeenCalledTimes(1); // no retry needed — got a full deck first try
   });
 
   it('returns 400 when the module does not exist', async () => {
@@ -64,6 +65,32 @@ describe('handleCarousel — POST /admin/modules/:id/carousel/draft', () => {
     const ctx = makeAdminCtx({ method: 'POST', path: '/admin/modules/missing/carousel/draft', prisma, body: {} });
     const res = await handleCarousel(ctx as any);
     expect(res?.statusCode).toBe(400);
+  });
+
+  it('retries once when Bedrock under-delivers, and keeps the retry if it recovers more slides (review fix, 2026-08-30)', async () => {
+    invokeBedrockForJsonMock
+      .mockResolvedValueOnce(makeDraftSlides(4))  // first attempt: truncated, only 4/9
+      .mockResolvedValueOnce(makeDraftSlides(9)); // retry: full 9
+    const prisma = makePrisma();
+    prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' });
+    const ctx = makeAdminCtx({ method: 'POST', path: '/admin/modules/m1/carousel/draft', prisma, body: {} });
+    const res = await handleCarousel(ctx as any);
+    expect(res?.statusCode).toBe(200);
+    expect(invokeBedrockForJsonMock).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(res.body);
+    expect(body.data.slides).toHaveLength(9);
+  });
+
+  it('keeps the first attempt when the retry does not recover more slides than it had', async () => {
+    invokeBedrockForJsonMock
+      .mockResolvedValueOnce(makeDraftSlides(4))
+      .mockResolvedValueOnce(makeDraftSlides(2)); // retry did worse — keep the first 4
+    const prisma = makePrisma();
+    prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' });
+    const ctx = makeAdminCtx({ method: 'POST', path: '/admin/modules/m1/carousel/draft', prisma, body: {} });
+    const res = await handleCarousel(ctx as any);
+    const body = JSON.parse(res.body);
+    expect(body.data.slides).toHaveLength(4);
   });
 
   it('returns 400 when Bedrock fails to produce usable slides', async () => {

@@ -36,10 +36,22 @@ Para cada diapositiva genera:
 Devuelve ÚNICAMENTE un array JSON de exactamente ${TARGET_SLIDES} objetos:
 [{"onScreenText":{"title":"...","bullets":["...","..."]},"narrationSegment":"...","imagePrompt":"..."}]`;
 
-    const raw = await invokeBedrockForJson(prompt, 4000).catch((e: any) => {
+    let raw = await invokeBedrockForJson(prompt, 4000).catch((e: any) => {
       console.error('[carousel/draft] Bedrock failed:', e?.message ?? e);
       return null;
     });
+    // Retry once if the model under-delivered — same reliability pattern already used for
+    // lesson generation (Bug B fix, ai-wizard-worker.ts). Found missing here in review
+    // (2026-08-30): without it, a truncated response silently gave the evaluator fewer
+    // slides than requested with no error and no second attempt.
+    if (!Array.isArray(raw) || raw.filter((s: any) => s?.narrationSegment).length < TARGET_SLIDES) {
+      console.warn(`[carousel/draft] module ${moduleId}: got ${Array.isArray(raw) ? raw.length : 0}/${TARGET_SLIDES} slides — retrying once`);
+      const retryRaw = await invokeBedrockForJson(prompt, 4000).catch((e: any) => {
+        console.error('[carousel/draft] retry failed:', e?.message ?? e);
+        return null;
+      });
+      if (Array.isArray(retryRaw) && retryRaw.length > (Array.isArray(raw) ? raw.length : 0)) raw = retryRaw;
+    }
     if (!Array.isArray(raw) || raw.length === 0) {
       return badRequest('No se pudo generar el guion. Intenta de nuevo.');
     }

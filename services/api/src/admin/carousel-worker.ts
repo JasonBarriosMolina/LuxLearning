@@ -16,12 +16,46 @@ const IMAGE_CONCURRENCY = 3;
 // when the number of sentence speech marks doesn't line up 1:1 with the slide count (the
 // model didn't phrase each slide as exactly one Polly-recognized sentence).
 const CHARS_PER_MINUTE_ESTIMATE = 750;
+// Polly's per-SynthesizeSpeech request limit (matches generateLessonAudio's own .slice(0,2900)
+// in ctx.ts). Kept as its own constant here because the fix below has to decide BEFORE
+// synthesis which slides survive — ctx.ts's silent .slice() truncates the raw text after
+// the fact, which would cut the narration audio short while every slide's image/text still
+// plays, an audio/slide desync bug found in review (2026-08-30).
+const POLLY_MAX_CHARS = 2900;
 
 export interface DraftSlide {
   order: number;
   onScreenText: { title: string; bullets: string[] };
   narrationSegment: string;
   imagePrompt: string;
+}
+
+/** Normalizes a narration segment to end in sentence punctuation — needed both to build
+ *  the final narration text AND to size it against Polly's per-request character limit,
+ *  so the two stay consistent. */
+function normalizedSegment(s: DraftSlide): string {
+  const t = s.narrationSegment.trim();
+  return /[.!?]$/.test(t) ? t : `${t}.`;
+}
+
+/** Drops trailing slides whose combined narration would exceed Polly's per-request
+ *  character limit — BEFORE synthesis, so the slides that remain always have real
+ *  narration audio behind them. Silently truncating the TEXT afterwards (as
+ *  generateLessonAudio's own defensive .slice(0,2900) does) would desync the last
+ *  slides from the actual audio: their images/text would show with no voice reading
+ *  them, since the cut-off point lands mid-sentence with no relationship to slide
+ *  boundaries. Found in review (2026-08-30). */
+export function fitSlidesToNarrationBudget(slides: DraftSlide[], maxChars = POLLY_MAX_CHARS): { slides: DraftSlide[]; dropped: number } {
+  const kept: DraftSlide[] = [];
+  let used = 0;
+  for (const s of slides) {
+    const seg = normalizedSegment(s);
+    const nextUsed = used + seg.length + (kept.length > 0 ? 1 : 0); // +1 for the joining space
+    if (nextUsed > maxChars) break;
+    kept.push(s);
+    used = nextUsed;
+  }
+  return { slides: kept, dropped: slides.length - kept.length };
 }
 
 export function computeSlideTiming(slides: DraftSlide[], marks: Array<{ time: number; value: string }>) {
@@ -103,11 +137,13 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
     const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
     if (!mod) { await saveAiJob(_jobId, { status: 'error', error: 'Módulo no encontrado' }); return ok({}); }
 
+    const { slides: fittedSlides, dropped } = fitSlidesToNarrationBudget(slides);
+    if (dropped > 0) {
+      console.warn(`[carousel-worker] module ${moduleId}: dropped ${dropped} trailing slide(s) — combined narration exceeded Polly's ${POLLY_MAX_CHARS}-char limit`);
+    }
+
     const voiceId = defaultVoiceForLanguage(courseLanguage);
-    const narrationText = slides.map((s) => {
-      const t = s.narrationSegment.trim();
-      return /[.!?]$/.test(t) ? t : `${t}.`;
-    }).join(' ');
+    const narrationText = fittedSlides.map(normalizedSegment).join(' ');
 
     const narration = await generateCarouselNarration(`carousel-${moduleId}`, narrationText, voiceId);
     if (!narration) {
@@ -115,18 +151,18 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
       return ok({});
     }
 
-    const timedSlides = computeSlideTiming(slides, narration.marks);
-    await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: 0, totalModules: slides.length });
+    const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
+    await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: 0, totalModules: fittedSlides.length });
 
-    const slideImages: (string | null)[] = new Array(slides.length).fill(null);
-    for (let i = 0; i < slides.length; i += IMAGE_CONCURRENCY) {
-      const batch = slides.slice(i, i + IMAGE_CONCURRENCY);
+    const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
+    for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
+      const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
       await Promise.all(batch.map(async (s, bi) => {
         const idx = i + bi;
         const url = await generateLessonImage(mod.title, mod.title, idx, { promptText: s.imagePrompt, style: 'diagram' }).catch(() => null);
         slideImages[idx] = url;
       }));
-      await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: Math.min(i + IMAGE_CONCURRENCY, slides.length), totalModules: slides.length });
+      await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: Math.min(i + IMAGE_CONCURRENCY, fittedSlides.length), totalModules: fittedSlides.length });
     }
 
     const finalSlides = timedSlides.map((s, i) => ({
