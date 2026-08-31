@@ -5,7 +5,7 @@ import { PlayCircle, CheckCircle, Mic, MicOff, Volume2, BookOpen, Loader2, Alert
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import { LuxMentorClassReview } from './LuxMentorClassReview';
-import { buildSystemPrompt, extractYouTubeId } from './LuxMentorClass.helpers';
+import { buildSystemPrompt, extractYouTubeId, computeSilenceAction } from './LuxMentorClass.helpers';
 import type Vapi from '@vapi-ai/web';
 
 interface ClassSession {
@@ -49,6 +49,11 @@ const TOTAL_SECONDS = 600;    // 10 minutes total
 const MONOLOGUE_SECONDS = 300; // first 5 min = exposition, mic muted
 const TIMER_REVEAL_AT = 120;  // reveal timer when 2 min remaining
 const SYSTEM_MSG_AT = 60;     // send warning when 1 min remaining
+// Silence handling during Q&A only (Trello DmPpbrff item 7, 2026-08-30 20:28): "si el
+// estudiante no habla en un margen de 10 a 15 segundos, Luz Mentor debe preguntar si la
+// persona todavía se encuentra ahí. Si no responde en 10 segundos más... cerrar la clase."
+const SILENCE_CHECKIN_SECONDS = 12; // no student speech for this long → ask "are you there?"
+const SILENCE_END_SECONDS = 10;     // no reply after the check-in → end the call
 
 export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Props) {
   const { lang } = useLanguage();
@@ -67,6 +72,11 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
   const monoTransitionSentRef = useRef(false);
   const callStartTimeRef = useRef<number>(0);
   const sessionCompletedRef = useRef(false); // guard: prevent double-update when timer + call-end both fire
+  // Silence-timeout refs (Q&A phase only) — see SILENCE_* constants above.
+  const lastUserSpeechAtRef = useRef<number>(0);
+  const silenceCheckinSentRef = useRef(false);
+  const silenceCheckinAtRef = useRef<number>(0);
+  const silenceEndingRef = useRef(false); // guards the end-the-call sequence from re-firing
 
   const vapiRef = useRef<Vapi | null>(null);
   const sessionIdRef = useRef<string>('');
@@ -95,6 +105,8 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       setTimerVisible(false);
       systemMsgSentRef.current = false;
       monoTransitionSentRef.current = false;
+      silenceCheckinSentRef.current = false;
+      silenceEndingRef.current = false;
       return;
     }
     callStartTimeRef.current = Date.now();
@@ -108,6 +120,8 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         monoTransitionSentRef.current = true;
         try { (vapiRef.current as any)?.setMuted(false); } catch {}
         setSubPhase('qa');
+        lastUserSpeechAtRef.current = Date.now(); // start the silence clock only once Q&A begins
+        silenceCheckinSentRef.current = false;
         try {
           (vapiRef.current as any)?.send({
             type: 'add-message',
@@ -119,6 +133,60 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
             },
           });
         } catch { /* non-fatal */ }
+      }
+
+      // Silence handling — Q&A phase only. Two stages: check in once, then end the call
+      // if there's still no reply. Runs on the same 1s tick as the rest of the timer logic.
+      // Uses `elapsed >= MONOLOGUE_SECONDS` (a ref-derived value), NOT the `subPhase` state
+      // variable — this interval closure is set up once per call and would otherwise read
+      // a stale 'monologue' value forever, since the effect doesn't re-run when subPhase
+      // changes (only when phase/lang/cleanup do).
+      if (elapsed >= MONOLOGUE_SECONDS && vapiRef.current && !silenceEndingRef.current) {
+        const silenceAction = computeSilenceAction({
+          inQA: true,
+          silenceSeconds: (Date.now() - lastUserSpeechAtRef.current) / 1000,
+          checkinSent: silenceCheckinSentRef.current,
+          secondsSinceCheckin: silenceCheckinSentRef.current ? (Date.now() - silenceCheckinAtRef.current) / 1000 : 0,
+          checkinThreshold: SILENCE_CHECKIN_SECONDS,
+          endThreshold: SILENCE_END_SECONDS,
+        });
+        if (silenceAction === 'checkin') {
+          silenceCheckinSentRef.current = true;
+          silenceCheckinAtRef.current = Date.now();
+          try {
+            (vapiRef.current as any).send({
+              type: 'add-message',
+              message: {
+                role: 'system',
+                content: lang === 'en'
+                  ? 'The student has been silent for a while. Ask if they are still there — a short, direct check-in question.'
+                  : 'El estudiante ha estado en silencio un momento. Pregunta si sigue ahí — una pregunta corta y directa de verificación.',
+              },
+            });
+          } catch { /* non-fatal */ }
+        } else if (silenceAction === 'end') {
+          silenceEndingRef.current = true;
+          try {
+            (vapiRef.current as any).send({
+              type: 'add-message',
+              message: {
+                role: 'system',
+                content: lang === 'en'
+                  ? 'There has been no response. Say: "It looks like you\'re not here, so we\'ll end the class here." Then stop — the Q&A section is now closed.'
+                  : 'No ha habido respuesta. Di: "Parece que no estás aquí, así que vamos a cerrar la clase aquí." Luego detente — la sección de preguntas queda cerrada.',
+              },
+            });
+          } catch { /* non-fatal */ }
+          // Give the goodbye a moment to play before actually ending the call.
+          setTimeout(() => {
+            cleanup();
+            if (sessionIdRef.current && !sessionCompletedRef.current) {
+              sessionCompletedRef.current = true;
+              api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
+            }
+            setPhase('ended');
+          }, 6000);
+        }
       }
 
       // Timer reveal at 2 min remaining (Q&A phase only)
@@ -227,6 +295,14 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     vapi.on('speech-start', () => setIsSpeaking(true));
     vapi.on('speech-end', () => setIsSpeaking(false));
     vapi.on('volume-level', (v: number) => setVolume(v));
+    // Resets the silence clock whenever the student actually speaks — cancels a pending
+    // check-in if they answer in time (item 7 silence-timeout, see constants above).
+    vapi.on('message', (msg: any) => {
+      if (msg?.role === 'user') {
+        lastUserSpeechAtRef.current = Date.now();
+        silenceCheckinSentRef.current = false;
+      }
+    });
     vapi.on('error', (e: any) => {
       console.error('[vapi-class]', e);
       setError(s('Ocurrió un error durante la sesión.', 'An error occurred during the session.'));
