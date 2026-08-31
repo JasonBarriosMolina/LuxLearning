@@ -108,20 +108,26 @@ model Module {
 }
 
 model Lesson {
-  id           String   @id @default(cuid())
-  moduleId     String
-  order        Int
-  title        String
-  duration     String
-  youtubeId    String   @default("")
-  imageUrl     String?
-  points       String[]
-  tip          String
-  content      String?
-  type         String   @default("video")
-  audioUrl     String?
-  prevSnapshot String?
-  module       Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  moduleId       String
+  order          Int
+  title          String
+  duration       String
+  youtubeId      String   @default("")
+  imageUrl       String?
+  points         String[]
+  tip            String
+  content        String?
+  type           String   @default("video")
+  audioUrl       String?
+  prevSnapshot   String?
+  // Lux Carrousel (type="carousel") — array of {imageUrl, onScreenText, startMs, endMs},
+  // audio narration reuses audioUrl above. speechMarks is Polly's raw per-sentence timing
+  // JSON, kept separately so the player can re-derive slide boundaries if needed.
+  carouselSlides Json?
+  speechMarks    Json?
+  pdfRecapUrl    String?
+  module         Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@unique([moduleId, order])
 }

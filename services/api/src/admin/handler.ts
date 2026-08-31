@@ -13,6 +13,8 @@ import { handleFiles } from './files';
 import { handleGroups } from './groups';
 import { handleInterviews } from './interviews';
 import { handleClasses as handleAdminClasses } from './classes';
+import { handleCarousel } from './carousel';
+import { handleCarouselWorker } from './carousel-worker';
 
 export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
@@ -56,6 +58,8 @@ export const handler = async (event: Event) => {
       await handleGroups(ctx) ??
       await handleInterviews(ctx) ??
       await handleAdminClasses(ctx) ??
+      await handleCarousel(ctx) ??
+      await handleCarouselWorker(ctx) ??
       notFound('Ruta no encontrada');
 
     return result;
