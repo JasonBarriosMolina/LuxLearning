@@ -8,6 +8,7 @@ import { LambdaClient } from '@aws-sdk/client-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { jsonrepair } from 'jsonrepair';
+import { POLLY_VOICE_LANGUAGE } from '../shared/polly-audio';
 
 // ── AWS Clients ──────────────────────────────────────────────────────────────
 export const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -70,61 +71,12 @@ export async function getCallerName(event: Event): Promise<string | null> {
 // keep this file under the shared-helper size limit (Trello DmPpbrff item 4).
 
 // ── Amazon Polly audio generation helper ─────────────────────────────────────
-// English neural voices added (Trello DmPpbrff item 4, 2026-08-30 20:20): the map only
-// had Spanish voices, so an English course could never get a matching neural voice.
-const POLLY_VOICE_LANGUAGE: Record<string, string> = {
-  Mia: 'es-MX', Lupe: 'es-US', Pedro: 'es-US', Lucia: 'es-ES', Sergio: 'es-ES',
-  Danielle: 'en-US', Gregory: 'en-US',
-};
-
-// Default neural voice per course language — used by the Lux Planner auto-audio worker
-// so every lesson gets a matching-language voice without an admin picking one manually.
-export function defaultVoiceForLanguage(planLanguage: string | null | undefined): string {
-  return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Danielle' : 'Mia';
-}
-
-// Male neural voice per language — Lux Mentor Class narration specifically asked for a
-// male voice (Trello DmPpbrff, 2026-08-31 04:01: "en una voz masculina, específicamente").
-export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefined): string {
-  return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Sergio';
-}
-
-export async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mia'): Promise<string | null> {
-  try {
-    const plain = text
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 2900); // Polly Neural limit per request
-
-    const resp = await pollyClient.send(new SynthesizeSpeechCommand({
-      Text: plain,
-      VoiceId: voiceId as VoiceId,
-      Engine: 'neural',
-      OutputFormat: 'mp3',
-      LanguageCode: (POLLY_VOICE_LANGUAGE[voiceId] ?? 'es-MX') as any,
-    }));
-
-    if (!resp.AudioStream) return null;
-
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of resp.AudioStream as any) chunks.push(chunk);
-    const audioBuffer = Buffer.concat(chunks);
-
-    const key = `audio/${lessonId}-${voiceId.toLowerCase()}.mp3`;
-    await s3Client.send(new PutObjectCommand({
-      Bucket: S3_IMAGES_BUCKET,
-      Key: key,
-      Body: audioBuffer,
-      ContentType: 'audio/mpeg',
-    }));
-    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
-  } catch (err) {
-    console.error('[Polly] Error generating audio:', err);
-    return null;
-  }
-}
+// Extracted to shared/polly-audio.ts (2026-08-31) so the student-facing lessons
+// lambda can lazily generate audio on demand too — re-exported here so every
+// existing caller importing from './ctx' keeps working unchanged.
+export {
+  POLLY_VOICE_LANGUAGE, defaultVoiceForLanguage, defaultMaleVoiceForLanguage, generateLessonAudio,
+} from '../shared/polly-audio';
 
 /** Synthesizes narration audio for a Lux Carrousel AND its sentence-level Speech Marks
  *  (Polly can only return one OutputFormat per call, so this is 2 requests) — used to
