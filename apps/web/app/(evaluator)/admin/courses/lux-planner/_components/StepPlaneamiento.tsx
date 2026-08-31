@@ -39,7 +39,7 @@ export function StepPlaneamiento({
   // Real polling of the lesson-generation job — was a static "ready in a few minutes"
   // message that never updated, no matter how long generation actually took (Jason,
   // 2026-08-30). null = still loading first status; jobStatus.status drives the UI below.
-  const [jobStatus, setJobStatus] = useState<{ status: string; modulesProcessed?: number; totalModules?: number; incompleteModuleIds?: string[] } | null>(null);
+  const [jobStatus, setJobStatus] = useState<{ status: string; phase?: string; modulesProcessed?: number; totalModules?: number; incompleteModuleIds?: string[] } | null>(null);
 
   const toggleExpand = (id: string) =>
     setExpanded((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -114,14 +114,27 @@ export function StepPlaneamiento({
               </div>
             );
           }
-          // Still processing — real progress instead of a static message
+          // Still processing — real progress, phase-labeled (Trello DmPpbrff item 8,
+          // 2026-08-30 20:30: "marcar algún tipo de barra de estado... para que yo...
+          // entienda por qué paso vamos" — generation now runs lessons → quiz →
+          // reflections → classes → interviews across all modules, so name the phase
+          // instead of one opaque "lessons and assessments" counter).
+          const phaseLabel: Record<string, string> = {
+            lessons: s('Generando lecciones', 'Generating lessons'),
+            quiz: s('Generando quizzes', 'Generating quizzes'),
+            reflections: s('Registrando reflexiones', 'Recording reflections'),
+            classes: s('Generando clases con Lux Mentor', 'Generating Lux Mentor classes'),
+            interviews: s('Registrando entrevistas', 'Recording interviews'),
+            repair: s('Verificando y completando módulos', 'Verifying and completing modules'),
+          };
+          const label = jobStatus?.phase ? (phaseLabel[jobStatus.phase] ?? phaseLabel.lessons) : s('Generando contenido del curso', 'Generating course content');
           return (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 rounded-xl flex items-center gap-3 text-left">
               <Loader2 className="w-4 h-4 text-blue-500 shrink-0 animate-spin" />
               <p className="text-xs text-blue-700 dark:text-blue-300">
                 {total
-                  ? s(`Generando lecciones y evaluaciones: ${processed}/${total} módulos listos...`, `Generating lessons and assessments: ${processed}/${total} modules ready...`)
-                  : s('Lux Planner está generando las lecciones de cada módulo en segundo plano...', 'Lux Planner is generating lessons for each module in the background...')}
+                  ? s(`${label}: ${processed}/${total} módulos listos...`, `${label}: ${processed}/${total} modules ready...`)
+                  : s('Lux Planner está generando el contenido del curso en segundo plano...', 'Lux Planner is generating the course content in the background...')}
               </p>
             </div>
           );

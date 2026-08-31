@@ -5,46 +5,81 @@
 // dispatch call (Trello DmPpbrff item 4, 2026-08-30).
 import webpush from 'web-push';
 import { createId } from '@paralleldrive/cuid2';
+import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { createNotification, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
-import { AdminCtx, shuffleQuestionOptions, invokeBedrockForJson } from './ctx';
+import {
+  AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
+  ses, cognito, FROM_EMAIL, FRONTEND_URL, USER_POOL_ID,
+} from './ctx';
+
+async function sendPushAndInApp(userId: string, type: 'GENERAL' | 'COURSE_READY_FOR_REVIEW', message: string, courseId: string): Promise<void> {
+  await createNotification({
+    userId, notifId: createId(), type, message, read: false,
+    createdAt: new Date().toISOString(), actionUrl: `/admin/courses/${courseId}`,
+  });
+  // lux-admin's VAPID keys are plain Lambda env vars (not Secrets Manager) — see CLAUDE.md.
+  const vapidPublic = process.env.VAPID_PUBLIC_KEY;
+  const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
+  const vapidEmail = process.env.VAPID_EMAIL;
+  if (!vapidPublic || !vapidPrivate || !vapidEmail) return; // env vars unset — in-app notification above still landed
+  webpush.setVapidDetails(vapidEmail, vapidPublic, vapidPrivate);
+  const subs = await getPushSubscriptionsByUserId(userId);
+  if (!subs.length) return;
+  const payload = JSON.stringify({ title: 'Lux Learning', body: message, url: `/admin/courses/${courseId}` });
+  await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
+}
 
 /** Notifies the course creator (in-app + push) once course generation truly finishes —
  *  Jason, 2026-08-30: no completion signal exists today, the wizard just shows a static
  *  "ready in a few minutes" message forever. Non-fatal: a notification failure must never
- *  fail the job itself, which already succeeded or gave an honest partial result. */
+ *  fail the job itself, which already succeeded or gave an honest partial result.
+ *
+ *  Also notifies the course's evaluator (email + push + in-app) that it's ready to
+ *  review and activate, when that's a different person from whoever ran the wizard —
+ *  Trello DmPpbrff item 8 (2026-08-30 20:30): "notificar... cuando el curso está listo
+ *  para poder ser revisado... para que el curso se active y esté disponible." */
 export async function notifyCourseGenerationDone(
   creatorUserId: string | undefined, courseId: string, courseTitle: string, isEN: boolean, incomplete: boolean,
+  evaluatorId?: string | null,
 ): Promise<void> {
-  if (!creatorUserId) return;
-  try {
-    const message = incomplete
-      ? (isEN
-        ? `⚠️ "${courseTitle}" is ready, but some modules need manual review (generation attempts exhausted).`
-        : `⚠️ "${courseTitle}" está listo, pero algunos módulos necesitan revisión manual (se agotaron los intentos de generación).`)
-      : (isEN
-        ? `✅ "${courseTitle}" is 100% ready — all lessons and quizzes were generated successfully.`
-        : `✅ "${courseTitle}" está 100% listo — todas las lecciones y quices se generaron correctamente.`);
-    await createNotification({
-      userId: creatorUserId,
-      notifId: createId(),
-      type: 'GENERAL',
-      message,
-      read: false,
-      createdAt: new Date().toISOString(),
-      actionUrl: `/admin/courses/${courseId}`,
-    });
-    // lux-admin's VAPID keys are plain Lambda env vars (not Secrets Manager) — see CLAUDE.md.
-    const vapidPublic = process.env.VAPID_PUBLIC_KEY;
-    const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
-    const vapidEmail = process.env.VAPID_EMAIL;
-    if (!vapidPublic || !vapidPrivate || !vapidEmail) return; // env vars unset — in-app notification above still landed
-    webpush.setVapidDetails(vapidEmail, vapidPublic, vapidPrivate);
-    const subs = await getPushSubscriptionsByUserId(creatorUserId);
-    if (!subs.length) return;
-    const payload = JSON.stringify({ title: 'Lux Learning', body: message, url: `/admin/courses/${courseId}` });
-    await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
-  } catch (e) {
-    console.error('[wizard-lessons-bulk] completion notification failed (non-fatal):', e);
+  const message = incomplete
+    ? (isEN
+      ? `⚠️ "${courseTitle}" is ready, but some modules need manual review (generation attempts exhausted).`
+      : `⚠️ "${courseTitle}" está listo, pero algunos módulos necesitan revisión manual (se agotaron los intentos de generación).`)
+    : (isEN
+      ? `✅ "${courseTitle}" is 100% ready — all lessons and quizzes were generated successfully.`
+      : `✅ "${courseTitle}" está 100% listo — todas las lecciones y quices se generaron correctamente.`);
+
+  if (creatorUserId) {
+    try {
+      await sendPushAndInApp(creatorUserId, 'GENERAL', message, courseId);
+    } catch (e) {
+      console.error('[wizard-lessons-bulk] completion notification failed (non-fatal):', e);
+    }
+  }
+
+  if (evaluatorId && evaluatorId !== creatorUserId) {
+    const reviewMessage = isEN
+      ? `📋 "${courseTitle}" is ready for review — check it and activate it when approved.`
+      : `📋 "${courseTitle}" está listo para revisión — revísalo y actívalo cuando esté aprobado.`;
+    try {
+      await sendPushAndInApp(evaluatorId, 'COURSE_READY_FOR_REVIEW', reviewMessage, courseId);
+      const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: evaluatorId }));
+      const email = res.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+      if (email) {
+        await ses.send(new SendEmailCommand({
+          Source: FROM_EMAIL,
+          Destination: { ToAddresses: [email] },
+          Message: {
+            Subject: { Data: isEN ? `📋 "${courseTitle}" is ready for review` : `📋 "${courseTitle}" está listo para revisión`, Charset: 'UTF-8' },
+            Body: { Html: { Data: `<p>${reviewMessage}</p><p><a href="${FRONTEND_URL}/admin/courses/${courseId}">${isEN ? 'Open course' : 'Abrir curso'}</a></p>`, Charset: 'UTF-8' } },
+          },
+        }));
+      }
+    } catch (e) {
+      console.error('[wizard-lessons-bulk] evaluator ready-for-review notification failed (non-fatal):', e);
+    }
   }
 }
 
