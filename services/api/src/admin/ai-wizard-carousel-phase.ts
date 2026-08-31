@@ -31,6 +31,16 @@ export async function generateModuleCarousel(
     const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
     if (!mod) return false;
 
+    // Idempotency guard (Trello DmPpbrff, 2026-08-31 19:49 — Mack: carousels were
+    // generating up to 3x per module because course regeneration re-runs this whole
+    // phase against a course that already has one). A module should get AT MOST ONE
+    // auto-generated carousel; re-running the bulk pipeline must never add another.
+    const existingCarousel = await prisma.lesson.count({ where: { moduleId, type: 'carousel' } });
+    if (existingCarousel > 0) {
+      console.log(`[carousel-phase] module ${moduleId}: already has a carousel, skipping`);
+      return false;
+    }
+
     const lessonCount = await prisma.lesson.count({ where: { moduleId } });
     if (lessonCount === 0) {
       // No written lessons yet (Phase 1 failed for this module) — nothing to be
