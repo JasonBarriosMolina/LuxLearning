@@ -796,7 +796,12 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc', duration: '60 min' }), update: vi.fn().mockResolvedValue({}) },
       lesson: {
         createMany: vi.fn().mockImplementation(async () => { callOrder.push('lessons'); return { count: 8 }; }),
-        count: vi.fn().mockResolvedValue(8),
+        // The carousel idempotency guard counts existing type:'carousel' lessons
+        // separately from the plain per-module lesson count — 0 for the former
+        // (no carousel yet), 8 for the latter (real lessons already exist).
+        count: vi.fn().mockImplementation(async ({ where }: any) =>
+          where?.type === 'carousel' ? 0 : 8
+        ),
         findMany: vi.fn().mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: '<p>Real content.</p>', points: [], tip: '' }))),
       },
       question: { createMany: questionCreateMany },
