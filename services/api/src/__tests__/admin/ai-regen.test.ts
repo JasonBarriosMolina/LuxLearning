@@ -43,8 +43,6 @@ vi.mock('../../admin/ctx', async (importOriginal) => {
       modules: [{ order: 1, title: 'Módulo regenerado', description: 'Desc' }],
     }),
     generateLessonAudio:      vi.fn().mockResolvedValue('https://s3.example.com/audio.mp3'),
-    generateLessonImage:      vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
-    generateLessonInfographic: vi.fn().mockResolvedValue('https://s3.example.com/infographic.jpg'),
     shuffleQuestionOptions:   vi.fn((arr: any[]) => arr),
     s3KeyFromUrl:             vi.fn().mockReturnValue('lessons/audio.mp3'),
     s3Client:                 { send: vi.fn().mockResolvedValue({}) },
@@ -52,6 +50,10 @@ vi.mock('../../admin/ctx', async (importOriginal) => {
     S3_IMAGES_BUCKET:         'lux-learning-images',
   };
 });
+vi.mock('../../admin/ai-image-helpers', () => ({
+  generateLessonImage:       vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
+  generateLessonInfographic: vi.fn().mockResolvedValue('https://s3.example.com/infographic.jpg'),
+}));
 
 import { handleAIRegen } from '../../admin/ai-regen';
 import { invokeBedrockForJson } from '../../admin/ctx';

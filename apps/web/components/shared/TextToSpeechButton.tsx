@@ -237,8 +237,12 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
   const [gender, setGender] = useState<Gender>(() =>
     typeof window !== 'undefined' && localStorage.getItem('tts-gender') === 'male' ? 'male' : 'female'
   );
+  // Default to the real Polly neural voice whenever one exists — was defaulting to the
+  // free browser voice even when a Polly audioUrl was available (Trello DmPpbrff item 4,
+  // 2026-08-30 20:20: "las que tenemos son voces gratuitas... no generan un gusto").
+  // Only an explicit prior choice of 'web' overrides this.
   const [source, setSource] = useState<TTSSource>(() =>
-    typeof window !== 'undefined' && localStorage.getItem('tts-source') === 'polly' ? 'polly' : 'web'
+    typeof window !== 'undefined' && localStorage.getItem('tts-source') === 'web' ? 'web' : 'polly'
   );
   const [rate, setRate] = useState<number>(() =>
     typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts-rate') ?? '1') : 1

@@ -8,8 +8,9 @@ import { ok, created, badRequest, forbidden, notFound, serverError } from '../sh
 import { jsonrepair } from 'jsonrepair';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName, shuffleQuestionOptions,
-  S3_IMAGES_BUCKET, lambdaClient, bedrock, generateLessonImage, generateLessonAudio, invokeBedrockForJson,
+  S3_IMAGES_BUCKET, lambdaClient, bedrock, generateLessonAudio, invokeBedrockForJson,
 } from './ctx';
+import { generateLessonImage } from './ai-image-helpers';
 
 // Escape control chars ONLY inside JSON string values (not structural whitespace).
 // Needed for ai-generate worker where Bedrock sometimes emits raw newlines inside strings.

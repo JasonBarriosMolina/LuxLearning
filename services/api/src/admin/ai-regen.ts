@@ -8,9 +8,10 @@ import { invalidateTranslation } from '../shared/translate';
 import { ok, badRequest, forbidden, notFound, serverError } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, s3KeyFromUrl, S3_IMAGES_BUCKET,
-  lambdaClient, s3Client, generateLessonAudio, generateLessonImage, generateLessonInfographic,
+  lambdaClient, s3Client, generateLessonAudio,
   invokeBedrockForJson, shuffleQuestionOptions,
 } from './ctx';
+import { generateLessonImage, generateLessonInfographic } from './ai-image-helpers';
 
 export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
