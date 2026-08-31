@@ -414,8 +414,13 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       // Fire-and-forget: Polly neural audio for every lesson, as its own background phase
       // (item 4) — never blocks or risks the completeness status set just above.
       await dispatchLessonAudioGeneration(blCourseId);
+      // Clears the "still generating" flag the admin course editor polls on — matched to
+      // THIS job (updateMany's where clause) so a late-finishing OLD job can't clobber a
+      // newer one that started since (2026-08-31 status-visibility fix).
+      await prisma.course.updateMany({ where: { id: blCourseId, activeGenerationJobId: _jobId }, data: { activeGenerationJobId: null } }).catch(() => {});
     } catch (err: any) {
       await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando lecciones' });
+      await prisma.course.updateMany({ where: { id: blCourseId, activeGenerationJobId: _jobId }, data: { activeGenerationJobId: null } }).catch(() => {});
     }
     return ok({});
   }

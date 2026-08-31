@@ -519,6 +519,27 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect(createNotification).not.toHaveBeenCalled();
   });
 
+  it('clears activeGenerationJobId on the Course once the job reaches a final status (2026-08-31 status-visibility fix)', async () => {
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content.</p>', points: [], tip: '' }));
+    const courseUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
+      course: { updateMany: courseUpdateManyMock },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-clear-flag', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+    expect(courseUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'c1', activeGenerationJobId: 'job-clear-flag' },
+      data: { activeGenerationJobId: null },
+    });
+  });
+
   it('generateAndSaveQuizQuestions retries once when the first Bedrock response is empty/invalid (regression: Trello DmPpbrff comment 6a9232ef — planned quizzes silently ending up with 0 questions)', async () => {
     const { invokeBedrockForJson } = await import('../../admin/ctx');
     const goodQuestions = Array.from({ length: 10 }, (_, i) => ({
