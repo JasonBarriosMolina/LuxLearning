@@ -5,7 +5,7 @@
 import { saveAiJob } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 import {
-  AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
+  AdminCtx, shuffleQuestionOptions, invokeBedrockForJson, generateLessonAudio, defaultMaleVoiceForLanguage,
 } from './ctx';
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
 import {
@@ -274,16 +274,36 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         // is shown verbatim to the student as on-screen class content — a chatty/emoji
         // tone read there like an AI assistant, not an instructor ("no me gusta cómo se
         // ve... se ve como si fuera un chat con alguna inteligencia artificial").
+        //
+        // Restructured (Trello DmPpbrff, 2026-08-31 04:01): the exposition is now narrated
+        // by Polly BEFORE Vapi connects — vapiPrompt drives ONLY the live Q&A (no more
+        // "deliver this monologue" instruction, which is what used to leave the class
+        // hanging after the mic-mute message). closingScript is new: a short module recap
+        // read by Polly after the call ends.
         const classPrompt = isBlEN
-          ? `Generate a Lux Mentor class script for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 200 words>"}`
-          : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 200 palabras>"}`;
-        const classContent = await invokeBedrockForJson(classPrompt, 1000).catch(() => null);
+          ? `Generate a Lux Mentor class for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<prompt for a live Q&A voice tutor — pose guiding questions about the module, 100 words max>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 200 words, written to be read aloud by a narrator>","closingScript":"<~90-110 word spoken closing: briefly recap the key topics covered in this module, then a warm one-sentence congratulation motivating the student to continue>"}`
+          : `Genera una Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt para un tutor de voz en vivo — plantea preguntas guía sobre el módulo, máx 100 palabras>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 200 palabras, escrito para ser leído en voz alta por un narrador>","closingScript":"<cierre hablado de ~90-110 palabras: resume brevemente los temas clave vistos en este módulo, luego una felicitación cálida de una oración motivando al estudiante a continuar>"}`;
+        const classContent = await invokeBedrockForJson(classPrompt, 1500).catch(() => null);
         if (classContent?.vapiPrompt) {
+          const maleVoice = defaultMaleVoiceForLanguage(isBlEN ? 'EN' : 'ES');
+          const transitionLine = isBlEN
+            ? ' If you have any questions or doubts, please address them now — the voice session will begin shortly.'
+            : ' Si tienes alguna duda o pregunta, por favor coméntala ahora — la sesión de voz comenzará en breve.';
+          const lessonScript: string = classContent.lessonScript ?? '';
+          const closingScript: string = classContent.closingScript ?? '';
+          const [lessonAudioUrl, closingAudioUrl] = await Promise.all([
+            lessonScript ? generateLessonAudio(`class-${moduleId}`, lessonScript + transitionLine, maleVoice) : Promise.resolve(null),
+            closingScript ? generateLessonAudio(`class-closing-${moduleId}`, closingScript, maleVoice) : Promise.resolve(null),
+          ]);
+          const classData = {
+            vapiPrompt: classContent.vapiPrompt, lessonScript: lessonScript || null,
+            lessonAudioUrl, closingScript: closingScript || null, closingAudioUrl,
+          };
           const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
           if (existingClass) {
-            await prisma.evaluationEvent.update({ where: { id: existingClass.id }, data: { vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+            await prisma.evaluationEvent.update({ where: { id: existingClass.id }, data: classData });
           } else {
-            await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type: 'CLASS', name: isBlEN ? `Lux Mentor Class — ${mod.title}` : `Clase Magistral — ${mod.title}`, weight: 0, order: moduleIdx, vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+            await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type: 'CLASS', name: isBlEN ? `Lux Mentor Class — ${mod.title}` : `Clase Magistral — ${mod.title}`, weight: 0, order: moduleIdx, ...classData } });
           }
         }
       } catch (e) {

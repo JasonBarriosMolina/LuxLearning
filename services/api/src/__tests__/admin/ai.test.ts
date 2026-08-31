@@ -618,8 +618,8 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
       if (prompt.includes('multiple-choice questions') || prompt.includes('opción múltiple')) {
         return Array.from({ length: 10 }, (_, i) => ({ text: `Q${i + 1}?`, options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: i + 1 }));
       }
-      if (prompt.includes('Lux Mentor class script') || prompt.includes('guión de Clase Magistral')) {
-        return { vapiPrompt: 'Prompt', lessonScript: 'Script' };
+      if (prompt.includes('Lux Mentor class for module') || prompt.includes('Clase Magistral Lux Mentor')) {
+        return { vapiPrompt: 'Prompt', lessonScript: 'Script', closingScript: 'Closing' };
       }
       // lessonPrompt / resourcesPrompt / retryPrompt — shape doesn't matter for ordering
       return null;
@@ -688,6 +688,50 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     const phases = vi.mocked(saveAiJob).mock.calls.map((c) => (c[1] as any)?.phase).filter(Boolean);
     expect(phases).toContain('lessons');
     expect(phases).toContain('quiz');
+  });
+
+  it('wizard-lessons-bulk generates Polly narration (male voice) + a closing recap for the class, and drops the old "deliver monologue" Vapi prompt (Trello DmPpbrff, 2026-08-31 restructure)', async () => {
+    const { invokeBedrockForJson, generateLessonAudio } = await import('../../admin/ctx');
+    vi.mocked(invokeBedrockForJson).mockImplementation(async (prompt: string) => {
+      if (prompt.includes('Clase Magistral Lux Mentor')) {
+        return { vapiPrompt: 'Preguntas guía sobre el módulo.', lessonScript: 'Puntos clave del módulo.', closingScript: 'Hoy vimos varios temas. ¡Felicidades por completar la clase!' };
+      }
+      return null;
+    });
+    vi.mocked(generateLessonAudio).mockImplementation(async (_id: string, _text: string, voiceId?: string) =>
+      voiceId === 'Sergio' ? 'https://s3.example.com/male-voice.mp3' : null
+    );
+
+    const evalEventCreate = vi.fn().mockResolvedValue({ id: 'ee-class' });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod 1', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }) },
+      evaluationEvent: { findFirst: vi.fn().mockResolvedValue(null), create: evalEventCreate },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-class-restructure', courseId: 'c1',
+        moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES',
+        classModuleIndices: [0], quizModuleIndices: [], reflexModuleIndices: [], interviewModuleIndices: [],
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    expect(evalEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: 'CLASS',
+        vapiPrompt: 'Preguntas guía sobre el módulo.',
+        lessonScript: 'Puntos clave del módulo.',
+        lessonAudioUrl: 'https://s3.example.com/male-voice.mp3',
+        closingScript: 'Hoy vimos varios temas. ¡Felicidades por completar la clase!',
+        closingAudioUrl: 'https://s3.example.com/male-voice.mp3',
+      }),
+    }));
+    // Narration audio was generated with the male voice, not the default female one
+    expect(generateLessonAudio).toHaveBeenCalledWith(expect.stringContaining('class-'), expect.any(String), 'Sergio');
   });
 
   it('wizard-lessons-bulk also notifies the course evaluator (distinct from the creator) that it is ready for review (Trello DmPpbrff item 8)', async () => {

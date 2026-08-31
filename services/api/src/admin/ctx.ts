@@ -83,6 +83,12 @@ export function defaultVoiceForLanguage(planLanguage: string | null | undefined)
   return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Danielle' : 'Mia';
 }
 
+// Male neural voice per language — Lux Mentor Class narration specifically asked for a
+// male voice (Trello DmPpbrff, 2026-08-31 04:01: "en una voz masculina, específicamente").
+export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefined): string {
+  return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Sergio';
+}
+
 export async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mia'): Promise<string | null> {
   try {
     const plain = text

@@ -91,6 +91,14 @@ model EvaluationEvent {
   isDraft          Boolean   @default(false)
   lessonScript     String?
   lessonVideoUrl   String?
+  // Lux Mentor Class restructure (Trello DmPpbrff, 2026-08-31 04:01): the exposition is
+  // now narrated by Amazon Polly (male voice) BEFORE Vapi ever connects — Vapi is used
+  // only for the live Q&A. lessonAudioUrl = narrated lessonScript + the "ask your
+  // questions now" transition line, one continuous clip. closingScript/closingAudioUrl =
+  // the ~40s Bedrock-written, Polly-narrated module recap played after the call ends.
+  lessonAudioUrl   String?
+  closingScript    String?
+  closingAudioUrl  String?
   course           Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId])
