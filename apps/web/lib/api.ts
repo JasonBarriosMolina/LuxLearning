@@ -388,6 +388,13 @@ export const api = {
       aiGenerate: (moduleId: string, body: { topic: string }) =>
         request<any>(`/admin/modules/${moduleId}/lessons/ai-generate`, { method: 'POST', body: JSON.stringify(body) }),
     },
+    // Lux Carrousel (Trello N1bbWdz0) — opt-in per module, Mini Wizard
+    carousel: {
+      draft: (moduleId: string, body: { topic?: string }) =>
+        request<any>(`/admin/modules/${moduleId}/carousel/draft`, { method: 'POST', body: JSON.stringify(body) }),
+      generate: (moduleId: string, body: { slides: any[]; courseLanguage?: string }) =>
+        request<any>(`/admin/modules/${moduleId}/carousel/generate`, { method: 'POST', body: JSON.stringify(body) }),
+    },
     // Questions
     questions: {
       create: (moduleId: string, body: any) => request<any>(`/admin/modules/${moduleId}/questions`, { method: 'POST', body: JSON.stringify(body) }),

@@ -15,6 +15,7 @@ import { LessonRow } from './LessonRow';
 import { QuestionRow } from './QuestionRow';
 import { LessonFields } from './LessonFields';
 import { QuestionFields } from './QuestionFields';
+import { LuxCarrouselWizard } from './LuxCarrouselWizard';
 import type { ModuleForm, LessonForm, QuestionForm } from './types';
 import { newLessonForm, newQuestionForm } from './types';
 
@@ -64,6 +65,7 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
   const [aiLessonLoading, setAiLessonLoading] = useState(false);
   const [aiLessonError, setAiLessonError] = useState('');
   const aiLessonIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [carouselWizardOpen, setCarouselWizardOpen] = useState(false);
 
   const [aiQuestionsOpen, setAiQuestionsOpen] = useState(false);
   const [aiQuestionsContent, setAiQuestionsContent] = useState('');
@@ -297,6 +299,9 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
                   onClick={() => { setAiLessonTopic(''); setAiLessonError(''); setAiLessonOpen(true); }}>
                   IA
                 </Button>
+                <Button size="sm" variant="secondary" onClick={() => setCarouselWizardOpen(true)}>
+                  🎠 Carrousel
+                </Button>
                 <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
                   onClick={() => { setLessonForm(newLessonForm((mod.lessons?.length ?? 0) + 1)); setLessonModal(true); }}>
                   Agregar
@@ -443,6 +448,14 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
           </div>
         </form>
       </Modal>
+
+      {/* Lux Carrousel Mini Wizard (Trello N1bbWdz0) */}
+      <LuxCarrouselWizard
+        moduleId={mod.id}
+        open={carouselWizardOpen}
+        onClose={() => setCarouselWizardOpen(false)}
+        onDone={onRefresh}
+      />
 
       {/* AI quiz questions generation modal */}
       <Modal open={aiQuestionsOpen} onClose={() => setAiQuestionsOpen(false)} title="Generar preguntas con IA" size="md">

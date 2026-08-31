@@ -12,6 +12,7 @@ import { formatCourseDuration } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 import { useLanguage } from '@/lib/i18n';
+import { LuxCarrouselPlayer } from './_components/LuxCarrouselPlayer';
 
 // ── Highlight colors ──────────────────────────────────────────────────────────
 const COLORS: Record<string, { bg: string; label: string }> = {
@@ -440,6 +441,32 @@ export default function LessonPage() {
         <div className="aspect-video bg-gray-200 rounded-2xl" />
         <div className="h-4 bg-gray-100 rounded" />
         <div className="h-4 bg-gray-100 rounded w-3/4" />
+      </div>
+    );
+  }
+
+  // Lux Carrousel (Trello N1bbWdz0) is a distinct lesson type — its own dedicated
+  // player, not the usual video/text tabs below.
+  if (lesson.type === 'carousel') {
+    return (
+      <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Link href={`/courses/${courseId}/modules/${moduleId}`} className="hover:text-charcoal flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> {module?.title}
+          </Link>
+          <span>/</span>
+          <span className="text-charcoal font-medium truncate">{lesson.title}</span>
+        </div>
+        <LuxCarrouselPlayer
+          courseId={courseId}
+          moduleId={moduleId}
+          lessonId={lessonId}
+          audioUrl={lesson.audioUrl}
+          slides={lesson.carouselSlides ?? []}
+          pdfRecapUrl={lesson.pdfRecapUrl ?? null}
+          hasCompletedBefore={completed}
+          onCompleted={() => setCompleted(true)}
+        />
       </div>
     );
   }

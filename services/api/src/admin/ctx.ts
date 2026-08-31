@@ -120,6 +120,53 @@ export async function generateLessonAudio(lessonId: string, text: string, voiceI
   }
 }
 
+/** Synthesizes narration audio for a Lux Carrousel AND its sentence-level Speech Marks
+ *  (Polly can only return one OutputFormat per call, so this is 2 requests) — used to
+ *  sync slide transitions to the exact millisecond narration reaches each sentence.
+ *  Each entry in the returned marks array is Polly's raw {time, type:'sentence', start,
+ *  end, value} JSON (one line per sentence in the input text). */
+export async function generateCarouselNarration(
+  lessonId: string, text: string, voiceId = 'Mia',
+): Promise<{ audioUrl: string; marks: Array<{ time: number; value: string }> } | null> {
+  try {
+    const plain = text.replace(/\s+/g, ' ').trim().slice(0, 2900);
+    const languageCode = (POLLY_VOICE_LANGUAGE[voiceId] ?? 'es-MX') as any;
+
+    const [audioResp, marksResp] = await Promise.all([
+      pollyClient.send(new SynthesizeSpeechCommand({
+        Text: plain, VoiceId: voiceId as VoiceId, Engine: 'neural', OutputFormat: 'mp3', LanguageCode: languageCode,
+      })),
+      pollyClient.send(new SynthesizeSpeechCommand({
+        Text: plain, VoiceId: voiceId as VoiceId, Engine: 'neural', OutputFormat: 'json',
+        SpeechMarkTypes: ['sentence'], LanguageCode: languageCode,
+      })),
+    ]);
+    if (!audioResp.AudioStream) return null;
+
+    const audioChunks: Uint8Array[] = [];
+    for await (const chunk of audioResp.AudioStream as any) audioChunks.push(chunk);
+    const audioBuffer = Buffer.concat(audioChunks);
+
+    let marksText = '';
+    if (marksResp.AudioStream) {
+      const marksChunks: Uint8Array[] = [];
+      for await (const chunk of marksResp.AudioStream as any) marksChunks.push(chunk);
+      marksText = Buffer.concat(marksChunks).toString('utf-8');
+    }
+    const marks = marksText.split('\n').filter(Boolean).map((line) => {
+      try { const m = JSON.parse(line); return { time: Number(m.time ?? 0), value: String(m.value ?? '') }; }
+      catch { return null; }
+    }).filter((m): m is { time: number; value: string } => m !== null);
+
+    const key = `audio/carousel-${lessonId}-${voiceId.toLowerCase()}.mp3`;
+    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key, Body: audioBuffer, ContentType: 'audio/mpeg' }));
+    return { audioUrl: `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`, marks };
+  } catch (err) {
+    console.error('[Polly] Error generating carousel narration:', err);
+    return null;
+  }
+}
+
 /** Shuffle options array in-place and update correctIndex so the correct answer moves with it */
 export function shuffleQuestionOptions(questions: any[]): any[] {
   return questions.map((q) => {
