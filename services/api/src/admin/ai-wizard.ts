@@ -276,6 +276,10 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               ...buildIndicesPayload(createdQuizIndices, createdClassIndices, createdReflexIndices, createdInterviewIndices),
             })),
           }));
+          // Makes the "still generating" status visible from the admin course editor
+          // too, not just the Lux Planner wizard screen the evaluator might navigate
+          // away from (Trello DmPpbrff, 2026-08-31).
+          await prisma.course.update({ where: { id: course.id }, data: { activeGenerationJobId: lessonJobId } }).catch(() => {});
         } catch (invokeErr: any) {
           console.error('[wizard/save] lesson bulk invoke error:', invokeErr?.message);
           await saveAiJob(lessonJobId, { status: 'error', error: 'No se pudo iniciar la generación de lecciones' });
@@ -343,6 +347,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
               ...buildIndicesPayload(newQuizIndices, newClassIndices, newReflexIndices, newInterviewIndices),
             })),
           }));
+          await prisma.course.update({ where: { id: course.id }, data: { activeGenerationJobId: lessonJobId } }).catch(() => {});
         } catch (invokeErr: any) {
           console.error('[wizard/save][edit] lesson bulk invoke error:', invokeErr?.message);
           await saveAiJob(lessonJobId, { status: 'error', error: 'No se pudo iniciar la generación de lecciones' });

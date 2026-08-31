@@ -44,6 +44,11 @@ model Course {
   isAutoevaluated    Boolean           @default(false)
   planSyllabusInput  String?
   planWeeklyPlan     Json?
+  // Set when a wizard-lessons-bulk generation job is dispatched, cleared when it reaches
+  // done/done_incomplete/error — lets the admin course editor show "still generating"
+  // even after the evaluator navigates away from the Lux Planner wizard screen (Trello
+  // DmPpbrff, 2026-08-31: "no hay ninguna referencia visual... por qué porcentaje vamos").
+  activeGenerationJobId String?
   sessions           CourseSession[]
   evaluationEvents   EvaluationEvent[]
   modules            Module[]

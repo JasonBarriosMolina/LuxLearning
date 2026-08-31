@@ -444,3 +444,41 @@ describe('ai-wizard/save — quiz/class index desync (Fix 2)', () => {
     expect(payload.quizModuleIndices).toEqual([0]);
   });
 });
+
+describe('ai-wizard/save — persists activeGenerationJobId on the Course (2026-08-31 status-visibility fix)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('stamps the dispatched jobId onto the course row so the admin editor can poll it later', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const { lambdaClient } = await import('../../admin/ctx');
+
+    const courseUpdateMock = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }), update: courseUpdateMock },
+      module: { create: vi.fn().mockImplementation(async () => ({ id: 'mod-1' })) },
+    });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    const bulkCall = (lambdaClient.send as any).mock.calls
+      .map((c: any[]) => c[0])
+      .find((cmd: any) => JSON.parse(cmd.Payload.toString())._action === 'wizard-lessons-bulk');
+    const dispatchedJobId = JSON.parse(bulkCall.Payload.toString())._jobId;
+
+    expect(courseUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'course-1' },
+      data: { activeGenerationJobId: dispatchedJobId },
+    });
+  });
+});

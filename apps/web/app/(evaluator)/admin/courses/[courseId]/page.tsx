@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/Badge';
 import { ModuleCard } from './_components/ModuleCard';
 import { EMPTY_MODULE } from './_components/types';
 import type { ModuleForm } from './_components/types';
+import { CourseGenerationStatusBanner } from './_components/CourseGenerationStatusBanner';
 
 export default function AdminCourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -182,6 +183,12 @@ export default function AdminCourseDetailPage() {
             <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>
           </div>
         </div>
+        {/* Still-generating status — visible here even after leaving the wizard screen */}
+        {course.activeGenerationJobId && (
+          <div className="pl-11">
+            <CourseGenerationStatusBanner jobId={course.activeGenerationJobId} onDone={load} />
+          </div>
+        )}
         {/* Activate / Deactivate — prominent CTA */}
         <div className="pl-11 mb-1">
           <Button
