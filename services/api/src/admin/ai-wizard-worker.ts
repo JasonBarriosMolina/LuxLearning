@@ -41,80 +41,64 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
     const reflexIdxSet: Set<number> = new Set(Array.isArray(blReflexIndices) ? blReflexIndices : []);
     const interviewIdxSet: Set<number> = new Set(Array.isArray(blInterviewIndices) ? blInterviewIndices : []);
     const failed: string[] = [];
-    // Process one module (all its Bedrock calls + DB writes). Extracted from the old
-    // sequential `for` loop so modules can run CONCURRENTLY in bounded batches below —
-    // sequential processing of all modules in one Lambda invocation was blowing past the
-    // function timeout on courses with several modules, silently killing the invocation
-    // mid-loop and leaving the remaining modules with ZERO lessons (not even the
-    // placeholder fallback, since that code path was never reached). Confirmed via
-    // CloudWatch: lux-admin-staging REPORT line "Duration: 600000.00 ms ... Status: timeout"
-    // (Trello DmPpbrff comment 6a91f73f, course cmtdfn06w0001f82rbt2ni2ta, modules 7-8 empty).
-    const processModule = async (moduleIdx: number): Promise<void> => {
+
+    // Records a durable "was X planned for this module" EvaluationEvent, independent of
+    // whether any content generation for it succeeds (Trello DmPpbrff comments 6a91f73f,
+    // 6a9269e2) — mod.questions.length===0 alone can't distinguish "never planned" from
+    // "planned but failed to generate".
+    const recordIntent = async (moduleIdx: number, type: 'QUIZ' | 'REFLECTION' | 'INTERVIEW', name: string) => {
+      const moduleId = (moduleIds as string[])[moduleIdx]!;
+      const existing = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type } });
+      if (!existing) {
+        await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type, name, weight: 0, order: moduleIdx } });
+      }
+    };
+
+    // ── Phase functions — Trello DmPpbrff item 8 (2026-08-30 20:30): "primero lecciones
+    // de todos los módulos... luego quizzes... luego reflexiones... luego clases... luego
+    // entrevistas." Each phase now runs across ALL modules before the next phase starts,
+    // instead of the old per-module loop that did lessons+quiz+class for module 1, then
+    // module 2, etc. — so an evaluator watching the status bar sees written lessons finish
+    // first ("para ver el contenido del curso lo más pronto posible"), and the status bar
+    // can name which phase is running instead of one opaque module counter.
+    // (Carousel lessons — mentioned as a future phase between lessons and quizzes — has no
+    // generation step yet; add it here once that feature exists.)
+    const generateModuleLessons = async (moduleIdx: number): Promise<void> => {
       const moduleId = (moduleIds as string[])[moduleIdx]!;
       try {
         const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
         if (!mod) return;
 
-        // Record INTENT immediately via EvaluationEvent rows, independent of whether the
-        // Bedrock generation below succeeds. This is the durable "was X planned for this
-        // module" signal the frontend needs (Trello DmPpbrff comments 6a91f73f, 6a9269e2)
-        // — mod.questions.length===0 alone can't distinguish "never planned" from "planned
-        // but failed to generate", so the UI can't safely hide a section on count alone.
-        // Same pattern for QUIZ, REFLECTION, and INTERVIEW — CLASS has its own creation
-        // block further down since it also carries generated vapiPrompt/lessonScript content.
-        const recordIntent = async (type: 'QUIZ' | 'REFLECTION' | 'INTERVIEW', name: string) => {
-          const existing = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type } });
-          if (!existing) {
-            await prisma.evaluationEvent.create({
-              data: { courseId: blCourseId, moduleId, type, name, weight: 0, order: moduleIdx },
-            });
-          }
-        };
-        if (quizIdxSet.has(moduleIdx)) await recordIntent('QUIZ', isBlEN ? 'Quiz' : 'Cuestionario');
-        if (reflexIdxSet.has(moduleIdx)) await recordIntent('REFLECTION', isBlEN ? 'Reflection' : 'Reflexión');
-        if (interviewIdxSet.has(moduleIdx)) await recordIntent('INTERVIEW', isBlEN ? 'Lux Mentor Interview' : 'Entrevista con Lux Mentor');
+        // ── Generate lesson content via Bedrock (one call per module) ──────────
+        // Dynamic lesson count based on ~60 min async target per module.
+        // 2 video lessons (intro + outro, 5 min each) + text lessons at 10 min
+        // active comprehension each (reading + assimilation, not raw WPM).
+        // Modules WITH a synchronous class still get the same async content —
+        // the class is supplementary, not a replacement for study material.
+        const hasClass = classIdxSet.has(moduleIdx);
+        const TARGET_ASYNC_MIN = 60;
+        const VIDEO_LESSON_MIN = 5;
+        // Raised from 6 to 9 min/lesson (Trello DmPpbrff comment 6a9232ef — lessons were
+        // too short, wanted a top-tier e-learning designer's depth: fully worked real
+        // examples + a self-practice section, not just a longer word count). Fewer,
+        // richer lessons instead of many short ones — keeps the ~60 min/module async
+        // budget roughly intact while each lesson carries meaningfully more content
+        // (approved by the user knowing this raises Bedrock output tokens per module).
+        const TEXT_COMPREHENSION_MIN = 9;
+        const textLessonCount = Math.max(4, Math.min(8,
+          Math.round((TARGET_ASYNC_MIN - 2 * VIDEO_LESSON_MIN) / TEXT_COMPREHENSION_MIN)
+        )); // default: 6 → lessonCount = 8 (≈ 60 min async)
+        const lessonCount = 2 + textLessonCount;
+        const textDuration = `${TEXT_COMPREHENSION_MIN} min`;
 
-        // When re-using this worker just to generate quiz questions for already-existing modules,
-        // skip lesson generation if the module already has lessons.
-        if (_quizOnlyForExistingModules) {
-            const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
-            if (existingLessonCount > 0 && quizIdxSet.has(moduleIdx)) {
-              await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isBlEN);
-            }
-            // Skip lesson generation regardless (module has no lessons, or no quiz planned)
-            return;
-          }
+        const classContextNote = hasClass
+          ? (isBlEN
+            ? `\nThis module includes a 50-minute synchronous Lux Mentor class. The async lessons are the study material students use before and after the class.`
+            : `\nEste módulo incluye una sesión sincrónica de 50 minutos en Lux Mentor. Las lecciones asíncronas son el material de estudio que los estudiantes usan antes y después de esa sesión.`)
+          : '';
 
-          // ── Generate lesson content via Bedrock (one call per module) ──────────
-          // Dynamic lesson count based on ~60 min async target per module.
-          // 2 video lessons (intro + outro, 5 min each) + text lessons at 10 min
-          // active comprehension each (reading + assimilation, not raw WPM).
-          // Modules WITH a synchronous class still get the same async content —
-          // the class is supplementary, not a replacement for study material.
-          const hasClass = classIdxSet.has(moduleIdx);
-          const TARGET_ASYNC_MIN = 60;
-          const VIDEO_LESSON_MIN = 5;
-          // Raised from 6 to 9 min/lesson (Trello DmPpbrff comment 6a9232ef — lessons were
-          // too short, wanted a top-tier e-learning designer's depth: fully worked real
-          // examples + a self-practice section, not just a longer word count). Fewer,
-          // richer lessons instead of many short ones — keeps the ~60 min/module async
-          // budget roughly intact while each lesson carries meaningfully more content
-          // (approved by the user knowing this raises Bedrock output tokens per module).
-          const TEXT_COMPREHENSION_MIN = 9;
-          const textLessonCount = Math.max(4, Math.min(8,
-            Math.round((TARGET_ASYNC_MIN - 2 * VIDEO_LESSON_MIN) / TEXT_COMPREHENSION_MIN)
-          )); // default: 6 → lessonCount = 8 (≈ 60 min async)
-          const lessonCount = 2 + textLessonCount;
-          const textDuration = `${TEXT_COMPREHENSION_MIN} min`;
-
-          const classContextNote = hasClass
-            ? (isBlEN
-              ? `\nThis module includes a 50-minute synchronous Lux Mentor class. The async lessons are the study material students use before and after the class.`
-              : `\nEste módulo incluye una sesión sincrónica de 50 minutos en Lux Mentor. Las lecciones asíncronas son el material de estudio que los estudiantes usan antes y después de esa sesión.`)
-            : '';
-
-          const lessonPrompt = isBlEN
-            ? `You are a top-tier e-learning instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".${classContextNote}
+        const lessonPrompt = isBlEN
+          ? `You are a top-tier e-learning instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".${classContextNote}
 Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module, split into scaffolded lessons (${TEXT_COMPREHENSION_MIN} min each) — each lesson builds on the previous one's concepts.
 Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (700-900 words each, ~${TEXT_COMPREHENSION_MIN} min active study) — real instructional depth, not a shallow list: explain the WHY and the HOW, not just the WHAT.
 STRUCTURE for every text lesson's "content" field (HTML, no full markdown) — 5 sections with progressive scaffolding:
@@ -126,7 +110,7 @@ STRUCTURE for every text lesson's "content" field (HTML, no full markdown) — 5
 Write in neutral, formal international English — no slang or regionalisms.
 Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown fencing:
 [{"title":"Lesson title","content":"<h3>Specific concept subtitle</h3><p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
-            : `Eres un diseñador instruccional de e-learning de primer nivel. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
+          : `Eres un diseñador instruccional de e-learning de primer nivel. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
 Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo, repartidos en lecciones con andamiaje progresivo (${TEXT_COMPREHENSION_MIN} min cada una) — cada lección construye sobre los conceptos de la anterior.
 La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (700-900 palabras cada una, ~${TEXT_COMPREHENSION_MIN} min de estudio activo) — profundidad instructiva real, no una lista superficial: explica el POR QUÉ y el CÓMO, no solo el QUÉ.
 ESTRUCTURA obligatoria para el campo "content" de cada lección de texto (HTML, sin markdown completo) — 5 secciones con andamiaje progresivo:
@@ -139,201 +123,294 @@ Redacta en español latino neutro y formal — sin modismos ni jerga local de ni
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
 [{"title":"Título lección","content":"<h3>Subtítulo del concepto específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
 
-          // Parallelize: lesson content + module resources (bibliography + YouTube suggestions)
-          const resourcesPrompt = isBlEN
-            ? `For the module "${mod.title}" in the course "${blTitle}": generate 2 APA bibliography references and 2 YouTube search queries for relevant educational videos. JSON only: {"references":["APA ref 1","APA ref 2"],"youtubeQueries":["search query 1","search query 2"]}`
-            : `Para el módulo "${mod.title}" del curso "${blTitle}": genera 2 referencias bibliográficas APA y 2 consultas de búsqueda YouTube para videos educativos relevantes. Solo JSON: {"references":["Ref APA 1","Ref APA 2"],"youtubeQueries":["búsqueda 1","búsqueda 2"]}`;
+        // Parallelize: lesson content + module resources (bibliography + YouTube suggestions)
+        const resourcesPrompt = isBlEN
+          ? `For the module "${mod.title}" in the course "${blTitle}": generate 2 APA bibliography references and 2 YouTube search queries for relevant educational videos. JSON only: {"references":["APA ref 1","APA ref 2"],"youtubeQueries":["search query 1","search query 2"]}`
+          : `Para el módulo "${mod.title}" del curso "${blTitle}": genera 2 referencias bibliográficas APA y 2 consultas de búsqueda YouTube para videos educativos relevantes. Solo JSON: {"references":["Ref APA 1","Ref APA 2"],"youtubeQueries":["búsqueda 1","búsqueda 2"]}`;
 
-          const [rawLessons, moduleResources] = await Promise.all([
-            // 64000 = max output tokens for global.anthropic.claude-haiku-4-5-20251001-v1:0 (raised from 8000 — truncation fix)
-            // Logged now instead of a bare `.catch(() => null)` — that silent swallow left
-            // zero trace in CloudWatch for a run that clearly had failures (Trello DmPpbrff
-            // comment 6a926775 investigation).
-            invokeBedrockForJson(lessonPrompt, 64000).catch((e: any) => {
-              console.error(`[wizard-lessons-bulk] module ${moduleId} lessonPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
-              return null;
-            }),
-            invokeBedrockForJson(resourcesPrompt, 400).catch((e: any) => {
-              console.error(`[wizard-lessons-bulk] module ${moduleId} resourcesPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
-              return null;
-            }),
-          ]);
-          let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
-            ? rawLessons : null;
+        const [rawLessons, moduleResources] = await Promise.all([
+          // 64000 = max output tokens for global.anthropic.claude-haiku-4-5-20251001-v1:0 (raised from 8000 — truncation fix)
+          // Logged now instead of a bare `.catch(() => null)` — that silent swallow left
+          // zero trace in CloudWatch for a run that clearly had failures (Trello DmPpbrff
+          // comment 6a926775 investigation).
+          invokeBedrockForJson(lessonPrompt, 64000).catch((e: any) => {
+            console.error(`[wizard-lessons-bulk] module ${moduleId} lessonPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+            return null;
+          }),
+          invokeBedrockForJson(resourcesPrompt, 400).catch((e: any) => {
+            console.error(`[wizard-lessons-bulk] module ${moduleId} resourcesPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+            return null;
+          }),
+        ]);
+        let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
+          ? rawLessons : null;
 
-          // Retry for missing lessons when Bedrock truncated the response (Bug B fix)
-          if (validLessons && validLessons.length < lessonCount) {
-            const missing = lessonCount - validLessons.length;
-            console.warn(`[wizard-lessons-bulk] module ${moduleId}: got ${validLessons.length}/${lessonCount} — retrying for ${missing} missing lessons`);
-            const retryPrompt = isBlEN
-              ? `Continue generating the remaining ${missing} lessons (lessons ${validLessons.length + 1} to ${lessonCount}) for module "${mod.title}" in course "${blTitle}".
+        // Retry for missing lessons when Bedrock truncated the response (Bug B fix)
+        if (validLessons && validLessons.length < lessonCount) {
+          const missing = lessonCount - validLessons.length;
+          console.warn(`[wizard-lessons-bulk] module ${moduleId}: got ${validLessons.length}/${lessonCount} — retrying for ${missing} missing lessons`);
+          const retryPrompt = isBlEN
+            ? `Continue generating the remaining ${missing} lessons (lessons ${validLessons.length + 1} to ${lessonCount}) for module "${mod.title}" in course "${blTitle}".
 These are the LAST ${missing} lessons of a ${lessonCount}-lesson module. Lesson ${lessonCount} is video type (summary, 100-150 words, ~5 min). All others in this batch are text type (700-900 words each) — same 5-section structure as the main lesson set (opening question, development, a fully worked real example, a self-practice exercise, and a closing summary on the last text lesson).
 Return ONLY a JSON array of exactly ${missing} lesson objects with no markdown fencing:
 [{"title":"Lesson title","content":"<h3>subtitle</h3><p>HTML content</p>","points":["point 1","point 2","point 3"],"tip":"practical tip","type":"video|text","duration":"5 min|${textDuration}"}]`
-              : `Continúa generando las ${missing} lecciones faltantes (lecciones ${validLessons.length + 1} a ${lessonCount}) para el módulo "${mod.title}" del curso "${blTitle}".
+            : `Continúa generando las ${missing} lecciones faltantes (lecciones ${validLessons.length + 1} a ${lessonCount}) para el módulo "${mod.title}" del curso "${blTitle}".
 Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (700-900 palabras cada una) — misma estructura de 5 secciones que el set principal (pregunta de apertura, desarrollo, un ejemplo real trabajado a fondo, un ejercicio de práctica propia, y cierre-resumen solo en la última lección de texto).
 Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdown de cercado:
 [{"title":"Título","content":"<h3>subtítulo</h3><p>Contenido HTML</p>","points":["punto 1","punto 2","punto 3"],"tip":"consejo práctico","type":"video|text","duration":"5 min|${textDuration}"}]`;
-            const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch((e: any) => {
-              console.error(`[wizard-lessons-bulk] module ${moduleId} retryPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
-              return null;
-            });
-            if (Array.isArray(retryRaw) && retryRaw.length > 0 && retryRaw[0]?.title) {
-              validLessons = [...validLessons, ...retryRaw.slice(0, missing)];
-              console.log(`[wizard-lessons-bulk] retry recovered ${retryRaw.slice(0, missing).length} lessons — total now ${validLessons.length}/${lessonCount}`);
-            } else {
-              console.warn(`[wizard-lessons-bulk] retry failed for module ${moduleId} — placeholder will be used for missing lessons`);
-            }
-          }
-
-          const PLACEHOLDER_CONTENT = isBlEN
-            ? '<p><strong>⚠ Content generation incomplete.</strong> This lesson was not generated due to a truncated AI response. Please use the regenerate button to retry content generation for this module.</p>'
-            : '<p><strong>⚠ Generación incompleta.</strong> Esta lección no se generó correctamente debido a una respuesta truncada de la IA. Usa el botón de regenerar para volver a generar el contenido de este módulo.</p>';
-
-          const lessonData = Array.from({ length: lessonCount }, (_, i) => {
-            const isFirst = i === 0;
-            const isLast = i === lessonCount - 1;
-            const defaultType = isFirst || isLast ? 'video' : 'text';
-            const defaultDuration = defaultType === 'video' ? '5 min' : textDuration;
-            const gen = validLessons?.[i];
-            // Per-lesson content validation: if this specific lesson has no content (truncated array
-            // or missing field), use a visible placeholder so the lesson is never silently empty.
-            const rawContent = gen?.content ?? null;
-            const lessonContent = rawContent
-              ? sanitizeLessonContent(rawContent)
-              : PLACEHOLDER_CONTENT;
-            return {
-              moduleId,
-              title: gen?.title || (isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`),
-              type: gen?.type || defaultType,
-              content: lessonContent,
-              youtubeId: '',
-              imageUrl: null as string | null,
-              duration: gen?.duration || defaultDuration,
-              points: Array.isArray(gen?.points) ? gen.points : [] as string[],
-              tip: gen?.tip || '',
-              order: i + 1,
-            };
+          const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch((e: any) => {
+            console.error(`[wizard-lessons-bulk] module ${moduleId} retryPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+            return null;
           });
+          if (Array.isArray(retryRaw) && retryRaw.length > 0 && retryRaw[0]?.title) {
+            validLessons = [...validLessons, ...retryRaw.slice(0, missing)];
+            console.log(`[wizard-lessons-bulk] retry recovered ${retryRaw.slice(0, missing).length} lessons — total now ${validLessons.length}/${lessonCount}`);
+          } else {
+            console.warn(`[wizard-lessons-bulk] retry failed for module ${moduleId} — placeholder will be used for missing lessons`);
+          }
+        }
 
-          // Append bibliography + YouTube links to the last text lesson (Bug 1)
-          if (moduleResources) {
-            const refs: string[] = Array.isArray(moduleResources.references) ? moduleResources.references.filter(Boolean) : [];
-            const ytQueries: string[] = Array.isArray(moduleResources.youtubeQueries) ? moduleResources.youtubeQueries.filter(Boolean) : [];
-            if (refs.length > 0 || ytQueries.length > 0) {
-              // Find last text lesson (not video) to append resources
-              let targetIdx = lessonData.findLastIndex((l) => l.type === 'text');
-              if (targetIdx < 0) targetIdx = lessonData.length - 1; // fallback to last lesson
-              if (targetIdx >= 0 && lessonData[targetIdx]) {
-                let resourcesHtml = '<section class="lesson-resources" style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">';
-                if (refs.length > 0) {
-                  resourcesHtml += isBlEN
-                    ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`
-                    : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`;
-                }
-                if (ytQueries.length > 0) {
-                  const ytLinks = ytQueries.map((q) => `<li><a href="https://youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">${q}</a></li>`).join('');
-                  resourcesHtml += isBlEN
-                    ? `<h3>🎥 Suggested Videos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`
-                    : `<h3>🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`;
-                }
-                resourcesHtml += '</section>';
-                const existing = lessonData[targetIdx].content ?? '';
-                lessonData[targetIdx] = { ...lessonData[targetIdx], content: existing + resourcesHtml };
+        const PLACEHOLDER_CONTENT = isBlEN
+          ? '<p><strong>⚠ Content generation incomplete.</strong> This lesson was not generated due to a truncated AI response. Please use the regenerate button to retry content generation for this module.</p>'
+          : '<p><strong>⚠ Generación incompleta.</strong> Esta lección no se generó correctamente debido a una respuesta truncada de la IA. Usa el botón de regenerar para volver a generar el contenido de este módulo.</p>';
+
+        const lessonData = Array.from({ length: lessonCount }, (_, i) => {
+          const isFirst = i === 0;
+          const isLast = i === lessonCount - 1;
+          const defaultType = isFirst || isLast ? 'video' : 'text';
+          const defaultDuration = defaultType === 'video' ? '5 min' : textDuration;
+          const gen = validLessons?.[i];
+          // Per-lesson content validation: if this specific lesson has no content (truncated array
+          // or missing field), use a visible placeholder so the lesson is never silently empty.
+          const rawContent = gen?.content ?? null;
+          const lessonContent = rawContent
+            ? sanitizeLessonContent(rawContent)
+            : PLACEHOLDER_CONTENT;
+          return {
+            moduleId,
+            title: gen?.title || (isBlEN ? `Lesson ${i + 1}` : `Lección ${i + 1}`),
+            type: gen?.type || defaultType,
+            content: lessonContent,
+            youtubeId: '',
+            imageUrl: null as string | null,
+            duration: gen?.duration || defaultDuration,
+            points: Array.isArray(gen?.points) ? gen.points : [] as string[],
+            tip: gen?.tip || '',
+            order: i + 1,
+          };
+        });
+
+        // Append bibliography + YouTube links to the last text lesson (Bug 1)
+        if (moduleResources) {
+          const refs: string[] = Array.isArray(moduleResources.references) ? moduleResources.references.filter(Boolean) : [];
+          const ytQueries: string[] = Array.isArray(moduleResources.youtubeQueries) ? moduleResources.youtubeQueries.filter(Boolean) : [];
+          if (refs.length > 0 || ytQueries.length > 0) {
+            // Find last text lesson (not video) to append resources
+            let targetIdx = lessonData.findLastIndex((l) => l.type === 'text');
+            if (targetIdx < 0) targetIdx = lessonData.length - 1; // fallback to last lesson
+            if (targetIdx >= 0 && lessonData[targetIdx]) {
+              let resourcesHtml = '<section class="lesson-resources" style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">';
+              if (refs.length > 0) {
+                resourcesHtml += isBlEN
+                  ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`
+                  : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`;
               }
+              if (ytQueries.length > 0) {
+                const ytLinks = ytQueries.map((q) => `<li><a href="https://youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">${q}</a></li>`).join('');
+                resourcesHtml += isBlEN
+                  ? `<h3>🎥 Suggested Videos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`
+                  : `<h3>🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`;
+              }
+              resourcesHtml += '</section>';
+              const existing = lessonData[targetIdx].content ?? '';
+              lessonData[targetIdx] = { ...lessonData[targetIdx], content: existing + resourcesHtml };
             }
           }
+        }
 
-          await prisma.lesson.createMany({ data: lessonData });
-          const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
+        await prisma.lesson.createMany({ data: lessonData });
+        const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
 
-          // Only create quiz questions for designated modules (#18 fix)
-          if (quizIdxSet.has(moduleIdx)) {
-            await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isBlEN);
-          }
-
-          // Create/update CLASS EvaluationEvent for designated modules (#17 fix)
-          if (classIdxSet.has(moduleIdx)) {
-            // Tone constraint added (Trello DmPpbrff item 6, 2026-08-30 20:24): lessonScript
-            // is shown verbatim to the student as on-screen class content — a chatty/emoji
-            // tone read there like an AI assistant, not an instructor ("no me gusta cómo se
-            // ve... se ve como si fuera un chat con alguna inteligencia artificial").
-            const classPrompt = isBlEN
-              ? `Generate a Lux Mentor class script for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 200 words>"}`
-              : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 200 palabras>"}`;
-            const classContent = await invokeBedrockForJson(classPrompt, 1000).catch(() => null);
-            if (classContent?.vapiPrompt) {
-              const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
-              if (existingClass) {
-                await prisma.evaluationEvent.update({ where: { id: existingClass.id }, data: { vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
-              } else {
-                await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type: 'CLASS', name: isBlEN ? `Lux Mentor Class — ${mod.title}` : `Clase Magistral — ${mod.title}`, weight: 0, order: moduleIdx, vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
-              }
-            }
-          }
-
-          // Module duration = actual sum of created lesson durations
-          const totalMin = createdLessons.reduce((sum: number, l) => {
-            const m = parseInt(l.duration, 10);
-            return sum + (isNaN(m) ? 7 : m);
-          }, 0);
-          await prisma.module.update({ where: { id: moduleId }, data: { duration: `${totalMin} min` } });
+        // Module duration = actual sum of created lesson durations
+        const totalMin = createdLessons.reduce((sum: number, l) => {
+          const m = parseInt(l.duration, 10);
+          return sum + (isNaN(m) ? 7 : m);
+        }, 0);
+        await prisma.module.update({ where: { id: moduleId }, data: { duration: `${totalMin} min` } });
       } catch (modErr: any) {
-        console.error(`[wizard-lessons-bulk] module ${moduleId} error:`, modErr);
+        console.error(`[wizard-lessons-bulk] module ${moduleId} lessons error:`, modErr);
         failed.push(moduleId);
       }
     };
 
+    const generateModuleQuiz = async (moduleIdx: number): Promise<void> => {
+      if (!quizIdxSet.has(moduleIdx)) return;
+      const moduleId = (moduleIds as string[])[moduleIdx]!;
+      try {
+        await recordIntent(moduleIdx, 'QUIZ', isBlEN ? 'Quiz' : 'Cuestionario');
+        const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
+        if (mod) await generateAndSaveQuizQuestions(prisma, moduleId, mod.title, isBlEN);
+      } catch (e) {
+        console.error(`[wizard-lessons-bulk] module ${moduleId} quiz error:`, e);
+      }
+    };
+
+    const recordModuleReflection = async (moduleIdx: number): Promise<void> => {
+      if (!reflexIdxSet.has(moduleIdx)) return;
+      try {
+        await recordIntent(moduleIdx, 'REFLECTION', isBlEN ? 'Reflection' : 'Reflexión');
+      } catch (e) {
+        console.error(`[wizard-lessons-bulk] module ${(moduleIds as string[])[moduleIdx]} reflection error:`, e);
+      }
+    };
+
+    const generateModuleClass = async (moduleIdx: number): Promise<void> => {
+      if (!classIdxSet.has(moduleIdx)) return;
+      const moduleId = (moduleIds as string[])[moduleIdx]!;
+      try {
+        const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
+        if (!mod) return;
+        // Tone constraint added (Trello DmPpbrff item 6, 2026-08-30 20:24): lessonScript
+        // is shown verbatim to the student as on-screen class content — a chatty/emoji
+        // tone read there like an AI assistant, not an instructor ("no me gusta cómo se
+        // ve... se ve como si fuera un chat con alguna inteligencia artificial").
+        const classPrompt = isBlEN
+          ? `Generate a Lux Mentor class script for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 200 words>"}`
+          : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 200 palabras>"}`;
+        const classContent = await invokeBedrockForJson(classPrompt, 1000).catch(() => null);
+        if (classContent?.vapiPrompt) {
+          const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
+          if (existingClass) {
+            await prisma.evaluationEvent.update({ where: { id: existingClass.id }, data: { vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+          } else {
+            await prisma.evaluationEvent.create({ data: { courseId: blCourseId, moduleId, type: 'CLASS', name: isBlEN ? `Lux Mentor Class — ${mod.title}` : `Clase Magistral — ${mod.title}`, weight: 0, order: moduleIdx, vapiPrompt: classContent.vapiPrompt, lessonScript: classContent.lessonScript ?? null } });
+          }
+        }
+      } catch (e) {
+        console.error(`[wizard-lessons-bulk] module ${moduleId} class error:`, e);
+      }
+    };
+
+    const recordModuleInterview = async (moduleIdx: number): Promise<void> => {
+      if (!interviewIdxSet.has(moduleIdx)) return;
+      try {
+        await recordIntent(moduleIdx, 'INTERVIEW', isBlEN ? 'Lux Mentor Interview' : 'Entrevista con Lux Mentor');
+      } catch (e) {
+        console.error(`[wizard-lessons-bulk] module ${(moduleIds as string[])[moduleIdx]} interview error:`, e);
+      }
+    };
+
     try {
-      // Bounded concurrency: 3 modules at a time. Wall-clock time is now driven by
-      // ceil(N/3) batches instead of N sequential modules — a 16-module course that
-      // used to risk a ~10min timeout now finishes in roughly 1/3 of that time, with
-      // enough Bedrock request headroom to avoid tripping throttling in a burst.
+      // Bounded concurrency: 3 modules at a time within each phase. Wall-clock time is
+      // driven by ceil(N/3) batches instead of N sequential modules — a 16-module course
+      // that used to risk a ~10min timeout now finishes each phase in roughly 1/3 of that
+      // time, with enough Bedrock request headroom to avoid tripping throttling in a burst.
       const MODULE_CONCURRENCY = 3;
       const allIdx = (moduleIds as string[]).map((_, i) => i);
       const totalModules = allIdx.length;
-      for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
-        const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
-        await Promise.all(batch.map((idx) => processModule(idx)));
-        // Incremental progress — lets the wizard UI poll real "N/total módulos listos"
-        // instead of a static "ready in a few minutes" message that never updates
-        // (Jason, 2026-08-30: no completion indicator in the wizard at all).
-        await saveAiJob(_jobId, { status: 'processing', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
-      }
+      let incompleteModuleIds: string[] = [];
 
-      // ── Completeness sweep — the "sí o sí" guarantee (Jason, 2026-08-30) ────────
-      // The in-line retry-once inside processModule() gives up after one extra attempt
-      // and leaves a placeholder / empty-quiz permanently if that also fails. Verify every
-      // module against the DB (not in-memory state) and give genuinely incomplete ones
-      // MORE real attempts — bounded, so a persistently-broken module (real network/
-      // Bedrock outage) can't loop forever — before ever reporting the job "done".
-      const MAX_SWEEPS = 3; // up to 3 real repair passes after the main loop's own attempt
-      let incompleteIdx: number[] = [];
-      if (!_quizOnlyForExistingModules) {
+      if (_quizOnlyForExistingModules) {
+        // Narrow retrofit path — unrelated to the phase restructuring below. Only adds a
+        // quiz to modules that already have lessons; never touches lessons/class. Still
+        // records REFLECTION/INTERVIEW intents when asked, matching the pre-restructure
+        // behavior of this mode.
+        for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map(async (idx) => {
+            const moduleId = (moduleIds as string[])[idx]!;
+            try {
+              if (reflexIdxSet.has(idx)) await recordIntent(idx, 'REFLECTION', isBlEN ? 'Reflection' : 'Reflexión');
+              if (interviewIdxSet.has(idx)) await recordIntent(idx, 'INTERVIEW', isBlEN ? 'Lux Mentor Interview' : 'Entrevista con Lux Mentor');
+              if (quizIdxSet.has(idx)) {
+                const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
+                if (existingLessonCount > 0) await generateModuleQuiz(idx);
+              }
+            } catch (e) {
+              console.error(`[wizard-lessons-bulk] module ${moduleId} quiz-only error:`, e);
+              failed.push(moduleId);
+            }
+          }));
+          await saveAiJob(_jobId, { status: 'processing', phase: 'quiz', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
+        }
+      } else {
+        // ── Phase 1: lessons, across every module ────────────────────────────────
+        for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleLessons(idx)));
+          // Incremental progress — lets the wizard UI poll real "N/total módulos listos"
+          // per phase instead of a static "ready in a few minutes" message that never
+          // updates (Jason, 2026-08-30: no completion indicator in the wizard at all).
+          await saveAiJob(_jobId, { status: 'processing', phase: 'lessons', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
+        }
+
+        // ── Phase 2: quizzes, only for modules that need one ─────────────────────
+        const quizIdx = allIdx.filter((idx) => quizIdxSet.has(idx));
+        for (let i = 0; i < quizIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = quizIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleQuiz(idx)));
+          await saveAiJob(_jobId, { status: 'processing', phase: 'quiz', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, quizIdx.length), totalModules: quizIdx.length });
+        }
+
+        // ── Phase 3: reflections, only for modules that need one (instant — a record only) ──
+        const reflexIdx = allIdx.filter((idx) => reflexIdxSet.has(idx));
+        for (const idx of reflexIdx) await recordModuleReflection(idx);
+        if (reflexIdx.length > 0) {
+          await saveAiJob(_jobId, { status: 'processing', phase: 'reflections', modulesProcessed: reflexIdx.length, totalModules: reflexIdx.length });
+        }
+
+        // ── Phase 4: classes, only for modules that need one ─────────────────────
+        const classIdx = allIdx.filter((idx) => classIdxSet.has(idx));
+        for (let i = 0; i < classIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = classIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleClass(idx)));
+          await saveAiJob(_jobId, { status: 'processing', phase: 'classes', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, classIdx.length), totalModules: classIdx.length });
+        }
+
+        // ── Phase 5: interviews, only for modules that need one (instant — a record only) ──
+        const interviewIdx = allIdx.filter((idx) => interviewIdxSet.has(idx));
+        for (const idx of interviewIdx) await recordModuleInterview(idx);
+        if (interviewIdx.length > 0) {
+          await saveAiJob(_jobId, { status: 'processing', phase: 'interviews', modulesProcessed: interviewIdx.length, totalModules: interviewIdx.length });
+        }
+
+        // ── Completeness sweep — the "sí o sí" guarantee (Jason, 2026-08-30) ────────
+        // The main lessons phase's in-line retry-once gives up after one extra attempt
+        // and leaves a placeholder / empty-quiz permanently if that also fails. Verify
+        // every module against the DB (not in-memory state) and give genuinely incomplete
+        // ones MORE real attempts — bounded, so a persistently-broken module (real network/
+        // Bedrock outage) can't loop forever — before ever reporting the job "done".
+        const MAX_SWEEPS = 3; // up to 3 real repair passes after the main loop's own attempt
+        let incompleteIdx: number[] = [];
         for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
           incompleteIdx = [];
           for (const idx of allIdx) {
             const moduleId = (moduleIds as string[])[idx]!;
             const complete = await verifyAndRepairModule(
-              prisma, moduleId, blTitle, isBlEN, quizIdxSet.has(idx), () => processModule(idx),
+              prisma, moduleId, blTitle, isBlEN, quizIdxSet.has(idx), () => generateModuleLessons(idx),
             );
             if (!complete) incompleteIdx.push(idx);
           }
           if (incompleteIdx.length === 0) break;
           console.warn(`[wizard-lessons-bulk] sweep ${sweep + 1}/${MAX_SWEEPS}: ${incompleteIdx.length}/${totalModules} module(s) still incomplete, repairing`);
+          await saveAiJob(_jobId, { status: 'processing', phase: 'repair', modulesProcessed: totalModules - incompleteIdx.length, totalModules });
+        }
+
+        incompleteModuleIds = incompleteIdx.map((idx) => (moduleIds as string[])[idx]);
+        if (incompleteModuleIds.length > 0) {
+          console.error(`[wizard-lessons-bulk] job ${_jobId}: gave up after ${MAX_SWEEPS} repair sweeps — still incomplete: ${incompleteModuleIds.join(', ')}`);
         }
       }
 
-      const incompleteModuleIds = incompleteIdx.map((idx) => (moduleIds as string[])[idx]);
-      if (incompleteModuleIds.length > 0) {
-        console.error(`[wizard-lessons-bulk] job ${_jobId}: gave up after ${MAX_SWEEPS} repair sweeps — still incomplete: ${incompleteModuleIds.join(', ')}`);
-      }
       await saveAiJob(_jobId, {
         status: incompleteModuleIds.length > 0 ? 'done_incomplete' : 'done',
         modulesProcessed: totalModules, totalModules, failed: failed.length,
         incompleteModuleIds,
       });
-      await notifyCourseGenerationDone(blCreatorUserId, blCourseId, blTitle, isBlEN, incompleteModuleIds.length > 0);
+      // Also notifies the course's evaluator (email + push + in-app) that it's ready to
+      // review and activate, when different from whoever ran the wizard (item 8).
+      const courseForNotify = await prisma.course.findUnique({ where: { id: blCourseId }, select: { evaluatorId: true } }).catch(() => null);
+      await notifyCourseGenerationDone(blCreatorUserId, blCourseId, blTitle, isBlEN, incompleteModuleIds.length > 0, courseForNotify?.evaluatorId);
       // Fire-and-forget: Polly neural audio for every lesson, as its own background phase
       // (item 4) — never blocks or risks the completeness status set just above.
       await dispatchLessonAudioGeneration(blCourseId);

@@ -589,6 +589,112 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     }));
   });
 
+  it('wizard-lessons-bulk runs phases across ALL modules in order: lessons → quiz → reflections → classes → interviews (Trello DmPpbrff item 8, 2026-08-30 20:30)', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    const callOrder: string[] = [];
+
+    vi.mocked(invokeBedrockForJson).mockImplementation(async (prompt: string) => {
+      if (prompt.includes('multiple-choice questions') || prompt.includes('opción múltiple')) {
+        return Array.from({ length: 10 }, (_, i) => ({ text: `Q${i + 1}?`, options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: i + 1 }));
+      }
+      if (prompt.includes('Lux Mentor class script') || prompt.includes('guión de Clase Magistral')) {
+        return { vapiPrompt: 'Prompt', lessonScript: 'Script' };
+      }
+      // lessonPrompt / resourcesPrompt / retryPrompt — shape doesn't matter for ordering
+      return null;
+    });
+
+    const evalEventCreate = vi.fn().mockImplementation(async ({ data }: any) => {
+      callOrder.push(data.type.toLowerCase());
+      return { id: `ee-${data.type}-${data.moduleId}` };
+    });
+    const lessonCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('lessons'); return { count: 8 }; });
+    const questionCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('quiz-questions'); return { count: 10 }; });
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
+
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: lessonCreateMany, findMany: vi.fn().mockResolvedValue(fakeLessons) },
+      question: { createMany: questionCreateMany },
+      evaluationEvent: { findFirst: vi.fn().mockResolvedValue(null), create: evalEventCreate },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-phases', courseId: 'c1',
+        moduleIds: ['m1', 'm2'], courseTitle: 'Curso', language: 'ES',
+        quizModuleIndices: [0, 1], classModuleIndices: [0, 1],
+        reflexModuleIndices: [0, 1], interviewModuleIndices: [0, 1],
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    const firstIndexOf = (label: string) => callOrder.indexOf(label);
+    expect(firstIndexOf('lessons')).toBeGreaterThanOrEqual(0);
+    expect(firstIndexOf('lessons')).toBeLessThan(firstIndexOf('quiz'));
+    expect(firstIndexOf('quiz')).toBeLessThan(firstIndexOf('reflection'));
+    expect(firstIndexOf('reflection')).toBeLessThan(firstIndexOf('class'));
+    expect(firstIndexOf('class')).toBeLessThan(firstIndexOf('interview'));
+    // Both modules' lessons finish before either module's quiz starts — not
+    // module-by-module (the old per-module loop's behavior).
+    const lastLessonsIdx = callOrder.lastIndexOf('lessons');
+    const firstQuizIdx = firstIndexOf('quiz-questions');
+    expect(lastLessonsIdx).toBeLessThan(firstQuizIdx);
+  });
+
+  it('wizard-lessons-bulk reports the current phase via saveAiJob so the UI can show which step is running', async () => {
+    const { saveAiJob } = await import('../../shared/db-dynamo');
+    vi.mocked(saveAiJob).mockClear();
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
+      question: { createMany: vi.fn().mockResolvedValue({ count: 10 }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-phase-status', courseId: 'c1',
+        moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES', quizModuleIndices: [0],
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    const phases = vi.mocked(saveAiJob).mock.calls.map((c) => (c[1] as any)?.phase).filter(Boolean);
+    expect(phases).toContain('lessons');
+    expect(phases).toContain('quiz');
+  });
+
+  it('wizard-lessons-bulk also notifies the course evaluator (distinct from the creator) that it is ready for review (Trello DmPpbrff item 8)', async () => {
+    const { createNotification } = await import('../../shared/db-dynamo');
+    vi.mocked(createNotification).mockClear();
+    const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content.</p>', points: [], tip: '' }));
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 8 }), findMany: vi.fn().mockResolvedValue(fakeLessons) },
+      course: { findUnique: vi.fn().mockResolvedValue({ evaluatorId: 'evaluator-99' }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: {
+        _action: 'wizard-lessons-bulk', _jobId: 'job-eval-notify', courseId: 'c1', moduleIds: ['m1'],
+        courseTitle: 'Curso Eval', language: 'ES', creatorUserId: 'admin-1',
+      },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ userId: 'admin-1' }));
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'evaluator-99', type: 'COURSE_READY_FOR_REVIEW',
+    }));
+  });
+
   it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {
     const { saveAiJob } = await import('../../shared/db-dynamo');
     const { invokeBedrockForJson } = await import('../../admin/ctx');
