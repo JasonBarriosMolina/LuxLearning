@@ -151,13 +151,37 @@ export default function CoursePreviewPage() {
                 )}
               </div>
 
-              {/* Polly audio preview (admin only — no voice profile selector) */}
-              {selectedLesson.audioUrl && (
-                <TextToSpeechButton
-                  text=""
-                  audioUrl={selectedLesson.audioUrl}
-                  adminMode
-                />
+              {/* Lux Carrousel preview — distinct lesson type, no HTML content/youtube/image
+                  fields to fall back on (found missing in review, 2026-08-31: this page
+                  showed a blank lesson panel for carousel lessons before). */}
+              {selectedLesson.type === 'carousel' ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-400">
+                    Vista previa de Lux Carrousel — {(selectedLesson.carouselSlides ?? []).length} diapositivas narradas
+                  </p>
+                  {selectedLesson.audioUrl && (
+                    <TextToSpeechButton text="" audioUrl={selectedLesson.audioUrl} adminMode />
+                  )}
+                  <div className="space-y-2">
+                    {(selectedLesson.carouselSlides ?? []).map((slide: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3 border border-border rounded-xl p-2.5">
+                        {slide.imageUrl && <img src={slide.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />}
+                        <p className="text-sm font-medium text-charcoal">{slide.onScreenText?.title}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Polly audio preview (admin only — no voice profile selector) */}
+                  {selectedLesson.audioUrl && (
+                    <TextToSpeechButton
+                      text=""
+                      audioUrl={selectedLesson.audioUrl}
+                      adminMode
+                    />
+                  )}
+                </>
               )}
 
               {/* YouTube embed */}

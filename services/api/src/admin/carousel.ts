@@ -28,6 +28,8 @@ export async function handleCarousel(ctx: AdminCtx): Promise<any | null> {
 
 Tema: ${effectiveTopic}
 
+Tono profesional y educativo — sin emojis en ningún campo (ni títulos, ni viñetas, ni narración).
+
 Para cada diapositiva genera:
 - "onScreenText": 1 título corto + hasta 3 viñetas breves (lo que se lee en pantalla)
 - "narrationSegment": 1-2 oraciones completas que un narrador leerá en voz alta para esa diapositiva — deben sonar naturales al narrarse en secuencia, cada una terminando en punto

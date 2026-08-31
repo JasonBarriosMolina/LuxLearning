@@ -76,6 +76,8 @@ export const api = {
       request('/lessons/complete', { method: 'POST', body: JSON.stringify(body) }),
     progress: (courseId: string) =>
       request(`/lessons/progress?courseId=${courseId}`),
+    carouselRecap: (lessonId: string) =>
+      request<any>('/lessons/carousel-recap', { method: 'POST', body: JSON.stringify({ lessonId }) }),
   },
 
   quiz: {
