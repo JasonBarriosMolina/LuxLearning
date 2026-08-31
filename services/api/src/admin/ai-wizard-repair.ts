@@ -12,6 +12,7 @@ import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
   ses, cognito, FROM_EMAIL, FRONTEND_URL, USER_POOL_ID,
 } from './ctx';
+import { lessonDurationLabel } from '../shared/reading-time';
 
 async function sendPushAndInApp(userId: string, type: 'GENERAL' | 'COURSE_READY_FOR_REVIEW', message: string, courseId: string): Promise<void> {
   await createNotification({
@@ -200,13 +201,21 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${placeholders.length} objetos
       await Promise.all(placeholders.map(async (l: any, j: number) => {
         const gen = repaired[j];
         if (!gen?.content) return;
+        const content = sanitizeLessonContent(gen.content);
+        const points = Array.isArray(gen.points) ? gen.points : l.points;
+        const tip = gen.tip || l.tip;
         await prisma.lesson.update({
           where: { id: l.id },
           data: {
             title: gen.title || l.title,
-            content: sanitizeLessonContent(gen.content),
-            points: Array.isArray(gen.points) ? gen.points : l.points,
-            tip: gen.tip || l.tip,
+            content,
+            points,
+            tip,
+            // Repaired content replaces whatever placeholder/short duration the lesson
+            // had before — recompute honestly from the real word count now (Trello
+            // DmPpbrff, 2026-08-31 15:19), same rule ai-wizard-lesson-visuals.ts applies
+            // on the main generation path.
+            duration: lessonDurationLabel(content, points, tip),
           },
         });
       }));

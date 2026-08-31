@@ -47,8 +47,19 @@ vi.mock('../../shared/db-messages', () => ({
 vi.mock('../../shared/env-context', () => ({
   getCurrentEnv: vi.fn().mockReturnValue('test'),
 }));
+vi.mock('../../admin/ai-image-helpers', () => ({
+  generateLessonImage:       vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
+  generateLessonInfographic: vi.fn().mockResolvedValue(null),
+}));
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/** N-word filler content — duration is now derived from real word count (Trello
+ *  DmPpbrff, 2026-08-31 15:19), so tests must mock realistically-sized content
+ *  instead of asserting on a static duration string the model returned. */
+function wordsOf(n: number): string {
+  return `<h3>Tema</h3><p>${Array.from({ length: n }, (_, i) => `palabra${i}`).join(' ')}</p>`;
+}
 
 let capturedLessons: any[] = [];
 
@@ -102,15 +113,19 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     // Stub invokeBedrockForJson via ctx module
     const ctx = await import('../../admin/ctx');
+    // Content sized realistically (~150 words video, ~1000 words text) — duration is
+    // now DERIVED from actual word count (Trello DmPpbrff, 2026-08-31 15:19), so the
+    // "duration" field the model returns here is deliberately ignored/wrong to prove
+    // the real content length is what determines the final stored duration.
     vi.spyOn(ctx, 'invokeBedrockForJson').mockResolvedValue([
-      { title: 'Lección 1', content: '<p>Intro</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
-      { title: 'Lección 2', content: '<h3>Tema A</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 3', content: '<h3>Tema B</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 4', content: '<h3>Tema C</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 5', content: '<h3>Tema D</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 6', content: '<h3>Tema E</h3><p>Contenido</p>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 7', content: '<h3>Cierre reflexivo</h3><p>Resumen</p><ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 8', content: '<p>Resumen</p>', points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 1', content: wordsOf(150), points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 2', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 3', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 4', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 5', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 6', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 7', content: wordsOf(1000) + '<ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 8', content: wordsOf(150), points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
     ]);
   });
 
@@ -130,7 +145,7 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     expect(texts).toHaveLength(6);
   });
 
-  it('lecciones de texto usan duración de 8-10 min (700-900 palabras, más profundas), no 5-7 min', async () => {
+  it('la duración de cada lección se deriva del conteo real de palabras (~200 wpm), no del valor que devolvió el modelo (Trello DmPpbrff, 2026-08-31 15:19)', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -139,12 +154,22 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     await handleAIWizard(ctx as any);
 
     const texts = capturedLessons.filter((l: any) => l.type === 'text');
-    // Cada lección texto debe durar entre 8 y 10 min (contenido de mayor profundidad —
-    // Trello DmPpbrff comment 6a9232ef, ya no el andamiaje corto de 5-7 min anterior)
+    // Contenido mockeado con ~1000 palabras reales — a 200 wpm eso son ~5 min, NO
+    // los "9 min" que el modelo devolvió (deliberadamente ignorado): el bug era
+    // exactamente que se confiaba en ese valor sin importar cuánto texto hubiera.
     texts.forEach((l: any) => {
       const mins = parseInt(l.duration, 10);
-      expect(mins).toBeGreaterThanOrEqual(8);
-      expect(mins).toBeLessThanOrEqual(10);
+      expect(mins).toBeGreaterThanOrEqual(4);
+      expect(mins).toBeLessThanOrEqual(6);
+      expect(l.duration).not.toBe('9 min');
+    });
+
+    const videos = capturedLessons.filter((l: any) => l.type === 'video');
+    // Contenido mockeado con ~150 palabras — a 200 wpm eso es <1 min, redondeado a 1 min
+    // mínimo — NO los "5 min" que el modelo devolvió (el bug concreto que reportó Mack:
+    // una lección de ~79 palabras etiquetada "5 minutos").
+    videos.forEach((l: any) => {
+      expect(l.duration).toBe('1 min');
     });
   });
 
@@ -180,15 +205,16 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    // 2 video × 5 min + 6 text × 9 min = 64 min
+    // Durations are now derived from real word count (Trello DmPpbrff, 2026-08-31
+    // 15:19): 2 video × ~1 min + 6 text × ~5 min = ~32 min, not the old static 64 min.
     const updateCall = updateSpy.mock.calls.find((c: any[]) =>
       c[0]?.data?.duration != null
     );
     expect(updateCall).toBeDefined();
     const durationStr: string = updateCall![0].data.duration;
     const totalMin = parseInt(durationStr, 10);
-    expect(totalMin).toBeGreaterThanOrEqual(55);
-    expect(totalMin).toBeLessThanOrEqual(70);
+    expect(totalMin).toBeGreaterThanOrEqual(28);
+    expect(totalMin).toBeLessThanOrEqual(38);
   });
 
   it('no genera menos de 6 lecciones por módulo', async () => {
