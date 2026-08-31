@@ -4,8 +4,9 @@ import type { AdminCtx } from './ctx';
 import { handleAIMedia } from './ai-media';
 import { handleAIRegen } from './ai-regen';
 import { handleAIWizard } from './ai-wizard';
+import { handleAIAudioWorker } from './ai-audio-worker';
 
 export async function handleAI(ctx: AdminCtx): Promise<any | null> {
   // Media first: captures ai-generate worker (_jobId) before wizard check
-  return await handleAIMedia(ctx) ?? await handleAIRegen(ctx) ?? await handleAIWizard(ctx) ?? null;
+  return await handleAIMedia(ctx) ?? await handleAIRegen(ctx) ?? await handleAIWizard(ctx) ?? await handleAIAudioWorker(ctx) ?? null;
 }

@@ -62,15 +62,17 @@ vi.mock('../../admin/ctx', async (importOriginal) => {
   return {
     ...actual,
     getCallerName:          vi.fn().mockResolvedValue('Test Admin'),
-    generateLessonImage:    vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
     generateLessonAudio:    vi.fn().mockResolvedValue(null),
-    generateLessonInfographic: vi.fn().mockResolvedValue(null),
     invokeBedrockForJson:   vi.fn().mockResolvedValue({ weeklyPlan: [{ weekNum: 1, topics: ['Topic'] }], modules: [] }),
     lambdaClient:           { send: vi.fn().mockResolvedValue({}) },
     s3Client:               { send: vi.fn().mockResolvedValue({}) },
     bedrock:                { send: vi.fn().mockResolvedValue({ body: Buffer.from(JSON.stringify({ content: [{ text: '[]' }] })) }) },
   };
 });
+vi.mock('../../admin/ai-image-helpers', () => ({
+  generateLessonImage:       vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
+  generateLessonInfographic: vi.fn().mockResolvedValue(null),
+}));
 
 import { handleAI } from '../../admin/ai';
 
