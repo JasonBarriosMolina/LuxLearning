@@ -18,8 +18,9 @@ import { sendTemplatedEmail } from '../shared/email';
 import { getPrismaClient } from '../shared/db-neon';
 import { UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
-import { ok, badRequest, serverError, cors, setRequestOrigin } from '../shared/response';
+import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { buildRecapPdf } from '../shared/carousel-pdf';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -84,6 +85,27 @@ export const handler = async (event: Event) => {
       } catch { /* non-fatal */ }
 
       return ok({ marked: true });
+    }
+
+    // POST /lessons/carousel-recap — on-demand "Lux Recap" PDF (Trello N1bbWdz0,
+    // 2026-08-31 15:21): built the first time ANY student (or the evaluator) asks
+    // for it, then cached on the Lesson row so every later request is instant —
+    // not generated eagerly for every carousel during creation.
+    if (method === 'POST' && path.includes('/carousel-recap')) {
+      const body = JSON.parse(event.body ?? '{}');
+      const { lessonId } = body as { lessonId?: string };
+      if (!lessonId) return badRequest('lessonId is required');
+      const prisma = await getPrismaClient();
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      if (!lesson || lesson.type !== 'carousel') return notFound('Lux Carrousel lesson not found');
+      if (lesson.pdfRecapUrl) return ok({ pdfRecapUrl: lesson.pdfRecapUrl });
+
+      const mod = await prisma.module.findUnique({ where: { id: lesson.moduleId }, select: { title: true } });
+      const slides = Array.isArray(lesson.carouselSlides) ? (lesson.carouselSlides as any[]) : [];
+      const pdfRecapUrl = await buildRecapPdf(mod?.title ?? lesson.title, slides);
+      if (!pdfRecapUrl) return serverError('No se pudo generar el PDF de repaso');
+      await prisma.lesson.update({ where: { id: lessonId }, data: { pdfRecapUrl } });
+      return ok({ pdfRecapUrl });
     }
 
     // ── Highlights ────────────────────────────────────────────────────────────

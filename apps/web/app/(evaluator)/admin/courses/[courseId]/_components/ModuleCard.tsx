@@ -300,7 +300,7 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
                   IA
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setCarouselWizardOpen(true)}>
-                  🎠 Carrousel
+                  Carrousel
                 </Button>
                 <Button size="sm" variant="secondary" leftIcon={<Plus className="w-3.5 h-3.5" />}
                   onClick={() => { setLessonForm(newLessonForm((mod.lessons?.length ?? 0) + 1)); setLessonModal(true); }}>

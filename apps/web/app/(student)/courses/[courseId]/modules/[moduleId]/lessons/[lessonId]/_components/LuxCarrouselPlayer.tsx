@@ -19,12 +19,26 @@ interface Props {
 // Lux Carrousel player (Trello N1bbWdz0, 2026-08-30) — student-facing playback of a
 // pre-generated narrated slide sequence. First view is locked (no scrub/skip, must
 // finish once); later views unlock free navigation + the "Lux Recap" PDF download.
-export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, pdfRecapUrl, hasCompletedBefore, onCompleted }: Props) {
+export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, pdfRecapUrl: initialPdfRecapUrl, hasCompletedBefore, onCompleted }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [ended, setEnded] = useState(hasCompletedBefore);
   const completedRef = useRef(false);
+  // "Lux Recap" PDF is built on demand (Trello N1bbWdz0, 2026-08-31 15:21) — the first
+  // request builds + caches it on the Lesson row; later visits (any student) just get
+  // the cached URL back instantly via the same endpoint.
+  const [pdfRecapUrl, setPdfRecapUrl] = useState(initialPdfRecapUrl);
+  const [pdfRequesting, setPdfRequesting] = useState(false);
+  const requestPdf = async () => {
+    setPdfRequesting(true);
+    try {
+      const res = await api.lessons.carouselRecap(lessonId);
+      const url = (res as any)?.data?.pdfRecapUrl ?? (res as any)?.pdfRecapUrl;
+      if (url) setPdfRecapUrl(url);
+    } catch { /* let the student retry */ }
+    finally { setPdfRequesting(false); }
+  };
   const unlocked = canScrub(hasCompletedBefore);
 
   const activeIdx = findActiveSlideIndex(slides, currentMs);
@@ -119,16 +133,26 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
         )}
       </div>
 
-      {ended && pdfRecapUrl && (
+      {ended && (
         <div className="bg-surface px-4 pb-3">
-          <a
-            href={pdfRecapUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline"
-          >
-            <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
-          </a>
+          {pdfRecapUrl ? (
+            <a
+              href={pdfRecapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline"
+            >
+              <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
+            </a>
+          ) : (
+            <button
+              onClick={requestPdf}
+              disabled={pdfRequesting}
+              className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" /> {pdfRequesting ? 'Generando PDF…' : 'Solicitar Lux Recap (PDF)'}
+            </button>
+          )}
         </div>
       )}
     </div>

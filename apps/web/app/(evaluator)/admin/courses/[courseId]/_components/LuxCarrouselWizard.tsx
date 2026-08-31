@@ -97,7 +97,7 @@ export function LuxCarrouselWizard({ moduleId, courseLanguage = 'ES', open, onCl
   };
 
   return (
-    <Modal open={open} onClose={close} title="🎠 Lux Carrousel" size="xl">
+    <Modal open={open} onClose={close} title="Lux Carrousel" size="xl">
       {step === 'topic' && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500">

@@ -1,15 +1,16 @@
 // ─── carousel-worker.ts ───────────────────────────────────────────────────────
 // Async asset generation for Lux Carrousel (Trello N1bbWdz0): narration audio +
-// speech marks (Polly), per-slide images (Stability, reusing ai-image-helpers —
-// same no-text negative-prompt pipeline the spec asks for), a "Lux Recap" PDF
-// (pdfkit, same library already used for certificates), then saves the finished
-// carousel as a new Lesson (type="carousel") on the target module.
+// speech marks (Polly) + per-slide images (Stability, reusing ai-image-helpers —
+// same no-text negative-prompt pipeline the spec asks for), then saves the
+// finished carousel as a new Lesson (type="carousel") on the target module. The
+// "Lux Recap" PDF is built later, on demand (see shared/carousel-pdf.ts) — not
+// here (2026-08-31 15:21: building it eagerly for every carousel, whether or not
+// anyone ever downloads it, was adding real time to every generation).
 import { createId } from '@paralleldrive/cuid2';
-import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage, S3_IMAGES_BUCKET, s3Client } from './ctx';
+import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage } from './ctx';
 import { generateLessonImage } from './ai-image-helpers';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 const IMAGE_CONCURRENCY = 3;
 // ~750 chars/min is a rough Polly neural speaking-rate estimate — only used as a fallback
@@ -78,54 +79,6 @@ export function computeSlideTiming(slides: DraftSlide[], marks: Array<{ time: nu
   });
 }
 
-async function buildRecapPdf(courseTitle: string, moduleTitle: string, finalSlides: any[]): Promise<string | null> {
-  try {
-    // Lazy require to avoid cold-start cost on other routes — same pattern as certificates/handler.ts
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const PDFDocument = require('pdfkit') as typeof import('pdfkit');
-    const pdfBuffer = await new Promise<Buffer>(async (resolve, reject) => {
-      try {
-        const doc = new PDFDocument({ size: 'A4', margin: 50 });
-        const chunks: Buffer[] = [];
-        doc.on('data', (c: Buffer) => chunks.push(c));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', reject);
-
-        doc.fontSize(20).font('Helvetica-Bold').text('Lux Recap', { align: 'center' });
-        doc.fontSize(12).font('Helvetica').fillColor('#555').text(moduleTitle, { align: 'center' });
-        doc.moveDown(1.5);
-
-        for (const slide of finalSlides) {
-          if (doc.y > doc.page.height - 220) doc.addPage();
-          if (slide.imageUrl) {
-            try {
-              const res = await fetch(slide.imageUrl);
-              if (res.ok) {
-                const buf = Buffer.from(await res.arrayBuffer());
-                doc.image(buf, { fit: [200, 200] });
-              }
-            } catch { /* skip image, keep the text */ }
-          }
-          doc.moveDown(0.3);
-          doc.fontSize(14).font('Helvetica-Bold').fillColor('#2C2C2C').text(slide.onScreenText?.title ?? '');
-          const bullets: string[] = Array.isArray(slide.onScreenText?.bullets) ? slide.onScreenText.bullets : [];
-          doc.fontSize(11).font('Helvetica').fillColor('#444');
-          for (const b of bullets) doc.text(`•  ${b}`);
-          doc.moveDown(1);
-        }
-        doc.end();
-      } catch (e) { reject(e); }
-    });
-
-    const key = `carousel/recap-${createId()}.pdf`;
-    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key, Body: pdfBuffer, ContentType: 'application/pdf' }));
-    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
-  } catch (err) {
-    console.error('[carousel-worker] PDF recap generation failed (non-fatal):', err);
-    return null;
-  }
-}
-
 export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
   if (ctx.action !== 'carousel-generate') return null;
   const { prisma, body } = ctx;
@@ -169,15 +122,15 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
       order: s.order, onScreenText: s.onScreenText, imageUrl: slideImages[i], startMs: s.startMs, endMs: s.endMs,
     }));
 
-    await saveAiJob(_jobId, { status: 'processing', phase: 'recap' });
-    const pdfRecapUrl = await buildRecapPdf(mod.title, mod.title, finalSlides);
-
+    // pdfRecapUrl is intentionally left null here — the "Lux Recap" PDF is built
+    // on demand by the student-facing courses lambda the first time anyone asks
+    // for it (Trello N1bbWdz0, 2026-08-31 15:21), not eagerly during generation.
     const lessonCount = await prisma.lesson.count({ where: { moduleId } });
     const lesson = await prisma.lesson.create({
       data: {
         moduleId, order: lessonCount + 1, title: `Lux Carrousel: ${mod.title}`, duration: '6 min',
         type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
-        audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl,
+        audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
       },
     });
 
@@ -186,7 +139,7 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
     if (creatorUserId) {
       await createNotification({
         userId: creatorUserId, notifId: createId(), type: 'GENERAL',
-        message: `🎠 Lux Carrousel listo — ${mod.title}`,
+        message: `Lux Carrousel listo — ${mod.title}`,
         read: false, createdAt: new Date().toISOString(), actionUrl: `/admin/courses`,
       }).catch(() => {});
     }

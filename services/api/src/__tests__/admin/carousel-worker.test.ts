@@ -21,24 +21,6 @@ vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
   CognitoIdentityProviderClient: function () { return {}; },
   AdminGetUserCommand: function (x: any) { return x; },
 }));
-// pdfkit is a real native-ish dependency — stub it so tests don't need a real PDF renderer
-vi.mock('pdfkit', () => ({
-  default: function () {
-    const listeners: Record<string, Function[]> = {};
-    return {
-      on: (evt: string, cb: Function) => { (listeners[evt] ??= []).push(cb); },
-      image: () => {},
-      fontSize: () => ({ font: () => ({ text: () => {} }), text: () => {} }),
-      font: () => ({ text: () => {}, fontSize: () => ({ text: () => {} }) }),
-      moveDown: () => {},
-      text: () => {},
-      end: () => { listeners['data']?.forEach((cb) => cb(Buffer.from('pdf'))); listeners['end']?.forEach((cb) => cb()); },
-      page: { width: 595, height: 842 },
-      get y() { return 100; },
-    };
-  },
-}), { virtual: true });
-
 const generateCarouselNarrationMock = vi.fn();
 vi.mock('../../admin/ctx', async (importOriginal) => {
   const actual = await importOriginal() as any;
@@ -157,6 +139,9 @@ describe('handleCarouselWorker', () => {
     expect(prisma.lesson.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         moduleId: 'm1', type: 'carousel', order: 5, audioUrl: 'https://s3.example.com/carousel.mp3',
+        // The recap PDF is no longer built eagerly (Trello N1bbWdz0, 2026-08-31 15:21) —
+        // it's built on demand by /lessons/carousel-recap the first time anyone asks.
+        pdfRecapUrl: null,
       }),
     }));
     const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
