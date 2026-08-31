@@ -9,6 +9,7 @@ import {
 } from './ctx';
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
 import { generateModuleCarousel } from './ai-wizard-carousel-phase';
+import { attachLessonVisuals } from './ai-wizard-lesson-visuals';
 import {
   notifyCourseGenerationDone, sanitizeLessonContent, generateAndSaveQuizQuestions,
   isPlaceholderContent, verifyAndRepairModule,
@@ -101,25 +102,27 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
         const lessonPrompt = isBlEN
           ? `You are a top-tier e-learning instructional designer. Generate exactly ${lessonCount} lessons for the module "${mod.title}" in the course "${blTitle}".${classContextNote}
 Target: ~${TARGET_ASYNC_MIN} minutes of active async study per module, split into scaffolded lessons (${TEXT_COMPREHENSION_MIN} min each) — each lesson builds on the previous one's concepts.
-Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (700-900 words each, ~${TEXT_COMPREHENSION_MIN} min active study) — real instructional depth, not a shallow list: explain the WHY and the HOW, not just the WHAT.
+Lesson 1 and Lesson ${lessonCount} are video type (introductory/summary, 100-150 words, ~${VIDEO_LESSON_MIN} min). All others are text type (900-1100 words each, ~${TEXT_COMPREHENSION_MIN} min active study) — real instructional depth, not a shallow list: explain the WHY and the HOW, not just the WHAT.
 STRUCTURE for every text lesson's "content" field (HTML, no full markdown) — 5 sections with progressive scaffolding:
 1. OPENING — specific <h3> that poses a real question or concrete scenario related to the concept (e.g. "<h3>Why Don't GPS Maps Always Give the Shortest Route?</h3>"). NEVER use "Hook" or "Introduction" as the title.
 2. DEVELOPMENT — specific <h3> naming the exact concept (e.g. "<h3>Heuristics in Search Algorithms</h3>"). Explain it thoroughly: the underlying idea, why it matters, and how it works step by step. Short paragraphs, max 4-5 lines each. At least one <strong> bolded key term and one bullet list (use "- item" lines, converted to <ul><li>). NEVER use "Development" or "Content" as the title.
 3. WORKED EXAMPLE — specific <h3> naming a concrete real-world case (e.g. "<h3>Tracing an A* Search Step by Step in GPS Routing</h3>"). Walk through an actual example with specifics (numbers, a named scenario, or a step-by-step trace) — do not just NAME an application, actually work through it so the student sees the concept in action. NEVER use "Practical Bridge" or "Example" alone as the title.
 4. PRACTICE IT YOURSELF — specific <h3> (e.g. "<h3>Try It: Estimate the Heuristic for Your Own Route</h3>") with ONE short self-guided exercise or thought experiment the student can attempt alone, using only what was just taught — not graded, just applied practice. NEVER title it "Exercise" or "Practice" alone.
 5. (Last text lesson of the module only) CLOSING — specific <h3> naming the module topic (e.g. "<h3>Key Takeaways: Heuristic Search Algorithms</h3>") with a bullet summary of key points and 1-2 self-assessment questions. NEVER use "Reflective Close" or "Summary" as the title.
+VISUAL VARIETY (required in every text lesson, not just walls of paragraphs): include exactly one colored callout box highlighting a key insight or warning, using this exact pattern: <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;"><strong>💡 [short label]:</strong> [one or two sentences]</div>. Combined with the required bullet list and bolded term above, this gives the student a visual break from plain text.
 Write in neutral, formal international English — no slang or regionalisms.
 Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown fencing:
 [{"title":"Lesson title","content":"<h3>Specific concept subtitle</h3><p>HTML paragraph content</p>","points":["key point 1","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
           : `Eres un diseñador instruccional de e-learning de primer nivel. Genera exactamente ${lessonCount} lecciones para el módulo "${mod.title}" del curso "${blTitle}".${classContextNote}
 Meta: ~${TARGET_ASYNC_MIN} minutos de estudio asíncrono activo por módulo, repartidos en lecciones con andamiaje progresivo (${TEXT_COMPREHENSION_MIN} min cada una) — cada lección construye sobre los conceptos de la anterior.
-La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (700-900 palabras cada una, ~${TEXT_COMPREHENSION_MIN} min de estudio activo) — profundidad instructiva real, no una lista superficial: explica el POR QUÉ y el CÓMO, no solo el QUÉ.
+La lección 1 y la lección ${lessonCount} son tipo video (intro/resumen, 100-150 palabras, ~${VIDEO_LESSON_MIN} min). Las demás son tipo texto (900-1100 palabras cada una, ~${TEXT_COMPREHENSION_MIN} min de estudio activo) — profundidad instructiva real, no una lista superficial: explica el POR QUÉ y el CÓMO, no solo el QUÉ.
 ESTRUCTURA obligatoria para el campo "content" de cada lección de texto (HTML, sin markdown completo) — 5 secciones con andamiaje progresivo:
 1. APERTURA — <h3> específico que plantee una pregunta real o escenario concreto relacionado al concepto (ej. "<h3>¿Por qué los mapas GPS no siempre dan la ruta más corta?</h3>"). NUNCA usar "Gancho", "Hook" ni "Introducción" como título.
 2. DESARROLLO — <h3> específico que nombre el concepto exacto (ej. "<h3>Heurísticas en Algoritmos de Búsqueda</h3>"). Explícalo a fondo: la idea de base, por qué importa, y cómo funciona paso a paso. Párrafos cortos máx 4-5 líneas. Al menos un <strong> clave y una lista con viñetas (usa líneas "- item", se convierten a <ul><li>). NUNCA usar "Desarrollo" ni "Contenido" como título.
 3. EJEMPLO TRABAJADO — <h3> que nombre un caso concreto del mundo real (ej. "<h3>Trazando A* Paso a Paso en Navegación GPS</h3>"). Desarrolla un ejemplo real con datos concretos (números, un escenario nombrado, o una traza paso a paso) — no basta con NOMBRAR una aplicación, hay que desarrollarla para que el estudiante vea el concepto en acción. NUNCA usar "Puente Práctico" ni solo "Ejemplo" como título.
 4. PONLO EN PRÁCTICA — <h3> específico (ej. "<h3>Inténtalo: Estima la Heurística de tu Propia Ruta</h3>") con UN ejercicio autoguiado corto o experimento mental que el estudiante pueda intentar solo, usando solo lo que se acaba de enseñar — no es calificado, es práctica aplicada. NUNCA titularlo solo "Ejercicio" o "Práctica".
 5. (Solo última lección de texto del módulo) CIERRE — <h3> que nombre el tema del módulo (ej. "<h3>Síntesis: Algoritmos de Búsqueda Heurística</h3>") con resumen en puntos clave y 1-2 preguntas de autoevaluación. NUNCA usar "Cierre Reflexivo" ni "Resumen" como título.
+VARIEDAD VISUAL (obligatorio en cada lección de texto, no solo párrafos de texto plano): incluye exactamente un recuadro destacado con color resaltando una idea clave o advertencia, usando este patrón exacto: <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;"><strong>💡 [etiqueta corta]:</strong> [una o dos oraciones]</div>. Combinado con la lista de viñetas y el término en negrita ya requeridos arriba, esto le da al estudiante un descanso visual de solo texto plano.
 Redacta en español latino neutro y formal — sin modismos ni jerga local de ningún país.
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
 [{"title":"Título lección","content":"<h3>Subtítulo del concepto específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
@@ -152,11 +155,11 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
           console.warn(`[wizard-lessons-bulk] module ${moduleId}: got ${validLessons.length}/${lessonCount} — retrying for ${missing} missing lessons`);
           const retryPrompt = isBlEN
             ? `Continue generating the remaining ${missing} lessons (lessons ${validLessons.length + 1} to ${lessonCount}) for module "${mod.title}" in course "${blTitle}".
-These are the LAST ${missing} lessons of a ${lessonCount}-lesson module. Lesson ${lessonCount} is video type (summary, 100-150 words, ~5 min). All others in this batch are text type (700-900 words each) — same 5-section structure as the main lesson set (opening question, development, a fully worked real example, a self-practice exercise, and a closing summary on the last text lesson).
+These are the LAST ${missing} lessons of a ${lessonCount}-lesson module. Lesson ${lessonCount} is video type (summary, 100-150 words, ~5 min). All others in this batch are text type (900-1100 words each) — same 5-section structure as the main lesson set (opening question, development, a fully worked real example, a self-practice exercise, and a closing summary on the last text lesson), including one colored callout box (<div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;">).
 Return ONLY a JSON array of exactly ${missing} lesson objects with no markdown fencing:
 [{"title":"Lesson title","content":"<h3>subtitle</h3><p>HTML content</p>","points":["point 1","point 2","point 3"],"tip":"practical tip","type":"video|text","duration":"5 min|${textDuration}"}]`
             : `Continúa generando las ${missing} lecciones faltantes (lecciones ${validLessons.length + 1} a ${lessonCount}) para el módulo "${mod.title}" del curso "${blTitle}".
-Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (700-900 palabras cada una) — misma estructura de 5 secciones que el set principal (pregunta de apertura, desarrollo, un ejemplo real trabajado a fondo, un ejercicio de práctica propia, y cierre-resumen solo en la última lección de texto).
+Estas son las ÚLTIMAS ${missing} lecciones de un módulo de ${lessonCount} lecciones. La lección ${lessonCount} es tipo video (resumen, 100-150 palabras, ~5 min). Las demás en este lote son tipo texto (900-1100 palabras cada una) — misma estructura de 5 secciones que el set principal (pregunta de apertura, desarrollo, un ejemplo real trabajado a fondo, un ejercicio de práctica propia, y cierre-resumen solo en la última lección de texto), incluyendo un recuadro destacado con color (<div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;">).
 Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdown de cercado:
 [{"title":"Título","content":"<h3>subtítulo</h3><p>Contenido HTML</p>","points":["punto 1","punto 2","punto 3"],"tip":"consejo práctico","type":"video|text","duration":"5 min|${textDuration}"}]`;
           const retryRaw = await invokeBedrockForJson(retryPrompt, 64000).catch((e: any) => {
@@ -228,6 +231,13 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             }
           }
         }
+
+        // Visual variety + honest durations (Trello DmPpbrff, 2026-08-31 15:19): one AI
+        // image per lesson (best-effort, never blocks) + duration recomputed from the
+        // ACTUAL final word count (content, including the resources just appended above,
+        // plus points/tip) — replaces the flat "5 min"/"9 min" guess that let a truncated
+        // ~79-word lesson claim 5 minutes.
+        await attachLessonVisuals(lessonData, mod.title);
 
         await prisma.lesson.createMany({ data: lessonData });
         const createdLessons = lessonData.map((l) => ({ duration: l.duration }));
