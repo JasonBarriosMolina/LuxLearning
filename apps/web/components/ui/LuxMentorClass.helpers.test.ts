@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, extractYouTubeId } from './LuxMentorClass.helpers';
+import { buildSystemPrompt, extractYouTubeId, computeSilenceAction } from './LuxMentorClass.helpers';
 
 describe('buildSystemPrompt — tone constraint', () => {
   // Trello DmPpbrff item 6 (2026-08-30 20:24): Lux Mentor's on-screen/spoken content
@@ -31,6 +31,40 @@ describe('buildSystemPrompt — tone constraint', () => {
     const prompt = buildSystemPrompt('Enfócate en ejemplos musicales.', null, 'es', null);
     expect(prompt).toContain('Enfócate en ejemplos musicales.');
     expect(prompt).toMatch(/sin emojis/i);
+  });
+});
+
+describe('computeSilenceAction — item 7 silence-timeout', () => {
+  const base = { checkinThreshold: 12, endThreshold: 10 };
+
+  it('does nothing during the monologue phase (not in Q&A yet)', () => {
+    const action = computeSilenceAction({ ...base, inQA: false, silenceSeconds: 999, checkinSent: false, secondsSinceCheckin: 0 });
+    expect(action).toBe('none');
+  });
+
+  it('does nothing before the check-in threshold is reached', () => {
+    const action = computeSilenceAction({ ...base, inQA: true, silenceSeconds: 5, checkinSent: false, secondsSinceCheckin: 0 });
+    expect(action).toBe('none');
+  });
+
+  it('triggers a check-in once silence reaches the threshold', () => {
+    const action = computeSilenceAction({ ...base, inQA: true, silenceSeconds: 12, checkinSent: false, secondsSinceCheckin: 0 });
+    expect(action).toBe('checkin');
+  });
+
+  it('does not end the call right after the check-in is sent', () => {
+    const action = computeSilenceAction({ ...base, inQA: true, silenceSeconds: 12, checkinSent: true, secondsSinceCheckin: 2 });
+    expect(action).toBe('none');
+  });
+
+  it('ends the call once the post-check-in grace period elapses with no reply', () => {
+    const action = computeSilenceAction({ ...base, inQA: true, silenceSeconds: 22, checkinSent: true, secondsSinceCheckin: 10 });
+    expect(action).toBe('end');
+  });
+
+  it('never re-triggers checkin once already sent, even if silenceSeconds keeps climbing', () => {
+    const action = computeSilenceAction({ ...base, inQA: true, silenceSeconds: 40, checkinSent: true, secondsSinceCheckin: 3 });
+    expect(action).toBe('none');
   });
 });
 

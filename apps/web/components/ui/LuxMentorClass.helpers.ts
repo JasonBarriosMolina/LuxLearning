@@ -54,6 +54,28 @@ FASE 2 — Q&A (después de 5 minutos, activada por mensaje del sistema): Cuando
   return base;
 }
 
+// Silence-timeout decision (Trello DmPpbrff item 7, 2026-08-30 20:28): pure so it can be
+// unit-tested without mocking timers/Vapi. The component calls this on every 1s tick
+// during Q&A and enacts whichever action comes back — 'checkin' sends the "are you
+// still there?" system message once; 'end' sends the goodbye and stops the call.
+export type SilenceAction = 'none' | 'checkin' | 'end';
+
+export function computeSilenceAction(params: {
+  inQA: boolean;                 // elapsed >= MONOLOGUE_SECONDS
+  silenceSeconds: number;        // seconds since the student last spoke
+  checkinSent: boolean;          // has the "are you there?" message already been sent
+  secondsSinceCheckin: number;   // seconds since that check-in was sent (0 if not sent)
+  checkinThreshold: number;      // e.g. 12
+  endThreshold: number;          // e.g. 10
+}): SilenceAction {
+  const { inQA, silenceSeconds, checkinSent, secondsSinceCheckin, checkinThreshold, endThreshold } = params;
+  if (!inQA) return 'none';
+  if (!checkinSent) {
+    return silenceSeconds >= checkinThreshold ? 'checkin' : 'none';
+  }
+  return secondsSinceCheckin >= endThreshold ? 'end' : 'none';
+}
+
 export function extractYouTubeId(url: string): string {
   const match = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
   return match?.[1] ?? '';

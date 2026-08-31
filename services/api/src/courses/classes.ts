@@ -12,7 +12,12 @@ import {
   updateClassSession,
 } from '../shared/db-classes';
 
-const MAX_ATTEMPTS = 2;
+// Trello DmPpbrff item 7 (2026-08-30 20:28): "el estudiante no puede llevar 2 veces las
+// clases con Luz Mentor... es imperativo que solo sea una vez." Was 2 — a student could
+// legitimately retake a class with no technical issue at all. Voided (technical-failure)
+// sessions are still excluded from this count, so a real connection problem still gets a
+// free retry — only a second *successful-connection* attempt is now blocked.
+const MAX_ATTEMPTS = 1;
 
 export async function handleClasses(
   event: any,

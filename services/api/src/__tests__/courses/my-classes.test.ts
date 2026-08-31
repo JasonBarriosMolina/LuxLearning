@@ -211,10 +211,11 @@ describe('POST /my-classes/start — completed session', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('POST /my-classes/start — attempts exhausted', () => {
-  it('returns attemptsExhausted=true when 2 real attempts exist', async () => {
+  // Trello DmPpbrff item 7 (2026-08-30 20:28): only 1 real (non-voided, connected) attempt
+  // is allowed — a student must not be able to retake a class with no technical issue.
+  it('returns attemptsExhausted=true after just 1 real attempt', async () => {
     mockListMySessions.mockResolvedValueOnce([
       { sessionId: 's1', status: 'error', voided: false, vapiCallId: 'call-1', createdAt: new Date().toISOString() },
-      { sessionId: 's2', status: 'error', voided: false, vapiCallId: 'call-2', createdAt: new Date().toISOString() },
     ]);
     const res = await handleClasses(
       makeEvent({}, START_BODY), 'POST', '/my-classes/start', 'u1', makePrisma(EVAL_EVENT),
