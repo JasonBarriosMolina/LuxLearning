@@ -48,6 +48,7 @@ export function CourseGenerationStatusBanner({ jobId, onDone }: Props) {
     lessons: 'Generando lecciones',
     quiz: 'Generando quizzes',
     reflections: 'Registrando reflexiones',
+    carousels: 'Generando carrouseles interactivos',
     classes: 'Generando clases con Lux Mentor',
     interviews: 'Registrando entrevistas',
     repair: 'Verificando y completando módulos',

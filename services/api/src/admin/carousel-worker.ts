@@ -79,6 +79,86 @@ export function computeSlideTiming(slides: DraftSlide[], marks: Array<{ time: nu
   });
 }
 
+/**
+ * Generates narration audio + timed slide images and saves the finished Lux Carrousel
+ * as a Lesson. Shared by the manual dispatch job below and the automatic per-module
+ * phase in ai-wizard-carousel-phase.ts (Trello DmPpbrff, 2026-08-31 14:02).
+ *
+ * `insertAtOrder`, when given, shifts the lesson currently at that order (and any
+ * after it) up by one and inserts the carousel there instead of appending at the
+ * end — used by the auto-phase to land the carousel as the module's PENULTIMATE
+ * lesson, right before the existing written closing lesson ("que el cierre se haga
+ * con una lección escrita como ya existe").
+ */
+export async function generateCarouselAssets(
+  prisma: any,
+  moduleId: string,
+  slides: DraftSlide[],
+  courseLanguage: string | undefined,
+  insertAtOrder?: number,
+): Promise<{ lessonId: string } | null> {
+  const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
+  if (!mod) return null;
+
+  const { slides: fittedSlides, dropped } = fitSlidesToNarrationBudget(slides);
+  if (dropped > 0) {
+    console.warn(`[carousel-worker] module ${moduleId}: dropped ${dropped} trailing slide(s) — combined narration exceeded Polly's ${POLLY_MAX_CHARS}-char limit`);
+  }
+
+  const voiceId = defaultVoiceForLanguage(courseLanguage);
+  const narrationText = fittedSlides.map(normalizedSegment).join(' ');
+
+  const narration = await generateCarouselNarration(`carousel-${moduleId}`, narrationText, voiceId);
+  if (!narration) return null;
+
+  const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
+
+  const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
+  for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
+    const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
+    await Promise.all(batch.map(async (s, bi) => {
+      const idx = i + bi;
+      const url = await generateLessonImage(mod.title, mod.title, idx, { promptText: s.imagePrompt, style: 'diagram' }).catch(() => null);
+      slideImages[idx] = url;
+    }));
+  }
+
+  const finalSlides = timedSlides.map((s, i) => ({
+    order: s.order, onScreenText: s.onScreenText, imageUrl: slideImages[i], startMs: s.startMs, endMs: s.endMs,
+  }));
+
+  // pdfRecapUrl is intentionally left null here — the "Lux Recap" PDF is built
+  // on demand by the student-facing courses lambda the first time anyone asks
+  // for it (Trello N1bbWdz0, 2026-08-31 15:21), not eagerly during generation.
+  const lessonData = {
+    moduleId, title: `Lux Carrousel: ${mod.title}`, duration: '6 min',
+    type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
+    audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
+  };
+
+  let lesson: { id: string };
+  if (insertAtOrder != null) {
+    // Shift every lesson at/after the target order up by one, then insert at the
+    // freed slot — sequential, not $transaction, to avoid the unique(moduleId,order)
+    // constraint colliding mid-shift (each update moves a lesson to an order nothing
+    // else currently holds, since we walk from the highest order downward).
+    const toShift = await prisma.lesson.findMany({
+      where: { moduleId, order: { gte: insertAtOrder } },
+      orderBy: { order: 'desc' },
+      select: { id: true, order: true },
+    });
+    for (const l of toShift) {
+      await prisma.lesson.update({ where: { id: l.id }, data: { order: l.order + 1 } });
+    }
+    lesson = await prisma.lesson.create({ data: { ...lessonData, order: insertAtOrder } });
+  } else {
+    const lessonCount = await prisma.lesson.count({ where: { moduleId } });
+    lesson = await prisma.lesson.create({ data: { ...lessonData, order: lessonCount + 1 } });
+  }
+
+  return { lessonId: lesson.id };
+}
+
 export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
   if (ctx.action !== 'carousel-generate') return null;
   const { prisma, body } = ctx;
@@ -87,59 +167,20 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
   };
 
   try {
-    const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
-    if (!mod) { await saveAiJob(_jobId, { status: 'error', error: 'Módulo no encontrado' }); return ok({}); }
-
-    const { slides: fittedSlides, dropped } = fitSlidesToNarrationBudget(slides);
-    if (dropped > 0) {
-      console.warn(`[carousel-worker] module ${moduleId}: dropped ${dropped} trailing slide(s) — combined narration exceeded Polly's ${POLLY_MAX_CHARS}-char limit`);
-    }
-
-    const voiceId = defaultVoiceForLanguage(courseLanguage);
-    const narrationText = fittedSlides.map(normalizedSegment).join(' ');
-
-    const narration = await generateCarouselNarration(`carousel-${moduleId}`, narrationText, voiceId);
-    if (!narration) {
-      await saveAiJob(_jobId, { status: 'error', error: 'No se pudo generar la narración de audio' });
+    await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: 0, totalModules: slides.length });
+    const result = await generateCarouselAssets(prisma, moduleId, slides, courseLanguage);
+    if (!result) {
+      await saveAiJob(_jobId, { status: 'error', error: 'No se pudo generar el carrousel (módulo no encontrado o narración fallida)' });
       return ok({});
     }
 
-    const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
-    await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: 0, totalModules: fittedSlides.length });
-
-    const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
-    for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
-      const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
-      await Promise.all(batch.map(async (s, bi) => {
-        const idx = i + bi;
-        const url = await generateLessonImage(mod.title, mod.title, idx, { promptText: s.imagePrompt, style: 'diagram' }).catch(() => null);
-        slideImages[idx] = url;
-      }));
-      await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: Math.min(i + IMAGE_CONCURRENCY, fittedSlides.length), totalModules: fittedSlides.length });
-    }
-
-    const finalSlides = timedSlides.map((s, i) => ({
-      order: s.order, onScreenText: s.onScreenText, imageUrl: slideImages[i], startMs: s.startMs, endMs: s.endMs,
-    }));
-
-    // pdfRecapUrl is intentionally left null here — the "Lux Recap" PDF is built
-    // on demand by the student-facing courses lambda the first time anyone asks
-    // for it (Trello N1bbWdz0, 2026-08-31 15:21), not eagerly during generation.
-    const lessonCount = await prisma.lesson.count({ where: { moduleId } });
-    const lesson = await prisma.lesson.create({
-      data: {
-        moduleId, order: lessonCount + 1, title: `Lux Carrousel: ${mod.title}`, duration: '6 min',
-        type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
-        audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
-      },
-    });
-
-    await saveAiJob(_jobId, { status: 'done', lessonId: lesson.id });
+    await saveAiJob(_jobId, { status: 'done', lessonId: result.lessonId });
 
     if (creatorUserId) {
+      const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
       await createNotification({
         userId: creatorUserId, notifId: createId(), type: 'GENERAL',
-        message: `Lux Carrousel listo — ${mod.title}`,
+        message: `Lux Carrousel listo — ${mod?.title ?? ''}`,
         read: false, createdAt: new Date().toISOString(), actionUrl: `/admin/courses`,
       }).catch(() => {});
     }
