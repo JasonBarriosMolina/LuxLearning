@@ -10,6 +10,7 @@ import {
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
 import { generateModuleCarousel } from './ai-wizard-carousel-phase';
 import { attachLessonVisuals } from './ai-wizard-lesson-visuals';
+import { handleWizardCopilot } from './ai-wizard-copilot-worker';
 import {
   notifyCourseGenerationDone, sanitizeLessonContent, generateAndSaveQuizQuestions,
   isPlaceholderContent, verifyAndRepairModule,
@@ -63,11 +64,24 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
     // module 2, etc. — so an evaluator watching the status bar sees written lessons finish
     // first ("para ver el contenido del curso lo más pronto posible"), and the status bar
     // can name which phase is running instead of one opaque module counter.
-    // Carousel phase (Trello DmPpbrff, 2026-08-31 14:02): auto-generated for EVERY module,
-    // runs after quizzes+reflections and before classes — see generateModuleCarousel below.
+    // Carousel phase (Trello DmPpbrff, 2026-08-31 17:30): auto-generated for EVERY module,
+    // runs right after this lessons phase, before classes/quiz/reflection — see
+    // generateModuleCarousel below.
     const generateModuleLessons = async (moduleIdx: number): Promise<void> => {
       const moduleId = (moduleIds as string[])[moduleIdx]!;
       try {
+        // Idempotency guard (Trello DmPpbrff, 2026-08-31 17:30 — Mack: "Lux Planner
+        // sigue generando lecciones vacías"). Root cause found in CloudWatch: this whole
+        // action was dispatched twice for the same course, and the second run's
+        // createMany collided on the (moduleId, order) unique constraint — a genuine DB
+        // error, not a Bedrock truncation — leaving every affected module's FIRST (valid)
+        // insert attempt aside while the failed second call reported failure. A module
+        // that already has lessons should never get a second, colliding batch.
+        const existingLessonCount = await prisma.lesson.count({ where: { moduleId } });
+        if (existingLessonCount > 0) {
+          console.log(`[wizard-lessons-bulk] module ${moduleId}: already has ${existingLessonCount} lessons, skipping (idempotency guard)`);
+          return;
+        }
         const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
         if (!mod) return;
 
@@ -391,29 +405,17 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
           await saveAiJob(_jobId, { status: 'processing', phase: 'lessons', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
         }
 
-        // ── Phase 2: quizzes, only for modules that need one ─────────────────────
-        const quizIdx = allIdx.filter((idx) => quizIdxSet.has(idx));
-        for (let i = 0; i < quizIdx.length; i += MODULE_CONCURRENCY) {
-          const batch = quizIdx.slice(i, i + MODULE_CONCURRENCY);
-          await Promise.all(batch.map((idx) => generateModuleQuiz(idx)));
-          await saveAiJob(_jobId, { status: 'processing', phase: 'quiz', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, quizIdx.length), totalModules: quizIdx.length });
-        }
-
-        // ── Phase 3: reflections, only for modules that need one (instant — a record only) ──
-        const reflexIdx = allIdx.filter((idx) => reflexIdxSet.has(idx));
-        for (const idx of reflexIdx) await recordModuleReflection(idx);
-        if (reflexIdx.length > 0) {
-          await saveAiJob(_jobId, { status: 'processing', phase: 'reflections', modulesProcessed: reflexIdx.length, totalModules: reflexIdx.length });
-        }
-
-        // ── Phase 3b: carousels, for EVERY module (auto-default, item 3) ─────────
+        // ── Phase 2: carousels, for EVERY module (auto-default, item 3) ──────────
+        // Order per Mack (Trello DmPpbrff, 2026-08-31 17:30 — his latest word on
+        // ordering, superseding two earlier/contradictory versions of this same day):
+        // lessons → carousel → class → quiz/reflection → interview.
         for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
           const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
           await Promise.all(batch.map((idx) => generateModuleCarouselPhase(idx)));
           await saveAiJob(_jobId, { status: 'processing', phase: 'carousels', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
         }
 
-        // ── Phase 4: classes, only for modules that need one ─────────────────────
+        // ── Phase 3: classes, only for modules that need one ─────────────────────
         const classIdx = allIdx.filter((idx) => classIdxSet.has(idx));
         for (let i = 0; i < classIdx.length; i += MODULE_CONCURRENCY) {
           const batch = classIdx.slice(i, i + MODULE_CONCURRENCY);
@@ -421,7 +423,22 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
           await saveAiJob(_jobId, { status: 'processing', phase: 'classes', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, classIdx.length), totalModules: classIdx.length });
         }
 
-        // ── Phase 5: interviews, only for modules that need one (instant — a record only) ──
+        // ── Phase 4: quizzes, only for modules that need one ─────────────────────
+        const quizIdx = allIdx.filter((idx) => quizIdxSet.has(idx));
+        for (let i = 0; i < quizIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = quizIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleQuiz(idx)));
+          await saveAiJob(_jobId, { status: 'processing', phase: 'quiz', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, quizIdx.length), totalModules: quizIdx.length });
+        }
+
+        // ── Phase 5: reflections, only for modules that need one (instant — a record only) ──
+        const reflexIdx = allIdx.filter((idx) => reflexIdxSet.has(idx));
+        for (const idx of reflexIdx) await recordModuleReflection(idx);
+        if (reflexIdx.length > 0) {
+          await saveAiJob(_jobId, { status: 'processing', phase: 'reflections', modulesProcessed: reflexIdx.length, totalModules: reflexIdx.length });
+        }
+
+        // ── Phase 6: interviews, only for modules that need one (instant — a record only) ──
         const interviewIdx = allIdx.filter((idx) => interviewIdxSet.has(idx));
         for (const idx of interviewIdx) await recordModuleInterview(idx);
         if (interviewIdx.length > 0) {
@@ -480,107 +497,9 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
   }
 
   // ── Async worker: wizard copilot ─────────────────────────────────────────────
-  if (ctx.action === 'wizard-copilot') {
-    const {
-      _jobId, title, courseType, description = '', planLanguage = 'ES', modality = '',
-      totalWeeks = 16, startDate = '', classDays = [], classSchedule = '',
-      academicPeriod = '', evaluationItems = [], syllabusInput = '', exceptionWeeks = [],
-    } = body as any;
-    try {
-      const isEN = planLanguage === 'EN';
-      const effectiveWeeks = (totalWeeks as number) - (exceptionWeeks as number[]).length;
-      const evalSummary = (evaluationItems as any[])
-        .map((it: any) => {
-          const label = isEN ? (it.nameEN || it.name) : it.name;
-          const countNote = it.count > 1 ? ` (${it.count})` : '';
-          return `- ${label}${countNote}: ${it.weight}%, ${it.count} entrega(s)`;
-        }).join('\n');
-      const exceptionNote = (exceptionWeeks as number[]).length > 0
-        ? `\n${isEN ? 'Non-teaching weeks' : 'Semanas con excepciones (NO lectivas)'}: ${(exceptionWeeks as number[]).map((n) => `S${n}`).join(', ')}`
-        : '';
-      const jsonFormat = isEN
-        ? `{"modules":[{"name":"Module","nameEN":"Module","description":"2-3 sentences","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Specific topic"],"module":"Module","procedure":"Suggested class activity","notes":"Important observation or upcoming deadline","evalEvent":null}]}`
-        : `{"modules":[{"name":"Módulo","nameEN":"Module","description":"2-3 oraciones","descriptionEN":"2-3 sentences","weeks":[1,2,3]}],"weeklyPlan":[{"weekNum":1,"topics":["Tema específico"],"module":"Módulo","procedure":"Actividad sugerida en clase","notes":"Observación importante o entrega próxima","evalEvent":null}]}`;
-      const isAsync = (modality as string).toUpperCase().includes('ASINC') || (modality as string).toUpperCase().includes('ASYNC');
-      const asyncNote = isAsync
-        ? (isEN
-          ? `\n\nASYNC COURSE RULE — NON-NEGOTIABLE:
-1. Generate EXACTLY ${effectiveWeeks} modules — one per teaching week. No more, no less.
-2. EVERY weeklyPlan entry MUST have a UNIQUE "module" value. The same module name MUST NOT appear in more than one week under ANY circumstance — a module must never span 2 weeks.
-3. Each module in the "modules" array MUST have "weeks" as a single-element array, e.g. "weeks":[3].
-4. If the syllabus has fewer topics than ${effectiveWeeks} weeks, SUBDIVIDE each topic into specific subtopics. Every week must have its own uniquely named module.
-5. VERIFY before responding: count the unique "module" values in weeklyPlan — it must equal ${effectiveWeeks}.`
-          : `\n\nREGLA CURSO ASÍNCRONO — NO NEGOCIABLE:
-1. Genera EXACTAMENTE ${effectiveWeeks} módulos — uno por semana lectiva. Ni más, ni menos.
-2. CADA entrada de weeklyPlan DEBE tener un valor "module" ÚNICO. El mismo nombre de módulo NO DEBE aparecer en más de una semana BAJO NINGUNA CIRCUNSTANCIA — un módulo nunca debe repartirse entre 2 semanas.
-3. Cada módulo en el array "modules" DEBE tener "weeks" como array de UN SOLO elemento, ej: "weeks":[3].
-4. Si el temario tiene menos temas que ${effectiveWeeks} semanas, SUBDIVIDE cada tema en subtemas específicos. Cada semana debe tener su propio módulo con nombre único.
-5. VERIFICA antes de responder: cuenta los valores "module" únicos en weeklyPlan — debe ser igual a ${effectiveWeeks}.`)
-        : '';
-      // For sync/lecture courses: one distinct module per teaching week — no module spans multiple weeks.
-      const syncNote = !isAsync
-        ? (isEN
-          ? `\n\nSYNC/LECTURE COURSE RULE — NON-NEGOTIABLE:
-1. Generate EXACTLY ${effectiveWeeks} modules — one per teaching week. No more, no less.
-2. EVERY weeklyPlan entry MUST have a UNIQUE "module" value. The same module name MUST NOT appear in more than one week under ANY circumstance.
-3. Each module in the "modules" array MUST have "weeks" as a single-element array, e.g. "weeks":[3].
-4. If the syllabus has fewer topics than ${effectiveWeeks} weeks, SUBDIVIDE each topic into specific subtopics (e.g. "Linear Algebra" → "Linear Algebra: Vectors", "Linear Algebra: Matrix Operations", "Linear Algebra: Eigenvalues"). Every week must have its own uniquely named module.
-5. VERIFY before responding: count the unique "module" values in weeklyPlan — it must equal ${effectiveWeeks}.`
-          : `\n\nREGLA ABSOLUTA CURSO SINCRÓNICO — NO NEGOCIABLE:
-1. Genera EXACTAMENTE ${effectiveWeeks} módulos — uno por semana lectiva. Ni más, ni menos.
-2. CADA entrada de weeklyPlan DEBE tener un valor "module" ÚNICO. El mismo nombre de módulo NO DEBE aparecer en más de una semana BAJO NINGUNA CIRCUNSTANCIA.
-3. Cada módulo en el array "modules" DEBE tener "weeks" como array de UN SOLO elemento, ej: "weeks":[3].
-4. Si el temario tiene menos temas que ${effectiveWeeks} semanas, SUBDIVIDE cada tema en subtemas específicos (ej: "Álgebra Lineal" → "Álgebra Lineal: Vectores", "Álgebra Lineal: Operaciones con Matrices", "Álgebra Lineal: Valores Propios"). Cada semana debe tener su propio módulo con nombre único.
-5. VERIFICA antes de responder: cuenta los valores "module" únicos en weeklyPlan — debe ser igual a ${effectiveWeeks}.`)
-        : '';
-      const prompt = isEN
-        ? `You are an expert instructional designer. Generate a week-by-week curriculum plan.\n\nCOURSE: ${title}\nTYPE: ${courseType}\nDESCRIPTION: ${description}\nPERIOD: ${academicPeriod}\nMODALITY: ${modality}\nSCHEDULE: ${classSchedule} | Days: ${(classDays as string[]).join(', ')}\nTOTAL TEACHING WEEKS: ${effectiveWeeks} (out of ${totalWeeks} calendar weeks)\nSTART DATE: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nCONFIGURED EVALUATIONS:\n${evalSummary}\n\nSYLLABUS:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribute the syllabus progressively week by week. For weeks with evaluations, include the evaluation in evalEvent. For each week include: procedure (suggested classroom activity) and notes (important observations, upcoming deadlines, or reminders).\n\nRespond ONLY with valid JSON (no markdown):\n${jsonFormat}`
-        : `Eres un experto en diseño curricular. Genera un plan de estudios detallado semana por semana.\n\nCURSO: ${title}\nTIPO: ${courseType}\nDESCRIPCIÓN: ${description}\nPERÍODO: ${academicPeriod}\nMODALIDAD: ${modality}\nHORARIO: ${classSchedule} | Días: ${(classDays as string[]).join(', ')}\nSEMANAS LECTIVAS: ${effectiveWeeks} (de ${totalWeeks} semanas calendario)\nFECHA INICIO: ${startDate}${exceptionNote}${asyncNote}${syncNote}\n\nEVALUACIONES CONFIGURADAS:\n${evalSummary}\n\nCONTENIDO / TEMARIO:\n${(syllabusInput as string).slice(0, 2500)}\n\nDistribuye el temario progresivamente semana a semana. Para semanas con evaluaciones, inclúyelas en evalEvent. Por cada semana incluye: procedure (actividad sugerida en clase) y notes (observaciones importantes, entregas próximas o recordatorios).\n\nResponde ÚNICAMENTE con JSON válido (sin markdown):\n${jsonFormat}`;
-
-      const result = await invokeBedrockForJson(prompt, 64000);
-      if (!result?.weeklyPlan || !Array.isArray(result.weeklyPlan)) {
-        await saveAiJob(_jobId, { status: 'error', error: 'El modelo no pudo generar el plan. Intenta de nuevo.' });
-      } else {
-        // Post-process: enforce unique module per week (sync AND async — a module must
-        // never span 2 weeks in either modality). Even with the strict prompt, Bedrock
-        // sometimes reuses module names across weeks.
-        {
-          const seenModules = new Map<string, number>();
-          const newModules: any[] = Array.isArray(result.modules) ? [...result.modules] : [];
-          for (const wk of result.weeklyPlan) {
-            const orig: string = wk.module ?? '';
-            if (!orig) continue;
-            const seen = seenModules.get(orig) ?? 0;
-            if (seen > 0) {
-              // Duplicate — create a unique sub-module name
-              const suffix = isEN ? ` — Part ${seen + 1}` : ` — Parte ${seen + 1}`;
-              const newName = `${orig}${suffix}`;
-              wk.module = newName;
-              // Clone the original module entry with the new name
-              const parentMod = newModules.find((m: any) => m.name === orig || m.nameEN === orig);
-              if (parentMod) {
-                newModules.push({
-                  ...parentMod,
-                  name: parentMod.name ? `${parentMod.name}${suffix}` : newName,
-                  nameEN: parentMod.nameEN ? `${parentMod.nameEN}${isEN ? ` — Part ${seen + 1}` : ` — Part ${seen + 1}`}` : newName,
-                  weeks: [wk.weekNum],
-                });
-              } else {
-                newModules.push({ name: newName, nameEN: newName, description: '', descriptionEN: '', weeks: [wk.weekNum] });
-              }
-              console.warn(`[wizard-copilot] dedup (${isAsync ? 'async' : 'sync'}): week ${wk.weekNum} had duplicate module "${orig}" → renamed "${newName}"`);
-            }
-            seenModules.set(orig, seen + 1);
-          }
-          result.modules = newModules;
-        }
-        await saveAiJob(_jobId, { status: 'done', weeklyPlan: result.weeklyPlan, modules: result.modules ?? [] });
-      }
-    } catch (err: any) {
-      await saveAiJob(_jobId, { status: 'error', error: err?.message ?? 'Error generando plan' });
-    }
-    return ok({});
-  }
+  // Extracted to ai-wizard-copilot-worker.ts (2026-08-31) to stay under the 600-line limit.
+  const copilotResult = await handleWizardCopilot(ctx);
+  if (copilotResult) return copilotResult;
 
   return null;
 }

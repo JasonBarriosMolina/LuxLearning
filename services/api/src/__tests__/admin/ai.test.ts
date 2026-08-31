@@ -379,6 +379,26 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect((doneCall?.[1] as any)?.failed).toBe(0);
   });
 
+  it('wizard-lessons-bulk skips a module that already has lessons instead of colliding on the (moduleId, order) unique constraint (regression: Trello DmPpbrff, 2026-08-31 17:30 — root cause of "lecciones vacías": the whole job was dispatched twice for the same course, and the second run\'s createMany threw P2002 on every module)', async () => {
+    const createManyMock = vi.fn().mockResolvedValue({ count: 8 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }) },
+      // Module already has 8 lessons from a prior run — the guard must skip, not retry.
+      lesson: { createMany: createManyMock, count: vi.fn().mockResolvedValue(8), findMany: vi.fn().mockResolvedValue(
+        Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: '<p>Real content.</p>', points: [], tip: '' })),
+      ) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-idempotent', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    expect(createManyMock).not.toHaveBeenCalled();
+  });
+
   it('wizard-lessons-bulk records quiz INTENT via EvaluationEvent even when the module ends up with 0 questions (regression: Trello DmPpbrff comment 6a91f73f — "Preguntas del quiz (0)" section can\'t be hidden without a durable planned-vs-not signal)', async () => {
     const { invokeBedrockForJson } = await import('../../admin/ctx');
     // Simulate quiz question generation returning nothing usable — module ends up with
@@ -621,8 +641,10 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     }));
   });
 
-  it('wizard-lessons-bulk runs phases across ALL modules in order: lessons → quiz → reflections → classes → interviews (Trello DmPpbrff item 8, 2026-08-30 20:30)', async () => {
+  it('wizard-lessons-bulk runs phases across ALL modules in order: lessons → carousel → class → quiz → reflections → interviews (Trello DmPpbrff, 2026-08-31 17:30 — Mack\'s latest/authoritative word on ordering, superseding two earlier same-day versions)', async () => {
     const { invokeBedrockForJson } = await import('../../admin/ctx');
+    const { draftCarouselScript } = await import('../../admin/carousel');
+    const { generateCarouselAssets } = await import('../../admin/carousel-worker');
     const callOrder: string[] = [];
 
     vi.mocked(invokeBedrockForJson).mockImplementation(async (prompt: string) => {
@@ -635,18 +657,31 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
       // lessonPrompt / resourcesPrompt / retryPrompt — shape doesn't matter for ordering
       return null;
     });
+    vi.mocked(draftCarouselScript).mockImplementation(async () => {
+      callOrder.push('carousel');
+      return { slides: [{ order: 1, onScreenText: { title: 'T', bullets: [] }, narrationSegment: 'Seg.', imagePrompt: 'p' }], topic: 'Mod' };
+    });
+    vi.mocked(generateCarouselAssets).mockResolvedValue({ lessonId: 'carousel-1' });
 
     const evalEventCreate = vi.fn().mockImplementation(async ({ data }: any) => {
       callOrder.push(data.type.toLowerCase());
       return { id: `ee-${data.type}-${data.moduleId}` };
     });
-    const lessonCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('lessons'); return { count: 8 }; });
+    let lessonsCreated = false;
+    const lessonCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('lessons'); lessonsCreated = true; return { count: 8 }; });
     const questionCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('quiz-questions'); return { count: 10 }; });
     const fakeLessons = Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `L${i + 1}`, content: '<p>Real content, no placeholder here.</p>', points: [], tip: '' }));
 
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
-      lesson: { createMany: lessonCreateMany, findMany: vi.fn().mockResolvedValue(fakeLessons) },
+      lesson: {
+        createMany: lessonCreateMany,
+        findMany: vi.fn().mockResolvedValue(fakeLessons),
+        // 0 for the carousel-existence check; the plain count is 0 until lessons are
+        // actually created (the new idempotency guard in generateModuleLessons reads
+        // this — must be 0 first so the lessons phase actually runs), then 8 after.
+        count: vi.fn().mockImplementation(async ({ where }: any) => (where?.type === 'carousel' ? 0 : (lessonsCreated ? 8 : 0))),
+      },
       question: { createMany: questionCreateMany },
       evaluationEvent: { findFirst: vi.fn().mockResolvedValue(null), create: evalEventCreate },
     });
@@ -665,10 +700,11 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
 
     const firstIndexOf = (label: string) => callOrder.indexOf(label);
     expect(firstIndexOf('lessons')).toBeGreaterThanOrEqual(0);
-    expect(firstIndexOf('lessons')).toBeLessThan(firstIndexOf('quiz'));
+    expect(firstIndexOf('lessons')).toBeLessThan(firstIndexOf('carousel'));
+    expect(firstIndexOf('carousel')).toBeLessThan(firstIndexOf('class'));
+    expect(firstIndexOf('class')).toBeLessThan(firstIndexOf('quiz'));
     expect(firstIndexOf('quiz')).toBeLessThan(firstIndexOf('reflection'));
-    expect(firstIndexOf('reflection')).toBeLessThan(firstIndexOf('class'));
-    expect(firstIndexOf('class')).toBeLessThan(firstIndexOf('interview'));
+    expect(firstIndexOf('reflection')).toBeLessThan(firstIndexOf('interview'));
     // Both modules' lessons finish before either module's quiz starts — not
     // module-by-module (the old per-module loop's behavior).
     const lastLessonsIdx = callOrder.lastIndexOf('lessons');
@@ -771,7 +807,7 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     }));
   });
 
-  it('wizard-lessons-bulk auto-generates a Lux Carrousel for EVERY module — no opt-in indices required — inserted as the penultimate lesson, running after quiz+reflection and before class (Trello DmPpbrff, 2026-08-31 14:02)', async () => {
+  it('wizard-lessons-bulk auto-generates a Lux Carrousel for EVERY module — no opt-in indices required — inserted as the penultimate lesson, running right after lessons and before quiz/reflection/class (Trello DmPpbrff, 2026-08-31 17:30)', async () => {
     const { draftCarouselScript } = await import('../../admin/carousel');
     const { generateCarouselAssets } = await import('../../admin/carousel-worker');
     const { invokeBedrockForJson } = await import('../../admin/ctx');
@@ -787,20 +823,19 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     });
 
     const callOrder: string[] = [];
+    let lessonsCreated = false;
     const evalEventCreate = vi.fn().mockImplementation(async ({ data }: any) => { callOrder.push(data.type.toLowerCase()); return { id: `ee-${data.type}` }; });
     const questionCreateMany = vi.fn().mockImplementation(async () => { callOrder.push('quiz-questions'); return { count: 10 }; });
-    // lessonCount = 8 (real lessons already exist) — required so the phase doesn't skip
-    // for "no written lessons yet"; no fakeLessons array needed since the sweep's
-    // repair path isn't under test here.
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc', duration: '60 min' }), update: vi.fn().mockResolvedValue({}) },
       lesson: {
-        createMany: vi.fn().mockImplementation(async () => { callOrder.push('lessons'); return { count: 8 }; }),
+        createMany: vi.fn().mockImplementation(async () => { callOrder.push('lessons'); lessonsCreated = true; return { count: 8 }; }),
         // The carousel idempotency guard counts existing type:'carousel' lessons
-        // separately from the plain per-module lesson count — 0 for the former
-        // (no carousel yet), 8 for the latter (real lessons already exist).
+        // separately from the plain per-module lesson count — 0 for the former (no
+        // carousel yet). The plain count must be 0 until lessons actually get created
+        // (the lessons-phase idempotency guard reads this too), then 8 after.
         count: vi.fn().mockImplementation(async ({ where }: any) =>
-          where?.type === 'carousel' ? 0 : 8
+          where?.type === 'carousel' ? 0 : (lessonsCreated ? 8 : 0)
         ),
         findMany: vi.fn().mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: '<p>Real content.</p>', points: [], tip: '' }))),
       },
@@ -823,17 +858,14 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect(draftCarouselScript).toHaveBeenCalledTimes(1);
     // Inserted at order = pre-carousel lesson count (8) — the module's PENULTIMATE slot.
     expect(generateCarouselAssets).toHaveBeenCalledWith(expect.anything(), 'm1', expect.any(Array), 'ES', 8);
-    // Runs after quiz + reflection, before class would run (no class planned here, but
-    // the ordering guarantee is what matters — verified via callOrder positions).
+    // Runs right after lessons, BEFORE quiz + reflection (order per Mack's 17:30
+    // comment, superseding the earlier 14:02 version this test used to assert).
     const quizIdx = callOrder.indexOf('quiz-questions');
     const reflexIdx = callOrder.indexOf('reflection');
     expect(quizIdx).toBeGreaterThanOrEqual(0);
     expect(reflexIdx).toBeGreaterThanOrEqual(0);
-    // draftCarouselScript/generateCarouselAssets were invoked (proves the phase ran)
-    // after both quiz and reflection phases had already completed, since those are
-    // synchronous phases that finish before the carousel phase's loop starts.
-    expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeGreaterThan(questionCreateMany.mock.invocationCallOrder[0]);
-    expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeGreaterThan(evalEventCreate.mock.invocationCallOrder[0]);
+    expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeLessThan(questionCreateMany.mock.invocationCallOrder[0]);
+    expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeLessThan(evalEventCreate.mock.invocationCallOrder[0]);
 
     // Module duration bumped by the carousel's ~6 min (60 → 66).
     expect(prisma.module.update).toHaveBeenCalledWith(expect.objectContaining({ data: { duration: '66 min' } }));
