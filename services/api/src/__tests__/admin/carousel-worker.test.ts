@@ -58,7 +58,7 @@ vi.mock('../../shared/db-dynamo', () => ({
 }));
 global.fetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) }) as any;
 
-import { handleCarouselWorker, computeSlideTiming } from '../../admin/carousel-worker';
+import { handleCarouselWorker, computeSlideTiming, fitSlidesToNarrationBudget } from '../../admin/carousel-worker';
 import { saveAiJob } from '../../shared/db-dynamo';
 
 function makeSlides(n = 3) {
@@ -86,6 +86,44 @@ describe('computeSlideTiming', () => {
     expect(timed[0].startMs).toBe(0);
     expect(timed[1].startMs).toBeGreaterThan(0);
     expect(timed[1].endMs).toBeGreaterThan(timed[1].startMs);
+  });
+});
+
+describe('fitSlidesToNarrationBudget — review fix (2026-08-30): audio/slide desync', () => {
+  // Bug found in review: ctx.ts's generateCarouselNarration silently .slice(0,2900)s the
+  // narration TEXT before synthesis — if applied after building the full text, the last
+  // slides would show images with no matching narration audio at all (a real desync, not
+  // just a timing approximation). Fitting the SLIDE LIST first keeps every kept slide
+  // backed by real audio.
+  it('keeps every slide when the combined narration fits within the budget', () => {
+    const slides = Array.from({ length: 9 }, (_, i) => ({
+      order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: `Frase corta ${i}.`, imagePrompt: 'x',
+    }));
+    const { slides: fitted, dropped } = fitSlidesToNarrationBudget(slides, 2900);
+    expect(fitted).toHaveLength(9);
+    expect(dropped).toBe(0);
+  });
+
+  it('drops only the trailing slides that would overflow the character budget', () => {
+    const slides = [
+      { order: 1, onScreenText: { title: 'A', bullets: [] }, narrationSegment: 'x'.repeat(50), imagePrompt: 'x' },
+      { order: 2, onScreenText: { title: 'B', bullets: [] }, narrationSegment: 'y'.repeat(50), imagePrompt: 'x' },
+      { order: 3, onScreenText: { title: 'C', bullets: [] }, narrationSegment: 'z'.repeat(50), imagePrompt: 'x' },
+    ];
+    const { slides: fitted, dropped } = fitSlidesToNarrationBudget(slides, 110); // fits ~2 slides, not 3
+    expect(fitted).toHaveLength(2);
+    expect(dropped).toBe(1);
+    expect(fitted[0]!.onScreenText.title).toBe('A');
+    expect(fitted[1]!.onScreenText.title).toBe('B');
+  });
+
+  it('never returns a slide list whose narration exceeds the given budget', () => {
+    const slides = Array.from({ length: 20 }, (_, i) => ({
+      order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: 'Una oración de tamaño moderado para esta prueba.', imagePrompt: 'x',
+    }));
+    const { slides: fitted } = fitSlidesToNarrationBudget(slides, 300);
+    const totalLen = fitted.map((s) => s.narrationSegment.trim()).join(' ').length;
+    expect(totalLen).toBeLessThanOrEqual(300);
   });
 });
 
@@ -140,6 +178,31 @@ describe('handleCarouselWorker', () => {
     expect(prisma.lesson.create).not.toHaveBeenCalled();
     const errCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'error');
     expect(errCall).toBeDefined();
+  });
+
+  it('drops trailing slides (and never generates images for them) when narration would overflow Polly\'s limit', async () => {
+    generateCarouselNarrationMock.mockResolvedValue({ audioUrl: 'https://s3.example.com/carousel.mp3', marks: [] });
+    generateLessonImageMock.mockResolvedValue('https://s3.example.com/slide.jpg');
+    const prisma = makePrisma();
+    prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod' });
+    prisma.lesson.count = vi.fn().mockResolvedValue(0);
+    prisma.lesson.create = vi.fn().mockResolvedValue({ id: 'lesson-1' });
+
+    // 3 slides with 1000-char narration each — well past a small 500-char test budget
+    const bigSlides = Array.from({ length: 3 }, (_, i) => ({
+      order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: 'x'.repeat(1000), imagePrompt: 'x',
+    }));
+    const ctx = makeAdminCtx({
+      action: 'carousel-generate', prisma,
+      body: { _jobId: 'job-fit', moduleId: 'm1', slides: bigSlides },
+    });
+    await handleCarouselWorker(ctx as any);
+
+    // Only the slides that fit within Polly's real 2900-char budget got an image call —
+    // 2 slides of 1000 chars fit (≈2001 with the joining space), the 3rd does not (≈3002).
+    expect(generateLessonImageMock).toHaveBeenCalledTimes(2);
+    const created = prisma.lesson.create.mock.calls[0]![0].data;
+    expect(created.carouselSlides).toHaveLength(2);
   });
 
   it('reports an error status when the module does not exist', async () => {
