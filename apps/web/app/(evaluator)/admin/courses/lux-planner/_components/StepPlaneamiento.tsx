@@ -123,6 +123,7 @@ export function StepPlaneamiento({
             lessons: s('Generando lecciones', 'Generating lessons'),
             quiz: s('Generando quizzes', 'Generating quizzes'),
             reflections: s('Registrando reflexiones', 'Recording reflections'),
+            carousels: s('Generando carrouseles interactivos', 'Generating interactive carousels'),
             classes: s('Generando clases con Lux Mentor', 'Generating Lux Mentor classes'),
             interviews: s('Registrando entrevistas', 'Recording interviews'),
             repair: s('Verificando y completando módulos', 'Verifying and completing modules'),

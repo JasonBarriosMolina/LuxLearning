@@ -8,6 +8,7 @@ import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson, generateLessonAudio, defaultMaleVoiceForLanguage,
 } from './ctx';
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
+import { generateModuleCarousel } from './ai-wizard-carousel-phase';
 import {
   notifyCourseGenerationDone, sanitizeLessonContent, generateAndSaveQuizQuestions,
   isPlaceholderContent, verifyAndRepairModule,
@@ -61,8 +62,8 @@ export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
     // module 2, etc. — so an evaluator watching the status bar sees written lessons finish
     // first ("para ver el contenido del curso lo más pronto posible"), and the status bar
     // can name which phase is running instead of one opaque module counter.
-    // (Carousel lessons — mentioned as a future phase between lessons and quizzes — has no
-    // generation step yet; add it here once that feature exists.)
+    // Carousel phase (Trello DmPpbrff, 2026-08-31 14:02): auto-generated for EVERY module,
+    // runs after quizzes+reflections and before classes — see generateModuleCarousel below.
     const generateModuleLessons = async (moduleIdx: number): Promise<void> => {
       const moduleId = (moduleIds as string[])[moduleIdx]!;
       try {
@@ -264,6 +265,22 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       }
     };
 
+    // Auto-carousel — every module, no opt-in index set (Trello DmPpbrff, 2026-08-31
+    // 14:02): unlike quiz/class/reflection/interview this isn't evaluator-selected per
+    // module, it's a default part of the bulk pipeline now. The manual Mini Wizard
+    // (carousel.ts) still exists separately for one-off generation/retries.
+    const generateModuleCarouselPhase = async (moduleIdx: number): Promise<void> => {
+      const moduleId = (moduleIds as string[])[moduleIdx]!;
+      const created = await generateModuleCarousel(prisma, blCourseId, moduleId, blLang);
+      if (created) {
+        // Carousel's own ~6 min isn't part of the Phase 1 duration sum (it didn't exist
+        // yet) — add it to the module's stored total now that it does.
+        const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { duration: true } });
+        const current = parseInt(mod?.duration ?? '0', 10);
+        await prisma.module.update({ where: { id: moduleId }, data: { duration: `${(isNaN(current) ? 0 : current) + 6} min` } }).catch(() => {});
+      }
+    };
+
     const generateModuleClass = async (moduleIdx: number): Promise<void> => {
       if (!classIdxSet.has(moduleIdx)) return;
       const moduleId = (moduleIds as string[])[moduleIdx]!;
@@ -377,6 +394,13 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         for (const idx of reflexIdx) await recordModuleReflection(idx);
         if (reflexIdx.length > 0) {
           await saveAiJob(_jobId, { status: 'processing', phase: 'reflections', modulesProcessed: reflexIdx.length, totalModules: reflexIdx.length });
+        }
+
+        // ── Phase 3b: carousels, for EVERY module (auto-default, item 3) ─────────
+        for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleCarouselPhase(idx)));
+          await saveAiJob(_jobId, { status: 'processing', phase: 'carousels', modulesProcessed: Math.min(i + MODULE_CONCURRENCY, totalModules), totalModules });
         }
 
         // ── Phase 4: classes, only for modules that need one ─────────────────────
