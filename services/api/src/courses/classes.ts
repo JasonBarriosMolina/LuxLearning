@@ -45,7 +45,7 @@ export async function handleClasses(
 
     const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
     if (!vapiPublicKey) {
-      return ok({ sessionId: null, vapiPublicKey: '', hasCompletedQA: false, vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null });
+      return ok({ sessionId: null, vapiPublicKey: '', hasCompletedQA: false, vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null, lessonAudioUrl: null, closingScript: null, closingAudioUrl: null });
     }
 
     // Get all existing sessions for this module
@@ -54,8 +54,9 @@ export async function handleClasses(
     // Check if already completed (permanent one-time flag)
     const completedSession = existing.find((s) => s.hasCompletedQA || s.status === 'completed');
     if (completedSession) {
-      // Fetch lessonScript so frontend can show it in Tab 1
+      // Fetch lessonScript/audio so frontend can show them in Tab 1
       let lessonScript: string | null = null;
+      let lessonAudioUrl: string | null = null;
       try {
         const ev = await prisma.evaluationEvent.findFirst({
           where: { courseId, moduleId, type: 'CLASS' },
@@ -65,6 +66,7 @@ export async function handleClasses(
           orderBy: { order: 'asc' },
         });
         lessonScript = ev?.lessonScript ?? null;
+        lessonAudioUrl = (ev as any)?.lessonAudioUrl ?? null;
       } catch (err) {
         console.warn('[my-classes/start] evaluationEvent fetch failed (completed path):', err);
       }
@@ -75,6 +77,7 @@ export async function handleClasses(
         transcript: completedSession.transcript ?? null,
         messages: completedSession.messages ?? [],
         lessonScript,
+        lessonAudioUrl,
         vapiPrompt: null,
         vapiObjectives: null,
         lessonVideoUrl: null,
@@ -135,6 +138,9 @@ export async function handleClasses(
       vapiObjectives: evalEvent?.vapiObjectives ?? null,
       lessonVideoUrl: evalEvent?.lessonVideoUrl ?? null,
       lessonScript: evalEvent?.lessonScript ?? null,
+      lessonAudioUrl: evalEvent?.lessonAudioUrl ?? null,
+      closingScript: evalEvent?.closingScript ?? null,
+      closingAudioUrl: evalEvent?.closingAudioUrl ?? null,
     });
   }
 

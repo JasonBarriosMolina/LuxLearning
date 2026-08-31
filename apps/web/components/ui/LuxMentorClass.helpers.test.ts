@@ -16,15 +16,19 @@ describe('buildSystemPrompt — tone constraint', () => {
     expect(prompt).toMatch(/professional/i);
   });
 
-  it('still includes the two-phase structure alongside the tone rule', () => {
+  // Restructure (2026-08-31): Vapi now handles Q&A only — the exposition monologue
+  // moved to a pre-call Polly narration (LuxMentorClass.tsx 'narrating' phase).
+  it('describes a Q&A-only session, not a monologue', () => {
     const prompt = buildSystemPrompt(null, null, 'es', null);
-    expect(prompt).toContain('FASE 1');
-    expect(prompt).toContain('FASE 2');
+    expect(prompt).toMatch(/Q&A/);
+    expect(prompt).not.toContain('FASE 1');
+    expect(prompt).not.toContain('FASE 2');
   });
 
-  it('still embeds the lessonScript content when provided', () => {
+  it('embeds lessonScript as reference material, explicitly not to be re-narrated', () => {
     const prompt = buildSystemPrompt(null, null, 'es', 'Tema: Redes neuronales');
     expect(prompt).toContain('Redes neuronales');
+    expect(prompt).toMatch(/NO lo vuelvas a leer/i);
   });
 
   it('appends the tone rule before an evaluator-provided custom vapiPrompt takes over the base', () => {

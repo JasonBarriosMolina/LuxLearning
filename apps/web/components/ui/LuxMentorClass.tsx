@@ -32,6 +32,9 @@ interface StartData {
   vapiObjectives: string | null;
   lessonVideoUrl: string | null;
   lessonScript: string | null;
+  lessonAudioUrl?: string | null;
+  closingScript?: string | null;
+  closingAudioUrl?: string | null;
   transcript?: string | null;
   messages?: any[];
 }
@@ -43,36 +46,34 @@ interface Props {
   onCompleted: () => void;
 }
 
-type Phase = 'idle' | 'loading' | 'content' | 'connecting' | 'active' | 'ended' | 'review' | 'error';
+type Phase = 'idle' | 'loading' | 'content' | 'narrating' | 'connecting' | 'active' | 'closing' | 'ended' | 'review' | 'error';
 
-const TOTAL_SECONDS = 600;    // 10 minutes total
-const MONOLOGUE_SECONDS = 300; // first 5 min = exposition, mic muted
-const TIMER_REVEAL_AT = 120;  // reveal timer when 2 min remaining
-const SYSTEM_MSG_AT = 60;     // send warning when 1 min remaining
-// Silence handling during Q&A only (Trello DmPpbrff item 7, 2026-08-30 20:28): "si el
-// estudiante no habla en un margen de 10 a 15 segundos, Luz Mentor debe preguntar si la
-// persona todavía se encuentra ahí. Si no responde en 10 segundos más... cerrar la clase."
-const SILENCE_CHECKIN_SECONDS = 12; // no student speech for this long → ask "are you there?"
-const SILENCE_END_SECONDS = 10;     // no reply after the check-in → end the call
+// Restructured (Trello DmPpbrff, 2026-08-31 04:01): the exposition is now narrated by
+// Amazon Polly ('narrating' phase, plain <audio>) BEFORE Vapi ever connects — Vapi
+// handles ONLY the live Q&A. This is also what fixes the class hanging after the old
+// "microphone will be deactivated" message: that whole monologue/mic-mute mechanism is
+// gone, replaced by a linear content → narration → Q&A call → Polly closing flow.
+const QA_TARGET_SECONDS = 300;      // ~5 min target Q&A length
+const QA_GRACE_SECONDS = 60;        // +1 min grace if no natural close by the target
+const QA_HARD_LIMIT_SECONDS = QA_TARGET_SECONDS + QA_GRACE_SECONDS;
+const QA_WARNING_AT_REMAINING = 120; // send the wrap-up cue with 2 min of the target left
+// Silence handling (Trello DmPpbrff item 7, 2026-08-30 20:28) — unchanged logic, now
+// active for the WHOLE call since there's no more separate monologue phase.
+const SILENCE_CHECKIN_SECONDS = 12;
+const SILENCE_END_SECONDS = 10;
 
 export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Props) {
   const { lang } = useLanguage();
   const s = useCallback((es: string, en: string) => lang === 'en' ? en : es, [lang]);
 
   const [phase, setPhase] = useState<Phase>('idle');
-  const [subPhase, setSubPhase] = useState<'monologue' | 'qa'>('monologue');
   const [error, setError] = useState('');
   const [startData, setStartData] = useState<StartData | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [volume, setVolume] = useState(0);
-  // Timer state
-  const [remainingSeconds, setRemainingSeconds] = useState(TOTAL_SECONDS);
-  const [timerVisible, setTimerVisible] = useState(false);
   const systemMsgSentRef = useRef(false);
-  const monoTransitionSentRef = useRef(false);
   const callStartTimeRef = useRef<number>(0);
   const sessionCompletedRef = useRef(false); // guard: prevent double-update when timer + call-end both fire
-  // Silence-timeout refs (Q&A phase only) — see SILENCE_* constants above.
   const lastUserSpeechAtRef = useRef<number>(0);
   const silenceCheckinSentRef = useRef(false);
   const silenceCheckinAtRef = useRef<number>(0);
@@ -80,6 +81,8 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
 
   const vapiRef = useRef<Vapi | null>(null);
   const sessionIdRef = useRef<string>('');
+  const narrationAudioRef = useRef<HTMLAudioElement | null>(null);
+  const closingAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const cleanup = useCallback(() => {
     if (vapiRef.current) {
@@ -99,12 +102,10 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       .catch(() => {});
   }, [sessions, courseId, moduleId, startData]);
 
-  // ── 10-minute countdown: Fase 1 (monólogo, 0-5 min) → Fase 2 (Q&A, 5-10 min) ─
+  // ── Q&A countdown: warn near the target, hard-cutoff after the grace period ──
   useEffect(() => {
     if (phase !== 'active') {
-      setTimerVisible(false);
       systemMsgSentRef.current = false;
-      monoTransitionSentRef.current = false;
       silenceCheckinSentRef.current = false;
       silenceEndingRef.current = false;
       return;
@@ -112,36 +113,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     callStartTimeRef.current = Date.now();
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
-      const remaining = Math.max(0, TOTAL_SECONDS - elapsed);
-      setRemainingSeconds(remaining);
 
-      // Monologue → Q&A transition at 5 min
-      if (elapsed >= MONOLOGUE_SECONDS && !monoTransitionSentRef.current) {
-        monoTransitionSentRef.current = true;
-        try { (vapiRef.current as any)?.setMuted(false); } catch {}
-        setSubPhase('qa');
-        lastUserSpeechAtRef.current = Date.now(); // start the silence clock only once Q&A begins
-        silenceCheckinSentRef.current = false;
-        try {
-          (vapiRef.current as any)?.send({
-            type: 'add-message',
-            message: {
-              role: 'system',
-              content: lang === 'en'
-                ? 'The 5-minute exposition is complete. Transition now: say "I have finished the lesson content. I will now open the floor for questions." Then begin the interactive Q&A phase.'
-                : 'Los 5 minutos de exposición están completos. Transiciona ahora: di "He concluido el contenido de la lección. Ahora abro el espacio para preguntas." Luego inicia el Q&A interactivo.',
-            },
-          });
-        } catch { /* non-fatal */ }
-      }
-
-      // Silence handling — Q&A phase only. Two stages: check in once, then end the call
-      // if there's still no reply. Runs on the same 1s tick as the rest of the timer logic.
-      // Uses `elapsed >= MONOLOGUE_SECONDS` (a ref-derived value), NOT the `subPhase` state
-      // variable — this interval closure is set up once per call and would otherwise read
-      // a stale 'monologue' value forever, since the effect doesn't re-run when subPhase
-      // changes (only when phase/lang/cleanup do).
-      if (elapsed >= MONOLOGUE_SECONDS && vapiRef.current && !silenceEndingRef.current) {
+      // Silence handling — active for the whole call now (no separate monologue phase).
+      if (vapiRef.current && !silenceEndingRef.current) {
         const silenceAction = computeSilenceAction({
           inQA: true,
           silenceSeconds: (Date.now() - lastUserSpeechAtRef.current) / 1000,
@@ -177,23 +151,19 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
               },
             });
           } catch { /* non-fatal */ }
-          // Give the goodbye a moment to play before actually ending the call.
           setTimeout(() => {
             cleanup();
             if (sessionIdRef.current && !sessionCompletedRef.current) {
               sessionCompletedRef.current = true;
               api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
             }
-            setPhase('ended');
+            setPhase('closing');
           }, 6000);
         }
       }
 
-      // Timer reveal at 2 min remaining (Q&A phase only)
-      if (remaining <= TIMER_REVEAL_AT) setTimerVisible(true);
-
-      // 1-min warning
-      if (remaining <= SYSTEM_MSG_AT && !systemMsgSentRef.current && vapiRef.current) {
+      // Wrap-up cue — invisible to the student (no countdown UI), 2 min before the target.
+      if (elapsed >= QA_TARGET_SECONDS - QA_WARNING_AT_REMAINING && !systemMsgSentRef.current && vapiRef.current) {
         systemMsgSentRef.current = true;
         try {
           (vapiRef.current as any).send({
@@ -201,20 +171,21 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
             message: {
               role: 'system',
               content: lang === 'en'
-                ? 'One minute remaining. Please summarize the topics covered today and say a warm goodbye to the student.'
-                : 'Queda 1 minuto. Por favor haz un resumen de los temas vistos hoy y despídete amablemente del estudiante.',
+                ? 'The session is wrapping up soon. Start moving toward a natural close of the conversation.'
+                : 'La sesión está por terminar pronto. Empieza a dirigir la conversación hacia un cierre natural.',
             },
           });
         } catch { /* non-fatal */ }
       }
 
-      if (remaining <= 0) {
-        cleanup(); // triggers call-end; guard below prevents double update
+      // Hard cutoff — target + grace period, in case no natural close happened.
+      if (elapsed >= QA_HARD_LIMIT_SECONDS) {
+        cleanup();
         if (sessionIdRef.current && !sessionCompletedRef.current) {
           sessionCompletedRef.current = true;
           api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
         }
-        setPhase('ended');
+        setPhase('closing');
         clearInterval(interval);
       }
     }, 1000);
@@ -257,6 +228,14 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     }
   };
 
+  // Plays the pre-narrated exposition (lessonScript read aloud + "ask your questions
+  // now" transition line, one clip). Falls back straight to the Q&A call when no
+  // narration audio exists (e.g. a class generated before this feature existed).
+  const startNarration = () => {
+    if (!startData?.lessonAudioUrl) { connectVapi(); return; }
+    setPhase('narrating');
+  };
+
   const connectVapi = async () => {
     if (!startData) return;
     setPhase('connecting');
@@ -266,16 +245,11 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
 
     vapi.on('call-start', async () => {
       setPhase('active');
-      setSubPhase('monologue');
-      setRemainingSeconds(TOTAL_SECONDS);
-      setTimerVisible(false);
       systemMsgSentRef.current = false;
-      monoTransitionSentRef.current = false;
       sessionCompletedRef.current = false;
-      // Mute student mic during Fase 1 (monologue).
-      // Delay slightly so Vapi's audio stack (AudioWorklet) finishes initializing
-      // before we modify the mute state — avoids race with AbortError on worklet load.
-      setTimeout(() => { try { (vapi as any).setMuted(true); } catch {} }, 500);
+      silenceEndingRef.current = false;
+      lastUserSpeechAtRef.current = Date.now(); // Q&A starts immediately — no monologue phase to wait out
+      silenceCheckinSentRef.current = false;
       const callId = (vapi as any).callId ?? '';
       if (callId && sessionIdRef.current) {
         await api.classes.update(sessionIdRef.current, { vapiCallId: callId, status: 'qa_started' }).catch(() => {});
@@ -284,12 +258,12 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
 
     vapi.on('call-end', async () => {
       cleanup();
-      // Guard: if timer already sent the update, skip to avoid a duplicate write
+      // Guard: if the timer already sent the update, skip to avoid a duplicate write
       if (sessionIdRef.current && !sessionCompletedRef.current) {
         sessionCompletedRef.current = true;
         await api.classes.update(sessionIdRef.current, { status: 'completed', hasCompletedQA: true } as any).catch(() => {});
       }
-      setPhase('ended');
+      setPhase('closing');
     });
 
     vapi.on('speech-start', () => setIsSpeaking(true));
@@ -319,19 +293,14 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       },
       voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: 'auto' } as any,
       name: 'Lux Mentor',
+      maxDurationSeconds: QA_HARD_LIMIT_SECONDS + 30, // absolute Vapi-side safety net above the client-side cutoff
       firstMessage: lang === 'en'
-        ? 'Hello! I\'m Lux Mentor. I\'ll now deliver today\'s lesson content. Please listen carefully — your microphone will activate for questions after the exposition.'
-        : 'Hola, soy Lux Mentor. Voy a exponer el contenido de la lección de hoy. Por favor escucha con atención — tu micrófono se activará para preguntas después de la exposición.',
+        ? 'Hi again! I\'m ready for your questions about today\'s lesson.'
+        : '¡Hola de nuevo! Estoy listo para tus preguntas sobre la lección de hoy.',
       endCallMessage: lang === 'en'
         ? 'Thank you for our conversation today. Keep up the great work!'
         : 'Gracias por nuestra conversación de hoy. ¡Sigue adelante con tu aprendizaje!',
     });
-  };
-
-  const formatTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s2 = sec % 60;
-    return `${String(m).padStart(2, '0')}:${String(s2).padStart(2, '0')}`;
   };
 
   // ── REVIEW mode (post-class tabs) ────────────────────────────────────────────
@@ -367,6 +336,32 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           messages={review.messages ?? []}
           lessonScript={review.lessonScript ?? null}
         />
+      </div>
+    );
+  }
+
+  // ── CLOSING — plays the Polly module recap after the Q&A call ends ──────────
+  if (phase === 'closing') {
+    const closingAudioUrl = startData?.closingAudioUrl;
+    if (!closingAudioUrl) {
+      setPhase('ended');
+      return null;
+    }
+    return (
+      <div className="border border-border rounded-xl p-6 text-center space-y-4">
+        <audio
+          ref={closingAudioRef}
+          src={closingAudioUrl}
+          autoPlay
+          onEnded={() => setPhase('ended')}
+        />
+        <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto">
+          <Volume2 className="w-7 h-7 text-blue-600" />
+        </div>
+        <div>
+          <p className="font-semibold text-charcoal">{s('Cerrando la clase…', 'Wrapping up the class…')}</p>
+          <p className="text-sm text-gray-500 mt-1">{s('Lux Mentor está resumiendo lo visto en el módulo.', 'Lux Mentor is recapping what the module covered.')}</p>
+        </div>
       </div>
     );
   }
@@ -413,7 +408,28 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     );
   }
 
-  // ── ACTIVE / CONNECTING — animated logo + optional countdown ─────────────────
+  // ── NARRATING — Polly reads the exposition before the Q&A call ──────────────
+  if (phase === 'narrating' && startData?.lessonAudioUrl) {
+    return (
+      <div className="border border-border rounded-xl overflow-hidden">
+        <audio
+          ref={narrationAudioRef}
+          src={startData.lessonAudioUrl}
+          autoPlay
+          onEnded={connectVapi}
+        />
+        <div className="bg-gradient-to-br from-[#17527E] to-[#7B2FBE] px-4 py-8 flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">
+            <Volume2 className="w-5 h-5 text-white" />
+          </div>
+          <p className="text-white font-semibold text-sm">{s('Lux Mentor está exponiendo la clase…', 'Lux Mentor is presenting the class…')}</p>
+          <p className="text-white/70 text-xs">{s('Al terminar, se abrirá la sesión de preguntas.', 'When it finishes, the Q&A session will open.')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ACTIVE / CONNECTING — animated logo, no visible countdown ────────────────
   if (phase === 'active' || phase === 'connecting') {
     return (
       <div className="border border-border rounded-xl overflow-hidden">
@@ -441,30 +457,13 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
             <p className="text-white/70 text-xs mt-0.5">
               {phase === 'connecting'
                 ? s('Conectando…', 'Connecting…')
-                : subPhase === 'monologue'
-                  ? s('Exponiendo lección…', 'Delivering lesson…')
-                  : isSpeaking ? s('Hablando…', 'Speaking…') : s('Escuchando…', 'Listening…')}
+                : isSpeaking ? s('Hablando…', 'Speaking…') : s('Escuchando…', 'Listening…')}
             </p>
           </div>
-          {/* Phase badge */}
-          {phase === 'active' && subPhase === 'monologue' && (
-            <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 text-xs text-white/80">
-              <MicOff className="w-3 h-3" />
-              {s('Tu micrófono se activará en la sesión de preguntas', 'Your mic activates in the Q&A session')}
-            </div>
-          )}
-          {phase === 'active' && subPhase === 'qa' && (
+          {phase === 'active' && (
             <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 text-xs text-white/80">
               <Mic className="w-3 h-3" />
-              {s('Modo preguntas — tu micrófono está activo', 'Q&A mode — your mic is active')}
-            </div>
-          )}
-          {/* Countdown — only visible in last 2 min */}
-          {timerVisible && phase === 'active' && (
-            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 animate-fade-in">
-              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-white font-mono text-sm font-semibold">{formatTime(remainingSeconds)}</span>
-              <span className="text-white/60 text-xs">{s('restantes', 'remaining')}</span>
+              {s('Sesión de preguntas — tu micrófono está activo', 'Q&A session — your mic is active')}
             </div>
           )}
         </div>
@@ -472,7 +471,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           <p className="text-xs text-gray-500">{s('Sesión con Lux Mentor en curso', 'Lux Mentor session in progress')}</p>
           {phase === 'active' && (
             <button
-              onClick={() => { cleanup(); if (sessionIdRef.current) api.classes.update(sessionIdRef.current, { status: 'completed' }).catch(() => {}); setPhase('ended'); }}
+              onClick={() => { cleanup(); if (sessionIdRef.current) api.classes.update(sessionIdRef.current, { status: 'completed' }).catch(() => {}); setPhase('closing'); }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition-colors"
             >
               <MicOff className="w-3.5 h-3.5" />
@@ -484,7 +483,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     );
   }
 
-  // ── CONTENT phase (Phase 1 — static material before Q&A) ─────────────────────
+  // ── CONTENT phase — static material, then narration + Q&A ────────────────────
   if (phase === 'content' && startData) {
     return (
       <div className="border border-border rounded-xl overflow-hidden">
@@ -494,7 +493,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-charcoal">{s('Contenido de la lección', 'Lesson Content')}</p>
-            <p className="text-xs text-gray-500">{s('Revisa el material antes de conversar con Mentor', 'Review the material before talking with Mentor')}</p>
+            <p className="text-xs text-gray-500">{s('Lux Mentor te la leerá en voz alta y luego podrás hacer preguntas', 'Lux Mentor will read it aloud, then you can ask questions')}</p>
           </div>
         </div>
         <div className="p-4 space-y-4">
@@ -518,9 +517,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
               <p className="text-sm text-charcoal leading-relaxed whitespace-pre-wrap">{startData.lessonScript}</p>
             </div>
           )}
-          <button onClick={connectVapi} className="btn-primary w-full flex items-center justify-center gap-2">
-            <Mic className="w-4 h-4" />
-            {s('Iniciar sesión con Lux Mentor', 'Start Lux Mentor session')}
+          <button onClick={startNarration} className="btn-primary w-full flex items-center justify-center gap-2">
+            <Volume2 className="w-4 h-4" />
+            {s('Iniciar clase con Lux Mentor', 'Start class with Lux Mentor')}
           </button>
           <p className="text-xs text-gray-400 text-center">
             {s(`Sesión de voz · ${startData.attemptsMax ?? 2} intentos máx`, `Voice session · max ${startData.attemptsMax ?? 2} attempts`)}
@@ -542,7 +541,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         </div>
         <div>
           <p className="text-sm font-semibold text-charcoal">{s('Clase con Lux Mentor', 'Lux Mentor Class')}</p>
-          <p className="text-xs text-gray-500">{s('Sesión de voz interactiva (10 min)', 'Interactive voice session (10 min)')}</p>
+          <p className="text-xs text-gray-500">{s('Exposición narrada + preguntas en vivo', 'Narrated exposition + live Q&A')}</p>
         </div>
       </div>
       <div className="p-4 space-y-3">
@@ -554,7 +553,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         )}
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <BookOpen className="w-3.5 h-3.5" />
-          <span>{s('Contenido → Conversación con Mentor (10 min máx)', 'Content → Mentor Conversation (10 min max)')}</span>
+          <span>{s('Contenido → Exposición narrada → Preguntas (~5 min)', 'Content → Narrated exposition → Questions (~5 min)')}</span>
         </div>
         <button
           onClick={startFlow}
@@ -577,5 +576,3 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     </div>
   );
 }
-
-// helpers re-exported from LuxMentorClass.helpers.ts
