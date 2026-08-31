@@ -21,6 +21,7 @@ import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
+import { generateLessonAudio, defaultVoiceForLanguage } from '../shared/polly-audio';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -106,6 +107,32 @@ export const handler = async (event: Event) => {
       if (!pdfRecapUrl) return serverError('No se pudo generar el PDF de repaso');
       await prisma.lesson.update({ where: { id: lessonId }, data: { pdfRecapUrl } });
       return ok({ pdfRecapUrl });
+    }
+
+    // POST /lessons/audio — on-demand Polly neural narration (Trello DmPpbrff,
+    // 2026-08-31 19:54): a lesson without a pre-generated audioUrl (older courses,
+    // or the bulk auto-audio phase hasn't run yet) used to fall back to the
+    // browser's free voice — "no son voces agradables". Built the first time any
+    // student asks, then cached on the Lesson row like carousel-recap above, so
+    // every later request (any student) is instant and every student hears the
+    // same real Amazon Polly neural voice matched to the course's language.
+    if (method === 'POST' && path.includes('/lessons/audio')) {
+      const body = JSON.parse(event.body ?? '{}');
+      const { lessonId } = body as { lessonId?: string };
+      if (!lessonId) return badRequest('lessonId is required');
+      const prisma = await getPrismaClient();
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      if (!lesson) return notFound('Lección no encontrada');
+      if (lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
+      if (!lesson.content) return badRequest('La lección no tiene contenido para narrar');
+
+      const mod = await prisma.module.findUnique({ where: { id: lesson.moduleId }, select: { course: { select: { planLanguage: true } } } });
+      const voiceId = defaultVoiceForLanguage(mod?.course?.planLanguage);
+      const text = [lesson.title, lesson.content, ...(lesson.points ?? []), lesson.tip ?? ''].filter(Boolean).join('. ');
+      const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
+      if (!audioUrl) return serverError('No se pudo generar el audio');
+      await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
+      return ok({ audioUrl });
     }
 
     // ── Highlights ────────────────────────────────────────────────────────────

@@ -3,12 +3,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Pause, Play, Square } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
+import { api } from '@/lib/api';
 
 interface Props {
   text: string;
   audioUrl?: string;
   className?: string;
   adminMode?: boolean;
+  // When provided (and audioUrl is missing), lazily requests a real Amazon Polly
+  // neural narration in the background instead of leaving the student stuck on
+  // the browser's free voice (Trello DmPpbrff, 2026-08-31 19:54 — Mack: "no son
+  // voces agradables"). Omitted by callers with no backing Lesson row to cache
+  // on (e.g. quiz questions) — those keep the browser-voice-only behavior.
+  lessonId?: string;
 }
 
 type Gender    = 'female' | 'male';
@@ -230,9 +237,23 @@ function WebSpeechPlayer({ text, rate, onRateChange, gender, appLang, voices }: 
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false }: Props) {
+export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false, lessonId }: Props) {
   const { lang } = useLanguage();
   const voices   = useVoices();
+
+  // Lazy on-demand Polly narration — fires once per mount when there's a lessonId
+  // to cache against but no audioUrl yet. Silent/background: the button keeps
+  // working via the browser voice meanwhile, then quietly upgrades once ready.
+  const [fetchedAudioUrl, setFetchedAudioUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!lessonId || audioUrl) return;
+    let cancelled = false;
+    api.lessons.audio(lessonId)
+      .then((res) => { if (!cancelled) setFetchedAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl); })
+      .catch(() => {}); // non-fatal — WebSpeechPlayer keeps working meanwhile
+    return () => { cancelled = true; };
+  }, [lessonId, audioUrl]);
+  const effectiveAudioUrl = audioUrl ?? fetchedAudioUrl;
 
   const [gender, setGender] = useState<Gender>(() =>
     typeof window !== 'undefined' && localStorage.getItem('tts-gender') === 'male' ? 'male' : 'female'
@@ -257,18 +278,18 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
   const handleRateChange = (r: number) => { setRate(r); localStorage.setItem('tts-rate', String(r)); };
 
   // Admin preview: only Polly audio, no controls
-  if (adminMode && audioUrl) {
+  if (adminMode && effectiveAudioUrl) {
     return (
       <div className={`flex items-center gap-2 flex-wrap ${className}`}>
-        <PollyPlayer audioUrl={audioUrl} rate={rate} onRateChange={handleRateChange} appLang={lang} />
+        <PollyPlayer audioUrl={effectiveAudioUrl} rate={rate} onRateChange={handleRateChange} appLang={lang} />
       </div>
     );
   }
 
   return (
     <div className={`flex items-center gap-2 flex-wrap ${className}`}>
-      {audioUrl && source === 'polly'
-        ? <PollyPlayer audioUrl={audioUrl} rate={rate} onRateChange={handleRateChange} appLang={lang} />
+      {effectiveAudioUrl && source === 'polly'
+        ? <PollyPlayer audioUrl={effectiveAudioUrl} rate={rate} onRateChange={handleRateChange} appLang={lang} />
         : <WebSpeechPlayer text={text} rate={rate} onRateChange={handleRateChange}
             gender={gender} appLang={lang} voices={voices} />
       }
@@ -282,7 +303,7 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
       </select>
 
       {/* Source switcher — only when Polly audio exists */}
-      {audioUrl && (
+      {effectiveAudioUrl && (
         <select value={source} onChange={e => { const s = e.target.value as TTSSource; setSource(s); localStorage.setItem('tts-source', s); }}
           className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
           title={lang === 'en' ? 'Audio source' : 'Fuente de audio'}>
