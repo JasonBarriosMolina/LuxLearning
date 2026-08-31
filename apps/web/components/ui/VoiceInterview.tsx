@@ -7,6 +7,7 @@ import { getUserFirstName } from '@/lib/auth';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/lib/i18n';
+import { buildSystemPrompt, computeInterviewAutoEnd } from './VoiceInterview.helpers';
 import type Vapi from '@vapi-ai/web';
 
 interface Props {
@@ -18,6 +19,10 @@ interface Props {
 
 type InterviewPhase = 'idle' | 'loading' | 'ready' | 'calling' | 'active' | 'ended' | 'error';
 
+// Auto-end tuning (Trello GTYQ3v1M, 2026-08-29 01:25) — see VoiceInterview.helpers.ts.
+const REQUIRED_ANSWERS = 3;
+const AUTO_END_GRACE_SECONDS = 15; // lets Mentor's closing line finish playing
+
 export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: Props) {
   const { t, lang } = useLanguage();
   const [phase, setPhase] = useState<InterviewPhase>('idle');
@@ -28,6 +33,10 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
   const [studentFirstName, setStudentFirstName] = useState<string>('');
   const vapiRef = useRef<Vapi | null>(null);
   const interviewIdRef = useRef<string>('');
+  // Auto-end tracking (Trello GTYQ3v1M, 2026-08-29 01:25) — see computeInterviewAutoEnd.
+  const userAnswerCountRef = useRef(0);
+  const requiredAnswersReachedAtRef = useRef<number>(0);
+  const autoEndedRef = useRef(false);
 
   useEffect(() => {
     getUserFirstName().then((name) => { if (name) setStudentFirstName(name); });
@@ -102,6 +111,16 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       setPhase('error');
       cleanup();
     });
+    // Counts real student answers to drive the auto-end timer — the model is no longer
+    // asked to end the call itself (see VoiceInterview.helpers.ts buildSystemPrompt).
+    userAnswerCountRef.current = 0;
+    requiredAnswersReachedAtRef.current = 0;
+    autoEndedRef.current = false;
+    vapi.on('message', (msg: any) => {
+      if (msg?.role !== 'user') return;
+      userAnswerCountRef.current += 1;
+      if (userAnswerCountRef.current === REQUIRED_ANSWERS) requiredAnswersReachedAtRef.current = Date.now();
+    });
 
     const systemPrompt = buildSystemPrompt(vapiConfig.vapiPrompt, vapiConfig.vapiObjectives, lang, studentFirstName);
     const greeting = studentFirstName ? `, ${studentFirstName}` : '';
@@ -132,6 +151,29 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
     }
     setTimeout(() => { onCompleted(); }, 1000);
   };
+
+  // Ends the call automatically once Mentor has had time to close after the 3rd answer —
+  // was left to the model to "call a function" that didn't exist (see helpers.ts), so it
+  // never actually hung up; the user had to end it manually (Trello GTYQ3v1M, 2026-08-29).
+  useEffect(() => {
+    if (phase !== 'active') return;
+    const interval = setInterval(() => {
+      if (autoEndedRef.current) return;
+      const shouldEnd = computeInterviewAutoEnd({
+        userAnswerCount: userAnswerCountRef.current,
+        requiredAnswers: REQUIRED_ANSWERS,
+        secondsSinceRequiredReached: requiredAnswersReachedAtRef.current
+          ? (Date.now() - requiredAnswersReachedAtRef.current) / 1000
+          : 0,
+        graceSeconds: AUTO_END_GRACE_SECONDS,
+      });
+      if (shouldEnd) {
+        autoEndedRef.current = true;
+        endCall();
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase]);
 
   if (isCompleted) {
     return (
@@ -287,55 +329,3 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
   );
 }
 
-function buildSystemPrompt(
-  vapiPrompt: string | null,
-  vapiObjectives: string | null,
-  lang: string,
-  studentName?: string,
-): string {
-  const objectives = vapiObjectives
-    ? vapiObjectives.split('\n').filter(Boolean).slice(0, 3).map((o, i) => `${i + 1}. ${o.trim()}`).join('\n')
-    : lang === 'en'
-      ? '1. Understand the main concepts of the module\n2. Apply knowledge to a practical example\n3. Reflect on lessons learned'
-      : '1. Comprender los conceptos principales del módulo\n2. Aplicar el conocimiento a un ejemplo práctico\n3. Reflexionar sobre lo aprendido';
-
-  const nameRef = studentName || (lang === 'en' ? 'the student' : 'el/la estudiante');
-
-  const structureRules = lang === 'en'
-    ? `REQUIRED CONVERSATION STRUCTURE — follow this order STRICTLY and QUICKLY (total session ≤ 10 min):
-1. GREETING: One sentence. Greet ${nameRef} by name and say you'll ask 3 questions about the module.
-2. QUESTIONS: Ask exactly 3 questions, ONE AT A TIME, strictly about the objectives below. Wait for the full response before the next. Do NOT lecture or introduce the topic — go straight to the questions.
-3. CLOSING: After the 3rd answer, thank ${nameRef} warmly in one sentence and end the call using the endCall function.
-CRITICAL: Do NOT give topic introductions, explanations, or summaries before the questions. Start question 1 within the first 30 seconds.`
-    : `ESTRUCTURA DE CONVERSACIÓN OBLIGATORIA — sigue este orden ESTRICTAMENTE y con AGILIDAD (sesión total ≤ 10 min):
-1. SALUDO: Una oración. Saluda a ${nameRef} por su nombre y di que le harás 3 preguntas sobre el módulo.
-2. PREGUNTAS: Haz exactamente 3 preguntas, UNA A LA VEZ, estrictamente sobre los objetivos indicados. Espera la respuesta completa antes de la siguiente. NO des clases ni introduzcas el tema — ve directo a las preguntas.
-3. CIERRE: Tras la 3ª respuesta, agradece a ${nameRef} con calidez en una oración y cierra la llamada con la función endCall.
-CRÍTICO: NO hagas introducciones, explicaciones ni resúmenes antes de las preguntas. Comienza la pregunta 1 dentro de los primeros 30 segundos.`;
-
-  if (vapiPrompt) {
-    return `${structureRules}\n\nInstrucciones del evaluador:\n${vapiPrompt}\n\nObjetivos de las preguntas:\n${objectives}`;
-  }
-
-  return lang === 'en'
-    ? `You are Mentor, a warm and professional oral evaluator for an online course.
-Student name: ${nameRef}
-
-${structureRules}
-
-IMPORTANT: Questions must be ONLY about the topics in the objectives below. Do NOT deviate.
-Tone: warm, patient, encouraging — make the student feel comfortable throughout.
-
-Question objectives:
-${objectives}`
-    : `Eres Mentor, un evaluador oral cálido y profesional para un curso en línea.
-Nombre del estudiante: ${nameRef}
-
-${structureRules}
-
-IMPORTANTE: Las preguntas deben ser ÚNICAMENTE sobre los temas en los objetivos. NO te desvíes.
-Tono: cálido, paciente, alentador — haz que el estudiante se sienta cómodo/a durante toda la conversación.
-
-Objetivos de las preguntas:
-${objectives}`;
-}

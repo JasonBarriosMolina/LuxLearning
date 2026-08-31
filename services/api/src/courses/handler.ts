@@ -1,23 +1,19 @@
-import { randomUUID, timingSafeEqual } from 'crypto';
+import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, getInterview, getInterviewByCallId, updateInterview, listMyInterviews, getClassSessionByCallId, updateClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, updateInterview, listMyInterviews } from '../shared/db-dynamo';
 import { listMyClassSessions, listMyClassSessionsForCourse } from '../shared/db-classes';
 import { handleClasses } from './classes';
+import { handleVapiWebhook } from './vapi-webhook';
 import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
-import { getVapidKeys } from '../shared/vapid';
-import { getVapiKeys } from '../shared/vapi-keys';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
@@ -329,159 +325,7 @@ export const handler = async (event: Event) => {
 
     // ── POST /vapi/webhook — public endpoint (no auth required) ──────────────
     if (path === '/vapi/webhook' && method === 'POST') {
-      // Load webhook secret from SM — fail closed if unavailable or empty
-      const vapiSecrets = await getVapiKeys().catch(() => null);
-      const vapiWebhookSecret = vapiSecrets?.webhookSecret ?? '';
-      if (!vapiWebhookSecret) {
-        console.error('[vapi] VAPI_WEBHOOK_SECRET not configured — rejecting webhook');
-        return { statusCode: 401, body: JSON.stringify({ error: 'Webhook not configured' }) };
-      }
-      // Verify signature with constant-time comparison (prevents timing attacks)
-      const { createHmac } = await import('crypto');
-      const rawBody = event.body ?? '';
-      const incomingSignature = event.headers?.['x-vapi-signature'] ?? event.headers?.['X-Vapi-Signature'] ?? '';
-      const expectedSignature = createHmac('sha256', vapiWebhookSecret).update(rawBody).digest('hex');
-      const expectedBuf = Buffer.from(expectedSignature, 'hex');
-      const incomingBuf = Buffer.from(incomingSignature, 'hex');
-      const isValidSig = expectedBuf.length > 0 && expectedBuf.length === incomingBuf.length && timingSafeEqual(expectedBuf, incomingBuf);
-      if (!isValidSig) {
-        return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
-      }
-
-      let body: any = {};
-      try { body = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
-
-      const { message } = body as { message?: any };
-      if (!message) return ok({ received: true });
-
-      const msgType: string = message.type ?? '';
-      const callId: string = message.call?.id ?? message.callId ?? '';
-
-      if (msgType === 'end-of-call-report' && callId) {
-        const transcript: string = message.artifact?.transcript ?? message.transcript ?? '';
-        const messages: any[] = message.artifact?.messages ?? message.messages ?? [];
-        const durationSec: number = message.durationSeconds ?? message.call?.endedAt
-          ? Math.round((new Date(message.call.endedAt).getTime() - new Date(message.call.startedAt ?? message.call.createdAt).getTime()) / 1000)
-          : 0;
-        const endedReason: string = message.call?.endedReason ?? '';
-        // Void if network failure: no audio from customer, or call too short with no transcript
-        const isVoided = endedReason === 'customer-did-not-give-audio' || (durationSec < 30 && !transcript.trim());
-
-        void (async () => {
-          try {
-            // ── Try interview first, then class session ───────────────────────
-            const interview = await getInterviewByCallId(callId);
-            if (!interview) {
-              // Check if it's a class session
-              const classSession = await getClassSessionByCallId(callId);
-              if (!classSession) { console.warn('[vapi] no record for callId=%s', callId); return; }
-              if (isVoided) {
-                await updateClassSession(classSession.userId, classSession.sessionId, {
-                  status: 'error', voided: true, voidedReason: endedReason || 'short-duration',
-                });
-                return;
-              }
-              let aiAnalysis = ''; let aiScore = 0;
-              if (transcript) {
-                const analysisPrompt = `Eres un tutor evaluando la sesión de clase de un estudiante con Lux Mentor.\nAnaliza la transcripción y proporciona:\n1. Un puntaje del 0 al 100 basado en: comprensión demostrada, calidad de respuestas, participación.\n2. Retroalimentación formativa (máx. 2 párrafos).\nResponde en el idioma de la transcripción.\nTranscripción:\n${transcript.slice(0, 4000)}\nDevuelve SOLO JSON: {"score": <n>, "analysis": "<texto>"}`;
-                try {
-                  const resp = await bedrock.send(new InvokeModelCommand({
-                    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-                    contentType: 'application/json', accept: 'application/json',
-                    body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 450, messages: [{ role: 'user', content: analysisPrompt }] }), // cost: JSON score+analysis ~300-400 tokens
-                  }));
-                  const raw = JSON.parse(Buffer.from(resp.body).toString());
-                  const parsed = JSON.parse((raw.content?.[0]?.text ?? '{}').replace(/```json\n?|\n?```/g, '').trim());
-                  aiScore = Math.min(100, Math.max(0, Number(parsed.score ?? 0)));
-                  aiAnalysis = String(parsed.analysis ?? '');
-                } catch { /* non-fatal */ }
-              }
-              await updateClassSession(classSession.userId, classSession.sessionId, {
-                status: 'completed', hasCompletedQA: true, transcript, messages, aiAnalysis, aiScore,
-                durationSeconds: durationSec, completedAt: new Date().toISOString(),
-              });
-              const vapidCs = await getVapidKeys().catch(() => null);
-              if (vapidCs) {
-                webpush.setVapidDetails(vapidCs.email, vapidCs.public, vapidCs.private);
-                const subs = await getPushSubscriptionsByUserId(classSession.userId);
-                const payload = JSON.stringify({ title: 'Clase completada', body: 'Tu sesión con Lux Mentor ha sido procesada. Tu evaluador revisará tu resultado pronto.' });
-                await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
-              }
-              return;
-            }
-
-            if (isVoided) {
-              await updateInterview(interview.userId, interview.interviewId, {
-                status: 'error', voided: true, voidedReason: endedReason || 'short-duration',
-              } as any);
-              return;
-            }
-
-            // Run Bedrock analysis
-            let aiAnalysis = '';
-            let aiScore = 0;
-            if (transcript) {
-              const analysisPrompt = `Analiza la siguiente transcripción de una entrevista oral de evaluación.
-Proporciona:
-1. Un puntaje formativo del 0 al 100 basado en: claridad de ideas, dominio del tema, fluidez y profundidad de respuestas.
-2. Un análisis formativo breve (máx. 3 párrafos) con fortalezas y áreas de mejora.
-3. Responde en el mismo idioma de la transcripción.
-
-Transcripción:
-${transcript.slice(0, 4000)}
-
-Responde ÚNICAMENTE con este JSON (sin markdown):
-{"score": <número>, "analysis": "<texto análisis>"}`;
-
-              const resp = await bedrock.send(new InvokeModelCommand({
-                modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-                contentType: 'application/json',
-                accept: 'application/json',
-                body: JSON.stringify({
-                  anthropic_version: 'bedrock-2023-05-31',
-                  max_tokens: 550, // cost: JSON score+2-paragraph analysis ~400-500 tokens
-                  messages: [{ role: 'user', content: analysisPrompt }],
-                }),
-              }));
-              const raw = JSON.parse(Buffer.from(resp.body).toString());
-              const text: string = raw.content?.[0]?.text ?? '';
-              try {
-                const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
-                aiScore = Math.min(100, Math.max(0, Number(parsed.score ?? 0)));
-                aiAnalysis = String(parsed.analysis ?? '');
-              } catch {
-                aiAnalysis = text;
-              }
-            }
-
-            await updateInterview(interview.userId, interview.interviewId, {
-              status: 'completed',
-              transcript,
-              messages,
-              aiAnalysis,
-              aiScore,
-              durationSeconds: durationSec,
-              questionsAsked: messages.filter((m: any) => m.role === 'assistant').length,
-              completedAt: new Date().toISOString(),
-            });
-
-            // Push notification to student
-            const vapidIv = await getVapidKeys().catch(() => null);
-            if (vapidIv) {
-              webpush.setVapidDetails(vapidIv.email, vapidIv.public, vapidIv.private);
-              const subs = await getPushSubscriptionsByUserId(interview.userId);
-              const payload = JSON.stringify({ title: 'Entrevista completada', body: 'Tu entrevista oral ha sido procesada. El evaluador revisará tu resultado pronto.' });
-              await Promise.allSettled(subs.map((sub: any) =>
-                webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)
-              ));
-            }
-          } catch (e) {
-            console.error('[vapi] webhook processing error', e);
-          }
-        })();
-      }
-
-      return ok({ received: true });
+      return handleVapiWebhook(event, prisma);
     }
 
     // ── GET /my-interviews?moduleId=X ─────────────────────────────────────────
