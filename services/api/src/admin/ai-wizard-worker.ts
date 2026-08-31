@@ -254,9 +254,13 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
 
           // Create/update CLASS EvaluationEvent for designated modules (#17 fix)
           if (classIdxSet.has(moduleIdx)) {
+            // Tone constraint added (Trello DmPpbrff item 6, 2026-08-30 20:24): lessonScript
+            // is shown verbatim to the student as on-screen class content — a chatty/emoji
+            // tone read there like an AI assistant, not an instructor ("no me gusta cómo se
+            // ve... se ve como si fuera un chat con alguna inteligencia artificial").
             const classPrompt = isBlEN
-              ? `Generate a Lux Mentor class script for module "${mod.title}". JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline with 3 key topics and activities, 200 words>"}`
-              : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase con 3 temas clave y actividades, 200 palabras>"}`;
+              ? `Generate a Lux Mentor class script for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<interactive AI tutor prompt, 150 words max, pose guiding questions>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 200 words>"}`
+              : `Genera un guión de Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt interactivo para tutor IA, máx 150 palabras, plantea preguntas guía>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 200 palabras>"}`;
             const classContent = await invokeBedrockForJson(classPrompt, 1000).catch(() => null);
             if (classContent?.vapiPrompt) {
               const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
