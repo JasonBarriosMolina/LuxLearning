@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft, PlayCircle, CheckCircle, Lock, Clock,
-  BookOpen, ClipboardCheck, FileText, Star, Mic,
+  BookOpen, ClipboardCheck, FileText, Star, Mic, ArrowRight, PartyPopper,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -172,6 +172,16 @@ export default function ModulePage() {
 
   const status = getModuleStatus();
 
+  // Big "continue to next module" CTA once this one is fully done (Trello DmPpbrff,
+  // 2026-09-01 01:48 — Mack: "cuando se termina todo un módulo, debería existir un
+  // botón grande que diga continuar con el módulo 2").
+  const sortedModules = [...(course.modules ?? [])].sort((a: any, b: any) => a.order - b.order);
+  const nextModule = status.variant === 'success'
+    ? sortedModules.find((m: any) => m.order > module.order)
+    : undefined;
+  const isLastModule = status.variant === 'success' && !nextModule
+    && sortedModules.length > 0 && sortedModules[sortedModules.length - 1]?.id === module.id;
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
       {/* Breadcrumb */}
@@ -182,6 +192,31 @@ export default function ModulePage() {
         <span>/</span>
         <span className="text-charcoal font-medium">{module.title}</span>
       </div>
+
+      {(nextModule || isLastModule) && (
+        <div className="card bg-gradient-to-br from-emerald-50 to-cta-from/5 border-emerald-200 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            {isLastModule
+              ? <PartyPopper className="w-6 h-6 text-emerald-600 shrink-0" />
+              : <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0" />}
+            <p className="text-sm font-semibold text-charcoal">
+              {isLastModule ? t.moduleView.courseCompletedCta : t.moduleView.continueToModule(nextModule.order)}
+            </p>
+          </div>
+          {nextModule && (
+            <Link href={`/courses/${courseId}/modules/${nextModule.id}`}>
+              <Button size="lg" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                {t.moduleView.continueToModule(nextModule.order)}
+              </Button>
+            </Link>
+          )}
+          {isLastModule && (
+            <Link href={`/courses/${courseId}`}>
+              <Button size="lg">{course.title}</Button>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Module header */}
       <div className="card">
