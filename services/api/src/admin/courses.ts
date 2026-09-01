@@ -237,7 +237,12 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
           },
           // Needed so the frontend can tell "quiz never planned for this module" apart
           // from "planned but not generated yet" — questions.length===0 alone is ambiguous.
-          evaluationEvents: { select: { moduleId: true, type: true } },
+          // name/lessonScript/vapiPrompt/closingScript included (2026-09-01) so the
+          // "Ver como Estudiante" preview can show CLASS/REFLECTION/INTERVIEW content
+          // too, not just lessons — Mack: "en esa vista es importante que me den la
+          // posibilidad de identificar posibles errores" (needs ALL module content, not
+          // just async lessons, to actually be useful for a pre-publish QA pass).
+          evaluationEvents: { select: { moduleId: true, type: true, name: true, lessonScript: true, vapiPrompt: true, closingScript: true } },
         },
       });
       if (!course) return notFound('Curso no encontrado');

@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen, Pencil } from 'lucide-react';
+import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen, Pencil, HelpCircle, MessageSquare, Mic, GraduationCap } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
+import { ExtraContentPreview } from './_components/ExtraContentPreview';
 
 export default function CoursePreviewPage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -15,6 +16,10 @@ export default function CoursePreviewPage() {
   const [loading, setLoading] = useState(true);
   const [expandedMods, setExpandedMods] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<any>(null);
+  // Non-lesson module content (quiz/reflection/class/interview) — previewing these
+  // was entirely missing before (2026-09-01): Mack needs to see EVERY piece of a
+  // module's content to catch errors, not just async lessons.
+  const [selectedExtra, setSelectedExtra] = useState<{ kind: 'quiz' | 'reflection' | 'class' | 'interview'; module: any } | null>(null);
   const contentPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +115,7 @@ export default function CoursePreviewPage() {
                       key={lesson.id}
                       onClick={() => {
                         setSelectedLesson(lesson);
+                        setSelectedExtra(null);
                         // On small screens the content panel is below — scroll to it
                         setTimeout(() => contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
                       }}
@@ -133,6 +139,33 @@ export default function CoursePreviewPage() {
                   {(!mod.lessons || mod.lessons.length === 0) && (
                     <p className="text-xs text-gray-400 text-center py-3">Sin lecciones</p>
                   )}
+
+                  {/* Quiz / reflection / class / interview — previewable now too (2026-09-01) */}
+                  {(mod.questions?.length ?? 0) > 0 && (
+                    <button
+                      onClick={() => { setSelectedExtra({ kind: 'quiz', module: mod }); setSelectedLesson(null); setTimeout(() => contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${selectedExtra?.kind === 'quiz' && selectedExtra.module.id === mod.id ? 'bg-cta-from/10 border-l-2 border-cta-from' : 'hover:bg-white/60'}`}
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                      <p className="text-xs font-medium text-charcoal">Quiz ({mod.questions.length} preguntas)</p>
+                    </button>
+                  )}
+                  {(course.evaluationEvents ?? []).filter((e: any) => e.moduleId === mod.id).map((ev: any) => {
+                    const kind = ev.type === 'CLASS' ? 'class' : ev.type === 'REFLECTION' ? 'reflection' : ev.type === 'INTERVIEW' ? 'interview' : null;
+                    if (!kind) return null;
+                    const Icon = kind === 'class' ? GraduationCap : kind === 'reflection' ? MessageSquare : Mic;
+                    const label = kind === 'class' ? 'Clase con Lux Mentor' : kind === 'reflection' ? 'Reflexión' : 'Entrevista con Lux Mentor';
+                    return (
+                      <button
+                        key={ev.type}
+                        onClick={() => { setSelectedExtra({ kind, module: mod }); setSelectedLesson(null); setTimeout(() => contentPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${selectedExtra?.kind === kind && selectedExtra.module.id === mod.id ? 'bg-cta-from/10 border-l-2 border-cta-from' : 'hover:bg-white/60'}`}
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        <p className="text-xs font-medium text-charcoal">{label}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -141,7 +174,9 @@ export default function CoursePreviewPage() {
 
         {/* ── Right panel: lesson content ── */}
         <div className="space-y-5" ref={contentPanelRef}>
-          {selectedLesson ? (
+          {selectedExtra ? (
+            <ExtraContentPreview extra={selectedExtra} course={course} />
+          ) : selectedLesson ? (
             <>
               {/* Lesson title + TTS */}
               <div className="flex items-start justify-between gap-3 flex-wrap">
