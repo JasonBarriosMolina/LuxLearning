@@ -127,11 +127,18 @@ export async function generateCarouselAssets(
     order: s.order, onScreenText: s.onScreenText, imageUrl: slideImages[i], startMs: s.startMs, endMs: s.endMs,
   }));
 
+  // Honest duration — derived from the actual narration length (last slide's endMs),
+  // not a flat "6 min" guess (Trello DmPpbrff, 2026-09-01 03:03 — Mack: "el carrousel
+  // está durando menos tiempo del planeado"). Same class of fix as the per-lesson
+  // duration honesty from yesterday.
+  const totalMs = finalSlides.length > 0 ? finalSlides[finalSlides.length - 1]!.endMs : 0;
+  const durationMin = Math.max(1, Math.round(totalMs / 60000));
+
   // pdfRecapUrl is intentionally left null here — the "Lux Recap" PDF is built
   // on demand by the student-facing courses lambda the first time anyone asks
   // for it (Trello N1bbWdz0, 2026-08-31 15:21), not eagerly during generation.
   const lessonData = {
-    moduleId, title: `Lux Carrousel: ${mod.title}`, duration: '6 min',
+    moduleId, title: `Lux Carrousel: ${mod.title}`, duration: `${durationMin} min`,
     type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
     audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
   };

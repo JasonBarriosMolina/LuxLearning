@@ -227,7 +227,7 @@ export default function AdminCourseDetailPage() {
           <Button
             variant="secondary"
             leftIcon={<GraduationCap className="w-4 h-4" />}
-            onClick={() => router.push(`/courses/${courseId}`)}
+            onClick={() => router.push(`/admin/courses/${courseId}/preview`)}
             className="shrink-0"
           >
             Ver como Estudiante

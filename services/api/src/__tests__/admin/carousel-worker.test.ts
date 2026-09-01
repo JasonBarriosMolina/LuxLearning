@@ -142,10 +142,36 @@ describe('handleCarouselWorker', () => {
         // The recap PDF is no longer built eagerly (Trello N1bbWdz0, 2026-08-31 15:21) —
         // it's built on demand by /lessons/carousel-recap the first time anyone asks.
         pdfRecapUrl: null,
+        // Honest duration derived from the last slide's endMs (Trello DmPpbrff,
+        // 2026-09-01 03:03) — not the old flat "6 min" regardless of real length.
+        duration: '1 min',
       }),
     }));
     const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
     expect(doneCall?.[1]).toMatchObject({ lessonId: 'lesson-carousel-1' });
+  });
+
+  it('computes an honest multi-minute duration from real narration length, not a flat guess', async () => {
+    generateCarouselNarrationMock.mockResolvedValue({
+      audioUrl: 'https://s3.example.com/carousel.mp3',
+      marks: [{ time: 0, value: 'Frase 1.' }, { time: 90000, value: 'Frase 2.' }, { time: 180000, value: 'Frase 3.' }],
+    });
+    generateLessonImageMock.mockResolvedValue(null);
+    const prisma = makePrisma();
+    prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod' });
+    prisma.lesson.count = vi.fn().mockResolvedValue(0);
+    prisma.lesson.create = vi.fn().mockResolvedValue({ id: 'lesson-carousel-2' });
+
+    const ctx = makeAdminCtx({
+      action: 'carousel-generate', prisma,
+      body: { _jobId: 'job-3', moduleId: 'm1', slides: makeSlides(3) },
+    });
+    await handleCarouselWorker(ctx as any);
+
+    // Last slide: startMs=180000, endMs=180000+4000=184000ms ≈ 3.07 min → rounds to 3.
+    expect(prisma.lesson.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ duration: '3 min' }),
+    }));
   });
 
   it('reports an error status when narration generation fails, without creating a lesson', async () => {
