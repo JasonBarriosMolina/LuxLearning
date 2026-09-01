@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Lock, Download, Play, Pause } from 'lucide-react';
+import Link from 'next/link';
+import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { findActiveSlideIndex, slideProgress, canScrub, type CarouselSlide } from './LuxCarrouselPlayer.helpers';
 
@@ -14,17 +15,37 @@ interface Props {
   pdfRecapUrl: string | null;
   hasCompletedBefore: boolean;
   onCompleted: () => void;
+  // "Continuar" CTA once the carousel ends (Trello DmPpbrff, 2026-09-01 00:57 —
+  // Mack: "crear un botón de siguiente"). null when this is the module's last lesson.
+  nextLessonId?: string | null;
+  nextLessonTitle?: string | null;
 }
 
 // Lux Carrousel player (Trello N1bbWdz0, 2026-08-30) — student-facing playback of a
 // pre-generated narrated slide sequence. First view is locked (no scrub/skip, must
 // finish once); later views unlock free navigation + the "Lux Recap" PDF download.
-export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, pdfRecapUrl: initialPdfRecapUrl, hasCompletedBefore, onCompleted }: Props) {
+export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, pdfRecapUrl: initialPdfRecapUrl, hasCompletedBefore, onCompleted, nextLessonId, nextLessonTitle }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [ended, setEnded] = useState(hasCompletedBefore);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const completedRef = useRef(false);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      stageRef.current?.requestFullscreen?.().catch(() => {});
+    }
+  };
   // "Lux Recap" PDF is built on demand (Trello N1bbWdz0, 2026-08-31 15:21) — the first
   // request builds + caches it on the Lesson row; later visits (any student) just get
   // the cached URL back instantly via the same endpoint.
@@ -85,7 +106,7 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   return (
     <div className="rounded-2xl overflow-hidden border border-border bg-black">
       {/* Slide stage */}
-      <div className="relative aspect-video bg-charcoal overflow-hidden">
+      <div ref={stageRef} className="relative aspect-video bg-charcoal overflow-hidden">
         {activeSlide?.imageUrl && (
           <img
             src={activeSlide.imageUrl}
@@ -107,10 +128,18 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
         )}
         {/* Lock overlay hint on first view */}
         {!unlocked && !ended && (
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full">
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full">
             <Lock className="w-3 h-3" /> Primera vista
           </div>
         )}
+        {/* Fullscreen toggle (Trello DmPpbrff, 2026-09-01 00:57) */}
+        <button
+          onClick={toggleFullscreen}
+          className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+          title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+        >
+          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Controls */}
@@ -134,24 +163,37 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
       </div>
 
       {ended && (
-        <div className="bg-surface px-4 pb-3">
-          {pdfRecapUrl ? (
-            <a
-              href={pdfRecapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline"
+        <div className="bg-surface px-4 py-3 space-y-3">
+          <div>
+            {pdfRecapUrl ? (
+              <a
+                href={pdfRecapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline"
+              >
+                <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
+              </a>
+            ) : (
+              <button
+                onClick={requestPdf}
+                disabled={pdfRequesting}
+                className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" /> {pdfRequesting ? 'Generando PDF…' : 'Solicitar Lux Recap (PDF)'}
+              </button>
+            )}
+          </div>
+          {/* "Continuar" CTA (Trello DmPpbrff, 2026-09-01 00:57) — the carousel branch
+              of the lesson page has no shared prev/next nav bar like other lesson
+              types, so this was the only way to move forward without scrolling away. */}
+          {nextLessonId && (
+            <Link
+              href={`/courses/${courseId}/modules/${moduleId}/lessons/${nextLessonId}`}
+              className="btn-primary w-full flex items-center justify-center gap-2"
             >
-              <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
-            </a>
-          ) : (
-            <button
-              onClick={requestPdf}
-              disabled={pdfRequesting}
-              className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" /> {pdfRequesting ? 'Generando PDF…' : 'Solicitar Lux Recap (PDF)'}
-            </button>
+              {nextLessonTitle ? `Siguiente: ${nextLessonTitle}` : 'Siguiente lección'} <ChevronRight className="w-4 h-4" />
+            </Link>
           )}
         </div>
       )}

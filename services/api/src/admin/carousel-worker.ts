@@ -137,8 +137,12 @@ export async function generateCarouselAssets(
   // pdfRecapUrl is intentionally left null here — the "Lux Recap" PDF is built
   // on demand by the student-facing courses lambda the first time anyone asks
   // for it (Trello N1bbWdz0, 2026-08-31 15:21), not eagerly during generation.
+  // Title doesn't expose the internal feature name to the student (Trello DmPpbrff,
+  // 2026-09-01 00:57 — Mack: "no tiene que decir que es un Lux Carrousel... nada más
+  // decir el nombre de la lección/módulo que se está viendo").
+  const title = courseLanguage === 'EN' ? `Interactive Summary: ${mod.title}` : `Resumen Interactivo: ${mod.title}`;
   const lessonData = {
-    moduleId, title: `Lux Carrousel: ${mod.title}`, duration: `${durationMin} min`,
+    moduleId, title, duration: `${durationMin} min`,
     type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
     audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
   };
