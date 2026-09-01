@@ -28,7 +28,7 @@ export async function sanitizeUserPromptForImage(userPrompt: string): Promise<st
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31', max_tokens: 120,
         messages: [{ role: 'user', content:
-          `Convert this user request into a diffusion model image prompt (max 70 words). Rules: describe ONLY visual elements — objects, people, settings, lighting, colors, composition. NEVER mention text, labels, titles, banners, infographic layouts, charts, or diagrams in any form. Flat illustration style, clean white background.\nUser request: "${userPrompt}"\nReturn ONLY the visual prompt, nothing else.`
+          `Convert this user request into a diffusion model image prompt (max 70 words). Rules: describe ONLY visual elements — objects, people, settings, lighting, colors, composition. NEVER mention text, labels, titles, banners, infographic layouts, charts, or diagrams in any form. NEVER describe a software interface, app screen, UI mockup, dashboard, screenshot, menu bar, toolbar, or buttons — a diffusion model always hallucinates illegible pseudo-text trying to render those. If the request describes one, replace it with a physical/conceptual object or scene instead (e.g. a software interface becomes a control panel with knobs and sliders, or an abstract representation of the concept). Flat illustration style, clean white background.\nUser request: "${userPrompt}"\nReturn ONLY the visual prompt, nothing else.`
         }],
       }),
     }));
@@ -36,9 +36,9 @@ export async function sanitizeUserPromptForImage(userPrompt: string): Promise<st
     if (text.length > 20) return text;
   } catch { /* fall through to deterministic fallback */ }
   const cleaned = userPrompt
-    .replace(/\b(infograph\w*|infografía|charts?|diagrama?s?|tables?|texto|texts?|labels?|banners?|posters?|flyers?|slides?|títulos?|titl\w*)\b/gi, '')
+    .replace(/\b(infograph\w*|infografía|charts?|diagrama?s?|tables?|texto|texts?|labels?|banners?|posters?|flyers?|slides?|títulos?|titl\w*|interfaz(?:es)?|interface|software|screenshots?|captura(?:s)? de pantalla|mockups?|dashboards?|barra(?:s)? de (?:herramientas|menú)|toolbars?|menu ?bars?|apps?)\b/gi, '')
     .replace(/\s+/g, ' ').trim();
-  return `${cleaned || 'colorful educational scene'}, flat illustration, colorful educational scene, clean white background, no text, no labels, no words`;
+  return `${cleaned || 'colorful educational scene'}, flat illustration, colorful educational scene, clean white background, no text, no labels, no words, no user interface, no screen mockup`;
 }
 
 // Haiku → visual prompt for Stability AI (pure scene description, no text in image)
@@ -140,7 +140,7 @@ export async function generateLessonImage(
       accept: 'application/json',
       body: JSON.stringify({
         prompt,
-        negative_prompt: 'text, words, letters, labels, captions, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
+        negative_prompt: 'text, words, letters, labels, captions, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, user interface, app screenshot, screen mockup, dashboard, menu bar, toolbar, buttons with text, icons with labels, software application, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
         mode: 'text-to-image',
         aspect_ratio: '1:1',
         output_format: 'jpeg',

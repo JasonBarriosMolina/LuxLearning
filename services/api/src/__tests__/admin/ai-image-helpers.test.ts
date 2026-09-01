@@ -73,6 +73,22 @@ describe('sanitizeUserPromptForImage', () => {
     expect(leadingPart).not.toMatch(/\btext\b/i);
     expect(result).toContain('no text');
   });
+
+  // Jason, 2026-09-01: a carousel slide describing a DAW "software interface" came
+  // back as a fake UI mockup full of illegible pseudo-text — diffusion models
+  // hallucinate gibberish text whenever the concept implies text-bearing UI widgets,
+  // regardless of a generic "no text" negative prompt.
+  it('strips software-interface/screenshot/mockup keywords in fallback (diffusion models hallucinate fake UI text otherwise)', async () => {
+    vi.mocked(bedrock.send).mockRejectedValueOnce(new Error('fail'));
+    const result = await sanitize('screenshot of a DAW software interface with toolbar and menu bar');
+    const leadingPart = result.split(', flat illustration')[0];
+    expect(leadingPart).not.toMatch(/\binterfaz?e?\b/i);
+    expect(leadingPart).not.toMatch(/\bsoftware\b/i);
+    expect(leadingPart).not.toMatch(/\bscreenshots?\b/i);
+    expect(leadingPart).not.toMatch(/\btoolbars?\b/i);
+    expect(leadingPart).not.toMatch(/\bmenu ?bars?\b/i);
+    expect(result).toContain('no user interface');
+  });
 });
 
 // ── generateLessonInfographic ─────────────────────────────────────────────────
