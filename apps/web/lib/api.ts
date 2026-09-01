@@ -78,8 +78,8 @@ export const api = {
       request(`/lessons/progress?courseId=${courseId}`),
     carouselRecap: (lessonId: string) =>
       request<any>('/lessons/carousel-recap', { method: 'POST', body: JSON.stringify({ lessonId }) }),
-    audio: (lessonId: string) =>
-      request<{ audioUrl: string }>('/lessons/audio', { method: 'POST', body: JSON.stringify({ lessonId }) }),
+    audio: (lessonId: string, gender?: 'male' | 'female') =>
+      request<{ audioUrl: string }>('/lessons/audio', { method: 'POST', body: JSON.stringify({ lessonId, gender }) }),
   },
 
   quiz: {
