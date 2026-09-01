@@ -242,7 +242,7 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
           // too, not just lessons — Mack: "en esa vista es importante que me den la
           // posibilidad de identificar posibles errores" (needs ALL module content, not
           // just async lessons, to actually be useful for a pre-publish QA pass).
-          evaluationEvents: { select: { moduleId: true, type: true, name: true, lessonScript: true, vapiPrompt: true, closingScript: true } },
+          evaluationEvents: { select: { moduleId: true, type: true, name: true, instructions: true, lessonScript: true, vapiPrompt: true, closingScript: true } },
         },
       });
       if (!course) return notFound('Curso no encontrado');

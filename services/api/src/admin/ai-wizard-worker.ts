@@ -303,13 +303,15 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
     // (carousel.ts) still exists separately for one-off generation/retries.
     const generateModuleCarouselPhase = async (moduleIdx: number): Promise<void> => {
       const moduleId = (moduleIds as string[])[moduleIdx]!;
-      const created = await generateModuleCarousel(prisma, blCourseId, moduleId, blLang);
-      if (created) {
-        // Carousel's own ~6 min isn't part of the Phase 1 duration sum (it didn't exist
-        // yet) — add it to the module's stored total now that it does.
+      const durationMin = await generateModuleCarousel(prisma, blCourseId, moduleId, blLang);
+      if (durationMin !== false) {
+        // Carousel's real narration length isn't part of the Phase 1 duration sum (it
+        // didn't exist yet) — add the ACTUAL computed minutes, not a flat guess (code
+        // review, 2026-09-01: a flat "+6 min" reintroduced the exact duration-honesty
+        // bug this session fixed for lessons).
         const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { duration: true } });
         const current = parseInt(mod?.duration ?? '0', 10);
-        await prisma.module.update({ where: { id: moduleId }, data: { duration: `${(isNaN(current) ? 0 : current) + 6} min` } }).catch(() => {});
+        await prisma.module.update({ where: { id: moduleId }, data: { duration: `${(isNaN(current) ? 0 : current) + durationMin} min` } }).catch(() => {});
       }
     };
 
@@ -332,7 +334,20 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         const classPrompt = isBlEN
           ? `Generate a Lux Mentor class for module "${mod.title}". Professional, formal educational tone — no emojis, no chatbot-style greetings or filler ("Hey!", "Great question!", etc). JSON: {"vapiPrompt":"<prompt for a live Q&A voice tutor — pose guiding questions about the module, 100 words max>","lessonScript":"<class outline as clear bullet points (- item) covering 3 key topics and activities, 400-450 words (this is a narrated 'clase magistral', not a summary — this is close to the maximum a single narration request can hold), written to be read aloud by a narrator, with natural pauses between points>","closingScript":"<~90-110 word spoken closing: briefly recap the key topics covered in this module, then a warm one-sentence congratulation motivating the student to continue>"}`
           : `Genera una Clase Magistral Lux Mentor para el módulo "${mod.title}". Tono profesional y educativo formal — sin emojis, sin saludos ni muletillas de chatbot ("¡Hola!", "¡Buena pregunta!", etc). JSON: {"vapiPrompt":"<prompt para un tutor de voz en vivo — plantea preguntas guía sobre el módulo, máx 100 palabras>","lessonScript":"<esquema de clase en viñetas claras (- item) cubriendo 3 temas clave y actividades, 400-450 palabras (esto es una clase magistral narrada, no un resumen — este es cerca del máximo que una sola narración puede contener), escrito para ser leído en voz alta por un narrador, con pausas naturales entre puntos>","closingScript":"<cierre hablado de ~90-110 palabras: resume brevemente los temas clave vistos en este módulo, luego una felicitación cálida de una oración motivando al estudiante a continuar>"}`;
-        const classContent = await invokeBedrockForJson(classPrompt, 1500).catch(() => null);
+        let classContent = await invokeBedrockForJson(classPrompt, 1500).catch((e: any) => {
+          console.error(`[wizard-lessons-bulk] module ${moduleId} classPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+          return null;
+        });
+        // Retry once on a total failure (code review, 2026-09-01: this silently gave up
+        // with zero retry and zero trace — the exact bug class already fixed for lesson
+        // generation, just never applied here).
+        if (!classContent?.vapiPrompt) {
+          console.warn(`[wizard-lessons-bulk] module ${moduleId}: class generation returned nothing usable — retrying once`);
+          classContent = await invokeBedrockForJson(classPrompt, 1500).catch((e: any) => {
+            console.error(`[wizard-lessons-bulk] module ${moduleId} class retry failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+            return null;
+          });
+        }
         if (classContent?.vapiPrompt) {
           const maleVoice = defaultMaleVoiceForLanguage(isBlEN ? 'EN' : 'ES');
           const transitionLine = isBlEN
@@ -478,6 +493,16 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         incompleteModuleIds = incompleteIdx.map((idx) => (moduleIds as string[])[idx]);
         if (incompleteModuleIds.length > 0) {
           console.error(`[wizard-lessons-bulk] job ${_jobId}: gave up after ${MAX_SWEEPS} repair sweeps — still incomplete: ${incompleteModuleIds.join(', ')}`);
+        }
+
+        // Carousel catch-up (found in code review, 2026-09-01): Phase 2 skips a module
+        // with 0 lessons at that point, and the sweep above only repairs lessons/quiz —
+        // never retries carousel generation. Re-running the (idempotent) carousel phase
+        // now picks up any module that had 0 lessons initially but has real ones after
+        // repair; a module that already got its carousel is a fast no-op via its own guard.
+        for (let i = 0; i < allIdx.length; i += MODULE_CONCURRENCY) {
+          const batch = allIdx.slice(i, i + MODULE_CONCURRENCY);
+          await Promise.all(batch.map((idx) => generateModuleCarouselPhase(idx)));
         }
       }
 

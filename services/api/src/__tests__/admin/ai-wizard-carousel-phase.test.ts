@@ -24,17 +24,17 @@ describe('generateModuleCarousel — idempotency guard (Trello DmPpbrff, 2026-08
     expect(generateCarouselAssets).not.toHaveBeenCalled();
   });
 
-  it('proceeds normally when no carousel exists yet', async () => {
+  it('proceeds normally when no carousel exists yet, returning the real computed duration (not a boolean)', async () => {
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }) },
       lesson: { count: vi.fn().mockImplementation(async ({ where }: any) => (where?.type === 'carousel' ? 0 : 8)) },
     });
     vi.mocked(draftCarouselScript).mockResolvedValue({ slides: [{}], topic: 'Mod' } as any);
-    vi.mocked(generateCarouselAssets).mockResolvedValue({ lessonId: 'l1' });
+    vi.mocked(generateCarouselAssets).mockResolvedValue({ lessonId: 'l1', durationMin: 3 });
 
     const created = await generateModuleCarousel(prisma, 'c1', 'm1', 'ES');
 
-    expect(created).toBe(true);
+    expect(created).toBe(3);
     expect(draftCarouselScript).toHaveBeenCalledTimes(1);
     expect(generateCarouselAssets).toHaveBeenCalledWith(prisma, 'm1', expect.any(Array), 'ES', 8);
   });

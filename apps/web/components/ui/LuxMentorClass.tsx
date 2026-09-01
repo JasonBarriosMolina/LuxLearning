@@ -354,6 +354,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           src={closingAudioUrl}
           autoPlay
           onEnded={() => setPhase('ended')}
+          // Found in code review (2026-09-01): same stuck-forever risk as the narration
+          // audio above — a failed closing clip must still let the student finish.
+          onError={() => setPhase('ended')}
         />
         <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto">
           <Volume2 className="w-7 h-7 text-blue-600" />
@@ -417,6 +420,11 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           src={startData.lessonAudioUrl}
           autoPlay
           onEnded={connectVapi}
+          // Found in code review (2026-09-01): a 404/CORS/blocked-autoplay failure left
+          // the student stuck on this screen forever (onEnded never fires). Same
+          // graceful degradation as having no lessonAudioUrl at all — just proceed to
+          // the Q&A call.
+          onError={connectVapi}
         />
         <div className="bg-gradient-to-br from-[#17527E] to-[#7B2FBE] px-4 py-8 flex flex-col items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">

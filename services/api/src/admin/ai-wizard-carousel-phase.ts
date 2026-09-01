@@ -18,15 +18,25 @@ import { generateCarouselAssets } from './carousel-worker';
  * the written closing lesson — one slot later). Non-fatal on any failure: logs and
  * returns, same pattern as the other phase functions in ai-wizard-worker.ts — a
  * failed carousel must never block or fail the rest of course generation. Returns
- * whether a carousel lesson was actually created — callers use this to add the
- * carousel's ~6 min to the module's stored duration total.
+ * the carousel's real computed duration (minutes) on success — callers use this
+ * to add the ACTUAL narration length to the module's stored duration total,
+ * instead of a flat guess (found in code review, 2026-09-01: a flat "+6 min" was
+ * exactly the "duration doesn't match real content" bug this session fixed
+ * elsewhere) — or `false` when skipped/failed.
+ *
+ * Idempotent and safe to call again for every module after the completeness
+ * sweep (ai-wizard-repair.ts) has run — a module that had 0 lessons on the first
+ * pass (skipped below) may have real lessons by then; a module that already got
+ * its carousel is a no-op via the existingCarousel guard (found in code review:
+ * the sweep only repairs lessons/quiz, never retries carousel generation, so a
+ * transiently-empty module used to permanently miss its carousel).
  */
 export async function generateModuleCarousel(
   prisma: any,
   courseId: string,
   moduleId: string,
   courseLanguage: string,
-): Promise<boolean> {
+): Promise<number | false> {
   try {
     const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true } });
     if (!mod) return false;
@@ -37,15 +47,14 @@ export async function generateModuleCarousel(
     // auto-generated carousel; re-running the bulk pipeline must never add another.
     const existingCarousel = await prisma.lesson.count({ where: { moduleId, type: 'carousel' } });
     if (existingCarousel > 0) {
-      console.log(`[carousel-phase] module ${moduleId}: already has a carousel, skipping`);
       return false;
     }
 
     const lessonCount = await prisma.lesson.count({ where: { moduleId } });
     if (lessonCount === 0) {
-      // No written lessons yet (Phase 1 failed for this module) — nothing to be
-      // "penultimate" to. Skip; the completeness sweep already flags this module.
-      console.warn(`[carousel-phase] module ${moduleId}: no lessons found, skipping auto-carousel`);
+      // No written lessons yet — nothing to be "penultimate" to. Not necessarily
+      // permanent: the caller re-runs this phase after the completeness sweep,
+      // by which point repaired modules will have real lessons.
       return false;
     }
 
@@ -62,7 +71,7 @@ export async function generateModuleCarousel(
       console.error(`[carousel-phase] module ${moduleId}: asset generation failed`);
       return false;
     }
-    return true;
+    return result.durationMin;
   } catch (e) {
     console.error(`[carousel-phase] module ${moduleId} error:`, e);
     return false;

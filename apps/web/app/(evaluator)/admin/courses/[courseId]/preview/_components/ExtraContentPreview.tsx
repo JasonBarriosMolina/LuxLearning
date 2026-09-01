@@ -6,10 +6,10 @@
 // module's quiz questions or class script for errors before publishing
 // (Mack: "en esa vista es importante que me den la posibilidad de identificar
 // posibles errores").
-import { HelpCircle, MessageSquare, Mic, GraduationCap, CheckCircle2 } from 'lucide-react';
+import { HelpCircle, MessageSquare, Mic, GraduationCap, CheckCircle2, FileText } from 'lucide-react';
 
 interface Props {
-  extra: { kind: 'quiz' | 'reflection' | 'class' | 'interview'; module: any };
+  extra: { kind: 'quiz' | 'reflection' | 'class' | 'interview' | 'evidence'; module: any };
   course: any;
 }
 
@@ -77,10 +77,16 @@ export function ExtraContentPreview({ extra, course }: Props) {
   }
 
   // reflection / interview — no generated script to preview (student-authored /
-  // live-voice), just confirm it's planned and show the evaluator-set instructions.
+  // live-voice/student-uploaded), just confirm it's planned and show the
+  // evaluator-set instructions.
   const ev = (course.evaluationEvents ?? []).find((e: any) => e.moduleId === mod.id && e.type === kind.toUpperCase());
-  const Icon = kind === 'reflection' ? MessageSquare : Mic;
-  const label = kind === 'reflection' ? 'Reflexión' : 'Entrevista con Lux Mentor';
+  const Icon = kind === 'reflection' ? MessageSquare : kind === 'evidence' ? FileText : Mic;
+  const label = kind === 'reflection' ? 'Reflexión' : kind === 'evidence' ? (ev?.name || 'Evidencia') : 'Entrevista con Lux Mentor';
+  const description = kind === 'reflection'
+    ? 'El estudiante escribe esta reflexión después de aprobar el quiz — no hay contenido generado que previsualizar aquí.'
+    : kind === 'evidence'
+      ? 'El estudiante sube un archivo/entregable aquí — no hay contenido generado que previsualizar, solo las instrucciones de abajo.'
+      : 'Esta es una entrevista de voz en vivo con Lux Mentor — no hay guión fijo que previsualizar aquí.';
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -88,9 +94,7 @@ export function ExtraContentPreview({ extra, course }: Props) {
         <h3 className="font-heading font-bold text-xl text-charcoal">{label} — {mod.title}</h3>
       </div>
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
-        {kind === 'reflection'
-          ? 'El estudiante escribe esta reflexión después de aprobar el quiz — no hay contenido generado que previsualizar aquí.'
-          : 'Esta es una entrevista de voz en vivo con Lux Mentor — no hay guión fijo que previsualizar aquí.'}
+        {description}
       </div>
       {ev?.instructions && (
         <div className="border border-border rounded-xl p-4">
