@@ -33,7 +33,7 @@ Tono profesional y educativo — sin emojis en ningún campo (ni títulos, ni vi
 Para cada diapositiva genera:
 - "onScreenText": 1 título corto + hasta 3 viñetas breves (lo que se lee en pantalla)
 - "narrationSegment": 1-2 oraciones completas que un narrador leerá en voz alta para esa diapositiva — deben sonar naturales al narrarse en secuencia, cada una terminando en punto
-- "imagePrompt": descripción puramente visual (objetos, composición, diagrama, sin texto) para generar una imagen de fondo tipo infografía — nunca menciones texto, letras o palabras a dibujar
+- "imagePrompt": descripción puramente visual (objetos concretos, escena, composición) para una imagen de fondo ilustrativa — NUNCA menciones texto, letras o palabras a dibujar, y NUNCA describas una interfaz de software, pantalla, mockup de app, dashboard, captura de pantalla, barra de menú o botones — un modelo de imagen SIEMPRE alucina texto ilegible al intentar dibujar eso. En vez de eso, describe una escena u objeto físico/conceptual relacionado (ej. en vez de "interfaz de un DAW con barra de herramientas" usa "consola de mezcla con perillas y deslizadores, estudio de grabación, ondas de sonido")
 
 Devuelve ÚNICAMENTE un array JSON de exactamente ${TARGET_SLIDES} objetos:
 [{"onScreenText":{"title":"...","bullets":["...","..."]},"narrationSegment":"...","imagePrompt":"..."}]`;
