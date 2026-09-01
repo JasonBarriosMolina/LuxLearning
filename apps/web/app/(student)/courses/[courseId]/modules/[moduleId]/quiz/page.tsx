@@ -56,6 +56,12 @@ export default function QuizPage() {
 
   const module = course?.modules?.find((m: any) => m.id === moduleId);
   const questions = module?.questions ?? [];
+  // Trello DmPpbrff, 2026-09-01 01:48 (Mack): a module with no reflection planned
+  // still pointed the post-quiz CTA at "Escribir reflexión" — a dead end, since
+  // there's no reflection to write. Gate the CTA on whether one was actually planned.
+  const hasReflectionPlanned = (course?.evaluationEvents ?? []).some(
+    (e: any) => e.moduleId === moduleId && e.type === 'REFLECTION',
+  );
   const answeredCount = answers.filter((a) => a !== null).length;
   const allAnswered = answeredCount === questions.length;
 
@@ -178,10 +184,18 @@ export default function QuizPage() {
 
           {passed ? (
             <div className="space-y-3">
-              <p className="text-sm text-gray-600">{t.quizPage.excellentWork}</p>
-              <Link href={`/courses/${courseId}/modules/${moduleId}/reflection`} className="btn-primary inline-flex">
-                {t.quizPage.writeReflection}
-              </Link>
+              <p className="text-sm text-gray-600">
+                {hasReflectionPlanned ? t.quizPage.excellentWork : t.quizPage.excellentWorkNoReflection}
+              </p>
+              {hasReflectionPlanned ? (
+                <Link href={`/courses/${courseId}/modules/${moduleId}/reflection`} className="btn-primary inline-flex">
+                  {t.quizPage.writeReflection}
+                </Link>
+              ) : (
+                <Link href={`/courses/${courseId}/modules/${moduleId}`} className="btn-primary inline-flex">
+                  {t.quizPage.continueLearning}
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
