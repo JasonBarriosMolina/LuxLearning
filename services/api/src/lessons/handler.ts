@@ -12,12 +12,15 @@ import {
   getTasksForUser, updateTask, autoCompleteTasks,
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
   setInactivityReminder, getAllEnrollments, getEnrollments,
+  createNotification, getPushSubscriptionsByUserId,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { getPrismaClient } from '../shared/db-neon';
 import { UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { FavoriteItem } from '../shared/db-dynamo';
+import webpush from 'web-push';
+import { getVapidKeys } from '../shared/vapid';
 import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
@@ -106,6 +109,25 @@ export const handler = async (event: Event) => {
       const pdfRecapUrl = await buildRecapPdf(mod?.title ?? lesson.title, slides);
       if (!pdfRecapUrl) return serverError('No se pudo generar el PDF de repaso');
       await prisma.lesson.update({ where: { id: lessonId }, data: { pdfRecapUrl } });
+
+      // Notify the requesting student, push + in-app (Trello DmPpbrff, 2026-09-01
+      // 00:57 — Mack: "se enviará una notificación... push... y una notificación a
+      // Lux Learning"). Non-fatal: the PDF is already usable even if this fails.
+      try {
+        const msg = `Tu PDF de repaso está listo — ${mod?.title ?? lesson.title}`;
+        await createNotification({
+          userId, notifId: createId(), type: 'GENERAL', message: msg,
+          read: false, createdAt: new Date().toISOString(), actionUrl: pdfRecapUrl,
+        });
+        const vapid = await getVapidKeys().catch(() => null);
+        if (vapid) {
+          webpush.setVapidDetails(vapid.email, vapid.public, vapid.private);
+          const subs = await getPushSubscriptionsByUserId(userId);
+          const payload = JSON.stringify({ title: 'Lux Learning', body: msg, url: pdfRecapUrl });
+          await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
+        }
+      } catch { /* non-fatal */ }
+
       return ok({ pdfRecapUrl });
     }
 

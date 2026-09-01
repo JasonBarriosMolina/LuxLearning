@@ -20,10 +20,21 @@ vi.mock('../../shared/db-dynamo', () => ({
   startSession: vi.fn(), updateSession: vi.fn(), endSession: vi.fn(), getActivity: vi.fn(),
   getAllQuizAttemptsForUser: vi.fn(), setInactivityReminder: vi.fn(),
   getAllEnrollments: vi.fn(), getEnrollments: vi.fn(),
+  createNotification: vi.fn(), getPushSubscriptionsByUserId: vi.fn().mockResolvedValue([]),
   TABLES: {}, ddb: { send: vi.fn() },
 }));
 vi.mock('../../shared/email', () => ({ sendTemplatedEmail: vi.fn() }));
 vi.mock('../../shared/carousel-pdf', () => ({ buildRecapPdf: vi.fn() }));
+// @aws-sdk/client-secrets-manager is a Lambda-provided runtime dep (esbuild
+// --external), not in local node_modules — shared/vapid.ts imports it, and
+// lessons/handler.ts now imports shared/vapid.ts for the carousel-recap
+// notification, so every test importing the handler needs this mocked.
+vi.mock('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: function () { return { send: vi.fn() }; },
+  GetSecretValueCommand: function (x: any) { return x; },
+}));
+vi.mock('../../shared/vapid', () => ({ getVapidKeys: vi.fn().mockRejectedValue(new Error('not configured in tests')) }));
+vi.mock('web-push', () => ({ default: { setVapidDetails: vi.fn(), sendNotification: vi.fn() } }));
 
 const lessonFindUniqueMock = vi.fn();
 const lessonUpdateMock = vi.fn().mockResolvedValue({});
