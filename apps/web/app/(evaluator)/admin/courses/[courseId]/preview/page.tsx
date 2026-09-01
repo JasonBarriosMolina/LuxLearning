@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen, Pencil, HelpCircle, MessageSquare, Mic, GraduationCap } from 'lucide-react';
+import { ArrowLeft, PlayCircle, ChevronDown, ChevronRight, Lightbulb, BookOpen, Pencil, HelpCircle, MessageSquare, Mic, GraduationCap, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -19,7 +19,7 @@ export default function CoursePreviewPage() {
   // Non-lesson module content (quiz/reflection/class/interview) — previewing these
   // was entirely missing before (2026-09-01): Mack needs to see EVERY piece of a
   // module's content to catch errors, not just async lessons.
-  const [selectedExtra, setSelectedExtra] = useState<{ kind: 'quiz' | 'reflection' | 'class' | 'interview'; module: any } | null>(null);
+  const [selectedExtra, setSelectedExtra] = useState<{ kind: 'quiz' | 'reflection' | 'class' | 'interview' | 'evidence'; module: any } | null>(null);
   const contentPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -151,10 +151,10 @@ export default function CoursePreviewPage() {
                     </button>
                   )}
                   {(course.evaluationEvents ?? []).filter((e: any) => e.moduleId === mod.id).map((ev: any) => {
-                    const kind = ev.type === 'CLASS' ? 'class' : ev.type === 'REFLECTION' ? 'reflection' : ev.type === 'INTERVIEW' ? 'interview' : null;
+                    const kind = ev.type === 'CLASS' ? 'class' : ev.type === 'REFLECTION' ? 'reflection' : ev.type === 'INTERVIEW' ? 'interview' : ev.type === 'EVIDENCE' ? 'evidence' : null;
                     if (!kind) return null;
-                    const Icon = kind === 'class' ? GraduationCap : kind === 'reflection' ? MessageSquare : Mic;
-                    const label = kind === 'class' ? 'Clase con Lux Mentor' : kind === 'reflection' ? 'Reflexión' : 'Entrevista con Lux Mentor';
+                    const Icon = kind === 'class' ? GraduationCap : kind === 'reflection' ? MessageSquare : kind === 'evidence' ? FileText : Mic;
+                    const label = kind === 'class' ? 'Clase con Lux Mentor' : kind === 'reflection' ? 'Reflexión' : kind === 'evidence' ? (ev.name || 'Evidencia') : 'Entrevista con Lux Mentor';
                     return (
                       <button
                         key={ev.type}

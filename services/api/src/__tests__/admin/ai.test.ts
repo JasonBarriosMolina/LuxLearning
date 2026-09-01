@@ -859,7 +859,8 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     vi.mocked(draftCarouselScript).mockClear();
     vi.mocked(generateCarouselAssets).mockClear();
     vi.mocked(draftCarouselScript).mockResolvedValue({ slides: [{ order: 1, onScreenText: { title: 'T', bullets: [] }, narrationSegment: 'Seg.', imagePrompt: 'p' }], topic: 'Mod' });
-    vi.mocked(generateCarouselAssets).mockResolvedValue({ lessonId: 'carousel-lesson-1' });
+    let carouselCreated = false;
+    vi.mocked(generateCarouselAssets).mockImplementation(async () => { carouselCreated = true; return { lessonId: 'carousel-lesson-1', durationMin: 2 }; });
     vi.mocked(invokeBedrockForJson).mockImplementation(async (prompt: string) => {
       if (prompt.includes('multiple-choice questions') || prompt.includes('opción múltiple')) {
         return Array.from({ length: 10 }, (_, i) => ({ text: `Q${i + 1}?`, options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: i + 1 }));
@@ -880,7 +881,7 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
         // carousel yet). The plain count must be 0 until lessons actually get created
         // (the lessons-phase idempotency guard reads this too), then 8 after.
         count: vi.fn().mockImplementation(async ({ where }: any) =>
-          where?.type === 'carousel' ? 0 : (lessonsCreated ? 8 : 0)
+          where?.type === 'carousel' ? (carouselCreated ? 1 : 0) : (lessonsCreated ? 8 : 0)
         ),
         findMany: vi.fn().mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: '<p>Real content.</p>', points: [], tip: '' }))),
       },
@@ -912,8 +913,11 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeLessThan(questionCreateMany.mock.invocationCallOrder[0]);
     expect(draftCarouselScript.mock.invocationCallOrder[0]).toBeLessThan(evalEventCreate.mock.invocationCallOrder[0]);
 
-    // Module duration bumped by the carousel's ~6 min (60 → 66).
-    expect(prisma.module.update).toHaveBeenCalledWith(expect.objectContaining({ data: { duration: '66 min' } }));
+    // Module duration bumped by the carousel's REAL computed duration (60 → 62,
+    // not a flat "+6" guess — code review, 2026-09-01). draftCarouselScript being
+    // called only once (asserted above) also proves the carousel catch-up pass
+    // after the completeness sweep correctly skips a module that already has one.
+    expect(prisma.module.update).toHaveBeenCalledWith(expect.objectContaining({ data: { duration: '62 min' } }));
   });
 
   it('wizard-copilot dedups a module reused across 2 weeks for ASYNC courses (regression: Trello DmPpbrff comment 6a91f241)', async () => {

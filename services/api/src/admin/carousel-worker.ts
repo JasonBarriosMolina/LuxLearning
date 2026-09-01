@@ -96,7 +96,7 @@ export async function generateCarouselAssets(
   slides: DraftSlide[],
   courseLanguage: string | undefined,
   insertAtOrder?: number,
-): Promise<{ lessonId: string } | null> {
+): Promise<{ lessonId: string; durationMin: number } | null> {
   const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true } });
   if (!mod) return null;
 
@@ -163,7 +163,7 @@ export async function generateCarouselAssets(
     lesson = await prisma.lesson.create({ data: { ...lessonData, order: lessonCount + 1 } });
   }
 
-  return { lessonId: lesson.id };
+  return { lessonId: lesson.id, durationMin };
 }
 
 export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
@@ -174,6 +174,17 @@ export async function handleCarouselWorker(ctx: AdminCtx): Promise<any | null> {
   };
 
   try {
+    // Idempotency guard (code review, 2026-09-01): the bulk auto-phase already got this
+    // guard after Mack reported 3x-duplicated carousels; this manual Mini-Wizard path had
+    // the identical exposure — a Lambda Event-invocation retry (AWS redelivers on error/
+    // timeout) or a user double-clicking "Generar" both re-run this same handler. To
+    // intentionally regenerate, delete the existing carousel lesson first.
+    const existingCarousel = await prisma.lesson.count({ where: { moduleId, type: 'carousel' } });
+    if (existingCarousel > 0) {
+      await saveAiJob(_jobId, { status: 'error', error: 'Este módulo ya tiene un Lux Carrousel. Elimínalo primero si deseas generar uno nuevo.' });
+      return ok({});
+    }
+
     await saveAiJob(_jobId, { status: 'processing', phase: 'images', modulesProcessed: 0, totalModules: slides.length });
     const result = await generateCarouselAssets(prisma, moduleId, slides, courseLanguage);
     if (!result) {

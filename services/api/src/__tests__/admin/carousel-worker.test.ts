@@ -126,7 +126,9 @@ describe('handleCarouselWorker', () => {
     generateLessonImageMock.mockResolvedValue('https://s3.example.com/slide.jpg');
     const prisma = makePrisma();
     prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Redes Neuronales' });
-    prisma.lesson.count = vi.fn().mockResolvedValue(4);
+    // 0 for the idempotency guard's existing-carousel check, 4 for the plain
+    // append-position count.
+    prisma.lesson.count = vi.fn().mockImplementation(async ({ where }: any) => (where?.type === 'carousel' ? 0 : 4));
     prisma.lesson.create = vi.fn().mockResolvedValue({ id: 'lesson-carousel-1' });
 
     const ctx = makeAdminCtx({
