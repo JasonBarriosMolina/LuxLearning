@@ -178,6 +178,11 @@ export default function AdminCourseDetailPage() {
               <h1 className="font-heading font-bold text-2xl text-charcoal">{course.title}</h1>
               <Badge variant={course.isActive ? 'success' : 'default'}>{course.isActive ? 'Activo' : 'Inactivo'}</Badge>
               {course.isPilot && <Badge variant="info">Piloto</Badge>}
+              {course.courseType && (
+                <Badge variant="default">
+                  {({ TEORICO: 'Teórico', TEORICO_PRACTICO: 'Teórico-Práctico', PROYECTOS: 'Por Proyectos', PROGRAMA_ESPECIAL: 'Programa Especial', CURSO_CORTO: 'Curso Corto', LIBRE: 'Libre' } as Record<string, string>)[course.courseType] ?? course.courseType}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-gray-500 leading-relaxed">{course.description}</p>
             <p className="text-xs text-gray-400 mt-1">{course.modules?.length ?? 0} módulos • {course.modules?.reduce((s: number, m: any) => s + (m.lessons?.length ?? 0), 0) ?? 0} lecciones • {course.modules?.reduce((s: number, m: any) => s + (m.questions?.length ?? 0), 0) ?? 0} preguntas totales</p>

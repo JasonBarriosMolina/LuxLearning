@@ -139,6 +139,11 @@ export default function CoursePage() {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h1 className="font-heading font-bold text-2xl text-charcoal">{course.title}</h1>
+            {course.courseType && (
+              <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-cta-from/10 border border-cta-from/20 text-cta-from font-medium">
+                {t.studentCourses.courseTypeLabels[course.courseType] ?? course.courseType}
+              </span>
+            )}
             <p className="text-gray-500 mt-1 text-sm">{course.description}</p>
             {/* Creator / Evaluator */}
             {(course.createdByName || course.evaluatorName) && (

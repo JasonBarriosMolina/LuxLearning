@@ -78,6 +78,9 @@ export function CourseCard({
             <option value="archived">{t.admin.statusArchived ?? 'Archivado'}</option>
           </select>
           {course.isPilot && <Badge variant="info">{t.admin.coursePilot}</Badge>}
+          {course.courseType && (
+            <Badge variant="default">{t.studentCourses?.courseTypeLabels?.[course.courseType] ?? course.courseType}</Badge>
+          )}
           {course.isLegacy && (
             <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
               {t.admin.statusLegacy}
