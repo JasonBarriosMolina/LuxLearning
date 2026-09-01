@@ -21,7 +21,7 @@ import type { FavoriteItem } from '../shared/db-dynamo';
 import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
-import { generateLessonAudio, defaultVoiceForLanguage } from '../shared/polly-audio';
+import { generateLessonAudio, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -118,20 +118,28 @@ export const handler = async (event: Event) => {
     // same real Amazon Polly neural voice matched to the course's language.
     if (method === 'POST' && path.includes('/lessons/audio')) {
       const body = JSON.parse(event.body ?? '{}');
-      const { lessonId } = body as { lessonId?: string };
+      // gender (Trello DmPpbrff, 2026-09-01 14:40 — Mack: "eliminar ese botón que dice
+      // 'voz preferida del curso'... lo que debería existir es el modelo de voz, si es
+      // hombre o mujer"): the DEFAULT cached audioUrl is always the female voice
+      // (defaultVoiceForLanguage) — requesting 'male' synthesizes fresh with the male
+      // voice each time (not cached on the Lesson row, to avoid a schema migration for
+      // a rarely-toggled preference) instead of ever falling back to a browser voice.
+      const { lessonId, gender } = body as { lessonId?: string; gender?: 'male' | 'female' };
       if (!lessonId) return badRequest('lessonId is required');
       const prisma = await getPrismaClient();
       const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
       if (!lesson) return notFound('Lección no encontrada');
-      if (lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
+      if (gender !== 'male' && lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
       if (!lesson.content) return badRequest('La lección no tiene contenido para narrar');
 
       const mod = await prisma.module.findUnique({ where: { id: lesson.moduleId }, select: { course: { select: { planLanguage: true } } } });
-      const voiceId = defaultVoiceForLanguage(mod?.course?.planLanguage);
+      const voiceId = gender === 'male'
+        ? defaultMaleVoiceForLanguage(mod?.course?.planLanguage)
+        : defaultVoiceForLanguage(mod?.course?.planLanguage);
       const text = [lesson.title, lesson.content, ...(lesson.points ?? []), lesson.tip ?? ''].filter(Boolean).join('. ');
       const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
       if (!audioUrl) return serverError('No se pudo generar el audio');
-      await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
+      if (gender !== 'male') await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
       return ok({ audioUrl });
     }
 

@@ -20,7 +20,6 @@ interface Props {
 
 type Gender    = 'female' | 'male';
 type TTSState  = 'idle' | 'speaking' | 'paused';
-type TTSSource = 'web' | 'polly';
 
 // ── Preferred voice names per lang+gender (most natural first) ─────────────────
 // The browser picks the FIRST name it finds installed on the device.
@@ -253,26 +252,40 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
       .catch(() => {}); // non-fatal — WebSpeechPlayer keeps working meanwhile
     return () => { cancelled = true; };
   }, [lessonId, audioUrl]);
-  const effectiveAudioUrl = audioUrl ?? fetchedAudioUrl;
+  const femaleAudioUrl = audioUrl ?? fetchedAudioUrl;
 
   const [gender, setGender] = useState<Gender>(() =>
     typeof window !== 'undefined' && localStorage.getItem('tts-gender') === 'male' ? 'male' : 'female'
-  );
-  // Default to the real Polly neural voice whenever one exists — was defaulting to the
-  // free browser voice even when a Polly audioUrl was available (Trello DmPpbrff item 4,
-  // 2026-08-30 20:20: "las que tenemos son voces gratuitas... no generan un gusto").
-  // Only an explicit prior choice of 'web' overrides this.
-  const [source, setSource] = useState<TTSSource>(() =>
-    typeof window !== 'undefined' && localStorage.getItem('tts-source') === 'web' ? 'web' : 'polly'
   );
   const [rate, setRate] = useState<number>(() =>
     typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts-rate') ?? '1') : 1
   );
 
+  // Male voice — fetched on demand only when the student actually picks it (not
+  // cached on the Lesson row, so it's a fresh Polly call each time; a rarely-
+  // toggled preference, not worth a schema migration for a second cache slot).
+  const [maleAudioUrl, setMaleAudioUrl] = useState<string | undefined>(undefined);
+  const [maleLoading, setMaleLoading] = useState(false);
+  useEffect(() => {
+    if (gender !== 'male' || !lessonId || maleAudioUrl || maleLoading) return;
+    setMaleLoading(true);
+    api.lessons.audio(lessonId, 'male')
+      .then((res) => setMaleAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl))
+      .catch(() => {})
+      .finally(() => setMaleLoading(false));
+  }, [gender, lessonId, maleAudioUrl, maleLoading]);
+
+  // Removed the "voz preferida del curso" (browser voice) vs "voz del curso"
+  // (Polly) source picker entirely (Trello DmPpbrff, 2026-09-01 14:40 — Mack:
+  // "debemos eliminar ese botón... lo que debería existir es el modelo de voz,
+  // si es hombre o mujer"). Always Polly when available; WebSpeechPlayer is now
+  // only a silent bridge while the real narration is still loading/unavailable,
+  // never a user-facing choice.
+  const effectiveAudioUrl = gender === 'male' ? maleAudioUrl : femaleAudioUrl;
+
   const handleGenderChange = (g: Gender) => {
     setGender(g);
     localStorage.setItem('tts-gender', g);
-    if (source === 'polly') { setSource('web'); localStorage.setItem('tts-source', 'web'); }
   };
 
   const handleRateChange = (r: number) => { setRate(r); localStorage.setItem('tts-rate', String(r)); };
@@ -288,29 +301,19 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
 
   return (
     <div className={`flex items-center gap-2 flex-wrap ${className}`}>
-      {effectiveAudioUrl && source === 'polly'
+      {effectiveAudioUrl
         ? <PollyPlayer audioUrl={effectiveAudioUrl} rate={rate} onRateChange={handleRateChange} appLang={lang} />
         : <WebSpeechPlayer text={text} rate={rate} onRateChange={handleRateChange}
             gender={gender} appLang={lang} voices={voices} />
       }
 
-      {/* Profile selector — always visible, labels change with app language */}
+      {/* Voice model — male/female, only real neural (Polly) voices */}
       <select value={gender} onChange={e => handleGenderChange(e.target.value as Gender)}
         className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
         title={lang === 'en' ? 'Voice profile' : 'Perfil de voz'}>
         <option value="female">{profileLabel('female', lang)}</option>
         <option value="male">{profileLabel('male', lang)}</option>
       </select>
-
-      {/* Source switcher — only when Polly audio exists */}
-      {effectiveAudioUrl && (
-        <select value={source} onChange={e => { const s = e.target.value as TTSSource; setSource(s); localStorage.setItem('tts-source', s); }}
-          className="text-xs border border-border rounded-lg px-1.5 py-1 bg-white dark:bg-[#1A1A2E] text-gray-500 dark:text-gray-400 cursor-pointer"
-          title={lang === 'en' ? 'Audio source' : 'Fuente de audio'}>
-          <option value="web">{lang === 'en' ? 'My voice' : 'Mi voz preferida'}</option>
-          <option value="polly">{lang === 'en' ? 'Course voice' : 'Voz del curso'}</option>
-        </select>
-      )}
     </div>
   );
 }

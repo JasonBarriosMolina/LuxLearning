@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { TextToSpeechButton } from './TextToSpeechButton';
 
 // Trello DmPpbrff, 2026-08-31 19:54 — Mack: a lesson without a pre-generated Polly
@@ -40,5 +40,36 @@ describe('TextToSpeechButton — lazy Polly audio fetch', () => {
     await waitFor(() => expect(audioMock).toHaveBeenCalled());
     // Component should still render its Listen button, not crash
     expect(screen.getByText(/Escuchar/i)).toBeTruthy();
+  });
+});
+
+describe('TextToSpeechButton — voice model selector only (Trello DmPpbrff, 2026-09-01 14:40)', () => {
+  beforeEach(() => {
+    audioMock.mockReset();
+    localStorage.clear();
+    (window as any).speechSynthesis = { getVoices: () => [], onvoiceschanged: null, cancel: vi.fn() };
+  });
+
+  it('never renders the removed "voz preferida"/"voz del curso" source picker', async () => {
+    audioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/lesson-1-mia.mp3' } });
+    render(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
+    await waitFor(() => expect(audioMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Mi voz preferida/i)).toBeNull();
+    expect(screen.queryByText(/Voz del curso/i)).toBeNull();
+  });
+
+  it('fetches a fresh male-voice clip on demand when the student switches the voice model', async () => {
+    audioMock.mockImplementation(async (_lessonId: string, gender?: string) =>
+      gender === 'male'
+        ? { data: { audioUrl: 'https://s3.example.com/lesson-1-sergio.mp3' } }
+        : { data: { audioUrl: 'https://s3.example.com/lesson-1-mia.mp3' } }
+    );
+    render(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1'));
+
+    const select = screen.getByTitle(/Perfil de voz/i) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'male' } });
+
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', 'male'));
   });
 });

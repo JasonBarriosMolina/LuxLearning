@@ -39,6 +39,7 @@ const generateLessonAudioMock = vi.fn();
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Danielle' : 'Mia'),
+  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Sergio'),
 }));
 
 import { handler } from '../../lessons/handler';
@@ -110,5 +111,44 @@ describe('POST /lessons/audio', () => {
     const res = await handler(makeEvent({ lessonId: 'l1' }));
     expect(res.statusCode).toBe(500);
     expect(lessonUpdateMock).not.toHaveBeenCalled();
+  });
+
+  // Trello DmPpbrff, 2026-09-01 14:40 — Mack: only a male/female voice-model
+  // toggle should exist, no browser-voice fallback exposed as a choice.
+  describe('gender param — male voice requested', () => {
+    it('synthesizes fresh with the male voice EVEN when a (female) audioUrl is already cached, and does NOT overwrite the cache', async () => {
+      lessonFindUniqueMock.mockResolvedValue({
+        id: 'l1', audioUrl: 'https://s3.example.com/cached-female.mp3', moduleId: 'm1',
+        title: 'Lección 1', content: '<p>Contenido</p>', points: [], tip: '',
+      });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-male.mp3');
+
+      const res = await handler(makeEvent({ lessonId: 'l1', gender: 'male' }));
+      expect(res.statusCode).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-male.mp3');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.stringContaining('Contenido'), 'Sergio');
+      expect(lessonUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('uses the language-matched male voice (English course -> Gregory)', async () => {
+      lessonFindUniqueMock.mockResolvedValue({ id: 'l1', audioUrl: null, moduleId: 'm1', content: '<p>Content</p>', points: [], tip: '' });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'EN' } });
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-male-en.mp3');
+
+      const res = await handler(makeEvent({ lessonId: 'l1', gender: 'male' }));
+      expect(res.statusCode).toBe(200);
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.any(String), 'Gregory');
+    });
+
+    it('without gender (or gender=female), still returns the cached URL and never re-synthesizes', async () => {
+      lessonFindUniqueMock.mockResolvedValue({ id: 'l1', audioUrl: 'https://s3.example.com/cached-female.mp3' });
+      const res = await handler(makeEvent({ lessonId: 'l1', gender: 'female' }));
+      expect(res.statusCode).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/cached-female.mp3');
+      expect(generateLessonAudioMock).not.toHaveBeenCalled();
+    });
   });
 });
