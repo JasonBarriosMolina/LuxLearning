@@ -61,9 +61,14 @@ export default function CoursesPage() {
                 )}
                 <div className="flex-1">
                   <h2 className="font-heading font-bold text-lg text-charcoal mb-1">{course.title}</h2>
-                  {(course.cardLabels?.length ?? 0) > 0 && (
+                  {(course.courseType || (course.cardLabels?.length ?? 0) > 0) && (
                     <div className="flex flex-wrap gap-1 mb-2">
-                      {course.cardLabels.map((label: string) => (
+                      {course.courseType && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-cta-from/10 border border-cta-from/20 text-cta-from font-medium">
+                          {t.studentCourses.courseTypeLabels[course.courseType] ?? course.courseType}
+                        </span>
+                      )}
+                      {course.cardLabels?.map((label: string) => (
                         <span key={label} className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-gray-500 font-medium">{label}</span>
                       ))}
                     </div>
