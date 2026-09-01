@@ -182,7 +182,17 @@ export async function invokeBedrockForJson(prompt: string, maxTokens = 2000): Pr
       const match = raw.match(/[\[{][\s\S]*/);
       const jsonStr = match?.[0] ?? '{}';
       try { return JSON.parse(jsonStr); }
-      catch { try { return JSON.parse(jsonrepair(jsonStr)); } catch { return {}; } }
+      catch {
+        try { return JSON.parse(jsonrepair(jsonStr)); }
+        catch {
+          // Silent before (Jason, 2026-09-01: "sigues generando lecciones vacías" —
+          // root cause was this exact fallback with zero visibility into WHY). Log a
+          // snippet of what Bedrock actually said (refusal, truncation, prose, etc.)
+          // so a future incident is diagnosable instead of just "empty lessons".
+          console.warn(`[invokeBedrockForJson] could not parse a usable JSON value — raw response snippet: ${raw.slice(0, 300)}`);
+          return {};
+        }
+      }
     } catch (err: any) {
       lastErr = err;
       if (attempt === RETRIES - 1) {
