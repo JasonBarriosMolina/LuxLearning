@@ -466,6 +466,8 @@ export default function LessonPage() {
           pdfRecapUrl={lesson.pdfRecapUrl ?? null}
           hasCompletedBefore={completed}
           onCompleted={() => setCompleted(true)}
+          nextLessonId={nextLesson?.id ?? null}
+          nextLessonTitle={nextLesson?.title ?? null}
         />
       </div>
     );
