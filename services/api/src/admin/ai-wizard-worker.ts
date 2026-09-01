@@ -160,11 +160,19 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
             return null;
           }),
         ]);
-        let validLessons: any[] | null = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
-          ? rawLessons : null;
+        // [] (not null) when Bedrock returned nothing usable — critical fix (Jason,
+        // 2026-09-01: "sigues generando lecciones vacías"): invokeBedrockForJson
+        // silently resolves to `{}` (not a thrown error) when it can't parse a JSON
+        // array out of the response — e.g. a soft refusal or non-JSON prose. With
+        // `null` here, the retry block below (`if (validLessons && ...)`) was SKIPPED
+        // ENTIRELY for a TOTAL failure, because `null` is falsy — so the worse the
+        // failure, the LESS retry effort it got. `[]` is truthy, so a total failure
+        // now retries exactly like a partial one (missing = lessonCount - 0).
+        let validLessons: any[] = Array.isArray(rawLessons) && rawLessons.length > 0 && rawLessons[0]?.title
+          ? rawLessons : [];
 
         // Retry for missing lessons when Bedrock truncated the response (Bug B fix)
-        if (validLessons && validLessons.length < lessonCount) {
+        if (validLessons.length < lessonCount) {
           const missing = lessonCount - validLessons.length;
           console.warn(`[wizard-lessons-bulk] module ${moduleId}: got ${validLessons.length}/${lessonCount} — retrying for ${missing} missing lessons`);
           const retryPrompt = isBlEN

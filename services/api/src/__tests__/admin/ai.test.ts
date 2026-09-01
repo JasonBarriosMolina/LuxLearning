@@ -430,11 +430,14 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     }));
   });
 
-  it('completeness sweep repairs a module whose lessons were ALL placeholders after the main pass (regression: Jason 2026-08-30 — "sí o sí" completeness guarantee)', async () => {
+  it('completeness sweep repairs a module whose lessons were ALL placeholders after the main pass AND its in-generation retry (regression: Jason 2026-08-30 — "sí o sí" completeness guarantee)', async () => {
     const { invokeBedrockForJson } = await import('../../admin/ctx');
     // 1st call = lessonPrompt (main pass) -> total failure. 2nd = resourcesPrompt -> null.
-    // 3rd = the sweep's targeted repair prompt -> succeeds this time.
+    // 3rd = the in-generation retry (2026-09-01 fix: a TOTAL failure now retries just
+    // like a partial one) -> also fails, so placeholders really do reach the DB.
+    // 4th = the sweep's targeted repair prompt -> succeeds this time.
     vi.mocked(invokeBedrockForJson)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(Array.from({ length: 8 }, (_, i) => ({
@@ -473,6 +476,48 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     const doneCall = vi.mocked(saveAiJob).mock.calls.find((c) => (c[1] as any)?.status === 'done');
     expect(doneCall).toBeDefined();
     expect((doneCall?.[1] as any)?.incompleteModuleIds).toEqual([]);
+  });
+
+  it('a TOTAL lesson-generation failure retries immediately during the main pass, never reaching the DB as placeholders — root cause fix (Jason, 2026-09-01: "sigues generando lecciones vacías... necesito que eso sea definitivamente arreglado hoy mismo")', async () => {
+    const { invokeBedrockForJson } = await import('../../admin/ctx');
+    // Root cause: invokeBedrockForJson silently resolves to a non-array (here: null,
+    // but in production it was `{}` from ctx.ts's own silent-parse-failure fallback)
+    // when Bedrock returns nothing usable — NOT a thrown error. The retry-for-missing
+    // block used to only fire for a PARTIAL failure (`validLessons` truthy array);
+    // a TOTAL failure (`validLessons` was `null`, which is falsy) skipped retry
+    // entirely and went straight to placeholder content for every lesson.
+    vi.mocked(invokeBedrockForJson)
+      .mockResolvedValueOnce(null)  // lessonPrompt — total failure
+      .mockResolvedValueOnce(null) // resourcesPrompt
+      .mockResolvedValueOnce(Array.from({ length: 8 }, (_, i) => ({    // in-generation retry — succeeds
+        title: `Lesson ${i + 1}`, content: `<h3>Real</h3><p>Genuine content ${i + 1}.</p>`, points: [], tip: '', type: i === 0 || i === 7 ? 'video' : 'text',
+      })));
+
+    const lessonCreateMany = vi.fn().mockResolvedValue({ count: 8 });
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
+      lesson: {
+        createMany: lessonCreateMany,
+        findMany: vi.fn().mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: `<p>Genuine content ${i + 1}.</p>`, points: [], tip: '' }))),
+      },
+    });
+    const ctx = makeAdminCtx({
+      method: 'WORKER', path: '', prisma,
+      action: 'wizard-lessons-bulk',
+      body: { _action: 'wizard-lessons-bulk', _jobId: 'job-total-retry', courseId: 'c1', moduleIds: ['m1'], courseTitle: 'Curso', language: 'ES' },
+    });
+    const res = await handleAI(ctx);
+    expect(res?.statusCode).toBe(200);
+
+    // createMany was called ONCE, already with the retry's real content — not
+    // placeholders that a later repair pass has to fix.
+    expect(lessonCreateMany).toHaveBeenCalledTimes(1);
+    const inserted = (lessonCreateMany.mock.calls[0]![0] as any).data;
+    expect(inserted).toHaveLength(8);
+    inserted.forEach((l: any, i: number) => {
+      expect(l.content).toContain(`Genuine content ${i + 1}`);
+      expect(l.content).not.toContain('Generación incompleta');
+    });
   });
 
   it('completeness sweep reports done_incomplete + which modules after exhausting all repair attempts (regression: Jason 2026-08-30)', async () => {
