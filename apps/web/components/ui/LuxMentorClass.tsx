@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { PlayCircle, CheckCircle, Mic, MicOff, Volume2, BookOpen, Loader2, AlertCircle, WifiOff, Ban } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { LuxMentorClassReview } from './LuxMentorClassReview';
 import { LuxMentorClassNarration } from './LuxMentorClassNarration';
 import { buildSystemPrompt, extractYouTubeId, computeSilenceAction, type SpeechMark } from './LuxMentorClass.helpers';
@@ -66,6 +67,7 @@ const SILENCE_END_SECONDS = 10;
 
 export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Props) {
   const { lang } = useLanguage();
+  const { userId } = useAuth();
   const s = useCallback((es: string, en: string) => lang === 'en' ? en : es, [lang]);
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -421,7 +423,9 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         lessonScript={startData.lessonScript ?? null}
         lessonAudioUrl={startData.lessonAudioUrl}
         lessonSpeechMarks={startData.lessonSpeechMarks ?? null}
-        notesStorageKey={`lux-class-notes-${moduleId}`}
+        // Found in code review (2026-09-01): must be scoped per-student, not just per-module
+        // — two students on the same device/browser would otherwise overwrite each other's notes.
+        notesStorageKey={`lux-class-notes-${userId ?? 'anon'}-${moduleId}`}
         lang={lang}
         onEnded={connectVapi}
         onError={connectVapi}

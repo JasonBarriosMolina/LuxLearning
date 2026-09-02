@@ -36,6 +36,9 @@ export function LuxMentorClassNarration({
 
   // Notes persist per-student per-module (v1 scope: localStorage only, no backend
   // schema — decided to bound scope this session; per-device only for now).
+  // notesStorageKey must already include the student's userId (parent's job) —
+  // found in code review (2026-09-01) that a module-only key collides between
+  // two students sharing a browser/device.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(notesStorageKey);
