@@ -143,19 +143,37 @@ export async function isModuleUnlocked(
   userId: string,
   moduleOrder: number,
   allModules: { id: string; order: number }[],
-  pacing?: { weeklyPacingEnabled?: boolean | null; courseStartDate?: Date | string | null } | null,
+  opts?: {
+    weeklyPacingEnabled?: boolean | null;
+    courseStartDate?: Date | string | null;
+    // Trello DmPpbrff, 2026-09-02 (Mack, real repro course found): the sequential
+    // gate always required the PREVIOUS module's reflection to be APPROVED, even
+    // when that module never had a reflection planned at all — since such a
+    // reflection can never be submitted, this permanently locked every module
+    // after it. Now only enforced when the previous module actually has a
+    // REFLECTION EvaluationEvent. `undefined` (caller not yet updated) keeps the
+    // old conservative behavior — always required — so this is backward
+    // compatible for any call site not explicitly passing it.
+    reflectionPlannedModuleIds?: Set<string> | string[] | null;
+  } | null,
 ): Promise<boolean> {
   const sorted = [...allModules].sort((a, b) => a.order - b.order);
   const currentIndex = sorted.findIndex((m) => m.order === moduleOrder);
   if (currentIndex > 0) {
     const prevModule = sorted[currentIndex - 1]!;
-    const reflection = await getReflection(userId, prevModule.id);
-    if (reflection?.status !== 'APPROVED') return false;
+    const plannedIds = opts?.reflectionPlannedModuleIds;
+    const reflectionPlanned = plannedIds == null
+      ? true
+      : (plannedIds instanceof Set ? plannedIds.has(prevModule.id) : plannedIds.includes(prevModule.id));
+    if (reflectionPlanned) {
+      const reflection = await getReflection(userId, prevModule.id);
+      if (reflection?.status !== 'APPROVED') return false;
+    }
   }
   return isWithinPacingWindow({
     moduleOrder,
-    weeklyPacingEnabled: pacing?.weeklyPacingEnabled,
-    courseStartDate: pacing?.courseStartDate,
+    weeklyPacingEnabled: opts?.weeklyPacingEnabled,
+    courseStartDate: opts?.courseStartDate,
   });
 }
 

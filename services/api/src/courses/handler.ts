@@ -82,6 +82,9 @@ export const handler = async (event: Event) => {
             orderBy: { order: 'asc' },
             include: { lessons: { orderBy: { order: 'asc' }, select: { id: true } } },
           },
+          // Light select — only used to know which modules actually have a
+          // REFLECTION planned, for the isModuleUnlocked sequential gate below.
+          evaluationEvents: { select: { type: true, moduleId: true } },
         },
       });
 
@@ -97,12 +100,18 @@ export const handler = async (event: Event) => {
             const progress = await getLessonProgress(userId, course.id);
             const completedLessonIds = new Set(progress.map((p) => p.lessonId));
             const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+            const reflectionPlannedModuleIds = new Set(
+              ((course as any).evaluationEvents ?? [])
+                .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+                .map((e: any) => e.moduleId as string),
+            );
 
             const enrichedModules = await Promise.all(
               course.modules.map(async (mod) => {
                 const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
                   weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
                   courseStartDate: course.startDate,
+                  reflectionPlannedModuleIds,
                 });
                 const reflection = await getReflection(userId, mod.id);
                 const quizPassed = await hasPassedQuiz(userId, mod.id);
@@ -173,6 +182,11 @@ export const handler = async (event: Event) => {
         }
         // Enrich with unlock status
         const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+        const reflectionPlannedModuleIds = new Set(
+          (course.evaluationEvents ?? [])
+            .filter((e) => e.type === 'REFLECTION' && e.moduleId)
+            .map((e) => e.moduleId as string),
+        );
         const lessonProgress = await getLessonProgress(userId, courseId);
         const completedLessonIds = new Set(lessonProgress.map((p) => p.lessonId));
         // One Query for every class session in the course (not one per module) — used to
@@ -184,6 +198,7 @@ export const handler = async (event: Event) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
               weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
               courseStartDate: course.startDate,
+              reflectionPlannedModuleIds,
             });
             const quizPassed = await hasPassedQuiz(userId, mod.id);
             const reflection = await getReflection(userId, mod.id);

@@ -140,15 +140,28 @@ Responde ÚNICAMENTE con JSON válido:
       // Check module unlock
       const module = await prisma.module.findUnique({
         where: { id: moduleId },
-        include: { course: { include: { modules: { orderBy: { order: 'asc' }, select: { id: true, order: true } } } } },
+        include: {
+          course: {
+            include: {
+              modules: { orderBy: { order: 'asc' }, select: { id: true, order: true } },
+              evaluationEvents: { select: { type: true, moduleId: true } },
+            },
+          },
+        },
       });
 
       if (!module) return badRequest('Module not found');
 
       const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order }));
+      const reflectionPlannedModuleIds = new Set(
+        ((module.course as any).evaluationEvents ?? [])
+          .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+          .map((e: any) => e.moduleId as string),
+      );
       const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs, {
         weeklyPacingEnabled: (module.course as any).weeklyPacingEnabled,
         courseStartDate: module.course.startDate,
+        reflectionPlannedModuleIds,
       });
       if (!unlocked) return forbidden('Module is locked');
 

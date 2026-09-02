@@ -86,7 +86,10 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
 
   const courses = await prisma.course.findMany({
     where: { id: { in: courseIds } },
-    include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } } },
+    include: {
+      modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } },
+      evaluationEvents: { select: { type: true, moduleId: true } },
+    },
   });
 
   const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(userId, cid)));
@@ -99,12 +102,18 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
   for (const course of courses) {
     promptLines.push(`Curso: ${course.title}`);
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+    const reflectionPlannedModuleIds = new Set(
+      ((course as any).evaluationEvents ?? [])
+        .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+        .map((e: any) => e.moduleId as string),
+    );
 
     for (const mod of (course as any).modules) {
       // Only include content from modules the student can actually access
       const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
         weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
         courseStartDate: (course as any).startDate,
+        reflectionPlannedModuleIds,
       });
       if (!unlocked) break; // Sequential lock — all further modules are also locked
 
