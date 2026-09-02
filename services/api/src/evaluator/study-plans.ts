@@ -101,7 +101,10 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       for (const course of courses) {
         const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
         for (const mod of (course as any).modules) {
-          const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs);
+          const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs, {
+            weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
+            courseStartDate: (course as any).startDate,
+          });
           if (!unlocked) break;
           if (passedModuleIds.has(mod.id)) continue;
 
