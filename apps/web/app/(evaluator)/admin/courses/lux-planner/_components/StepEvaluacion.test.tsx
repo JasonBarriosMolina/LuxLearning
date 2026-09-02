@@ -8,6 +8,7 @@ vi.mock('lucide-react', () => ({
   Mic: () => null, Sparkles: () => null, Loader2: () => null, X: () => null, BookOpen: () => null,
   FlaskConical: () => null, FolderKanban: () => null, Clock: () => null, AlignLeft: () => null,
   ClipboardList: () => null, FileUp: () => null, CheckCircle: () => null,
+  Calendar: () => null, ChevronLeft: () => null, ChevronRight: () => null,
 }));
 
 vi.mock('@/lib/api', () => ({ api: { admin: { courses: { get: vi.fn() } } } }));
@@ -28,7 +29,7 @@ const baseProps = {
   step1, step2, step3, step4,
   totalWeight: 10, weightOk: false,
   outOfRangeItems: [], dateWarningDismissed: false, setDateWarningDismissed: vi.fn(),
-  updateItem: vi.fn(), updateDueDate: vi.fn(), setCount: vi.fn(), addEvalItem: vi.fn(), removeItem: vi.fn(),
+  updateItem: vi.fn(), updateDueDate: vi.fn(), updateInstructionAt: vi.fn(), setCount: vi.fn(), addEvalItem: vi.fn(), removeItem: vi.fn(),
   updateModuleQuizWeek: vi.fn(), updateModuleReflexWeek: vi.fn(), updateModuleInterviewWeek: vi.fn(),
   isEN: false, step5Error: '', editingCourseId: null,
 };

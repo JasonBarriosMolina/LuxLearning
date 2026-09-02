@@ -33,6 +33,12 @@ export interface Step2Data { totalWeeks: number; exceptions: ExceptionItem[]; }
 export interface EvalItem {
   id: string; type: EvalType; name: string; nameEN: string;
   weight: number; count: number; dueDates: string[]; instructions: string; locked?: boolean;
+  // Trello DmPpbrff, 2026-09-01 14:30 (Mack): when count > 1, each due-date instance
+  // needs its own delivery instructions (parallel array, aligned by index to
+  // dueDates). `instructions` above stays as the single/first-instance value for
+  // count===1 items (unchanged, backward compatible). Jason (2026-09-02): each
+  // instance becomes its own EvaluationEvent server-side, weight split evenly.
+  instructionsByIndex?: string[];
   vapiPrompt?: string; vapiObjectives?: string;
   interviewStartDate?: string; interviewEndDate?: string; interviewTimeSlot?: string;
 }
@@ -140,6 +146,58 @@ export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
     case 'LIBRE': return [mk('1','QUIZ','Contenido Teórico','Theoretical Content',50,1), mk('2','EVIDENCE','Contenido Práctico','Practical Content',50,1)];
     default: return [];
   }
+}
+
+// ─── Preload-for-edit mappers ──────────────────────────────────────────────────
+// Pure Course-row → wizard-step-state mappers, extracted out of page.tsx's
+// preloadCourse (page.tsx was over the 500-line file-size limit).
+export function mapCourseToStep1(c: any): Step1Data {
+  return {
+    title: c.title ?? '',
+    academicPeriod: c.academicPeriod ?? '',
+    classDays: Array.isArray(c.classDays) ? c.classDays : [],
+    classSchedule: c.classSchedule ?? '',
+    classSchedules: c.classSchedules ?? {},
+    modality: c.modality ?? '',
+    startDate: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
+    planLanguage: (c.planLanguage ?? 'ES') as Step1Data['planLanguage'],
+    courseType: (c.courseType ?? '') as CourseTypeId | '',
+    description: c.description ?? '',
+    imageUrl: c.imageUrl ?? '',
+    cardColor: c.cardColor ?? '',
+    cardBorderColor: c.cardBorderColor ?? '',
+    cardLabels: Array.isArray(c.cardLabels) ? c.cardLabels : [],
+    pilotoAutomatico: Boolean(c.pilotoAutomatico),
+    isAutoevaluated: c.isAutoevaluated ?? true,
+  };
+}
+
+export function mapCourseToStep2(c: any): Step2Data {
+  return {
+    totalWeeks: c.totalWeeks ?? 16,
+    exceptions: Array.isArray(c.calendarExceptions) ? c.calendarExceptions.map((ex: any) => ({ ...ex, id: ex.id ?? uid() })) : [],
+  };
+}
+
+export function mapCourseToStep3Items(c: any): EvalItem[] {
+  const evalConfig = Array.isArray(c.evaluationConfig) ? c.evaluationConfig : [];
+  return evalConfig.map((it: any, i: number) => ({
+    id: it.id ?? String(i),
+    type: it.type ?? 'EXAM',
+    name: it.name ?? '',
+    nameEN: it.nameEN ?? it.name ?? '',
+    weight: it.weight ?? 0,
+    count: it.count ?? (Array.isArray(it.dueDates) ? it.dueDates.length : 1),
+    dueDates: Array.isArray(it.dueDates) ? it.dueDates : [''],
+    instructions: it.instructions ?? '',
+    instructionsByIndex: Array.isArray(it.instructionsByIndex) ? it.instructionsByIndex : [],
+    locked: it.locked ?? false,
+    vapiPrompt: it.vapiPrompt ?? '',
+    vapiObjectives: it.vapiObjectives ?? '',
+    interviewStartDate: it.interviewStartDate ?? '',
+    interviewEndDate: it.interviewEndDate ?? '',
+    interviewTimeSlot: it.interviewTimeSlot ?? '',
+  }));
 }
 
 export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false, isAutoevaluated: true };
