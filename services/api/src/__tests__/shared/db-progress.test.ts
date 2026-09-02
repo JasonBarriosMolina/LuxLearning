@@ -101,4 +101,49 @@ describe('isModuleUnlocked', () => {
     const unlocked = await isModuleUnlocked('user-1', 2, modules, { weeklyPacingEnabled: true, courseStartDate: new Date() });
     expect(unlocked).toBe(false);
   });
+
+  // Trello DmPpbrff, 2026-09-02 (Mack, real repro course): a module whose PREVIOUS
+  // module never had a reflection planned was permanently locked forever, because a
+  // reflection that can never be submitted can also never become APPROVED.
+  describe('reflectionPlannedModuleIds (permanent-lock fix)', () => {
+    it('unlocks module 2 without checking getReflection when module 1 never had a reflection planned', async () => {
+      const unlocked = await isModuleUnlocked('user-1', 2, modules, {
+        reflectionPlannedModuleIds: new Set(['mod-3']), // only module 3 has a reflection planned
+      });
+      expect(unlocked).toBe(true);
+      expect(mockGetReflection).not.toHaveBeenCalled();
+    });
+
+    it('still requires an approved reflection when the previous module DOES have one planned', async () => {
+      mockGetReflection.mockResolvedValue(null);
+      const unlocked = await isModuleUnlocked('user-1', 2, modules, {
+        reflectionPlannedModuleIds: new Set(['mod-1']),
+      });
+      expect(unlocked).toBe(false);
+      expect(mockGetReflection).toHaveBeenCalledWith('user-1', 'mod-1');
+    });
+
+    it('unlocks once the planned reflection is approved', async () => {
+      mockGetReflection.mockResolvedValue({ status: 'APPROVED' });
+      const unlocked = await isModuleUnlocked('user-1', 2, modules, {
+        reflectionPlannedModuleIds: new Set(['mod-1']),
+      });
+      expect(unlocked).toBe(true);
+    });
+
+    it('accepts a plain string array (not just a Set)', async () => {
+      const unlocked = await isModuleUnlocked('user-1', 2, modules, {
+        reflectionPlannedModuleIds: ['mod-3'],
+      });
+      expect(unlocked).toBe(true);
+      expect(mockGetReflection).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the old conservative behavior (always required) when the option is omitted entirely', async () => {
+      mockGetReflection.mockResolvedValue(null);
+      const unlocked = await isModuleUnlocked('user-1', 2, modules);
+      expect(unlocked).toBe(false);
+      expect(mockGetReflection).toHaveBeenCalledWith('user-1', 'mod-1');
+    });
+  });
 });

@@ -61,7 +61,10 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
     const courses = courseIds.length > 0
       ? await prisma.course.findMany({
           where: { id: { in: courseIds } },
-          include: { modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } } },
+          include: {
+            modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } },
+            evaluationEvents: { select: { type: true, moduleId: true } },
+          },
         })
       : [];
 
@@ -100,10 +103,16 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
 
       for (const course of courses) {
         const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+        const reflectionPlannedModuleIds = new Set(
+          ((course as any).evaluationEvents ?? [])
+            .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+            .map((e: any) => e.moduleId as string),
+        );
         for (const mod of (course as any).modules) {
           const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs, {
             weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
             courseStartDate: (course as any).startDate,
+            reflectionPlannedModuleIds,
           });
           if (!unlocked) break;
           if (passedModuleIds.has(mod.id)) continue;

@@ -107,6 +107,7 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
         orderBy: { order: 'asc' },
         include: { lessons: { select: { id: true, title: true }, orderBy: { order: 'asc' } } },
       },
+      evaluationEvents: { select: { type: true, moduleId: true } },
     },
   });
 
@@ -117,11 +118,17 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
   let dayIndex = 0;
   for (const course of courses) {
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+    const reflectionPlannedModuleIds = new Set(
+      ((course as any).evaluationEvents ?? [])
+        .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+        .map((e: any) => e.moduleId as string),
+    );
     for (const mod of (course as any).modules) {
       // Only include accessible (unlocked) modules — sequential lock check
       const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
         weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
         courseStartDate: (course as any).startDate,
+        reflectionPlannedModuleIds,
       });
       if (!unlocked) break;
 
