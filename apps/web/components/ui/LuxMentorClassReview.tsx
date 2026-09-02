@@ -92,8 +92,17 @@ export function LuxMentorClassReview({ transcript, messages, lessonScript }: Pro
                 {transcript}
               </p>
             ) : (
+              // Trello DmPpbrff, 2026-09-01 00:57 (Mack): "es importante que se le
+              // mencione al estudiante que todavía no está disponible, que se está
+              // generando" — not a flat "no transcript" dead end. VAPI's end-of-call
+              // webhook (which fills this in) can lag a bit behind the call ending;
+              // the student already gets a push + in-app notification once it's ready
+              // (courses/vapi-webhook.ts, "Clase completada").
               <p className="text-sm text-gray-400 text-center py-6">
-                {s('No hay transcripción disponible.', 'No transcript available.')}
+                {s(
+                  'La transcripción todavía se está generando. Te avisaremos (notificación) cuando esté lista.',
+                  'The transcript is still being generated. We\'ll notify you once it\'s ready.',
+                )}
               </p>
             )}
           </>
