@@ -221,11 +221,25 @@ export function StepPlaneamiento({
                         </div>
                       </div>
                     )}
-                    {/* Instructions */}
-                    {it.type === 'EVIDENCE' && it.instructions && (
+                    {/* Instructions — Trello DmPpbrff, 2026-09-02 21:51 (Mack): "no veo que
+                        se genere alguna descripción" — when count > 1 the description lives
+                        per-deliverable in instructionsByIndex (2026-09-01 14:30 change), not
+                        in the shared `instructions` field this only used to check. */}
+                    {it.type === 'EVIDENCE' && it.count <= 1 && it.instructions && (
                       <div>
                         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{s('Instrucciones', 'Instructions')}</p>
                         <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">{it.instructions}</p>
+                      </div>
+                    )}
+                    {it.type === 'EVIDENCE' && it.count > 1 && it.instructionsByIndex?.some(Boolean) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{s('Instrucciones por entrega', 'Instructions per deliverable')}</p>
+                        {it.instructionsByIndex.map((text, i) => text ? (
+                          <div key={i}>
+                            <p className="text-[9px] text-gray-400">{s(`Entrega ${i + 1}`, `Deliverable ${i + 1}`)}</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">{text}</p>
+                          </div>
+                        ) : null)}
                       </div>
                     )}
                     {/* Interview topic/objectives — was only showing interviewStartDate/

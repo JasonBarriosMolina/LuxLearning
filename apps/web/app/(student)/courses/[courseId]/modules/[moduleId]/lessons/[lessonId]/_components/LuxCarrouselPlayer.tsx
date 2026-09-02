@@ -33,6 +33,14 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   const [isFullscreen, setIsFullscreen] = useState(false);
   const completedRef = useRef(false);
 
+  // Trello DmPpbrff, 2026-09-02 22:12 (Mack): "si ya el carrusel se vio... el botón
+  // de continuar debería aparecer automáticamente" — it didn't, because the parent
+  // page's `completed` state starts false and only flips true via its own effect
+  // once lesson data arrives, one render AFTER this component first mounts. The
+  // `useState(hasCompletedBefore)` initializer above only runs once at mount, so it
+  // locked in `ended=false` and never noticed the prop becoming true a tick later.
+  useEffect(() => { if (hasCompletedBefore) setEnded(true); }, [hasCompletedBefore]);
+
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
     document.addEventListener('fullscreenchange', onFsChange);
