@@ -322,9 +322,14 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-charcoal dark:text-gray-100 text-sm">{s('Clase con Lux Mentor', 'Lux Mentor Class')}</p>
             <p className="text-xs text-gray-500">
+              {/* Trello DmPpbrff, 2026-09-02 00:53 (Mack): "¿Cuál calificación es
+                  necesaria? Es solo una clase" — the Q&A session is never part of the
+                  course's weighted grade (CLASS EvaluationEvent is always weight:0),
+                  so "pendiente de calificación" wrongly implied a required, blocking
+                  step. Feedback here is optional evaluator commentary, not grading. */}
               {completedSession?.grade != null
                 ? s(`Calificada: ${completedSession.grade}%`, `Graded: ${completedSession.grade}%`)
-                : s('Completada — pendiente de calificación', 'Completed — awaiting grading')}
+                : s('Completada — tu evaluador puede dejarte retroalimentación', 'Completed — your evaluator may leave you feedback')}
             </p>
           </div>
         </div>

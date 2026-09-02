@@ -158,4 +158,38 @@ describe('handleVapiWebhook', () => {
     // Evaluator notification is interview-only — a class session must not trigger it
     expect(createNotificationMock).not.toHaveBeenCalled();
   });
+
+  // Trello DmPpbrff, 2026-09-02 00:53 (Mack): "la transcripción de la clase no está
+  // disponible... ya que sí está ahí [en Vapi]." Root cause: `??` doesn't fall through
+  // on an empty (but present) string/array — only `||` does.
+  it('falls back to message.transcript when artifact.transcript is present but empty', async () => {
+    getClassSessionByCallIdMock.mockResolvedValue({ userId: 'u3', sessionId: 's2' });
+    const event = makeSignedEvent(endOfCallPayload({
+      artifact: { transcript: '', messages: [] },
+      transcript: 'Estudiante: Hola. Mentor: ¿Listo para empezar?',
+    }));
+
+    await handleVapiWebhook(event, {});
+    await flushAsync();
+
+    expect(updateClassSessionMock).toHaveBeenCalledWith('u3', 's2', expect.objectContaining({
+      transcript: 'Estudiante: Hola. Mentor: ¿Listo para empezar?',
+    }));
+  });
+
+  it('falls back to message.messages when artifact.messages is present but empty', async () => {
+    getClassSessionByCallIdMock.mockResolvedValue({ userId: 'u4', sessionId: 's3' });
+    const fallbackMessages = [{ role: 'assistant', content: 'Pregunta desde message.messages' }];
+    const event = makeSignedEvent(endOfCallPayload({
+      artifact: { transcript: 'algo', messages: [] },
+      messages: fallbackMessages,
+    }));
+
+    await handleVapiWebhook(event, {});
+    await flushAsync();
+
+    expect(updateClassSessionMock).toHaveBeenCalledWith('u4', 's3', expect.objectContaining({
+      messages: fallbackMessages,
+    }));
+  });
 });
