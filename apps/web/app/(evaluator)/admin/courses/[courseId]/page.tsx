@@ -18,6 +18,7 @@ import { ModuleCard } from './_components/ModuleCard';
 import { EMPTY_MODULE } from './_components/types';
 import type { ModuleForm } from './_components/types';
 import { CourseGenerationStatusBanner } from './_components/CourseGenerationStatusBanner';
+import { CourseSettingsToggles } from './_components/CourseSettingsToggles';
 
 export default function AdminCourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -97,6 +98,12 @@ export default function AdminCourseDetailPage() {
   const [weeklyPacing, setWeeklyPacing] = useState(false);
   const [savingWeeklyPacing, setSavingWeeklyPacing] = useState(false);
 
+  // Async auto-eval toggle (Trello DmPpbrff, 2026-09-01 01:48 — Mack): only shown
+  // for ASINCRONICA courses. true = Lux Mentor auto-evaluates. false = a human
+  // evaluator must review reflections/entregas — and one must be assigned.
+  const [autoevaluated, setAutoevaluated] = useState(true);
+  const [savingAutoevaluated, setSavingAutoevaluated] = useState(false);
+
   const [validateOpen, setValidateOpen] = useState(false);
   const [validateLoading, setValidateLoading] = useState(false);
   const [validateResult, setValidateResult] = useState<{ videos: any[]; broken: number; total: number } | null>(null);
@@ -123,6 +130,7 @@ export default function AdminCourseDetailPage() {
       setCourse(data);
       setPiloto(data?.pilotoAutomatico ?? false);
       setWeeklyPacing(data?.weeklyPacingEnabled ?? false);
+      setAutoevaluated(data?.isAutoevaluated ?? true);
     } finally {
       setLoading(false);
     }
@@ -138,6 +146,19 @@ export default function AdminCourseDetailPage() {
       alert('Error: ' + (err?.message ?? 'desconocido'));
     } finally {
       setSavingPiloto(false);
+    }
+  }
+
+  async function toggleAutoevaluated() {
+    setSavingAutoevaluated(true);
+    try {
+      const next = !autoevaluated;
+      await api.admin.courses.update(courseId, { isAutoevaluated: next });
+      setAutoevaluated(next);
+    } catch (err: any) {
+      alert('Error: ' + (err?.message ?? 'desconocido'));
+    } finally {
+      setSavingAutoevaluated(false);
     }
   }
 
@@ -283,41 +304,13 @@ export default function AdminCourseDetailPage() {
         </div>
       </div>
 
-      {/* Piloto automático de asistencia */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div>
-          <p className="text-sm font-semibold text-gray-800">Piloto automático de asistencia</p>
-          <p className="text-xs text-gray-500 mt-0.5">Envía notificaciones y alertas de riesgo automáticamente</p>
-        </div>
-        <button
-          type="button"
-          onClick={togglePiloto}
-          disabled={savingPiloto}
-          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${piloto ? 'bg-blue-500' : 'bg-gray-300'} disabled:opacity-50`}
-          aria-label="Piloto automático"
-        >
-          <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${piloto ? 'translate-x-5' : ''}`} />
-        </button>
-      </div>
-
-      {/* Ritmo semanal estricto (Lux Planner) */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div>
-          <p className="text-sm font-semibold text-gray-800">Ritmo semanal estricto</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            El módulo N solo se desbloquea en la semana N del curso (desde la fecha de inicio), además de aprobar la reflexión anterior. Desactivado: flujo libre (actual).
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={toggleWeeklyPacing}
-          disabled={savingWeeklyPacing}
-          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${weeklyPacing ? 'bg-blue-500' : 'bg-gray-300'} disabled:opacity-50`}
-          aria-label="Ritmo semanal estricto"
-        >
-          <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${weeklyPacing ? 'translate-x-5' : ''}`} />
-        </button>
-      </div>
+      <CourseSettingsToggles
+        piloto={piloto} savingPiloto={savingPiloto} onTogglePiloto={togglePiloto}
+        weeklyPacing={weeklyPacing} savingWeeklyPacing={savingWeeklyPacing} onToggleWeeklyPacing={toggleWeeklyPacing}
+        showAutoevaluated={course.modality === 'ASINCRONICA'}
+        autoevaluated={autoevaluated} savingAutoevaluated={savingAutoevaluated} onToggleAutoevaluated={toggleAutoevaluated}
+        hasEvaluator={!!course.evaluatorId}
+      />
 
       {/* Modules */}
       {(course.modules?.length ?? 0) === 0 ? (

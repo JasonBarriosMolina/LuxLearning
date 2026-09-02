@@ -166,18 +166,44 @@ export function StepIdentidad({
             </div>
           </div>
           {isAsync && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 flex items-start gap-3">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                  {s('Curso Asincrónico Autogestionado — Generado y Administrado por Lux Mentor', 'Asynchronous Self-Managed Course — Generated and Managed by Lux Mentor')}
-                </p>
-                <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
-                  {s(
-                    'No requiere evaluador humano. Lux Mentor evaluará reflexiones y entregas automáticamente. Los días y horarios de clase no aplican.',
-                    'No human evaluator required. Lux Mentor will evaluate reflections and submissions automatically. Class days and schedule do not apply.',
-                  )}
-                </p>
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 space-y-3">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    {s('Curso Asincrónico Autogestionado', 'Asynchronous Self-Managed Course')}
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-300 mt-0.5">
+                    {s('Los días y horarios de clase no aplican.', 'Class days and schedule do not apply.')}
+                  </p>
+                </div>
+              </div>
+              {/* Trello DmPpbrff, 2026-09-01 01:48 (Mack): "debería existir una opción
+                  como un toggle que me dé la función de que sí se puede evaluar
+                  automáticamente por Lux Mentor, o que quede más bien siendo evaluada
+                  por un evaluador humano" — was previously hardcoded to always
+                  auto-evaluate whenever modality was async. */}
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-200/60">
+                <div>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    {step1.isAutoevaluated ?? true
+                      ? s('Lux Mentor evalúa automáticamente', 'Lux Mentor auto-evaluates')
+                      : s('Evaluador humano', 'Human evaluator')}
+                  </p>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-300 mt-0.5">
+                    {step1.isAutoevaluated ?? true
+                      ? s('Lux Mentor evaluará reflexiones y entregas automáticamente.', 'Lux Mentor will evaluate reflections and submissions automatically.')
+                      : s('Debes asignar un evaluador humano a este curso — se hace desde el editor del curso después de crearlo.', 'You must assign a human evaluator to this course — done from the course editor after creation.')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStep1((p) => ({ ...p, isAutoevaluated: !(p.isAutoevaluated ?? true) }))}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${(step1.isAutoevaluated ?? true) ? 'bg-blue-500' : 'bg-gray-300'}`}
+                  aria-label={s('Evaluación automática por Lux Mentor', 'Automatic evaluation by Lux Mentor')}
+                >
+                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${(step1.isAutoevaluated ?? true) ? 'translate-x-5' : ''}`} />
+                </button>
               </div>
             </div>
           )}

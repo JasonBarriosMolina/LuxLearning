@@ -106,7 +106,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       cardColor, cardBorderColor, cardLabels = [], calendarExceptions = [],
       evaluationItems = [], weeklyPlan = [], suggestedModules = [], editingCourseId,
       pilotoAutomatico = false, syllabusInput = '', replaceModules = false,
-      luxMentorWeeks = [],
+      luxMentorWeeks = [], isAutoevaluated,
     } = body as any;
     if (!title) return badRequest('title es requerido');
 
@@ -149,7 +149,10 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       calendarExceptions: calendarExceptions.length > 0 ? calendarExceptions : undefined,
       evaluationConfig: evaluationItems.length > 0 ? evaluationItems : undefined,
       pilotoAutomatico: Boolean(pilotoAutomatico),
-      isAutoevaluated: modality === 'ASINCRONICA',
+      // Trello DmPpbrff, 2026-09-01 01:48 (Mack): async courses now get an explicit
+      // toggle (frontend defaults it true) instead of this always being forced true
+      // whenever modality was async — a human-evaluator option must be choosable.
+      isAutoevaluated: modality === 'ASINCRONICA' ? Boolean(isAutoevaluated ?? true) : false,
       planWeeklyPlan: weeklyPlan.length > 0 ? weeklyPlan : undefined,
       planSyllabusInput: syllabusInput || undefined,
     };

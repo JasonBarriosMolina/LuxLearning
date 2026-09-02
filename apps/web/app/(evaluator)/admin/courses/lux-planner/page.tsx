@@ -140,6 +140,7 @@ function CourseWizardInner() {
         cardBorderColor: c.cardBorderColor ?? '',
         cardLabels: Array.isArray(c.cardLabels) ? c.cardLabels : [],
         pilotoAutomatico: Boolean(c.pilotoAutomatico),
+        isAutoevaluated: c.isAutoevaluated ?? true,
       });
 
       setStep2({
@@ -411,6 +412,10 @@ function CourseWizardInner() {
           interviewWeek: m.interviewWeek ?? null,
         })),
         pilotoAutomatico: step1.pilotoAutomatico ?? false,
+        // Trello DmPpbrff, 2026-09-01 01:48 (Mack): async courses now get an explicit
+        // toggle instead of always auto-evaluating — defaults true (today's behavior)
+        // when unset, only meaningful while modality is ASINCRONICA.
+        isAutoevaluated: step1.modality === 'ASINCRONICA' ? (step1.isAutoevaluated ?? true) : false,
         syllabusInput: step4.syllabusInput,
         ...(editingCourseId ? { editingCourseId, replaceModules } : {}),
       }) as any;
