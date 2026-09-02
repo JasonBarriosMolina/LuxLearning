@@ -41,6 +41,13 @@ export async function handleVapiWebhook(event: any, prisma: any): Promise<any> {
   const incomingBuf = Buffer.from(incomingSignature, 'hex');
   const isValidSig = expectedBuf.length > 0 && expectedBuf.length === incomingBuf.length && timingSafeEqual(expectedBuf, incomingBuf);
   if (!isValidSig) {
+    // Found in code review (2026-09-02): this rejected silently — no log line at all —
+    // so a wrong/rotated secret or a body-transformation mismatch would make every
+    // Vapi webhook call vanish with zero trace in CloudWatch (Mack: "la transcripción
+    // no llega aunque Vapi sí la tiene").
+    console.error('[vapi] webhook signature mismatch — rejecting', {
+      hasIncomingSig: !!incomingSignature, incomingLen: incomingBuf.length, expectedLen: expectedBuf.length,
+    });
     return { statusCode: 401, body: JSON.stringify({ error: 'Invalid webhook signature' }) };
   }
 
@@ -54,8 +61,16 @@ export async function handleVapiWebhook(event: any, prisma: any): Promise<any> {
   const callId: string = message.call?.id ?? message.callId ?? '';
 
   if (msgType === 'end-of-call-report' && callId) {
-    const transcript: string = message.artifact?.transcript ?? message.transcript ?? '';
-    const messages: any[] = message.artifact?.messages ?? message.messages ?? [];
+    // Trello DmPpbrff, 2026-09-02 00:53 (Mack): "la transcripción de la clase no está
+    // disponible... revisa bien la comunicación con vapi, ya que sí está ahí." Root
+    // cause: `??` only falls through on null/undefined, NOT on an empty string/array —
+    // if Vapi sends artifact.transcript as '' (present but empty) while the real
+    // content is in the top-level message.transcript (or vice versa for messages),
+    // the empty value won by `??` and the real one was silently discarded. `||` falls
+    // through on any falsy value, so the non-empty side always wins regardless of
+    // which field Vapi actually populated.
+    const transcript: string = message.artifact?.transcript || message.transcript || '';
+    const messages: any[] = (message.artifact?.messages?.length ? message.artifact.messages : message.messages) ?? [];
     const durationSec: number = message.durationSeconds ?? message.call?.endedAt
       ? Math.round((new Date(message.call.endedAt).getTime() - new Date(message.call.startedAt ?? message.call.createdAt).getTime()) / 1000)
       : 0;
@@ -92,6 +107,9 @@ export async function handleVapiWebhook(event: any, prisma: any): Promise<any> {
               aiAnalysis = String(parsed.analysis ?? '');
             } catch { /* non-fatal */ }
           }
+          console.log('[vapi] class session completed', {
+            callId, sessionId: classSession.sessionId, transcriptLen: transcript.length, messageCount: messages.length,
+          });
           await updateClassSession(classSession.userId, classSession.sessionId, {
             status: 'completed', hasCompletedQA: true, transcript, messages, aiAnalysis, aiScore,
             durationSeconds: durationSec, completedAt: new Date().toISOString(),
