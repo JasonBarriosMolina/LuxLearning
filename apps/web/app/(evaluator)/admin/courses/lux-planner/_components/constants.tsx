@@ -17,6 +17,11 @@ export interface Step1Data {
   description: string; imageUrl: string;
   cardColor: string; cardBorderColor: string; cardLabels: string[];
   pilotoAutomatico?: boolean;
+  // Trello DmPpbrff, 2026-09-01 01:48 (Mack): only meaningful while modality is
+  // ASINCRONICA. true = Lux Mentor auto-evaluates reflections/entregas (today's
+  // default). false = a human evaluator must review them — the course still
+  // needs an evaluator assigned via the normal course-editor flow.
+  isAutoevaluated?: boolean;
 }
 
 export interface ExceptionItem {
@@ -137,7 +142,7 @@ export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
   }
 }
 
-export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false };
+export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false, isAutoevaluated: true };
 export const EMPTY_STEP2: Step2Data = { totalWeeks: 16, exceptions: [] };
 export const EMPTY_STEP3: Step3Data = { items: [], luxMentorWeeks: [] };
 export const EMPTY_STEP4: Step4Data = { syllabusInput: '', weeklyPlan: [], modules: [], status: 'idle', error: '' };

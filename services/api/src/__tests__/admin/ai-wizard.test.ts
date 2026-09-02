@@ -508,3 +508,52 @@ describe('ai-wizard/save — persists activeGenerationJobId on the Course (2026-
     });
   });
 });
+
+// ── isAutoevaluated toggle (Trello DmPpbrff, 2026-09-01 01:48) ────────────────
+// Was previously hardcoded to `modality === 'ASINCRONICA'` — no way to choose a
+// human evaluator for an async course. Now an explicit, evaluator-controlled toggle.
+describe('ai-wizard/save — async auto-eval toggle', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  async function saveWithBody(extraBody: Record<string, any>) {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const courseCreateMock = vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null });
+    const prisma = makePrisma({
+      course: { create: courseCreateMock },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [],
+        ...extraBody,
+      },
+    });
+    ctx.prisma = prisma as any;
+    await handleAIWizard(ctx as any);
+    return courseCreateMock.mock.calls[0]?.[0]?.data;
+  }
+
+  it('defaults to true for an async course when the toggle is not sent (backward compatible)', async () => {
+    const data = await saveWithBody({ modality: 'ASINCRONICA' });
+    expect(data.isAutoevaluated).toBe(true);
+  });
+
+  it('respects isAutoevaluated=false for an async course — human evaluator path', async () => {
+    const data = await saveWithBody({ modality: 'ASINCRONICA', isAutoevaluated: false });
+    expect(data.isAutoevaluated).toBe(false);
+  });
+
+  it('respects isAutoevaluated=true explicitly for an async course', async () => {
+    const data = await saveWithBody({ modality: 'ASINCRONICA', isAutoevaluated: true });
+    expect(data.isAutoevaluated).toBe(true);
+  });
+
+  it('forces false for a non-async course regardless of the toggle value sent', async () => {
+    const data = await saveWithBody({ modality: 'PRESENCIAL', isAutoevaluated: true });
+    expect(data.isAutoevaluated).toBe(false);
+  });
+});
