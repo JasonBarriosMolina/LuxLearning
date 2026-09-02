@@ -119,17 +119,44 @@ export async function getAllQuizAttempts(): Promise<QuizAttempt[]> {
   return items;
 }
 
+// Weekly-pacing gate (Trello DmPpbrff, 2026-09-01 01:48 — Mack): pure so it can be
+// unit-tested without mocking Prisma/DynamoDB. Module order N maps 1:1 to calendar
+// week N, anchored to the course's startDate (same for every student in the
+// course — Jason, 2026-09-01). Disabled or missing startDate = always within window
+// (i.e. no additional restriction beyond the sequential reflection gate).
+export function isWithinPacingWindow(params: {
+  moduleOrder: number;
+  weeklyPacingEnabled: boolean | undefined | null;
+  courseStartDate: Date | string | null | undefined;
+  now?: Date;
+}): boolean {
+  const { moduleOrder, weeklyPacingEnabled, courseStartDate, now = new Date() } = params;
+  if (!weeklyPacingEnabled || !courseStartDate) return true;
+  const start = new Date(courseStartDate);
+  if (isNaN(start.getTime())) return true; // malformed date — don't lock students out
+  const weeksElapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const currentWeek = weeksElapsed + 1; // week 1 starts on startDate itself
+  return moduleOrder <= currentWeek;
+}
+
 export async function isModuleUnlocked(
   userId: string,
   moduleOrder: number,
-  allModules: { id: string; order: number }[]
+  allModules: { id: string; order: number }[],
+  pacing?: { weeklyPacingEnabled?: boolean | null; courseStartDate?: Date | string | null } | null,
 ): Promise<boolean> {
   const sorted = [...allModules].sort((a, b) => a.order - b.order);
   const currentIndex = sorted.findIndex((m) => m.order === moduleOrder);
-  if (currentIndex <= 0) return true;
-  const prevModule = sorted[currentIndex - 1]!;
-  const reflection = await getReflection(userId, prevModule.id);
-  return reflection?.status === 'APPROVED';
+  if (currentIndex > 0) {
+    const prevModule = sorted[currentIndex - 1]!;
+    const reflection = await getReflection(userId, prevModule.id);
+    if (reflection?.status !== 'APPROVED') return false;
+  }
+  return isWithinPacingWindow({
+    moduleOrder,
+    weeklyPacingEnabled: pacing?.weeklyPacingEnabled,
+    courseStartDate: pacing?.courseStartDate,
+  });
 }
 
 // ─── Highlights ───────────────────────────────────────────────────────────────

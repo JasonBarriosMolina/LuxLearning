@@ -119,7 +119,10 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
     for (const mod of (course as any).modules) {
       // Only include accessible (unlocked) modules — sequential lock check
-      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
+        weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
+        courseStartDate: (course as any).startDate,
+      });
       if (!unlocked) break;
 
       if (passedModuleIds.has(mod.id)) continue;

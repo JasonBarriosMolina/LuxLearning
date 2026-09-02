@@ -100,7 +100,10 @@ export const handler = async (event: Event) => {
 
             const enrichedModules = await Promise.all(
               course.modules.map(async (mod) => {
-                const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+                const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
+                  weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
+                  courseStartDate: course.startDate,
+                });
                 const reflection = await getReflection(userId, mod.id);
                 const quizPassed = await hasPassedQuiz(userId, mod.id);
                 const t = translations?.get(`module#${mod.id}`);
@@ -178,7 +181,10 @@ export const handler = async (event: Event) => {
         const myClassSessions = await listMyClassSessionsForCourse(userId, courseId).catch(() => []);
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
-            const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+            const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
+              weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
+              courseStartDate: course.startDate,
+            });
             const quizPassed = await hasPassedQuiz(userId, mod.id);
             const reflection = await getReflection(userId, mod.id);
             const mt = translations?.get(`module#${mod.id}`);

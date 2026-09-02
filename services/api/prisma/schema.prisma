@@ -42,6 +42,13 @@ model Course {
   totalWeeks         Int?
   pilotoAutomatico   Boolean           @default(false)
   isAutoevaluated    Boolean           @default(false)
+  // Lux Planner weekly-pacing toggle (Trello DmPpbrff, 2026-09-01 01:48 — Mack):
+  // "free flow" (default, off) unlocks module N as soon as module N-1's reflection
+  // is approved, regardless of date. "strict" (on) additionally requires the
+  // course's calendar week N to have arrived — anchored to startDate, module order
+  // = week number (Jason, 2026-09-01: same startDate for every student, not
+  // per-enrollment). See isModuleUnlocked in shared/db-progress.ts.
+  weeklyPacingEnabled Boolean          @default(false)
   planSyllabusInput  String?
   planWeeklyPlan     Json?
   // Set when a wizard-lessons-bulk generation job is dispatched, cleared when it reaches

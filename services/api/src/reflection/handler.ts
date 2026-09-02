@@ -146,7 +146,10 @@ Responde ÚNICAMENTE con JSON válido:
       if (!module) return badRequest('Module not found');
 
       const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order }));
-      const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs);
+      const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs, {
+        weeklyPacingEnabled: (module.course as any).weeklyPacingEnabled,
+        courseStartDate: module.course.startDate,
+      });
       if (!unlocked) return forbidden('Module is locked');
 
       // Save reflection with PENDING_AI status

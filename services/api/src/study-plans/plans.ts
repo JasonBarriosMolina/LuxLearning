@@ -102,7 +102,10 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
 
     for (const mod of (course as any).modules) {
       // Only include content from modules the student can actually access
-      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs);
+      const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
+        weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
+        courseStartDate: (course as any).startDate,
+      });
       if (!unlocked) break; // Sequential lock — all further modules are also locked
 
       const quizPassed = passedModuleIds.has(mod.id);

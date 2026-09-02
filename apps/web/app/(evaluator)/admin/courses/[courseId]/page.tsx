@@ -91,6 +91,12 @@ export default function AdminCourseDetailPage() {
   const [piloto, setPiloto] = useState(false);
   const [savingPiloto, setSavingPiloto] = useState(false);
 
+  // Weekly-pacing toggle (Trello DmPpbrff, 2026-09-01 01:48 — Mack): strict
+  // week-per-module vs free flow. Module N unlocks in calendar week N (anchored
+  // to course.startDate), on top of the existing reflection-approval gate.
+  const [weeklyPacing, setWeeklyPacing] = useState(false);
+  const [savingWeeklyPacing, setSavingWeeklyPacing] = useState(false);
+
   const [validateOpen, setValidateOpen] = useState(false);
   const [validateLoading, setValidateLoading] = useState(false);
   const [validateResult, setValidateResult] = useState<{ videos: any[]; broken: number; total: number } | null>(null);
@@ -116,6 +122,7 @@ export default function AdminCourseDetailPage() {
       const data = (res as any).data;
       setCourse(data);
       setPiloto(data?.pilotoAutomatico ?? false);
+      setWeeklyPacing(data?.weeklyPacingEnabled ?? false);
     } finally {
       setLoading(false);
     }
@@ -131,6 +138,19 @@ export default function AdminCourseDetailPage() {
       alert('Error: ' + (err?.message ?? 'desconocido'));
     } finally {
       setSavingPiloto(false);
+    }
+  }
+
+  async function toggleWeeklyPacing() {
+    setSavingWeeklyPacing(true);
+    try {
+      const next = !weeklyPacing;
+      await api.admin.courses.update(courseId, { weeklyPacingEnabled: next });
+      setWeeklyPacing(next);
+    } catch (err: any) {
+      alert('Error: ' + (err?.message ?? 'desconocido'));
+    } finally {
+      setSavingWeeklyPacing(false);
     }
   }
 
@@ -277,6 +297,25 @@ export default function AdminCourseDetailPage() {
           aria-label="Piloto automático"
         >
           <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${piloto ? 'translate-x-5' : ''}`} />
+        </button>
+      </div>
+
+      {/* Ritmo semanal estricto (Lux Planner) */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">Ritmo semanal estricto</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            El módulo N solo se desbloquea en la semana N del curso (desde la fecha de inicio), además de aprobar la reflexión anterior. Desactivado: flujo libre (actual).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggleWeeklyPacing}
+          disabled={savingWeeklyPacing}
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${weeklyPacing ? 'bg-blue-500' : 'bg-gray-300'} disabled:opacity-50`}
+          aria-label="Ritmo semanal estricto"
+        >
+          <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${weeklyPacing ? 'translate-x-5' : ''}`} />
         </button>
       </div>
 
