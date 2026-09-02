@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, extractYouTubeId, computeSilenceAction } from './LuxMentorClass.helpers';
+import { buildSystemPrompt, extractYouTubeId, computeSilenceAction, findActiveCaptionIndex } from './LuxMentorClass.helpers';
 
 describe('buildSystemPrompt — tone constraint', () => {
   // Trello DmPpbrff item 6 (2026-08-30 20:24): Lux Mentor's on-screen/spoken content
@@ -83,5 +83,32 @@ describe('extractYouTubeId', () => {
 
   it('returns an empty string when no id is found', () => {
     expect(extractYouTubeId('https://example.com/video')).toBe('');
+  });
+});
+
+describe('findActiveCaptionIndex — exposition redesign live captions (DmPpbrff 2026-09-01 01:10)', () => {
+  const marks = [
+    { time: 0, value: 'Primera oración.' },
+    { time: 2000, value: 'Segunda oración.' },
+    { time: 5000, value: 'Tercera oración.' },
+  ];
+
+  it('returns -1 for an empty marks list', () => {
+    expect(findActiveCaptionIndex([], 3000)).toBe(-1);
+  });
+
+  it('returns the first sentence at/just after playback start', () => {
+    expect(findActiveCaptionIndex(marks, 0)).toBe(0);
+    expect(findActiveCaptionIndex(marks, 1999)).toBe(0);
+  });
+
+  it('advances to the next sentence exactly at its start time', () => {
+    expect(findActiveCaptionIndex(marks, 2000)).toBe(1);
+    expect(findActiveCaptionIndex(marks, 4999)).toBe(1);
+  });
+
+  it('stays on the last sentence for the remainder of playback', () => {
+    expect(findActiveCaptionIndex(marks, 5000)).toBe(2);
+    expect(findActiveCaptionIndex(marks, 999999)).toBe(2);
   });
 });

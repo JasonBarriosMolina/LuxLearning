@@ -6,6 +6,7 @@ import { saveAiJob } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson, generateLessonAudio, defaultMaleVoiceForLanguage,
+  generateCarouselNarration,
 } from './ctx';
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
 import { generateModuleCarousel } from './ai-wizard-carousel-phase';
@@ -355,13 +356,20 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             : ' Si tienes alguna duda o pregunta, por favor coméntala ahora — la sesión de voz comenzará en breve.';
           const lessonScript: string = classContent.lessonScript ?? '';
           const closingScript: string = classContent.closingScript ?? '';
-          const [lessonAudioUrl, closingAudioUrl] = await Promise.all([
-            lessonScript ? generateLessonAudio(`class-${moduleId}`, lessonScript + transitionLine, maleVoice) : Promise.resolve(null),
+          // Lux Mentor Class exposition redesign (Trello DmPpbrff, 2026-09-01 01:10 —
+          // Mack: "puedo ver el close caption de lo que él va diciendo"): the lesson
+          // narration now also captures Polly's sentence-level speech marks (same dual-
+          // request pattern already used for carousels), so the frontend can highlight
+          // the currently-spoken sentence in sync — not just play a silent audio clip.
+          const [lessonNarration, closingAudioUrl] = await Promise.all([
+            lessonScript ? generateCarouselNarration(`class-${moduleId}`, lessonScript + transitionLine, maleVoice) : Promise.resolve(null),
             closingScript ? generateLessonAudio(`class-closing-${moduleId}`, closingScript, maleVoice) : Promise.resolve(null),
           ]);
           const classData = {
             vapiPrompt: classContent.vapiPrompt, lessonScript: lessonScript || null,
-            lessonAudioUrl, closingScript: closingScript || null, closingAudioUrl,
+            lessonAudioUrl: lessonNarration?.audioUrl ?? null,
+            lessonSpeechMarks: (lessonNarration?.marks as any) ?? null,
+            closingScript: closingScript || null, closingAudioUrl,
           };
           const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
           if (existingClass) {

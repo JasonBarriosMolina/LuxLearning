@@ -5,7 +5,8 @@ import { PlayCircle, CheckCircle, Mic, MicOff, Volume2, BookOpen, Loader2, Alert
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import { LuxMentorClassReview } from './LuxMentorClassReview';
-import { buildSystemPrompt, extractYouTubeId, computeSilenceAction } from './LuxMentorClass.helpers';
+import { LuxMentorClassNarration } from './LuxMentorClassNarration';
+import { buildSystemPrompt, extractYouTubeId, computeSilenceAction, type SpeechMark } from './LuxMentorClass.helpers';
 import type Vapi from '@vapi-ai/web';
 
 interface ClassSession {
@@ -33,6 +34,7 @@ interface StartData {
   lessonVideoUrl: string | null;
   lessonScript: string | null;
   lessonAudioUrl?: string | null;
+  lessonSpeechMarks?: SpeechMark[] | null;
   closingScript?: string | null;
   closingAudioUrl?: string | null;
   transcript?: string | null;
@@ -81,7 +83,6 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
 
   const vapiRef = useRef<Vapi | null>(null);
   const sessionIdRef = useRef<string>('');
-  const narrationAudioRef = useRef<HTMLAudioElement | null>(null);
   const closingAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const cleanup = useCallback(() => {
@@ -412,28 +413,19 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
   }
 
   // ── NARRATING — Polly reads the exposition before the Q&A call ──────────────
+  // (Trello DmPpbrff, 2026-09-01 01:10) styled content + live captions + notes,
+  // extracted to LuxMentorClassNarration.tsx to keep this file under the size limit.
   if (phase === 'narrating' && startData?.lessonAudioUrl) {
     return (
-      <div className="border border-border rounded-xl overflow-hidden">
-        <audio
-          ref={narrationAudioRef}
-          src={startData.lessonAudioUrl}
-          autoPlay
-          onEnded={connectVapi}
-          // Found in code review (2026-09-01): a 404/CORS/blocked-autoplay failure left
-          // the student stuck on this screen forever (onEnded never fires). Same
-          // graceful degradation as having no lessonAudioUrl at all — just proceed to
-          // the Q&A call.
-          onError={connectVapi}
-        />
-        <div className="bg-gradient-to-br from-[#17527E] to-[#7B2FBE] px-4 py-8 flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">
-            <Volume2 className="w-5 h-5 text-white" />
-          </div>
-          <p className="text-white font-semibold text-sm">{s('Lux Mentor está exponiendo la clase…', 'Lux Mentor is presenting the class…')}</p>
-          <p className="text-white/70 text-xs">{s('Al terminar, se abrirá la sesión de preguntas.', 'When it finishes, the Q&A session will open.')}</p>
-        </div>
-      </div>
+      <LuxMentorClassNarration
+        lessonScript={startData.lessonScript ?? null}
+        lessonAudioUrl={startData.lessonAudioUrl}
+        lessonSpeechMarks={startData.lessonSpeechMarks ?? null}
+        notesStorageKey={`lux-class-notes-${moduleId}`}
+        lang={lang}
+        onEnded={connectVapi}
+        onError={connectVapi}
+      />
     );
   }
 

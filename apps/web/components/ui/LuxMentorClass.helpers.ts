@@ -77,3 +77,27 @@ export function extractYouTubeId(url: string): string {
   const match = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
   return match?.[1] ?? '';
 }
+
+// ── Exposition redesign (Trello DmPpbrff, 2026-09-01 01:10) ──────────────────
+// Live closed-caption sync: lessonSpeechMarks is Polly's sentence-level timing
+// array ({time, value}, time in ms, ascending, same shape produced by
+// generateCarouselNarration in admin/ctx.ts). Mirrors LuxCarrouselPlayer's
+// findActiveSlideIndex, but marks here have no explicit endMs — a sentence
+// stays "active" until the next one's start time.
+export interface SpeechMark {
+  time: number;
+  value: string;
+}
+
+/** Which caption/sentence is active at a given playback position. Returns -1
+ *  for an empty marks list. Before the first mark's time (e.g. currentMs=0
+ *  while the first mark starts at a few ms in), the first sentence is shown. */
+export function findActiveCaptionIndex(marks: SpeechMark[], currentMs: number): number {
+  if (marks.length === 0) return -1;
+  let active = 0;
+  for (let i = 0; i < marks.length; i++) {
+    if (marks[i]!.time <= currentMs) active = i;
+    else break;
+  }
+  return active;
+}

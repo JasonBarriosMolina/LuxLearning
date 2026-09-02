@@ -99,6 +99,11 @@ model EvaluationEvent {
   lessonAudioUrl   String?
   closingScript    String?
   closingAudioUrl  String?
+  // Lux Mentor Class exposition redesign (Trello DmPpbrff, 2026-09-01 01:10 — Mack:
+  // wants a dedicated pre-call screen with the lessonScript as readable HTML, live
+  // captions synced to the narration, and a notes area). Polly's sentence-level
+  // timing marks for lessonAudioUrl, same shape as Lesson.speechMarks for carousels.
+  lessonSpeechMarks Json?
   course           Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([courseId])

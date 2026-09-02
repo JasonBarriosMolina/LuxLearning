@@ -45,7 +45,7 @@ export async function handleClasses(
 
     const vapiPublicKey = process.env.VAPI_PUBLIC_KEY ?? '';
     if (!vapiPublicKey) {
-      return ok({ sessionId: null, vapiPublicKey: '', hasCompletedQA: false, vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null, lessonAudioUrl: null, closingScript: null, closingAudioUrl: null });
+      return ok({ sessionId: null, vapiPublicKey: '', hasCompletedQA: false, vapiPrompt: null, vapiObjectives: null, lessonVideoUrl: null, lessonScript: null, lessonAudioUrl: null, lessonSpeechMarks: null, closingScript: null, closingAudioUrl: null });
     }
 
     // Get all existing sessions for this module
@@ -57,6 +57,7 @@ export async function handleClasses(
       // Fetch lessonScript/audio so frontend can show them in Tab 1
       let lessonScript: string | null = null;
       let lessonAudioUrl: string | null = null;
+      let lessonSpeechMarks: any = null;
       try {
         const ev = await prisma.evaluationEvent.findFirst({
           where: { courseId, moduleId, type: 'CLASS' },
@@ -67,6 +68,7 @@ export async function handleClasses(
         });
         lessonScript = ev?.lessonScript ?? null;
         lessonAudioUrl = (ev as any)?.lessonAudioUrl ?? null;
+        lessonSpeechMarks = (ev as any)?.lessonSpeechMarks ?? null;
       } catch (err) {
         console.warn('[my-classes/start] evaluationEvent fetch failed (completed path):', err);
       }
@@ -78,6 +80,7 @@ export async function handleClasses(
         messages: completedSession.messages ?? [],
         lessonScript,
         lessonAudioUrl,
+        lessonSpeechMarks,
         vapiPrompt: null,
         vapiObjectives: null,
         lessonVideoUrl: null,
@@ -139,6 +142,7 @@ export async function handleClasses(
       lessonVideoUrl: evalEvent?.lessonVideoUrl ?? null,
       lessonScript: evalEvent?.lessonScript ?? null,
       lessonAudioUrl: evalEvent?.lessonAudioUrl ?? null,
+      lessonSpeechMarks: (evalEvent as any)?.lessonSpeechMarks ?? null,
       closingScript: evalEvent?.closingScript ?? null,
       closingAudioUrl: evalEvent?.closingAudioUrl ?? null,
     });
