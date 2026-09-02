@@ -12,7 +12,9 @@ import {
   ExceptionItem, EvalItem, CourseTypeId, PendingException, CalendarWeek,
   EMPTY_STEP1, EMPTY_STEP2, EMPTY_STEP3, EMPTY_STEP4, EMPTY_STEP5,
   DAY_TO_JS, uid, weekStart, addDays, fmtDate, defaultEvalItems,
+  mapCourseToStep1, mapCourseToStep2, mapCourseToStep3Items,
 } from './_components/constants';
+import { suggestNextDueDate } from './_components/WeekAwareDatePicker.helpers';
 import { StepBar } from './_components/StepBar';
 import { StepIdentidad } from './_components/StepIdentidad';
 import { StepCalendario } from './_components/StepCalendario';
@@ -124,51 +126,12 @@ function CourseWizardInner() {
         });
       }
 
-      setStep1({
-        title: c.title ?? '',
-        academicPeriod: c.academicPeriod ?? '',
-        classDays: Array.isArray(c.classDays) ? c.classDays : [],
-        classSchedule: c.classSchedule ?? '',
-        classSchedules: c.classSchedules ?? {},
-        modality: c.modality ?? '',
-        startDate: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
-        planLanguage: (c.planLanguage ?? 'ES') as Step1Data['planLanguage'],
-        courseType: (c.courseType ?? '') as CourseTypeId | '',
-        description: c.description ?? '',
-        imageUrl: c.imageUrl ?? '',
-        cardColor: c.cardColor ?? '',
-        cardBorderColor: c.cardBorderColor ?? '',
-        cardLabels: Array.isArray(c.cardLabels) ? c.cardLabels : [],
-        pilotoAutomatico: Boolean(c.pilotoAutomatico),
-        isAutoevaluated: c.isAutoevaluated ?? true,
-      });
+      setStep1(mapCourseToStep1(c));
+      setStep2(mapCourseToStep2(c));
 
-      setStep2({
-        totalWeeks: c.totalWeeks ?? 16,
-        exceptions: Array.isArray(c.calendarExceptions) ? c.calendarExceptions.map((ex: any) => ({ ...ex, id: ex.id ?? uid() })) : [],
-      });
-
-      const evalConfig = Array.isArray(c.evaluationConfig) ? c.evaluationConfig : [];
-      if (evalConfig.length > 0) {
-        setStep3((prev) => ({
-          ...prev,
-          items: evalConfig.map((it: any, i: number) => ({
-            id: it.id ?? String(i),
-            type: it.type ?? 'EXAM',
-            name: it.name ?? '',
-            nameEN: it.nameEN ?? it.name ?? '',
-            weight: it.weight ?? 0,
-            count: it.count ?? (Array.isArray(it.dueDates) ? it.dueDates.length : 1),
-            dueDates: Array.isArray(it.dueDates) ? it.dueDates : [''],
-            instructions: it.instructions ?? '',
-            locked: it.locked ?? false,
-            vapiPrompt: it.vapiPrompt ?? '',
-            vapiObjectives: it.vapiObjectives ?? '',
-            interviewStartDate: it.interviewStartDate ?? '',
-            interviewEndDate: it.interviewEndDate ?? '',
-            interviewTimeSlot: it.interviewTimeSlot ?? '',
-          })),
-        }));
+      const step3Items = mapCourseToStep3Items(c);
+      if (step3Items.length > 0) {
+        setStep3((prev) => ({ ...prev, items: step3Items }));
       }
 
       // Restore weekly plan and syllabus if previously saved
@@ -297,12 +260,41 @@ function CourseWizardInner() {
   const updateDueDate = (id: string, idx: number, val: string) =>
     setStep3((p) => ({ ...p, items: p.items.map((it) => it.id !== id ? it : { ...it, dueDates: it.dueDates.map((d, i) => i === idx ? val : d) }) }));
 
+  // Trello DmPpbrff, 2026-09-01 14:30 (Mack): separate instructions per due-date
+  // instance once count > 1 — parallel array to dueDates, same index.
+  const updateInstructionAt = (id: string, idx: number, val: string) =>
+    setStep3((p) => ({
+      ...p,
+      items: p.items.map((it) => {
+        if (it.id !== id) return it;
+        const arr = [...(it.instructionsByIndex ?? [])];
+        arr[idx] = val;
+        return { ...it, instructionsByIndex: arr };
+      }),
+    }));
+
   const setCount = (id: string, count: number) => {
     const n = Math.max(1, count);
-    setStep3((p) => ({ ...p, items: p.items.map((it) => it.id !== id ? it : { ...it, count: n, dueDates: Array(n).fill('').map((_, i) => it.dueDates[i] ?? '') }) }));
+    setStep3((p) => ({
+      ...p,
+      items: p.items.map((it) => {
+        if (it.id !== id) return it;
+        // Trello DmPpbrff, 2026-09-01 14:30 (Mack): "sería bueno que automáticamente se
+        // posicione esa [nueva] tarea" — a newly-added due-date slot defaults to the
+        // next configured class day after the last existing one, instead of blank.
+        const dueDates = Array(n).fill('').map((_, i) => {
+          if (i < it.dueDates.length) return it.dueDates[i]!;
+          return suggestNextDueDate(it.dueDates.filter(Boolean), step1.startDate, step1.classDays);
+        });
+        return {
+          ...it, count: n, dueDates,
+          instructionsByIndex: Array(n).fill('').map((_, i) => it.instructionsByIndex?.[i] ?? ''),
+        };
+      }),
+    }));
   };
 
-  const addEvalItem = () => setStep3((p) => ({ ...p, items: [...p.items, { id: uid(), type: 'EVIDENCE' as EvalItem['type'], name: 'Actividad', nameEN: 'Activity', weight: 0, count: 1, dueDates: [''], instructions: '' }] }));
+  const addEvalItem = () => setStep3((p) => ({ ...p, items: [...p.items, { id: uid(), type: 'EVIDENCE' as EvalItem['type'], name: 'Actividad', nameEN: 'Activity', weight: 0, count: 1, dueDates: [''], instructions: '', instructionsByIndex: [] }] }));
   const removeItem = (id: string) => setStep3((p) => ({ ...p, items: p.items.filter((it) => it.id !== id) }));
 
   // Init default eval items when entering Evaluación (step 4)
@@ -554,7 +546,7 @@ function CourseWizardInner() {
               totalWeight={totalWeight} weightOk={weightOk}
               outOfRangeItems={outOfRangeItems}
               dateWarningDismissed={dateWarningDismissed} setDateWarningDismissed={setDateWarningDismissed}
-              updateItem={updateItem} updateDueDate={updateDueDate} setCount={setCount}
+              updateItem={updateItem} updateDueDate={updateDueDate} updateInstructionAt={updateInstructionAt} setCount={setCount}
               addEvalItem={addEvalItem} removeItem={removeItem}
               updateModuleQuizWeek={updateModuleQuizWeek} updateModuleReflexWeek={updateModuleReflexWeek} updateModuleInterviewWeek={updateModuleInterviewWeek}
               isEN={isEN}

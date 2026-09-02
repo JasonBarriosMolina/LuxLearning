@@ -557,3 +557,106 @@ describe('ai-wizard/save — async auto-eval toggle', () => {
     expect(data.isAutoevaluated).toBe(false);
   });
 });
+
+// ── Multi-deliverable EVIDENCE split (Trello DmPpbrff, 2026-09-01 14:30) ──────
+// count > 1 must become one EvaluationEvent row per deliverable, each with its
+// own due date + instructions, weight split evenly. Every other type/count
+// combination keeps the original single-row behavior.
+describe('ai-wizard/save — multi-deliverable EVIDENCE split', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('creates one EvaluationEvent per instance with weight split evenly and per-index instructions', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const evalCreateMock = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+      evaluationEvent: { create: evalCreateMock },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [{
+          name: 'Tareas', nameEN: 'Assignments', type: 'EVIDENCE', weight: 30, count: 3,
+          dueDates: ['2026-09-10', '2026-09-17', '2026-09-24'],
+          instructionsByIndex: ['Instrucción 1', 'Instrucción 2', 'Instrucción 3'],
+        }],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    expect(evalCreateMock).toHaveBeenCalledTimes(3);
+    const calls = evalCreateMock.mock.calls.map((c: any[]) => c[0].data);
+    expect(calls.map((d: any) => d.weight)).toEqual([10, 10, 10]);
+    expect(calls.map((d: any) => d.name)).toEqual(['Tareas 1', 'Tareas 2', 'Tareas 3']);
+    expect(calls.map((d: any) => d.instructions)).toEqual(['Instrucción 1', 'Instrucción 2', 'Instrucción 3']);
+    expect(calls.map((d: any) => d.dueDate.toISOString().slice(0, 10))).toEqual(['2026-09-10', '2026-09-17', '2026-09-24']);
+    expect(calls.map((d: any) => d.order)).toEqual([0, 1, 2]);
+  });
+
+  it('keeps the single-row behavior for count===1 EVIDENCE (unchanged)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const evalCreateMock = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+      evaluationEvent: { create: evalCreateMock },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [{
+          name: 'Examen Final', type: 'EXAM', weight: 40, count: 1,
+          dueDates: ['2026-09-10'], instructions: 'Instrucción única',
+        }],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    expect(evalCreateMock).toHaveBeenCalledTimes(1);
+    const data = evalCreateMock.mock.calls[0][0].data;
+    expect(data.name).toBe('Examen Final');
+    expect(data.weight).toBe(40);
+    expect(data.instructions).toBe('Instrucción única');
+  });
+
+  it('does not split a non-EVIDENCE type even if count > 1', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const evalCreateMock = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+      evaluationEvent: { create: evalCreateMock },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [{
+          name: 'Quices', type: 'QUIZ', weight: 20, count: 3,
+          dueDates: ['2026-09-10', '2026-09-17', '2026-09-24'],
+        }],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    expect(evalCreateMock).toHaveBeenCalledTimes(1);
+    const data = evalCreateMock.mock.calls[0][0].data;
+    expect(data.name).toBe('Quices');
+    expect(data.weight).toBe(20);
+  });
+});

@@ -187,20 +187,37 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       }).catch((e: any) => console.error('[wizard/save] deleteMany eval events error:', e));
     }
 
+    // Trello DmPpbrff, 2026-09-01 14:30 (Mack): a multi-deliverable EVIDENCE item
+    // ("Tareas" x3) used to collapse into ONE EvaluationEvent row (dueDates[0] only,
+    // one shared instructions field) — no way to give each deliverable its own due
+    // date + instructions. Jason (2026-09-02, option 1): each instance now becomes
+    // its own EvaluationEvent, splitting the category's weight evenly across them.
+    // Every other type keeps the original one-row-per-item behavior unchanged.
+    let evalEventOrder = 0;
     for (let i = 0; i < evaluationItems.length; i++) {
       const item = evaluationItems[i];
-      const firstDate = item.dueDates?.[0] ? new Date(item.dueDates[0]) : null;
-      try {
-        await prisma.evaluationEvent.create({
-          data: {
-            courseId: course.id, type: item.type ?? 'EXAM',
-            name: item.name ?? item.nameEN ?? 'Evaluación',
-            dueDate: firstDate, weight: parseFloat(String(item.weight ?? 0)),
-            instructions: item.instructions || null, vapiPrompt: item.vapiPrompt || null,
-            vapiObjectives: item.vapiObjectives || null, order: i,
-          },
-        });
-      } catch (evalErr: any) { console.error('[wizard/save] evaluationEvent create error:', evalErr?.message); }
+      const instances = item.type === 'EVIDENCE' && Number(item.count) > 1 ? Number(item.count) : 1;
+      const perInstanceWeight = parseFloat(String(item.weight ?? 0)) / instances;
+      for (let idx = 0; idx < instances; idx++) {
+        const dueDateStr = item.dueDates?.[idx] ?? item.dueDates?.[0];
+        const dueDate = dueDateStr ? new Date(dueDateStr) : null;
+        const name = instances > 1
+          ? `${item.name ?? item.nameEN ?? 'Evaluación'} ${idx + 1}`
+          : (item.name ?? item.nameEN ?? 'Evaluación');
+        const instructions = instances > 1
+          ? (item.instructionsByIndex?.[idx] || null)
+          : (item.instructions || null);
+        try {
+          await prisma.evaluationEvent.create({
+            data: {
+              courseId: course.id, type: item.type ?? 'EXAM',
+              name, dueDate, weight: perInstanceWeight,
+              instructions, vapiPrompt: item.vapiPrompt || null,
+              vapiObjectives: item.vapiObjectives || null, order: evalEventOrder++,
+            },
+          });
+        } catch (evalErr: any) { console.error('[wizard/save] evaluationEvent create error:', evalErr?.message); }
+      }
     }
 
     // Sync evaluation due dates to calendar (helper in ai-wizard-docx.ts)
