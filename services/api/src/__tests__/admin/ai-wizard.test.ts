@@ -707,4 +707,59 @@ describe('ai-wizard/generate-instruction — week-grounded prompt', () => {
     const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
     expect(promptSent).not.toContain('DEBE enfocarse en estos temas');
   });
+
+  // PROYECTO (Trello DmPpbrff, 2026-09-02 21:48): capstone spans the whole
+  // course and must match the course's theoretical/practical nature.
+  it('asks for a practical, demonstrable project for a practical course type', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Produce X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Producción Musical', evalName: 'Proyecto Final', isProject: true, courseType: 'PROYECTOS' },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).toContain('naturaleza PRÁCTICA');
+    expect(promptSent).toContain('PROYECTO FINAL');
+  });
+
+  it('asks for an analytical/written project for a theoretical course type', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Analiza X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Historia del Arte', evalName: 'Proyecto Final', isProject: true, courseType: 'TEORICO' },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).toContain('naturaleza TEÓRICA');
+  });
+
+  it('uses the regular week-grounded prompt (not the project one) when isProject is false', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Analiza X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Curso', evalName: 'Tareas 1', isProject: false, courseType: 'PROYECTOS' },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).not.toContain('PROYECTO FINAL');
+    expect(promptSent).not.toContain('naturaleza PRÁCTICA');
+  });
 });

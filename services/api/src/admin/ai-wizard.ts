@@ -41,7 +41,7 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
   if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-    const { courseTitle, evalName, syllabusInput = '', weekTopics = '' } = body as any;
+    const { courseTitle, evalName, syllabusInput = '', weekTopics = '', isProject = false, courseType = '' } = body as any;
     if (!courseTitle || !evalName) return badRequest('courseTitle y evalName son requeridos');
     const syllabusSnippet = (syllabusInput as string).slice(0, 400);
     // Trello DmPpbrff, 2026-09-02 21:43/21:48 (Mack): "genera una entrega muy
@@ -52,7 +52,32 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
     // sends that week's topics here so each deliverable is grounded in
     // different content.
     const weekSnippet = (weekTopics as string).trim().slice(0, 300);
-    const prompt = `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega (evidence) en un curso universitario.
+
+    // PROYECTO (Trello DmPpbrff, 2026-09-02 21:48 — Mack): the final capstone
+    // spans the WHOLE course (not a single week) and its NATURE must match the
+    // course type — "si el curso es teórico, no podemos pedir que sea
+    // directamente una actividad práctica... si es práctico, debería ser una
+    // actividad práctica demostrable."
+    const PRACTICAL_TYPES = new Set(['TEORICO_PRACTICO', 'PROYECTOS', 'PROGRAMA_ESPECIAL']);
+    const natureHint = isProject
+      ? (PRACTICAL_TYPES.has(String(courseType))
+          ? 'Este curso es de naturaleza PRÁCTICA — el proyecto debe ser una actividad práctica demostrable (ej. producción, prototipo, presentación en vivo, entrega funcional), no un simple ensayo teórico.'
+          : String(courseType) === 'TEORICO'
+            ? 'Este curso es de naturaleza TEÓRICA — el proyecto debe ser una entrega analítica/escrita (ej. ensayo, reporte, análisis comparativo), no una actividad práctica que el curso no preparó.'
+            : 'Adapta la naturaleza del proyecto (teórica o práctica) según lo que el temario del curso sugiera.')
+      : '';
+
+    const prompt = isProject
+      ? `Eres un diseñador instruccional experto. Genera una instrucción clara para el PROYECTO FINAL (capstone) de un curso universitario — debe integrar y evaluar todo lo visto durante el curso completo, no solo una parte.
+
+Curso: ${courseTitle}
+Nombre de la evaluación: ${evalName}
+${natureHint}
+${syllabusSnippet ? `Extracto del temario completo del curso:\n${syllabusSnippet}` : ''}
+
+Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
+{"instruction":"<2-4 oraciones de instrucción para el estudiante, específica, accionable, y que abarque el curso completo>"}`
+      : `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega de Evidencia en un curso universitario.
 
 Curso: ${courseTitle}
 Nombre de la evaluación: ${evalName}

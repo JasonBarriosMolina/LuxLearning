@@ -225,13 +225,13 @@ export function StepPlaneamiento({
                         se genere alguna descripción" — when count > 1 the description lives
                         per-deliverable in instructionsByIndex (2026-09-01 14:30 change), not
                         in the shared `instructions` field this only used to check. */}
-                    {it.type === 'EVIDENCE' && it.count <= 1 && it.instructions && (
+                    {(it.type === 'EVIDENCE' || it.type === 'PROYECTO') && it.count <= 1 && it.instructions && (
                       <div>
                         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{s('Instrucciones', 'Instructions')}</p>
                         <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">{it.instructions}</p>
                       </div>
                     )}
-                    {it.type === 'EVIDENCE' && it.count > 1 && it.instructionsByIndex?.some(Boolean) && (
+                    {(it.type === 'EVIDENCE' || it.type === 'PROYECTO') && it.count > 1 && it.instructionsByIndex?.some(Boolean) && (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{s('Instrucciones por entrega', 'Instructions per deliverable')}</p>
                         {it.instructionsByIndex.map((text, i) => text ? (

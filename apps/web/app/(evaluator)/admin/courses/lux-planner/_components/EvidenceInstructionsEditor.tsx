@@ -14,7 +14,7 @@ interface Props {
   evalName: string; // already language-picked (nameEN or name)
   s: (es: string, en: string) => string;
   genInstrId: string | null;
-  onGenerate: (itemId: string, evalName: string, idx?: number, dueDateStr?: string) => void;
+  onGenerate: (itemId: string, evalName: string, idx?: number, dueDateStr?: string, evalType?: EvalItem['type']) => void;
   updateItem: (id: string, patch: Partial<EvalItem>) => void;
   updateInstructionAt: (id: string, idx: number, val: string) => void;
 }
@@ -28,7 +28,7 @@ export function EvidenceInstructionsEditor({ item, evalName, s, genInstrId, onGe
           <textarea value={item.instructions} onChange={(e) => updateItem(item.id, { instructions: e.target.value })} className="input-field w-full min-h-[60px] text-xs resize-y" />
           <button
             type="button"
-            onClick={() => onGenerate(item.id, evalName, undefined, item.dueDates?.[0])}
+            onClick={() => onGenerate(item.id, evalName, undefined, item.dueDates?.[0], item.type)}
             disabled={genInstrId === item.id}
             className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-600 hover:text-purple-800 disabled:opacity-50 transition-colors"
           >
@@ -56,7 +56,7 @@ export function EvidenceInstructionsEditor({ item, evalName, s, genInstrId, onGe
               />
               <button
                 type="button"
-                onClick={() => onGenerate(item.id, `${evalName} ${idx + 1}`, idx, item.dueDates?.[idx])}
+                onClick={() => onGenerate(item.id, `${evalName} ${idx + 1}`, idx, item.dueDates?.[idx], item.type)}
                 disabled={genInstrId === genKey}
                 className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-600 hover:text-purple-800 disabled:opacity-50 transition-colors"
               >
