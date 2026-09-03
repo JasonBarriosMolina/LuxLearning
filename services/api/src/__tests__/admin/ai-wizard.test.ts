@@ -660,3 +660,51 @@ describe('ai-wizard/save — multi-deliverable EVIDENCE split', () => {
     expect(data.weight).toBe(20);
   });
 });
+
+// ── wizard/generate-instruction — week-grounded prompt (Trello DmPpbrff, ─────
+// 2026-09-02 21:43/21:48): near-duplicate instructions across deliverables of
+// the same category, fixed by grounding the prompt in that specific week's topics.
+describe('ai-wizard/generate-instruction — week-grounded prompt', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('includes the week topics in the prompt when provided', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Analiza X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: {
+        courseTitle: 'Historia de la Música Barroca',
+        evalName: 'Tareas 2',
+        weekTopics: 'Ópera veneciana, monodia acompañada',
+      },
+    });
+
+    const res = await handleAIWizard(ctx as any);
+    const body = await bodyOf(res);
+
+    expect(body.data.instruction).toBe('Analiza X.');
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).toContain('Ópera veneciana, monodia acompañada');
+    expect(promptSent).toContain('DEBE enfocarse en estos temas');
+  });
+
+  it('omits the week-topics line entirely when none is provided (backward compatible)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Analiza X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Curso', evalName: 'Tarea 1' },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).not.toContain('DEBE enfocarse en estos temas');
+  });
+});

@@ -10,6 +10,7 @@ import {
 import { EvidenceInstructionsEditor } from './EvidenceInstructionsEditor';
 import { InterviewEvalConfig } from './InterviewEvalConfig';
 import { WeekAwareDatePicker } from './WeekAwareDatePicker';
+import { getWeekNumberForDate } from './WeekAwareDatePicker.helpers';
 
 interface OutOfRangeItem { itemName: string; date: string; }
 
@@ -90,14 +91,22 @@ export function StepEvaluacion({
   // Generate EVIDENCE instruction with AI. `idx` set only when count > 1 — writes
   // to instructionsByIndex[idx] instead of the shared `instructions` field
   // (Trello DmPpbrff, 2026-09-01 14:30 — one instruction box per deliverable).
-  const generateInstruction = async (itemId: string, evalName: string, idx?: number) => {
+  // `dueDateStr` (Trello DmPpbrff, 2026-09-02 21:43/21:48 — Mack: "genera una
+  // entrega muy parecida... abarca los temas de cada semana") is used to look up
+  // that specific deliverable's week in the syllabus plan, so each one's
+  // instruction is grounded in different content instead of the same generic ask.
+  const generateInstruction = async (itemId: string, evalName: string, idx?: number, dueDateStr?: string) => {
     const genKey = idx == null ? itemId : `${itemId}#${idx}`;
     setGenInstrId(genKey);
     try {
+      const weekNum = dueDateStr ? getWeekNumberForDate(dueDateStr, step1.startDate) : null;
+      const week = weekNum != null ? step4.weeklyPlan.find((w) => w.weekNum === weekNum) : null;
+      const weekTopics = week ? week.topics.join(', ') : undefined;
       const res = await api.admin.courses.generateInstruction({
         courseTitle: step1.title,
         evalName,
         syllabusInput: step4.syllabusInput,
+        weekTopics,
       }) as any;
       const instruction = res?.data?.instruction ?? res?.instruction ?? '';
       if (instruction) {
