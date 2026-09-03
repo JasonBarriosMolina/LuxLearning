@@ -410,7 +410,12 @@ Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
       }
       const question = await prisma.question.update({
         where: { id: questionId },
-        data: { text, options, correctIndex: Number(correctIndex), order: Number(order) },
+        // Clear any cached Polly narration (code-review finding, 2026-09-03): without
+        // this, POST /quiz/question-audio's cache check (`if (... question.audioUrl)
+        // return cached`) would keep serving a stale mp3 narrating the OLD text/options
+        // forever after an evaluator edits the question — same pattern already
+        // established for the translation cache below.
+        data: { text, options, correctIndex: Number(correctIndex), order: Number(order), audioUrl: null, audioUrlMale: null },
       });
       await invalidateTranslation('question', questionId);
       return ok(question);

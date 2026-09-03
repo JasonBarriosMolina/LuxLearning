@@ -13,7 +13,7 @@ import {
   AdminCtx, isAuthorized, isAdmin, getCallerName,
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
 } from './ctx';
-import { generateWizardPlanDocument, createWizardCourseSessions, syncWizardCalendarEvents } from './ai-wizard-docx';
+import { generateWizardPlanDocument, createWizardCourseSessions, syncWizardCalendarEvents, buildPlanFileName } from './ai-wizard-docx';
 import { handleAIWizardWorker } from './ai-wizard-worker';
 
 /** Builds the index fields for the wizard-lessons-bulk payload. Always includes all 4
@@ -124,9 +124,12 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     if (!isAuthorized(event)) return forbidden('Se requiere autenticación');
     const courseId = event.queryStringParameters?.courseId;
     if (!courseId) return badRequest('courseId es requerido');
-    const course = await prisma.course.findUnique({ where: { id: courseId }, select: { planDocumentS3Key: true } });
-    if (!course?.planDocumentS3Key) return badRequest('Este curso no tiene un plan Word generado');
-    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="plan-${courseId}.docx"` }), { expiresIn: 3600 });
+    const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true, academicPeriod: true, planDocumentS3Key: true } });
+    if (!course?.planDocumentS3Key) return badRequest('Este curso no tiene un plan de estudios editable generado');
+    // Descriptive filename (Trello DmPpbrff 6a92658b) — no teacher-profile lookup here
+    // (lightweight refresh endpoint), so it's omitted rather than fetched from Cognito.
+    const fileName = buildPlanFileName(course.title, course.academicPeriod ?? undefined, '');
+    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${fileName}"` }), { expiresIn: 3600 });
     return ok({ url });
   }
 

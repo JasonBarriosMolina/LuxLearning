@@ -190,6 +190,22 @@ describe('PUT /admin/questions/:questionId', () => {
     const res = await handleCoursesContent(ctx);
     expect(res?.statusCode).toBe(403);
   });
+
+  // Code-review finding, 2026-09-03: without this, POST /quiz/question-audio's cache
+  // check keeps serving Polly narration of the OLD text/options after an edit.
+  it('clears the cached Polly narration (audioUrl/audioUrlMale) whenever the question is edited', async () => {
+    const questionUpdateMock = vi.fn().mockResolvedValue({ id: 'q-1', text: 'Actualizada?' });
+    const prisma = makePrisma({ question: { update: questionUpdateMock } });
+    const ctx = makeAdminCtx({
+      method: 'PUT', path: '/admin/questions/q-1', prisma,
+      body: { text: 'Actualizada?', options: ['A', 'B', 'C', 'D'], correctIndex: 1, order: 1 },
+    });
+    await handleCoursesContent(ctx);
+    expect(questionUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'q-1' },
+      data: expect.objectContaining({ audioUrl: null, audioUrlMale: null }),
+    });
+  });
 });
 
 describe('DELETE /admin/questions/:questionId', () => {

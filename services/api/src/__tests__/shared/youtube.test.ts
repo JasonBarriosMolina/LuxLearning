@@ -5,7 +5,7 @@
  * URL pasted into the "YouTube ID" field was never normalized before checking.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extractYoutubeId, isYoutubeVideoAvailable } from '../../shared/youtube';
+import { extractYoutubeId, isYoutubeVideoAvailable, searchYoutubeVideo, escapeHtml } from '../../shared/youtube';
 
 describe('extractYoutubeId', () => {
   it('passes through a bare 11-char ID unchanged', () => {
@@ -54,5 +54,63 @@ describe('isYoutubeVideoAvailable', () => {
   it('returns false (not throws) on a network error', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down')) as any;
     expect(await isYoutubeVideoAvailable('dQw4w9WgXcQ')).toBe(false);
+  });
+});
+
+// Trello Nk0XDBvJ, 2026-09-02 21:43 (Mack): "no necesitamos palabras claves puestas en
+// la búsqueda de YouTube... necesitamos el enlace de un video en específico."
+describe('searchYoutubeVideo', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => { global.fetch = originalFetch; });
+
+  it('returns null immediately (no fetch call) when no API key is available', async () => {
+    global.fetch = vi.fn() as any;
+    expect(await searchYoutubeVideo('historia de la música barroca', undefined)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns null for an empty/blank query even with a key', async () => {
+    global.fetch = vi.fn() as any;
+    expect(await searchYoutubeVideo('   ', 'fake-key')).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns the first result videoId/title/channelTitle on a successful search', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [{ id: { videoId: 'abc123XYZ_9' }, snippet: { title: 'Música Barroca 101', channelTitle: 'Jaime Altozano' } }] }),
+    }) as any;
+    const result = await searchYoutubeVideo('música barroca', 'fake-key');
+    expect(result).toEqual({ videoId: 'abc123XYZ_9', title: 'Música Barroca 101', channelTitle: 'Jaime Altozano' });
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('key=fake-key'), expect.anything());
+  });
+
+  it('returns null when the API responds with no items', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [] }) }) as any;
+    expect(await searchYoutubeVideo('algo muy raro', 'fake-key')).toBeNull();
+  });
+
+  it('returns null (not throws) when the API responds non-ok (quota exceeded, bad key, etc.)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false }) as any;
+    expect(await searchYoutubeVideo('cualquier cosa', 'fake-key')).toBeNull();
+  });
+
+  it('returns null (not throws) on a network error', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down')) as any;
+    expect(await searchYoutubeVideo('cualquier cosa', 'fake-key')).toBeNull();
+  });
+});
+
+// Code-review finding, 2026-09-03: a YouTube video title is untrusted third-party text
+// (from Google's API) interpolated into lesson HTML rendered via
+// dangerouslySetInnerHTML — without escaping, a malicious/weird title is stored XSS.
+describe('escapeHtml', () => {
+  it('escapes the 5 characters that matter for HTML injection', () => {
+    expect(escapeHtml(`<img src=x onerror=alert(1)>`)).toBe('&lt;img src=x onerror=alert(1)&gt;');
+    expect(escapeHtml(`"quoted" & 'apostrophe'`)).toBe('&quot;quoted&quot; &amp; &#39;apostrophe&#39;');
+  });
+
+  it('leaves ordinary text untouched', () => {
+    expect(escapeHtml('Historia de la Música Barroca - Jaime Altozano')).toBe('Historia de la Música Barroca - Jaime Altozano');
   });
 });

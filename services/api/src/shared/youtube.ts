@@ -29,6 +29,50 @@ export function extractYoutubeId(input: string | null | undefined): string | nul
   return null;
 }
 
+/** Escapes text pulled from an untrusted source (a third-party API response, here) before
+ *  it's interpolated into lesson HTML that the frontend renders via
+ *  dangerouslySetInnerHTML. A video title is ordinary free text from Google's API, not
+ *  something Lux controls or validates — without this, a title containing `<img
+ *  onerror=...>` would land in every enrolled student's lesson page as stored XSS
+ *  (code-review finding, 2026-09-03). */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Searches YouTube for a real video matching `query` and returns its videoId + title,
+ *  instead of the raw-keyword-search link the module-resources generator used to embed
+ *  (Trello Nk0XDBvJ, 2026-09-02 21:43 — Mack: "no necesitamos palabras claves puestas en
+ *  la búsqueda de YouTube; necesitamos... el enlace de un video en específico y no que el
+ *  estudiante... vaya a buscarlo"). Requires the YouTube Data API v3 (a Google Cloud API
+ *  key with "YouTube Data API v3" enabled — different from any Bedrock/AWS key already in
+ *  use); returns null immediately when YOUTUBE_API_KEY isn't set, so every caller degrades
+ *  gracefully to the previous keyword-search-link behavior until that key is provisioned.
+ *  Availability is NOT re-checked here — callers should pass the id through
+ *  isYoutubeVideoAvailable before using it, same as any other video id. */
+export async function searchYoutubeVideo(
+  query: string,
+  apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
+): Promise<{ videoId: string; title: string; channelTitle: string } | null> {
+  if (!apiKey || !query.trim()) return null;
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&safeSearch=strict&relevanceLanguage=es&q=${encodeURIComponent(query)}&key=${apiKey}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    const item = data?.items?.[0];
+    const videoId = item?.id?.videoId;
+    if (!videoId) return null;
+    return { videoId, title: item?.snippet?.title ?? '', channelTitle: item?.snippet?.channelTitle ?? '' };
+  } catch {
+    return null;
+  }
+}
+
 /** Checks whether a YouTube video is actually available via the public oEmbed endpoint —
  *  no API key needed. Returns false on any non-200 response or network error (removed,
  *  private, age-restricted-without-embed, or a malformed/non-existent ID all resolve to a

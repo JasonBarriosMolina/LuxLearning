@@ -16,7 +16,7 @@ const INSTITUTION_ACRONYM = process.env.INSTITUTION_ACRONYM ?? 'LUX';
  *  raw courseId ("plan-cmtdwh...docx") — Trello DmPpbrff comment 6a92658b. Strips characters
  *  invalid in filenames and collapses whitespace; falls back gracefully when a piece (period,
  *  teacher name) isn't available. */
-function buildPlanFileName(courseTitle: string, academicPeriod: string | undefined, teacherName: string): string {
+export function buildPlanFileName(courseTitle: string, academicPeriod: string | undefined, teacherName: string): string {
   const parts = ['Plan de Estudios', courseTitle, academicPeriod, INSTITUTION_ACRONYM, teacherName]
     .filter((p): p is string => !!p && p.trim().length > 0)
     .map((p) => p.trim().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' '));
@@ -213,7 +213,12 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
   // return a fresh signed URL for the existing document so the download link persists.
   if (!docPublicUrl && course.planDocumentS3Key) {
     try {
-      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="plan-${course.id}.docx"` }), { expiresIn: 604800 });
+      // Same descriptive filename as the fresh-generation path above (2026-09-03) —
+      // this fallback re-signs an already-existing S3 object, so it has no chance to
+      // rebuild the name from a failed generation, but course/title/teacherName are
+      // still in scope here regardless of which branch produced docPublicUrl.
+      const fallbackFileName = buildPlanFileName(title, academicPeriod, teacherName);
+      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${fallbackFileName}"` }), { expiresIn: 604800 });
     } catch { /* non-fatal — download link just won't appear */ }
   }
   return { docPublicUrl };

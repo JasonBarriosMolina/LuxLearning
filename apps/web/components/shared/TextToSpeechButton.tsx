@@ -13,9 +13,12 @@ interface Props {
   // When provided (and audioUrl is missing), lazily requests a real Amazon Polly
   // neural narration in the background instead of leaving the student stuck on
   // the browser's free voice (Trello DmPpbrff, 2026-08-31 19:54 — Mack: "no son
-  // voces agradables"). Omitted by callers with no backing Lesson row to cache
-  // on (e.g. quiz questions) — those keep the browser-voice-only behavior.
+  // voces agradables"). lessonId caches on the Lesson row; questionId (added
+  // 2026-09-03 — Mack: quiz/exam questions still used the browser voice) caches
+  // on the Question row instead — pass exactly one. Omitted entirely keeps the
+  // browser-voice-only behavior (e.g. a caller with neither row to cache on).
   lessonId?: string;
+  questionId?: string;
 }
 
 type Gender    = 'female' | 'male';
@@ -236,22 +239,33 @@ function WebSpeechPlayer({ text, rate, onRateChange, gender, appLang, voices }: 
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false, lessonId }: Props) {
+export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false, lessonId, questionId }: Props) {
   const { lang } = useLanguage();
   const voices   = useVoices();
 
-  // Lazy on-demand Polly narration — fires once per mount when there's a lessonId
-  // to cache against but no audioUrl yet. Silent/background: the button keeps
-  // working via the browser voice meanwhile, then quietly upgrades once ready.
+  // lessonId and questionId cache on different DB rows via different endpoints —
+  // this picks whichever one the caller passed (exactly one is expected). gender
+  // omitted entirely (not passed as `undefined`) on the default female fetch to
+  // match the exact single-argument call the original lessonId-only code made.
+  const fetchAudio = (gender?: 'male' | 'female') =>
+    lessonId
+      ? (gender ? api.lessons.audio(lessonId, gender) : api.lessons.audio(lessonId))
+      : questionId
+        ? (gender ? api.quiz.questionAudio(questionId, gender) : api.quiz.questionAudio(questionId))
+        : null;
+
+  // Lazy on-demand Polly narration — fires once per mount when there's a lessonId/
+  // questionId to cache against but no audioUrl yet. Silent/background: the button
+  // keeps working via the browser voice meanwhile, then quietly upgrades once ready.
   const [fetchedAudioUrl, setFetchedAudioUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
-    if (!lessonId || audioUrl) return;
+    if ((!lessonId && !questionId) || audioUrl) return;
     let cancelled = false;
-    api.lessons.audio(lessonId)
-      .then((res) => { if (!cancelled) setFetchedAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl); })
+    fetchAudio()
+      ?.then((res) => { if (!cancelled) setFetchedAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl); })
       .catch(() => {}); // non-fatal — WebSpeechPlayer keeps working meanwhile
     return () => { cancelled = true; };
-  }, [lessonId, audioUrl]);
+  }, [lessonId, questionId, audioUrl]);
   const femaleAudioUrl = audioUrl ?? fetchedAudioUrl;
 
   const [gender, setGender] = useState<Gender>(() =>
@@ -261,19 +275,21 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
     typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts-rate') ?? '1') : 1
   );
 
-  // Male voice — fetched on demand only when the student actually picks it (not
-  // cached on the Lesson row, so it's a fresh Polly call each time; a rarely-
-  // toggled preference, not worth a schema migration for a second cache slot).
+  // Male voice — fetched on demand only when the student actually picks it. For
+  // lessonId this isn't cached on the Lesson row (fresh Polly call each time — a
+  // rarely-toggled preference, not worth a second cache slot there); questionId
+  // DOES cache (Question.audioUrlMale, added alongside audioUrl in the same
+  // 2026-09-03 migration, so it was free to include).
   const [maleAudioUrl, setMaleAudioUrl] = useState<string | undefined>(undefined);
   const [maleLoading, setMaleLoading] = useState(false);
   useEffect(() => {
-    if (gender !== 'male' || !lessonId || maleAudioUrl || maleLoading) return;
+    if (gender !== 'male' || (!lessonId && !questionId) || maleAudioUrl || maleLoading) return;
     setMaleLoading(true);
-    api.lessons.audio(lessonId, 'male')
-      .then((res) => setMaleAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl))
+    fetchAudio('male')
+      ?.then((res) => setMaleAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl))
       .catch(() => {})
       .finally(() => setMaleLoading(false));
-  }, [gender, lessonId, maleAudioUrl, maleLoading]);
+  }, [gender, lessonId, questionId, maleAudioUrl, maleLoading]);
 
   // Removed the "voz preferida del curso" (browser voice) vs "voz del curso"
   // (Polly) source picker entirely (Trello DmPpbrff, 2026-09-01 14:40 — Mack:

@@ -41,6 +41,8 @@ export const courseEs = {
     submit: 'Entregar',
     present: 'Presentar',
     goToQuiz: 'Ir al quiz',
+    nonSummativeToggle: (n: number) => `Actividades no sumativas (${n})`,
+    nonSummativeHint: 'No cuentan para la nota final',
     typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidencia', PROYECTO: 'Proyecto', INTERVIEW: 'Entrevista', ATTENDANCE: 'Asistencia' } as Record<string, string>,
   },
   evidenceCard: {
@@ -204,6 +206,8 @@ export const courseEn = {
     submit: 'Submit',
     present: 'Present',
     goToQuiz: 'Take quiz',
+    nonSummativeToggle: (n: number) => `Non-summative activities (${n})`,
+    nonSummativeHint: "Don't count toward the final grade",
     typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidence', PROYECTO: 'Project', INTERVIEW: 'Interview', ATTENDANCE: 'Attendance' } as Record<string, string>,
   },
   evidenceCard: {

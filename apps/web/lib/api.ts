@@ -89,6 +89,8 @@ export const api = {
       request(`/quiz/${moduleId}/attempts`),
     gapAnalysis: (moduleId: string, body: { results: any[] }) =>
       request<any>(`/quiz/${moduleId}/gap-analysis`, { method: 'POST', body: JSON.stringify(body) }),
+    questionAudio: (questionId: string, gender?: 'male' | 'female') =>
+      request<{ audioUrl: string }>('/quiz/question-audio', { method: 'POST', body: JSON.stringify({ questionId, gender }) }),
   },
 
   reflection: {

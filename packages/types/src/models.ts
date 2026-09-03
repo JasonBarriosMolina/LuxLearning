@@ -44,6 +44,9 @@ export interface Question {
   text: string;
   options: string[];
   correctIndex: number;
+  // On-demand Polly neural narration cache (2026-09-03) — see Question in schema.prisma.
+  audioUrl?: string | null;
+  audioUrlMale?: string | null;
 }
 
 // ─── DynamoDB Models ─────────────────────────────────────────────────────────
