@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import {
   Step1Data, Step2Data, Step3Data, Step4Data, EvalItem, EvalType, CourseTypeId,
-  COURSE_TYPES, EVAL_TYPE_META, fmtDisplay,
+  COURSE_TYPES, EVAL_TYPE_META, SELECTABLE_EVAL_TYPES, fmtDisplay,
 } from './constants';
 import { EvidenceInstructionsEditor } from './EvidenceInstructionsEditor';
 import { InterviewEvalConfig } from './InterviewEvalConfig';
@@ -95,11 +95,16 @@ export function StepEvaluacion({
   // entrega muy parecida... abarca los temas de cada semana") is used to look up
   // that specific deliverable's week in the syllabus plan, so each one's
   // instruction is grounded in different content instead of the same generic ask.
-  const generateInstruction = async (itemId: string, evalName: string, idx?: number, dueDateStr?: string) => {
+  const generateInstruction = async (itemId: string, evalName: string, idx?: number, dueDateStr?: string, evalType?: EvalItem['type']) => {
     const genKey = idx == null ? itemId : `${itemId}#${idx}`;
     setGenInstrId(genKey);
     try {
-      const weekNum = dueDateStr ? getWeekNumberForDate(dueDateStr, step1.startDate) : null;
+      // PROYECTO (Trello DmPpbrff, 2026-09-02 21:48 — Mack): the final/capstone
+      // deliverable spans the WHOLE course, not one week — and its nature must
+      // match the course type (theoretical → essay/report/analysis; practical →
+      // a demonstrable practical activity). No week-grounding for this type.
+      const isProject = evalType === 'PROYECTO';
+      const weekNum = !isProject && dueDateStr ? getWeekNumberForDate(dueDateStr, step1.startDate) : null;
       const week = weekNum != null ? step4.weeklyPlan.find((w) => w.weekNum === weekNum) : null;
       const weekTopics = week ? week.topics.join(', ') : undefined;
       const res = await api.admin.courses.generateInstruction({
@@ -107,6 +112,8 @@ export function StepEvaluacion({
         evalName,
         syllabusInput: step4.syllabusInput,
         weekTopics,
+        isProject,
+        courseType: isProject ? (step1.courseType || undefined) : undefined,
       }) as any;
       const instruction = res?.data?.instruction ?? res?.instruction ?? '';
       if (instruction) {
@@ -166,7 +173,7 @@ export function StepEvaluacion({
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-400">{s('Tipo:', 'Type:')}</span>
                     <div className="flex gap-1">
-                      {(Object.keys(EVAL_TYPE_META) as EvalType[]).filter((t) => t !== 'ATTENDANCE').map((t) => {
+                      {SELECTABLE_EVAL_TYPES.map((t) => {
                         const m = EVAL_TYPE_META[t];
                         return (
                           <button key={t} onClick={() => updateItem(item.id, { type: t })}
@@ -204,10 +211,13 @@ export function StepEvaluacion({
                   </div>
                 )}
 
-                {/* EVIDENCE — instructions with AI generate button (extracted component). One
-                    box when count===1 (unchanged); one box PER due-date instance when
-                    count > 1 — Trello DmPpbrff, 2026-09-01 14:30 (Mack). */}
-                {item.type === 'EVIDENCE' && (
+                {/* EVIDENCE / PROYECTO — instructions with AI generate button (extracted
+                    component). One box when count===1 (unchanged); one box PER due-date
+                    instance when count > 1 — Trello DmPpbrff, 2026-09-01 14:30 (Mack).
+                    PROYECTO (2026-09-02 21:48) reuses the same editor — same shape
+                    (weight/count/dueDates/instructions) — but generateInstruction below
+                    grounds it in the whole course + course type instead of a single week. */}
+                {(item.type === 'EVIDENCE' || item.type === 'PROYECTO') && (
                   <EvidenceInstructionsEditor
                     item={item} evalName={planEN ? item.nameEN : item.name}
                     s={s} genInstrId={genInstrId} onGenerate={generateInstruction}

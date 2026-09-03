@@ -6,7 +6,13 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CourseTypeId = 'TEORICO' | 'TEORICO_PRACTICO' | 'PROYECTOS' | 'PROGRAMA_ESPECIAL' | 'CURSO_CORTO' | 'LIBRE';
-export type EvalType = 'QUIZ' | 'EVIDENCE' | 'EXAM' | 'ATTENDANCE' | 'INTERVIEW';
+// Trello DmPpbrff, 2026-09-02 21:48 (Mack): "vamos a sustituirlo por proyecto" —
+// PROYECTO is the course's final/capstone deliverable, distinct from ongoing
+// EVIDENCE submissions. QUIZ stays in the union (existing saved courses still
+// have QUIZ EvaluationEvents) but is hidden from the type-selector for NEW
+// items — the per-module quiz is now handled entirely by the quizWeek
+// selector further down, making a second, manual "Quiz" category redundant.
+export type EvalType = 'QUIZ' | 'EVIDENCE' | 'EXAM' | 'ATTENDANCE' | 'INTERVIEW' | 'PROYECTO';
 export type PlanLang = 'ES' | 'EN';
 
 export interface Step1Data {
@@ -127,12 +133,18 @@ export const TIME_SLOTS: string[] = (() => {
 })();
 
 export const EVAL_TYPE_META: Record<EvalType, { icon: React.ReactNode; label: string; labelEN: string; color: string }> = {
-  QUIZ:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Quiz',           labelEN: 'Quiz',           color: 'bg-blue-100 text-blue-700' },
-  EVIDENCE:   { icon: <FileUp className="w-3.5 h-3.5" />,       label: 'Entrega',         labelEN: 'Submission',     color: 'bg-purple-100 text-purple-700' },
-  EXAM:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Examen/Prueba',  labelEN: 'Exam/Test',      color: 'bg-amber-100 text-amber-700' },
-  ATTENDANCE: { icon: <CheckCircle className="w-3.5 h-3.5" />,  label: 'Asistencia',      labelEN: 'Attendance',     color: 'bg-emerald-100 text-emerald-700' },
-  INTERVIEW:  { icon: <Mic className="w-3.5 h-3.5" />,          label: 'Entrevista Oral', labelEN: 'Oral Interview', color: 'bg-rose-100 text-rose-700' },
+  QUIZ:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Quiz',              labelEN: 'Quiz',              color: 'bg-blue-100 text-blue-700' },
+  EVIDENCE:   { icon: <FileUp className="w-3.5 h-3.5" />,       label: 'Entrega de Evidencia', labelEN: 'Evidence Submission', color: 'bg-purple-100 text-purple-700' },
+  EXAM:       { icon: <ClipboardList className="w-3.5 h-3.5" />, label: 'Examen/Prueba',     labelEN: 'Exam/Test',         color: 'bg-amber-100 text-amber-700' },
+  ATTENDANCE: { icon: <CheckCircle className="w-3.5 h-3.5" />,  label: 'Asistencia',         labelEN: 'Attendance',        color: 'bg-emerald-100 text-emerald-700' },
+  INTERVIEW:  { icon: <Mic className="w-3.5 h-3.5" />,          label: 'Entrevista Oral',    labelEN: 'Oral Interview',    color: 'bg-rose-100 text-rose-700' },
+  PROYECTO:   { icon: <FolderKanban className="w-3.5 h-3.5" />, label: 'Proyecto',           labelEN: 'Project',           color: 'bg-indigo-100 text-indigo-700' },
 };
+
+// QUIZ hidden from manual selection in section 4 (Evaluación) — Trello DmPpbrff,
+// 2026-09-02 21:48. Existing courses with a QUIZ item still render/save fine
+// (EVAL_TYPE_META keeps the entry); this only affects what a user can newly pick.
+export const SELECTABLE_EVAL_TYPES: EvalType[] = ['EVIDENCE', 'EXAM', 'INTERVIEW', 'PROYECTO'];
 
 export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
   const mk = (id: string, t: EvalType, name: string, nameEN: string, weight: number, count = 1, locked = false): EvalItem =>
