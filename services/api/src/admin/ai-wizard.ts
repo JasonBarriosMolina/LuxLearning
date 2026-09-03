@@ -41,14 +41,23 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
   if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-    const { courseTitle, evalName, syllabusInput = '' } = body as any;
+    const { courseTitle, evalName, syllabusInput = '', weekTopics = '' } = body as any;
     if (!courseTitle || !evalName) return badRequest('courseTitle y evalName son requeridos');
     const syllabusSnippet = (syllabusInput as string).slice(0, 400);
+    // Trello DmPpbrff, 2026-09-02 21:43/21:48 (Mack): "genera una entrega muy
+    // parecida [a la anterior]... abarca los temas de cada semana." Without a
+    // week anchor every deliverable of the same category got the same generic
+    // prompt (course + evalName only), so Bedrock produced near-duplicates.
+    // When the frontend resolves which week a specific due date falls in, it
+    // sends that week's topics here so each deliverable is grounded in
+    // different content.
+    const weekSnippet = (weekTopics as string).trim().slice(0, 300);
     const prompt = `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega (evidence) en un curso universitario.
 
 Curso: ${courseTitle}
 Nombre de la evaluación: ${evalName}
-${syllabusSnippet ? `Extracto del temario:\n${syllabusSnippet}` : ''}
+${weekSnippet ? `Temas específicos de la semana en que se entrega esta evaluación (la instrucción DEBE enfocarse en estos temas, no en el curso completo):\n${weekSnippet}` : ''}
+${syllabusSnippet ? `Extracto del temario general del curso (referencia):\n${syllabusSnippet}` : ''}
 
 Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
 {"instruction":"<1-3 oraciones de instrucción para el estudiante, específica y accionable>"}
