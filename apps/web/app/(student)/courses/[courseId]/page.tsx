@@ -325,9 +325,11 @@ export default function CoursePage() {
               <tbody className="divide-y divide-gray-50">
                 {(() => {
                   const today = new Date();
-                  const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', INTERVIEW: 'bg-purple-100 text-purple-700' };
+                  const typeColor: Record<string, string> = { QUIZ: 'bg-amber-100 text-amber-700', EVIDENCE: 'bg-orange-100 text-orange-700', PROYECTO: 'bg-indigo-100 text-indigo-700', INTERVIEW: 'bg-purple-100 text-purple-700' };
                   const getGradeForEvent = (ev: any): number | null => {
-                    if (ev.type !== 'EVIDENCE') return null;
+                    // PROYECTO (2026-09-03, code-review finding): reuses the EVIDENCE
+                    // submission/grading shape 1:1 — same graded-submission average.
+                    if (ev.type !== 'EVIDENCE' && ev.type !== 'PROYECTO') return null;
                     const mods = ev.moduleId
                       ? [course.modules?.find((m: any) => m.id === ev.moduleId)]
                       : (course.modules ?? []);
@@ -373,7 +375,9 @@ export default function CoursePage() {
                         </Link>
                       );
                     }
-                    if (ev.type === 'EVIDENCE') return (
+                    // PROYECTO (2026-09-03, code-review finding): reuses EVIDENCE's
+                    // submission flow 1:1 — same EvidenceCard, same action button.
+                    if (ev.type === 'EVIDENCE' || ev.type === 'PROYECTO') return (
                       <Link href={modPath}>
                         <Button size="sm" variant="secondary">{t.courseGrades.submit}</Button>
                       </Link>

@@ -41,7 +41,7 @@ export const courseEs = {
     submit: 'Entregar',
     present: 'Presentar',
     goToQuiz: 'Ir al quiz',
-    typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidencia', INTERVIEW: 'Entrevista', ATTENDANCE: 'Asistencia' } as Record<string, string>,
+    typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidencia', PROYECTO: 'Proyecto', INTERVIEW: 'Entrevista', ATTENDANCE: 'Asistencia' } as Record<string, string>,
   },
   evidenceCard: {
     defaultHint: 'Sube tu entrega para esta evaluación.',
@@ -204,7 +204,7 @@ export const courseEn = {
     submit: 'Submit',
     present: 'Present',
     goToQuiz: 'Take quiz',
-    typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidence', INTERVIEW: 'Interview', ATTENDANCE: 'Attendance' } as Record<string, string>,
+    typeNames: { QUIZ: 'Quiz', EVIDENCE: 'Evidence', PROYECTO: 'Project', INTERVIEW: 'Interview', ATTENDANCE: 'Attendance' } as Record<string, string>,
   },
   evidenceCard: {
     defaultHint: 'Upload your submission for this evaluation.',

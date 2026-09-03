@@ -388,9 +388,13 @@ export default function ModulePage() {
       </div>
       )}
 
-      {/* Evidence submissions — one card per EVIDENCE eval event linked to this module */}
+      {/* Evidence/Project submissions — one card per EVIDENCE or PROYECTO eval event
+          linked to this module. PROYECTO added 2026-09-03 (code-review finding): the
+          wizard editor already treats it like EVIDENCE (same instructions shape), but
+          this filter still only matched EVIDENCE, so a module-scoped PROYECTO item had
+          no submission card at all. */}
       {course?.evaluationEvents
-        ?.filter((e: any) => e.type === 'EVIDENCE' && e.moduleId === moduleId)
+        ?.filter((e: any) => (e.type === 'EVIDENCE' || e.type === 'PROYECTO') && e.moduleId === moduleId)
         .map((e: any) => (
           <EvidenceCard
             key={e.id}
