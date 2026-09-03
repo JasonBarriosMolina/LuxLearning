@@ -117,10 +117,15 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
 
   let dayIndex = 0;
   for (const course of courses) {
-    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
     const reflectionPlannedModuleIds = new Set(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+        .map((e: any) => e.moduleId as string),
+    );
+    const quizPlannedModuleIds = new Set(
+      ((course as any).evaluationEvents ?? [])
+        .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
         .map((e: any) => e.moduleId as string),
     );
     for (const mod of (course as any).modules) {
@@ -129,6 +134,9 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
         weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
         courseStartDate: (course as any).startDate,
         reflectionPlannedModuleIds,
+        completedLessonIds,
+        quizPlannedModuleIds,
+        quizPassedModuleIds: passedModuleIds, // already computed above — avoids a duplicate hasPassedQuiz DB call
       });
       if (!unlocked) break;
 

@@ -99,11 +99,26 @@ export const handler = async (event: Event) => {
           courses.map(async (course) => {
             const progress = await getLessonProgress(userId, course.id);
             const completedLessonIds = new Set(progress.map((p) => p.lessonId));
-            const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+            const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l) => l.id) }));
             const reflectionPlannedModuleIds = new Set(
               ((course as any).evaluationEvents ?? [])
                 .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
                 .map((e: any) => e.moduleId as string),
+            );
+            const quizPlannedModuleIds = new Set(
+              ((course as any).evaluationEvents ?? [])
+                .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
+                .map((e: any) => e.moduleId as string),
+            );
+            // Computed once here (instead of per-module inline) so isModuleUnlocked's
+            // previous-module quiz check below can reuse it instead of re-querying
+            // DynamoDB for a module whose quiz status this same request already fetched
+            // (code-review finding, 2026-09-03).
+            const quizPassedByModuleId = new Map(
+              await Promise.all(course.modules.map(async (m) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
+            );
+            const quizPassedModuleIds = new Set(
+              [...quizPassedByModuleId].filter(([, passed]) => passed).map(([id]) => id),
             );
 
             const enrichedModules = await Promise.all(
@@ -112,9 +127,12 @@ export const handler = async (event: Event) => {
                   weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
                   courseStartDate: course.startDate,
                   reflectionPlannedModuleIds,
+                  completedLessonIds,
+                  quizPlannedModuleIds,
+                  quizPassedModuleIds,
                 });
                 const reflection = await getReflection(userId, mod.id);
-                const quizPassed = await hasPassedQuiz(userId, mod.id);
+                const quizPassed = quizPassedByModuleId.get(mod.id) ?? false;
                 const t = translations?.get(`module#${mod.id}`);
                 return {
                   ...mod,
@@ -181,10 +199,15 @@ export const handler = async (event: Event) => {
           if (!enrolled.includes(courseId)) return forbidden('No estás inscrito en este curso');
         }
         // Enrich with unlock status
-        const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order }));
+        const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l) => l.id) }));
         const reflectionPlannedModuleIds = new Set(
           (course.evaluationEvents ?? [])
             .filter((e) => e.type === 'REFLECTION' && e.moduleId)
+            .map((e) => e.moduleId as string),
+        );
+        const quizPlannedModuleIds = new Set(
+          (course.evaluationEvents ?? [])
+            .filter((e) => e.type === 'QUIZ' && e.moduleId)
             .map((e) => e.moduleId as string),
         );
         const lessonProgress = await getLessonProgress(userId, courseId);
@@ -193,14 +216,27 @@ export const handler = async (event: Event) => {
         // gate the dashboard's "Presentar"/"Ir al quiz" buttons on the class actually being
         // done, same as the module page's blockingStep (Trello DmPpbrff item 3).
         const myClassSessions = await listMyClassSessionsForCourse(userId, courseId).catch(() => []);
+        // Computed once here (instead of per-module inline) so isModuleUnlocked's
+        // previous-module quiz check below can reuse it instead of re-querying
+        // DynamoDB for a module whose quiz status this same request already fetched
+        // (code-review finding, 2026-09-03).
+        const quizPassedByModuleId = new Map(
+          await Promise.all(course.modules.map(async (m) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
+        );
+        const quizPassedModuleIds = new Set(
+          [...quizPassedByModuleId].filter(([, passed]) => passed).map(([id]) => id),
+        );
         const enriched = await Promise.all(
           course.modules.map(async (mod) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
               weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
               courseStartDate: course.startDate,
               reflectionPlannedModuleIds,
+              completedLessonIds,
+              quizPlannedModuleIds,
+              quizPassedModuleIds,
             });
-            const quizPassed = await hasPassedQuiz(userId, mod.id);
+            const quizPassed = quizPassedByModuleId.get(mod.id) ?? false;
             const reflection = await getReflection(userId, mod.id);
             const mt = translations?.get(`module#${mod.id}`);
 

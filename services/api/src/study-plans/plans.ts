@@ -101,10 +101,15 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
 
   for (const course of courses) {
     promptLines.push(`Curso: ${course.title}`);
-    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order }));
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
     const reflectionPlannedModuleIds = new Set(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+        .map((e: any) => e.moduleId as string),
+    );
+    const quizPlannedModuleIds = new Set(
+      ((course as any).evaluationEvents ?? [])
+        .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
         .map((e: any) => e.moduleId as string),
     );
 
@@ -114,6 +119,9 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
         weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
         courseStartDate: (course as any).startDate,
         reflectionPlannedModuleIds,
+        completedLessonIds,
+        quizPlannedModuleIds,
+        quizPassedModuleIds: passedModuleIds, // already computed above — avoids a duplicate hasPassedQuiz DB call
       });
       if (!unlocked) break; // Sequential lock — all further modules are also locked
 
