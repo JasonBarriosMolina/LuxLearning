@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest*)",
+      "Bash(npx tsc --noEmit*)",
+      "Bash(npm run build)",
+      "Bash(npm test)",
+      "Bash(npm run test)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git add *)",
+      "Bash(git commit -m *)",
+      "Bash(git push origin test)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "PowerShell(.\\scripts\\deploy-test.ps1 *)",
+      "PowerShell(cd D:\\InHouse\\Lux; .\\scripts\\deploy-test.ps1 *)",
+      "Bash(npx prisma generate*)",
+      "Bash(aws secretsmanager get-secret-value --secret-id lux/neon-db-test*)",
+      "Bash(aws secretsmanager get-secret-value --secret-id lux/neon-db-staging*)",
+      "Bash(aws secretsmanager list-secrets*)",
+      "Bash(aws lambda get-policy*)",
+      "Bash(aws lambda list-functions*)",
+      "Bash(aws lambda get-function-configuration*)",
+      "Bash(aws apigatewayv2 get-routes*)",
+      "Bash(aws apigatewayv2 get-integrations*)",
+      "Bash(curl -s https://api.trello.com/*)",
+      "mcp__claude-in-chrome__navigate",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__claude-in-chrome__read_page",
+      "mcp__claude-in-chrome__find",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__codegraph__codegraph_context",
+      "mcp__codegraph__codegraph_search",
+      "mcp__codegraph__codegraph_files"
+    ]
+  }
+}
