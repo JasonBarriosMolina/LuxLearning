@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripMarkup, applyHighlightsToHtml } from './page';
+import { stripMarkup, applyHighlightsToHtml } from './lessonHighlights';
 
 // Trello DmPpbrff, 2026-09-04 (Mack) — two bugs in the same "Puntos clave"/highlight area.
 

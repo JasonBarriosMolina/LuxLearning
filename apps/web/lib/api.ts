@@ -68,6 +68,16 @@ export const api = {
     favorites: () => request<any>('/lessons/favorites'),
     toggleFavorite: (body: { type: string; id: string; title: string; courseId?: string; moduleId?: string }) =>
       request<any>('/lessons/favorites/toggle', { method: 'POST', body: JSON.stringify(body) }),
+    // Student notes (Trello DmPpbrff, 2026-09-04) — server-persisted, tags + search,
+    // and "Consultar a Lux Mentor" summarizes highlighted passages into one.
+    notes: (contextType: 'lesson' | 'class', contextId: string) =>
+      request<any>(`/lessons/notes?contextType=${contextType}&contextId=${encodeURIComponent(contextId)}`),
+    saveNote: (body: { contextType: 'lesson' | 'class'; contextId: string; text: string; tags?: string[]; noteId?: string }) =>
+      request<any>('/lessons/notes', { method: 'POST', body: JSON.stringify(body) }),
+    deleteNote: (body: { contextType: 'lesson' | 'class'; contextId: string; noteId: string }) =>
+      request<any>('/lessons/notes/delete', { method: 'POST', body: JSON.stringify(body) }),
+    summarizeHighlights: (body: { contextId: string; highlights: string[]; lessonTitle?: string }) =>
+      request<any>('/lessons/notes/summarize-highlights', { method: 'POST', body: JSON.stringify(body) }),
     transcript: (lessonId: string, youtubeId: string) =>
       request<any>(`/lessons/transcript?lessonId=${lessonId}&youtubeId=${youtubeId}`),
     chat: (body: { lessonId: string; lessonTitle?: string; lessonContent?: string; moduleTitle?: string; history: { role: string; content: string }[]; message: string; lang?: string }) =>

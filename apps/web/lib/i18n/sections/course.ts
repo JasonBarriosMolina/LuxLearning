@@ -167,6 +167,21 @@ export const courseEs = {
     nextDisabledHint: 'Marca esta lección como completada para continuar',
     backToModule: 'Volver al módulo',
   },
+  notesPanel: {
+    title: 'Mis notas',
+    empty: 'Todavía no tenés notas en esta lección.',
+    addPlaceholder: 'Escribí una nota...',
+    add: 'Agregar nota',
+    searchPlaceholder: 'Buscar en tus notas...',
+    noResults: 'No hay notas que coincidan con tu búsqueda.',
+    delete: 'Eliminar',
+    tagsPlaceholder: 'Etiquetas (separadas por coma)',
+    summarizeHighlights: 'Consultar a Lux Mentor',
+    summarizing: 'Generando resumen...',
+    summaryTag: 'resumen',
+    noHighlightsYet: 'Resaltá texto en la lección primero para poder pedir un resumen.',
+    summarizeError: 'No se pudo generar el resumen. Intenta de nuevo.',
+  },
 };
 
 export const courseEn = {
@@ -326,5 +341,20 @@ export const courseEn = {
     gateHint: 'Review all lesson content before continuing',
     nextDisabledHint: 'Mark this lesson as complete to continue',
     backToModule: 'Back to module',
+  },
+  notesPanel: {
+    title: 'My notes',
+    empty: "You don't have any notes on this lesson yet.",
+    addPlaceholder: 'Write a note...',
+    add: 'Add note',
+    searchPlaceholder: 'Search your notes...',
+    noResults: 'No notes match your search.',
+    delete: 'Delete',
+    tagsPlaceholder: 'Tags (comma-separated)',
+    summarizeHighlights: 'Ask Lux Mentor',
+    summarizing: 'Generating summary...',
+    summaryTag: 'summary',
+    noHighlightsYet: 'Highlight some text in the lesson first to request a summary.',
+    summarizeError: 'Could not generate the summary. Please try again.',
   },
 };
