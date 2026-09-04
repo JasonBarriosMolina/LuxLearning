@@ -49,3 +49,28 @@ export function musicDuckGain(params: { isNarrationPlaying: boolean; msIntoSlide
 export function canScrub(hasCompletedBefore: boolean): boolean {
   return hasCompletedBefore;
 }
+
+export interface SpeechMark { time: number; value: string; }
+
+/** Close captions (Trello DmPpbrff, 2026-09-04 — Mack: "No hay close captions en los
+ *  carrouseles"): reuses the same Polly sentence-level speech marks already generated
+ *  and stored on the Lesson row for slide timing (carousel-worker.ts) — no separate
+ *  caption generation needed, `value` is the exact narration text. A mark has no
+ *  explicit end, so the active caption is whichever mark's `time` is the latest one
+ *  at/before currentMs, until the next mark's `time` takes over. */
+export function findActiveCaptionIndex(marks: SpeechMark[], currentMs: number): number {
+  if (marks.length === 0) return -1;
+  let idx = -1;
+  for (let i = 0; i < marks.length; i++) {
+    if (marks[i]!.time <= currentMs) idx = i; else break;
+  }
+  return idx;
+}
+
+/** Post-class transcript (Trello DmPpbrff, 2026-09-04 — Mack: "Ni transcripción del
+ *  texto post clase"): the full narration, reconstructed by joining every speech
+ *  mark's text in order — the same text Polly actually spoke, not the abbreviated
+ *  on-screen bullets. */
+export function buildCarouselTranscript(marks: SpeechMark[]): string {
+  return marks.map((m) => m.value.trim()).filter(Boolean).join(' ');
+}

@@ -465,6 +465,7 @@ export default function LessonPage() {
           lessonId={lessonId}
           audioUrl={lesson.audioUrl}
           slides={lesson.carouselSlides ?? []}
+          speechMarks={lesson.speechMarks ?? []}
           pdfRecapUrl={lesson.pdfRecapUrl ?? null}
           hasCompletedBefore={completed}
           onCompleted={() => setCompleted(true)}

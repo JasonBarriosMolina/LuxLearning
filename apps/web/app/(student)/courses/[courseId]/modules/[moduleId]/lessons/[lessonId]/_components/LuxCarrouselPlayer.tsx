@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight } from 'lucide-react';
+import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight, Captions, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
-import { findActiveSlideIndex, slideProgress, canScrub, type CarouselSlide } from './LuxCarrouselPlayer.helpers';
+import {
+  findActiveSlideIndex, slideProgress, canScrub, findActiveCaptionIndex, buildCarouselTranscript,
+  type CarouselSlide, type SpeechMark,
+} from './LuxCarrouselPlayer.helpers';
 
 interface Props {
   courseId: string;
@@ -12,6 +15,11 @@ interface Props {
   lessonId: string;
   audioUrl: string;
   slides: CarouselSlide[];
+  // Polly sentence-level speech marks, same data used to time the slides
+  // (carousel-worker.ts) — reused here for close captions + the post-class
+  // transcript (Trello DmPpbrff, 2026-09-04 — Mack: "No hay close captions en los
+  // carrouseles... Ni transcripción del texto post clase").
+  speechMarks?: SpeechMark[];
   pdfRecapUrl: string | null;
   hasCompletedBefore: boolean;
   onCompleted: () => void;
@@ -24,7 +32,7 @@ interface Props {
 // Lux Carrousel player (Trello N1bbWdz0, 2026-08-30) — student-facing playback of a
 // pre-generated narrated slide sequence. First view is locked (no scrub/skip, must
 // finish once); later views unlock free navigation + the "Lux Recap" PDF download.
-export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, pdfRecapUrl: initialPdfRecapUrl, hasCompletedBefore, onCompleted, nextLessonId, nextLessonTitle }: Props) {
+export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, slides, speechMarks = [], pdfRecapUrl: initialPdfRecapUrl, hasCompletedBefore, onCompleted, nextLessonId, nextLessonTitle }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -32,6 +40,10 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   const [ended, setEnded] = useState(hasCompletedBefore);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const completedRef = useRef(false);
+  // Close captions — off by default like any standard video player, toggled via the CC
+  // button. Post-class transcript — collapsed by default, shown once the carousel ends.
+  const [ccEnabled, setCcEnabled] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Trello DmPpbrff, 2026-09-02 22:12 (Mack): "si ya el carrusel se vio... el botón
   // de continuar debería aparecer automáticamente" — it didn't, because the parent
@@ -73,6 +85,9 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   const activeIdx = findActiveSlideIndex(slides, currentMs);
   const activeSlide = activeIdx >= 0 ? slides[activeIdx] : undefined;
   const progress = slideProgress(activeSlide, currentMs);
+  const activeCaptionIdx = findActiveCaptionIndex(speechMarks, currentMs);
+  const activeCaption = activeCaptionIdx >= 0 ? speechMarks[activeCaptionIdx]!.value : null;
+  const transcript = buildCarouselTranscript(speechMarks);
   // Ken Burns: slow pan+zoom across the slide's own duration, direction alternates per slide.
   const kenBurnsScale = 1 + progress * 0.08;
   const kenBurnsTranslate = (activeIdx % 2 === 0 ? 1 : -1) * progress * 2;
@@ -123,6 +138,15 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
             style={{ transform: `scale(${kenBurnsScale}) translateX(${kenBurnsTranslate}%)` }}
           />
         )}
+        {/* Close captions (Trello DmPpbrff, 2026-09-04) — sits above the always-on
+            title/bullets overlay below, so the two never occupy the same line. */}
+        {ccEnabled && activeCaption && (
+          <div className="absolute inset-x-0 bottom-24 flex justify-center px-4 pointer-events-none z-10">
+            <p className="max-w-[90%] text-center text-white text-sm md:text-base font-medium bg-black/75 rounded-lg px-3 py-1.5">
+              {activeCaption}
+            </p>
+          </div>
+        )}
         {/* Text overlay — Capa 2: 100% legible native HTML/CSS, not AI-drawn */}
         {activeSlide && (
           <div className="absolute inset-x-0 bottom-0 p-5 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
@@ -140,14 +164,30 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
             <Lock className="w-3 h-3" /> Primera vista
           </div>
         )}
-        {/* Fullscreen toggle (Trello DmPpbrff, 2026-09-01 00:57) */}
-        <button
-          onClick={toggleFullscreen}
-          className="absolute top-3 right-3 flex items-center justify-center w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
-          title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-        >
-          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-        </button>
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {/* Close captions toggle (Trello DmPpbrff, 2026-09-04 — Mack: "No hay close
+              captions en los carrouseles") */}
+          {speechMarks.length > 0 && (
+            <button
+              onClick={() => setCcEnabled((v) => !v)}
+              className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                ccEnabled ? 'bg-cta-from text-white' : 'bg-black/50 text-white hover:bg-black/70'
+              }`}
+              title={ccEnabled ? 'Ocultar subtítulos' : 'Mostrar subtítulos'}
+              aria-pressed={ccEnabled}
+            >
+              <Captions className="w-4 h-4" />
+            </button>
+          )}
+          {/* Fullscreen toggle (Trello DmPpbrff, 2026-09-01 00:57) */}
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+            title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+          >
+            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
       {/* Controls */}
@@ -172,6 +212,26 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
 
       {ended && (
         <div className="bg-surface px-4 py-3 space-y-3">
+          {/* Post-class transcript (Trello DmPpbrff, 2026-09-04 — Mack: "Ni
+              transcripción del texto post clase"): available immediately, no async
+              wait — unlike the VAPI class transcript, this is just the already-stored
+              Polly speech marks joined back into text, nothing to generate on demand. */}
+          {transcript && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowTranscript((v) => !v)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-charcoal hover:bg-surface/60 transition-colors"
+              >
+                <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Transcripción de la clase</span>
+                {showTranscript ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+              {showTranscript && (
+                <p className="px-3 pb-3 text-sm text-gray-600 leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto">
+                  {transcript}
+                </p>
+              )}
+            </div>
+          )}
           <div>
             {pdfRecapUrl ? (
               <a

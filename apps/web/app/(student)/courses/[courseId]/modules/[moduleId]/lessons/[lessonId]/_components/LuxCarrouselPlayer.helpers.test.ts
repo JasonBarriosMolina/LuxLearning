@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { findActiveSlideIndex, slideProgress, musicDuckGain, canScrub, type CarouselSlide } from './LuxCarrouselPlayer.helpers';
+import {
+  findActiveSlideIndex, slideProgress, musicDuckGain, canScrub,
+  findActiveCaptionIndex, buildCarouselTranscript, type CarouselSlide, type SpeechMark,
+} from './LuxCarrouselPlayer.helpers';
 
 const slides: CarouselSlide[] = [
   { order: 1, onScreenText: { title: 'A', bullets: [] }, imageUrl: null, startMs: 0, endMs: 1000 },
@@ -70,5 +73,52 @@ describe('canScrub — first-view lock', () => {
 
   it('unlocks after the carousel has been completed once', () => {
     expect(canScrub(true)).toBe(true);
+  });
+});
+
+const marks: SpeechMark[] = [
+  { time: 0, value: 'Primera frase.' },
+  { time: 1200, value: 'Segunda frase.' },
+  { time: 3400, value: 'Tercera frase.' },
+];
+
+describe('findActiveCaptionIndex', () => {
+  it('returns -1 for an empty marks list', () => {
+    expect(findActiveCaptionIndex([], 500)).toBe(-1);
+  });
+
+  it('returns -1 before the first mark', () => {
+    expect(findActiveCaptionIndex(marks, -1)).toBe(-1);
+  });
+
+  it('finds the first mark at its exact start time', () => {
+    expect(findActiveCaptionIndex(marks, 0)).toBe(0);
+  });
+
+  it('stays on the first mark until the second one starts', () => {
+    expect(findActiveCaptionIndex(marks, 1199)).toBe(0);
+  });
+
+  it('switches to the second mark at its exact start time', () => {
+    expect(findActiveCaptionIndex(marks, 1200)).toBe(1);
+  });
+
+  it('stays on the last mark for any time past its start', () => {
+    expect(findActiveCaptionIndex(marks, 999999)).toBe(2);
+  });
+});
+
+describe('buildCarouselTranscript', () => {
+  it('returns an empty string for no marks', () => {
+    expect(buildCarouselTranscript([])).toBe('');
+  });
+
+  it('joins every mark\'s text in order with a single space', () => {
+    expect(buildCarouselTranscript(marks)).toBe('Primera frase. Segunda frase. Tercera frase.');
+  });
+
+  it('drops empty/whitespace-only marks without leaving double spaces', () => {
+    const withBlank: SpeechMark[] = [{ time: 0, value: 'Uno.' }, { time: 100, value: '   ' }, { time: 200, value: 'Dos.' }];
+    expect(buildCarouselTranscript(withBlank)).toBe('Uno. Dos.');
   });
 });

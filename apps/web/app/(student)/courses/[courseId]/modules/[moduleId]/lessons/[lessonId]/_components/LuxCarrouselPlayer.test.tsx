@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { LuxCarrouselPlayer } from './LuxCarrouselPlayer';
 
 // Trello DmPpbrff, 2026-09-02 22:12 (Mack): "si ya el carrusel se vio y lo vio el
@@ -16,6 +16,7 @@ vi.mock('next/link', () => ({
 vi.mock('lucide-react', () => ({
   Lock: () => null, Download: () => null, Play: () => null, Pause: () => null,
   Maximize: () => null, Minimize: () => null, ChevronRight: () => null,
+  Captions: () => null, FileText: () => null, ChevronDown: () => null, ChevronUp: () => null,
 }));
 vi.mock('@/lib/api', () => ({ api: { lessons: { carouselRecap: vi.fn() } } }));
 
@@ -43,5 +44,51 @@ describe('LuxCarrouselPlayer — auto-shows "Siguiente" when hasCompletedBefore 
   it('does not show the CTA on a genuine first view that has not ended', () => {
     render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore={false} />);
     expect(screen.queryByText(/Siguiente lección/)).not.toBeInTheDocument();
+  });
+});
+
+// Trello DmPpbrff, 2026-09-04 (Mack): "No hay close captions en los carrouseles...
+// Ni transcripción del texto post clase." Both reuse the same Polly speech marks
+// already stored for slide timing — no new generation step.
+const speechMarks = [
+  { time: 0, value: 'Primera frase de la narración.' },
+  { time: 2000, value: 'Segunda frase de la narración.' },
+];
+
+describe('LuxCarrouselPlayer — close captions toggle', () => {
+  it('does not render a CC button when there are no speech marks', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={[]} />);
+    expect(screen.queryByTitle('Mostrar subtítulos')).not.toBeInTheDocument();
+  });
+
+  it('renders a CC button when speech marks are available, off by default', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={speechMarks} />);
+    const btn = screen.getByTitle('Mostrar subtítulos');
+    expect(btn).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('toggles aria-pressed and title when clicked', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={speechMarks} />);
+    fireEvent.click(screen.getByTitle('Mostrar subtítulos'));
+    expect(screen.getByTitle('Ocultar subtítulos')).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('LuxCarrouselPlayer — post-class transcript', () => {
+  it('does not render a transcript section when there are no speech marks', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={[]} />);
+    expect(screen.queryByText('Transcripción de la clase')).not.toBeInTheDocument();
+  });
+
+  it('renders a collapsed transcript toggle once the carousel has ended', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={speechMarks} />);
+    expect(screen.getByText('Transcripción de la clase')).toBeInTheDocument();
+    expect(screen.queryByText(/Primera frase de la narración/)).not.toBeInTheDocument();
+  });
+
+  it('expands to show the full joined transcript text when clicked', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={speechMarks} />);
+    fireEvent.click(screen.getByText('Transcripción de la clase'));
+    expect(screen.getByText('Primera frase de la narración. Segunda frase de la narración.')).toBeInTheDocument();
   });
 });
