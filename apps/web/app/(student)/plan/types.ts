@@ -4,6 +4,9 @@ export interface PlanItem {
   title: string;
   description?: string;
   courseId?: string;
+  // Trello Nk0XDBvJ, 2026-08-18 (Mack): grouping/badging by course needs the title as
+  // its own field — used by WeeklyGrid's course headers and PlanCard's course badge.
+  courseTitle?: string;
   moduleId?: string;
   lessonId?: string;
   pinned: boolean;
