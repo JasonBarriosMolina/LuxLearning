@@ -599,6 +599,42 @@ describe('ai-wizard/save — multi-deliverable EVIDENCE split', () => {
     expect(calls.map((d: any) => d.order)).toEqual([0, 1, 2]);
   });
 
+  // Trello DmPpbrff, 2026-09-04 (Mack): multi-session PROYECTO ("4 semanas... 4
+  // entregables lógicos") reuses this same split — the frontend count/instruction
+  // editor already worked for PROYECTO, this backend split was EVIDENCE-only.
+  it('also splits a multi-session PROYECTO the same way as EVIDENCE', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const evalCreateMock = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      course: { create: vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null }) },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+      evaluationEvent: { create: evalCreateMock },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A' }],
+        weeklyPlan: [], evaluationItems: [{
+          name: 'Proyecto Final', nameEN: 'Final Project', type: 'PROYECTO', weight: 40, count: 4,
+          dueDates: ['2026-09-10', '2026-09-17', '2026-09-24', '2026-10-01'],
+          instructionsByIndex: ['Sesión 1', 'Sesión 2', 'Sesión 3', 'Sesión 4'],
+        }],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    expect(evalCreateMock).toHaveBeenCalledTimes(4);
+    const calls = evalCreateMock.mock.calls.map((c: any[]) => c[0].data);
+    expect(calls.map((d: any) => d.weight)).toEqual([10, 10, 10, 10]);
+    expect(calls.map((d: any) => d.name)).toEqual(['Proyecto Final 1', 'Proyecto Final 2', 'Proyecto Final 3', 'Proyecto Final 4']);
+    expect(calls.map((d: any) => d.instructions)).toEqual(['Sesión 1', 'Sesión 2', 'Sesión 3', 'Sesión 4']);
+    expect(calls.every((d: any) => d.type === 'PROYECTO')).toBe(true);
+  });
+
   it('keeps the single-row behavior for count===1 EVIDENCE (unchanged)', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const evalCreateMock = vi.fn().mockResolvedValue({});
@@ -743,6 +779,44 @@ describe('ai-wizard/generate-instruction — week-grounded prompt', () => {
 
     const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
     expect(promptSent).toContain('naturaleza TEÓRICA');
+  });
+
+  // Multi-session PROYECTO (Trello DmPpbrff, 2026-09-04 — Mack: "4 semanas... 4
+  // entregables lógicos... cada uno debe ser un paso a paso secuencial").
+  it('includes the session-arc hint when sessionCount > 1, naming this session\'s position', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Propone el tema.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Barroco', evalName: 'Proyecto Final 1', isProject: true, courseType: 'TEORICO', sessionIndex: 1, sessionCount: 4 },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).toContain('SESIÓN 1 de 4');
+    expect(promptSent).toContain('enfocada SOLO en el alcance de esta sesión específica');
+  });
+
+  it('omits the session-arc hint when sessionCount is 1 or absent (single-session project, unchanged)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const ctxModule = await import('../../admin/ctx');
+    const bedrockMock = vi.spyOn(ctxModule, 'invokeBedrockForJson').mockResolvedValue({ instruction: 'Produce X.' });
+
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/generate-instruction',
+      body: { courseTitle: 'Curso', evalName: 'Proyecto Final', isProject: true, courseType: 'PROYECTOS' },
+    });
+
+    await handleAIWizard(ctx as any);
+
+    const promptSent = bedrockMock.mock.calls[0]?.[0] as string;
+    expect(promptSent).not.toContain('SESIÓN');
+    expect(promptSent).toContain('que abarque el curso completo');
   });
 
   it('uses the regular week-grounded prompt (not the project one) when isProject is false', async () => {
