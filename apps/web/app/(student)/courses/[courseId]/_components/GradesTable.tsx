@@ -8,6 +8,21 @@ import { Badge } from '@/components/ui/Badge';
 import { useLanguage } from '@/lib/i18n';
 import { getModulePrereq, type BlockingStep } from '../modulePrereq';
 
+// Trello DmPpbrff, 2026-09-04 (Mack): "en sistema de evaluación, debe poder verse el
+// número de semana correspondiente a la fecha del entregable" — same week math the
+// admin-side WeekAwareDatePicker already uses (course.startDate + 7-day buckets),
+// inlined here rather than imported across the admin/student route-group boundary for
+// one small pure function.
+function weekNumberForDate(dateStr: string | null | undefined, courseStartDate: string | null | undefined): number | null {
+  if (!dateStr || !courseStartDate) return null;
+  const date = new Date(dateStr);
+  const start = new Date(courseStartDate);
+  if (isNaN(date.getTime()) || isNaN(start.getTime())) return null;
+  const diffDays = Math.floor((date.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+  if (diffDays < 0) return null;
+  return Math.floor(diffDays / 7) + 1;
+}
+
 // Extracted out of page.tsx (2026-09-03) — was pushing the parent page past the
 // 500-line file-size limit, and this table + its non-summative split is a
 // self-contained unit with no state the parent needs.
@@ -102,7 +117,15 @@ export function GradesTable({ course, courseId }: { course: any; courseId: strin
         </td>
         <td className="py-2.5 px-4 text-center text-gray-600">{t.courseGrades.weight(ev.weight)}</td>
         <td className="py-2.5 px-4 text-center text-gray-500 text-xs whitespace-nowrap">
-          {ev.dueDate ? new Date(ev.dueDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-ES', { day: '2-digit', month: 'short' }) : '—'}
+          {ev.dueDate ? (
+            <>
+              {new Date(ev.dueDate).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-ES', { day: '2-digit', month: 'short' })}
+              {(() => {
+                const wk = weekNumberForDate(ev.dueDate, course.startDate);
+                return wk != null ? <span className="text-gray-400"> · {lang === 'en' ? 'W' : 'S'}{wk}</span> : null;
+              })()}
+            </>
+          ) : '—'}
         </td>
         <td className="py-2.5 px-4 text-right">
           {grade !== null

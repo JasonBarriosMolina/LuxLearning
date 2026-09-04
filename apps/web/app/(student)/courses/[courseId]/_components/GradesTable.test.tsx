@@ -49,3 +49,36 @@ describe('GradesTable — summative / non-summative split', () => {
     expect(screen.queryByText('Quiz Extra')).toBeNull();
   });
 });
+
+// Trello DmPpbrff, 2026-09-04 (Mack): "en sistema de evaluación, debe poder verse el
+// número de semana correspondiente a la fecha del entregable."
+describe('GradesTable — week number next to the due date', () => {
+  function makeCourseWithDates(startDate: string, evaluationEvents: any[]) {
+    return { modules: [], isCourseLocked: false, startDate, evaluationEvents };
+  }
+
+  it('shows the week number derived from the course startDate', () => {
+    render(<GradesTable
+      course={makeCourseWithDates('2026-01-05', [{ id: 'e1', type: 'EXAM', name: 'Examen 1', weight: 40, dueDate: '2026-01-19' }])}
+      courseId="c1"
+    />);
+    // 2026-01-19 is 14 days after 2026-01-05 -> week 3
+    expect(screen.getByText(/S3/)).toBeTruthy();
+  });
+
+  it('renders no week marker when the course has no startDate', () => {
+    render(<GradesTable
+      course={{ modules: [], isCourseLocked: false, evaluationEvents: [{ id: 'e1', type: 'EXAM', name: 'Examen 1', weight: 40, dueDate: '2026-01-19' }] }}
+      courseId="c1"
+    />);
+    expect(screen.queryByText(/S\d/)).toBeNull();
+  });
+
+  it('renders no week marker when the event has no dueDate', () => {
+    render(<GradesTable
+      course={makeCourseWithDates('2026-01-05', [{ id: 'e1', type: 'EXAM', name: 'Examen 1', weight: 40 }])}
+      courseId="c1"
+    />);
+    expect(screen.queryByText(/S\d/)).toBeNull();
+  });
+});
