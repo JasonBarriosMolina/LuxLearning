@@ -363,7 +363,7 @@ export default function QuizPage() {
           <p className="font-heading font-semibold text-lg text-charcoal leading-snug">
             {currentQuestion.text}
           </p>
-          <TextToSpeechButton key={currentQ} text={currentQuestion.text} />
+          <TextToSpeechButton key={currentQ} text={currentQuestion.text} questionId={currentQuestion.id} />
 
           <div className="space-y-2">
             {shuffleMap.map((originalIdx: number, visualPos: number) => {

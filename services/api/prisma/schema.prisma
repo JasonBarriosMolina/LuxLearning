@@ -164,6 +164,12 @@ model Question {
   text         String
   options      String[]
   correctIndex Int
+  // On-demand Polly neural narration cache, same pattern as Lesson.audioUrl (Trello
+  // DmPpbrff, 2026-09-03 — Mack: quiz/exam questions still fell back to the browser's
+  // free voice; TextToSpeechButton only upgrades to Polly when given something to
+  // cache the generated audio on).
+  audioUrl     String?
+  audioUrlMale String?
   module       Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@unique([moduleId, order])

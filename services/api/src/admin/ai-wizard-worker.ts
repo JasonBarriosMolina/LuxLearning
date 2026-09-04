@@ -16,6 +16,7 @@ import {
   notifyCourseGenerationDone, sanitizeLessonContent, generateAndSaveQuizQuestions,
   isPlaceholderContent, verifyAndRepairModule,
 } from './ai-wizard-repair';
+import { searchYoutubeVideo, isYoutubeVideoAvailable, escapeHtml } from '../shared/youtube';
 
 export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
   const { prisma, body } = ctx;
@@ -239,11 +240,29 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
               let resourcesHtml = '<section class="lesson-resources" style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">';
               if (refs.length > 0) {
                 resourcesHtml += isBlEN
-                  ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`
-                  : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${r}</li>`).join('')}</ol>`;
+                  ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ol>`
+                  : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ol>`;
               }
               if (ytQueries.length > 0) {
-                const ytLinks = ytQueries.map((q) => `<li><a href="https://youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">${q}</a></li>`).join('');
+                // Real, verified video links instead of a keyword-search URL the student
+                // has to sift through themselves (Trello Nk0XDBvJ, 2026-09-02 21:43 —
+                // Mack). Needs YOUTUBE_API_KEY (Google Cloud "YouTube Data API v3") — until
+                // it's set, searchYoutubeVideo returns null and every query keeps falling
+                // back to the old search-results link, so this never regresses.
+                const resolved = await Promise.all(ytQueries.map(async (q) => {
+                  const found = await searchYoutubeVideo(q);
+                  // Validate the id shape (real YouTube ids are always exactly this) before
+                  // trusting it in an href — defense in depth on top of escapeHtml below,
+                  // since this one value comes straight from a third-party API response.
+                  if (found && /^[a-zA-Z0-9_-]{11}$/.test(found.videoId) && await isYoutubeVideoAvailable(found.videoId)) {
+                    return { href: `https://www.youtube.com/watch?v=${found.videoId}`, label: found.title || q };
+                  }
+                  return { href: `https://youtube.com/results?search_query=${encodeURIComponent(q)}`, label: q };
+                }));
+                // escapeHtml on the label — found.title is untrusted third-party text from
+                // Google's API, not something Lux controls (code-review finding: stored XSS
+                // via dangerouslySetInnerHTML on the student lesson page otherwise).
+                const ytLinks = resolved.map(({ href, label }) => `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a></li>`).join('');
                 resourcesHtml += isBlEN
                   ? `<h3>🎥 Suggested Videos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`
                   : `<h3>🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`;

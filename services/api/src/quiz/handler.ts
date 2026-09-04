@@ -3,8 +3,9 @@ import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedroc
 import { getPrismaClient } from '../shared/db-neon';
 import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
-import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
+import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
+import { generateLessonAudio, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -192,6 +193,36 @@ Máximo ${Math.min(incorrect.length, 3)} gaps.`;
         console.error('[gap-analysis] Bedrock error:', bedrockErr);
         return ok({ gaps: [], overallPattern: null });
       }
+    }
+
+    // POST /quiz/question-audio — on-demand Polly neural narration for a quiz/exam
+    // question, same pattern as POST /lessons/audio (Trello DmPpbrff, 2026-09-03 —
+    // Mack: quiz questions still fell back to the browser's free voice because
+    // TextToSpeechButton's Polly upgrade only fires when given a lessonId to cache
+    // against, and quiz questions have no Lesson row). Cached on the Question row.
+    if (method === 'POST' && path === '/quiz/question-audio') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { questionId, gender } = body as { questionId?: string; gender?: 'male' | 'female' };
+      if (!questionId) return badRequest('questionId is required');
+      const question = await prisma.question.findUnique({
+        where: { id: questionId },
+        include: { module: { select: { course: { select: { planLanguage: true } } } } },
+      });
+      if (!question) return notFound('Pregunta no encontrada');
+      if (gender !== 'male' && question.audioUrl) return ok({ audioUrl: question.audioUrl });
+      if (gender === 'male' && question.audioUrlMale) return ok({ audioUrl: question.audioUrlMale });
+
+      const voiceId = gender === 'male'
+        ? defaultMaleVoiceForLanguage(question.module?.course?.planLanguage)
+        : defaultVoiceForLanguage(question.module?.course?.planLanguage);
+      const text = [question.text, ...(question.options ?? [])].filter(Boolean).join('. ');
+      const audioUrl = await generateLessonAudio(`question-${questionId}`, text, voiceId);
+      if (!audioUrl) return serverError('No se pudo generar el audio');
+      await prisma.question.update({
+        where: { id: questionId },
+        data: gender === 'male' ? { audioUrlMale: audioUrl } : { audioUrl },
+      });
+      return ok({ audioUrl });
     }
 
     return badRequest('Unknown route');

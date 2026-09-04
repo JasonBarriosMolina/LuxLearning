@@ -6,7 +6,10 @@ import { TextToSpeechButton } from './TextToSpeechButton';
 // audioUrl fell back to the browser's free voice ("no son voces agradables"). Fix:
 // lazily request real Polly narration in the background when a lessonId is given.
 const audioMock = vi.fn();
-vi.mock('@/lib/api', () => ({ api: { lessons: { audio: (...args: any[]) => audioMock(...args) } } }));
+// questionAudio (Trello DmPpbrff, 2026-09-03 — Mack: quiz/exam questions still used
+// the browser voice) mirrors lessons.audio but caches on the Question row instead.
+const questionAudioMock = vi.fn();
+vi.mock('@/lib/api', () => ({ api: { lessons: { audio: (...args: any[]) => audioMock(...args) }, quiz: { questionAudio: (...args: any[]) => questionAudioMock(...args) } } }));
 vi.mock('@/lib/i18n', () => ({ useLanguage: () => ({ lang: 'es' }) }));
 
 describe('TextToSpeechButton — lazy Polly audio fetch', () => {
@@ -29,8 +32,16 @@ describe('TextToSpeechButton — lazy Polly audio fetch', () => {
     expect(audioMock).not.toHaveBeenCalled();
   });
 
-  it('does NOT fetch when no lessonId is given (e.g. quiz questions — no Lesson row to cache on)', () => {
-    render(<TextToSpeechButton text="Pregunta de quiz" />);
+  it('does NOT fetch when neither lessonId nor questionId is given', () => {
+    render(<TextToSpeechButton text="Texto sin id" />);
+    expect(audioMock).not.toHaveBeenCalled();
+    expect(questionAudioMock).not.toHaveBeenCalled();
+  });
+
+  it('fetches via questionAudio (not lessons.audio) when questionId is given instead of lessonId', async () => {
+    questionAudioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/question-1-mia.mp3' } });
+    render(<TextToSpeechButton text="¿Cuánto es 2+2?" questionId="q1" />);
+    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1'));
     expect(audioMock).not.toHaveBeenCalled();
   });
 

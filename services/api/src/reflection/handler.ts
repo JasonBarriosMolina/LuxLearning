@@ -4,7 +4,7 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
-import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole } from '../shared/db-dynamo';
+import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole, getLessonProgress } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 import { getVapidKeys } from '../shared/vapid';
@@ -143,7 +143,7 @@ Responde ÚNICAMENTE con JSON válido:
         include: {
           course: {
             include: {
-              modules: { orderBy: { order: 'asc' }, select: { id: true, order: true } },
+              modules: { orderBy: { order: 'asc' }, select: { id: true, order: true, lessons: { select: { id: true } } } },
               evaluationEvents: { select: { type: true, moduleId: true } },
             },
           },
@@ -152,16 +152,25 @@ Responde ÚNICAMENTE con JSON válido:
 
       if (!module) return badRequest('Module not found');
 
-      const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order }));
+      const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: (m as any).lessons.map((l: any) => l.id) }));
       const reflectionPlannedModuleIds = new Set(
         ((module.course as any).evaluationEvents ?? [])
           .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
           .map((e: any) => e.moduleId as string),
       );
+      const quizPlannedModuleIds = new Set(
+        ((module.course as any).evaluationEvents ?? [])
+          .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
+          .map((e: any) => e.moduleId as string),
+      );
+      const reflectionLessonProgress = await getLessonProgress(userId, module.course.id);
+      const completedLessonIds = new Set(reflectionLessonProgress.map((p) => p.lessonId));
       const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs, {
         weeklyPacingEnabled: (module.course as any).weeklyPacingEnabled,
         courseStartDate: module.course.startDate,
         reflectionPlannedModuleIds,
+        completedLessonIds,
+        quizPlannedModuleIds,
       });
       if (!unlocked) return forbidden('Module is locked');
 

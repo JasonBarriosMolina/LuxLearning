@@ -149,13 +149,20 @@ export const SELECTABLE_EVAL_TYPES: EvalType[] = ['EVIDENCE', 'EXAM', 'INTERVIEW
 export function defaultEvalItems(type: CourseTypeId): EvalItem[] {
   const mk = (id: string, t: EvalType, name: string, nameEN: string, weight: number, count = 1, locked = false): EvalItem =>
     ({ id, type: t, name, nameEN, weight, count, dueDates: Array(count).fill(''), instructions: '', locked });
+  // 'Trabajo Cotidiano' / 'Contenido Teórico' used EvalType QUIZ here, but QUIZ is
+  // hidden from SELECTABLE_EVAL_TYPES (2026-09-02) — its Type: pill row rendered
+  // with nothing selected, and clicking any visible pill silently converted the
+  // item away from QUIZ with no pill left to switch it back (code-review finding,
+  // 2026-09-03). These were never the automatic per-module quiz anyway (that's the
+  // separate quizWeek selector) — they're daily-work/participation items, so EVIDENCE
+  // is the correct type, not a workaround.
   switch (type) {
-    case 'TEORICO': return [mk('1','QUIZ','Trabajo Cotidiano','Daily Work',30,5), mk('2','EVIDENCE','Tareas','Assignments',20,4), mk('3','EXAM','Pruebas','Exams',35,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
-    case 'TEORICO_PRACTICO': return [mk('1','QUIZ','Trabajo Cotidiano','Daily Work',30,5), mk('2','EVIDENCE','Tareas / Laboratorio','Tasks / Lab',15,3), mk('3','EXAM','Pruebas','Exams',40,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
+    case 'TEORICO': return [mk('1','EVIDENCE','Trabajo Cotidiano','Daily Work',30,5), mk('2','EVIDENCE','Tareas','Assignments',20,4), mk('3','EXAM','Pruebas','Exams',35,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
+    case 'TEORICO_PRACTICO': return [mk('1','EVIDENCE','Trabajo Cotidiano','Daily Work',30,5), mk('2','EVIDENCE','Tareas / Laboratorio','Tasks / Lab',15,3), mk('3','EXAM','Pruebas','Exams',40,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
     case 'PROYECTOS': return [mk('1','EVIDENCE','Investigación temática','Topic Research',20,1), mk('2','EVIDENCE','Avances del proyecto','Project Progress',40,3), mk('3','EVIDENCE','Defensa del proyecto','Project Defense',25,1), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
-    case 'PROGRAMA_ESPECIAL': return [mk('1','QUIZ','Trabajo Cotidiano','Daily Work',50,8), mk('2','EVIDENCE','Tareas','Tasks',10,2), mk('3','EXAM','Pruebas','Exams',25,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
+    case 'PROGRAMA_ESPECIAL': return [mk('1','EVIDENCE','Trabajo Cotidiano','Daily Work',50,8), mk('2','EVIDENCE','Tareas','Tasks',10,2), mk('3','EXAM','Pruebas','Exams',25,2), mk('4','ATTENDANCE','Asistencia','Attendance',15,1,true)];
     case 'CURSO_CORTO': return [mk('1','EVIDENCE','Proyecto Final','Final Project',70,1), mk('2','ATTENDANCE','Asistencia (mín. 6/8)','Attendance (min. 6/8)',30,1,true)];
-    case 'LIBRE': return [mk('1','QUIZ','Contenido Teórico','Theoretical Content',50,1), mk('2','EVIDENCE','Contenido Práctico','Practical Content',50,1)];
+    case 'LIBRE': return [mk('1','EVIDENCE','Contenido Teórico','Theoretical Content',50,1), mk('2','EVIDENCE','Contenido Práctico','Practical Content',50,1)];
     default: return [];
   }
 }
