@@ -49,8 +49,13 @@ vi.mock('../../shared/db-neon', () => ({
 const generateLessonAudioMock = vi.fn();
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
-  defaultVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Danielle' : 'Mia'),
-  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Sergio'),
+  defaultVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Danielle' : 'Mia'),
+  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Gregory' : 'Sergio'),
+}));
+
+const batchTranslateMock = vi.fn();
+vi.mock('../../shared/translate', () => ({
+  batchTranslate: (...a: any[]) => batchTranslateMock(...a),
 }));
 
 import { handler } from '../../lessons/handler';
@@ -160,6 +165,63 @@ describe('POST /lessons/audio', () => {
       const body = await bodyOf(res);
       expect(body.data.audioUrl).toBe('https://s3.example.com/cached-female.mp3');
       expect(generateLessonAudioMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // Trello DmPpbrff, 2026-09-04 — Mack: "cuando cambio a otro idioma... las voces
+  // neuronales siguen leyendo el texto en español." The cached lesson.audioUrl is only
+  // ever the course's own language — a `lang` that differs from it must translate and
+  // synthesize fresh, never serving (or overwriting) that native-language cache.
+  describe('lang param — cross-language narration', () => {
+    it('ignores the cached audioUrl and synthesizes translated text when lang differs from the course language', async () => {
+      lessonFindUniqueMock.mockResolvedValue({
+        id: 'l1', audioUrl: 'https://s3.example.com/cached-es.mp3', moduleId: 'm1',
+        title: 'Lección 1', content: '<p>Contenido en español</p>', points: ['punto'], tip: 'consejo',
+      });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+      batchTranslateMock.mockResolvedValue(new Map([
+        ['lesson#l1', { title: 'Lesson 1', content: '<p>Content in English</p>', points: ['point'], tip: 'tip' }],
+      ]));
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-en.mp3');
+
+      const res = await handler(makeEvent({ lessonId: 'l1', lang: 'en' }));
+      expect(res.statusCode).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-en.mp3');
+      expect(batchTranslateMock).toHaveBeenCalledWith(
+        [{ type: 'lesson', id: 'l1', fields: { title: 'Lección 1', content: '<p>Contenido en español</p>', points: ['punto'], tip: 'consejo' } }],
+        'en',
+      );
+      // English voice, translated text, S3 key namespaced by lang — and NEVER touches
+      // the native-language cache column.
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1-en', expect.stringContaining('Content in English'), 'Danielle');
+      expect(lessonUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('uses the normal cached-audio path when lang matches the course language', async () => {
+      lessonFindUniqueMock.mockResolvedValue({ id: 'l1', audioUrl: 'https://s3.example.com/cached-es.mp3' });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+
+      const res = await handler(makeEvent({ lessonId: 'l1', lang: 'es' }));
+      expect(res.statusCode).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/cached-es.mp3');
+      expect(batchTranslateMock).not.toHaveBeenCalled();
+      expect(generateLessonAudioMock).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the original text if translation fails/returns nothing', async () => {
+      lessonFindUniqueMock.mockResolvedValue({
+        id: 'l1', audioUrl: 'https://s3.example.com/cached-es.mp3', moduleId: 'm1',
+        title: 'Lección 1', content: '<p>Contenido</p>', points: [], tip: '',
+      });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+      batchTranslateMock.mockResolvedValue(new Map()); // no translation found
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-en.mp3');
+
+      const res = await handler(makeEvent({ lessonId: 'l1', lang: 'en' }));
+      expect(res.statusCode).toBe(200);
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1-en', expect.stringContaining('Contenido'), 'Danielle');
     });
   });
 });

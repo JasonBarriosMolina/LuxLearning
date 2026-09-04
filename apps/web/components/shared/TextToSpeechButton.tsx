@@ -247,25 +247,33 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
   // this picks whichever one the caller passed (exactly one is expected). gender
   // omitted entirely (not passed as `undefined`) on the default female fetch to
   // match the exact single-argument call the original lessonId-only code made.
+  // lang (Trello DmPpbrff, 2026-09-04 — Mack: switching the UI language kept
+  // narrating in the old language) is passed for lessonId so the backend can
+  // synthesize a translated narration when it differs from the course's own
+  // language; questionAudio doesn't take one yet (quiz questions aren't
+  // server-translated the same way).
   const fetchAudio = (gender?: 'male' | 'female') =>
     lessonId
-      ? (gender ? api.lessons.audio(lessonId, gender) : api.lessons.audio(lessonId))
+      ? api.lessons.audio(lessonId, gender, lang)
       : questionId
         ? (gender ? api.quiz.questionAudio(questionId, gender) : api.quiz.questionAudio(questionId))
         : null;
 
-  // Lazy on-demand Polly narration — fires once per mount when there's a lessonId/
-  // questionId to cache against but no audioUrl yet. Silent/background: the button
-  // keeps working via the browser voice meanwhile, then quietly upgrades once ready.
+  // Lazy on-demand Polly narration — fires on mount AND whenever `lang` changes
+  // (student toggling the platform language mid-lesson, not just on remount) when
+  // there's a lessonId/questionId to cache against but no audioUrl yet. Silent/
+  // background: the button keeps working via the browser voice meanwhile, then
+  // quietly upgrades once ready.
   const [fetchedAudioUrl, setFetchedAudioUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     if ((!lessonId && !questionId) || audioUrl) return;
+    setFetchedAudioUrl(undefined); // drop any previous-language clip immediately
     let cancelled = false;
     fetchAudio()
       ?.then((res) => { if (!cancelled) setFetchedAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl); })
       .catch(() => {}); // non-fatal — WebSpeechPlayer keeps working meanwhile
     return () => { cancelled = true; };
-  }, [lessonId, questionId, audioUrl]);
+  }, [lessonId, questionId, audioUrl, lang]);
   const femaleAudioUrl = audioUrl ?? fetchedAudioUrl;
 
   const [gender, setGender] = useState<Gender>(() =>

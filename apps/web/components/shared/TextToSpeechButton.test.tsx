@@ -10,12 +10,14 @@ const audioMock = vi.fn();
 // the browser voice) mirrors lessons.audio but caches on the Question row instead.
 const questionAudioMock = vi.fn();
 vi.mock('@/lib/api', () => ({ api: { lessons: { audio: (...args: any[]) => audioMock(...args) }, quiz: { questionAudio: (...args: any[]) => questionAudioMock(...args) } } }));
-vi.mock('@/lib/i18n', () => ({ useLanguage: () => ({ lang: 'es' }) }));
+let mockLang = 'es';
+vi.mock('@/lib/i18n', () => ({ useLanguage: () => ({ lang: mockLang }) }));
 
 describe('TextToSpeechButton — lazy Polly audio fetch', () => {
   beforeEach(() => {
     audioMock.mockReset();
     localStorage.clear();
+    mockLang = 'es';
     // jsdom has no real speechSynthesis — stub it so the WebSpeechPlayer fallback
     // actually renders its button, same as it would in a real browser.
     (window as any).speechSynthesis = { getVoices: () => [], onvoiceschanged: null, cancel: vi.fn() };
@@ -24,7 +26,7 @@ describe('TextToSpeechButton — lazy Polly audio fetch', () => {
   it('fetches audio when lessonId is given and audioUrl is missing', async () => {
     audioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/lesson-1-mia.mp3' } });
     render(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
-    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1'));
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', undefined, 'es'));
   });
 
   it('does NOT fetch when audioUrl already exists', () => {
@@ -52,12 +54,28 @@ describe('TextToSpeechButton — lazy Polly audio fetch', () => {
     // Component should still render its Listen button, not crash
     expect(screen.getByText(/Escuchar/i)).toBeTruthy();
   });
+
+  // Trello DmPpbrff, 2026-09-04 — Mack: switching the platform language mid-lesson kept
+  // narrating in the old language — the fetch effect never re-fired on a lang change.
+  it('re-fetches with the new lang when the platform language changes mid-mount', async () => {
+    audioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/lesson-1-es.mp3' } });
+    const { rerender } = render(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', undefined, 'es'));
+
+    audioMock.mockClear();
+    audioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/lesson-1-en.mp3' } });
+    mockLang = 'en';
+    rerender(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
+
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', undefined, 'en'));
+  });
 });
 
 describe('TextToSpeechButton — voice model selector only (Trello DmPpbrff, 2026-09-01 14:40)', () => {
   beforeEach(() => {
     audioMock.mockReset();
     localStorage.clear();
+    mockLang = 'es';
     (window as any).speechSynthesis = { getVoices: () => [], onvoiceschanged: null, cancel: vi.fn() };
   });
 
@@ -76,11 +94,11 @@ describe('TextToSpeechButton — voice model selector only (Trello DmPpbrff, 202
         : { data: { audioUrl: 'https://s3.example.com/lesson-1-mia.mp3' } }
     );
     render(<TextToSpeechButton text="<p>Contenido</p>" lessonId="lesson-1" />);
-    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1'));
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', undefined, 'es'));
 
     const select = screen.getByTitle(/Perfil de voz/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'male' } });
 
-    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', 'male'));
+    await waitFor(() => expect(audioMock).toHaveBeenCalledWith('lesson-1', 'male', 'es'));
   });
 });

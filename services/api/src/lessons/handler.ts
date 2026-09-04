@@ -146,22 +146,53 @@ export const handler = async (event: Event) => {
       // (defaultVoiceForLanguage) — requesting 'male' synthesizes fresh with the male
       // voice each time (not cached on the Lesson row, to avoid a schema migration for
       // a rarely-toggled preference) instead of ever falling back to a browser voice.
-      const { lessonId, gender } = body as { lessonId?: string; gender?: 'male' | 'female' };
+      // lang (Trello DmPpbrff, 2026-09-04 — Mack: "cuando cambio a otro idioma... las
+      // voces neuronales siguen leyendo el texto en español"): the cached lesson.audioUrl
+      // is only ever generated once, in the COURSE's own language — switching the UI
+      // language translates the on-screen text (courses/handler.ts) but this endpoint
+      // kept serving that same cached narration regardless. When the requested lang
+      // differs from the course's planLanguage, translate the text and synthesize fresh
+      // in that language instead of touching the native-language cache.
+      const { lessonId, gender, lang } = body as { lessonId?: string; gender?: 'male' | 'female'; lang?: string };
       if (!lessonId) return badRequest('lessonId is required');
       const prisma = await getPrismaClient();
       const lesson = await prisma.lesson.findUnique({ where: { id: lessonId } });
       if (!lesson) return notFound('Lección no encontrada');
-      if (gender !== 'male' && lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
-      if (!lesson.content) return badRequest('La lección no tiene contenido para narrar');
 
       const mod = await prisma.module.findUnique({ where: { id: lesson.moduleId }, select: { course: { select: { planLanguage: true } } } });
+      const courseLang = (mod?.course?.planLanguage ?? 'ES').toLowerCase();
+      const isCrossLanguage = !!lang && lang.toLowerCase() !== courseLang;
+
+      if (!isCrossLanguage && gender !== 'male' && lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
+      if (!lesson.content) return badRequest('La lección no tiene contenido para narrar');
+
       const voiceId = gender === 'male'
-        ? defaultMaleVoiceForLanguage(mod?.course?.planLanguage)
-        : defaultVoiceForLanguage(mod?.course?.planLanguage);
-      const text = [lesson.title, lesson.content, ...(lesson.points ?? []), lesson.tip ?? ''].filter(Boolean).join('. ');
-      const audioUrl = await generateLessonAudio(lessonId, text, voiceId);
+        ? defaultMaleVoiceForLanguage(isCrossLanguage ? lang : mod?.course?.planLanguage)
+        : defaultVoiceForLanguage(isCrossLanguage ? lang : mod?.course?.planLanguage);
+
+      let title = lesson.title, content = lesson.content, points = lesson.points ?? [], tip = lesson.tip ?? '';
+      if (isCrossLanguage) {
+        const { batchTranslate } = await import('../shared/translate');
+        const translations = await batchTranslate(
+          [{ type: 'lesson', id: lessonId, fields: { title, content, points, tip } }],
+          lang!.toLowerCase(),
+        );
+        const t = translations.get(`lesson#${lessonId}`);
+        if (t) {
+          title = (t.title as string) ?? title;
+          content = (t.content as string) ?? content;
+          points = (t.points as string[]) ?? points;
+          tip = (t.tip as string) ?? tip;
+        }
+      }
+      const text = [title, content, ...points, tip].filter(Boolean).join('. ');
+      // Cross-language narration is never cached on the Lesson row (that field is the
+      // native-language slot) — S3 key includes the target lang so re-requests are still
+      // cheap without needing a schema change for a per-language cache column.
+      const audioId = isCrossLanguage ? `${lessonId}-${lang!.toLowerCase()}` : lessonId;
+      const audioUrl = await generateLessonAudio(audioId, text, voiceId);
       if (!audioUrl) return serverError('No se pudo generar el audio');
-      if (gender !== 'male') await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
+      if (!isCrossLanguage && gender !== 'male') await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
       return ok({ audioUrl });
     }
 

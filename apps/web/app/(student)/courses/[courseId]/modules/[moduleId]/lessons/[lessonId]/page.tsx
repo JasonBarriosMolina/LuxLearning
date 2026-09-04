@@ -24,6 +24,22 @@ const COLORS: Record<string, { bg: string; label: string }> = {
 
 interface HighlightItem { id: string; text: string; color: string; createdAt: string; }
 
+// "Puntos clave" are rendered as plain text (no dangerouslySetInnerHTML, no markdown
+// parser) — Bedrock's output for this field isn't always clean plain text (Trello
+// DmPpbrff, 2026-09-04 — Mack: "hay partes de código desplegado" in Puntos clave, e.g.
+// "**1**Tras <em>L'Orfeo</em>..."), so raw markdown bold markers and HTML tags leaked
+// through verbatim instead of being either rendered or omitted. Strips both classes of
+// markup before display; doesn't touch the main lesson body, which already renders as
+// real HTML deliberately.
+export function stripMarkup(text: string): string {
+  return text
+    .replace(/<[^>]+>/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .trim();
+}
+
 // Apply highlights to plain text → render as ReactNode
 function applyHighlights(text: string, highlights: HighlightItem[]): React.ReactNode {
   if (!highlights.length) return text;
@@ -53,6 +69,29 @@ function applyHighlights(text: string, highlights: HighlightItem[]): React.React
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
   return <>{parts}</>;
+}
+
+// Body highlights (Trello DmPpbrff, 2026-09-04 — Mack: "el resaltador de texto no está
+// funcionando en los textos de las lecciones, solo en los puntos clave"): selecting text
+// in the body and saving a highlight worked — the body is just re-rendered from raw
+// lesson.content via dangerouslySetInnerHTML every time, with no mechanism to inject the
+// saved highlight back in, so it visually never appeared. applyHighlights (above) returns
+// React children, which can't mix with dangerouslySetInnerHTML — this instead injects
+// <mark> directly into the HTML string, splitting on tags first so a highlight's text is
+// only ever matched inside real text nodes, never inside a tag name or attribute.
+export function applyHighlightsToHtml(html: string, highlights: HighlightItem[]): string {
+  if (!highlights.length) return html;
+  const segments = html.split(/(<[^>]+>)/);
+  return segments.map((seg) => {
+    if (seg.startsWith('<')) return seg; // an actual tag — leave untouched
+    let result = seg;
+    for (const h of highlights) {
+      if (!h.text) continue;
+      const markOpen = `<mark style="background-color:${COLORS[h.color]?.bg ?? '#FEF08A'};border-radius:3px;padding:0 2px;">`;
+      result = result.split(h.text).join(`${markOpen}${h.text}</mark>`);
+    }
+    return result;
+  }).join('');
 }
 
 // ── Lightweight markdown renderer (for Mentor chat responses) ────────────────
@@ -193,6 +232,13 @@ export default function LessonPage() {
   const [markingDone, setMarkingDone] = useState(false);
   const [completed, setCompleted] = useState(false);
   const startTimeRef = useRef(Date.now());
+  // Language-switch notice (Trello DmPpbrff, 2026-09-04 — Mack: "no hay nada que avise
+  // que se va a cambiar el texto a ese idioma, que espere un momento"): the re-fetch on
+  // a lang change was silent — text just changed once translation finished, with no cue.
+  // Tracks the PREVIOUS lang via a ref so this only fires on an actual switch, not the
+  // initial mount (where a "espera un momento" banner would be pointless).
+  const [translatingLang, setTranslatingLang] = useState(false);
+  const prevLangRef = useRef(lang);
 
   // Highlights
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
@@ -235,6 +281,9 @@ export default function LessonPage() {
   const [transcriptError, setTranscriptError] = useState(false);
 
   useEffect(() => {
+    const isLangSwitch = prevLangRef.current !== lang;
+    prevLangRef.current = lang;
+    if (isLangSwitch) setTranslatingLang(true);
     Promise.all([
       api.courses.get(courseId),
       api.lessons.highlights(lessonId),
@@ -245,7 +294,8 @@ export default function LessonPage() {
       const favs: any[] = (favRes as any).data ?? [];
       setIsFavorite(favs.some((f: any) => f?.id === lessonId));
       setLoading(false);
-    }).catch(() => setLoading(false));
+      setTranslatingLang(false);
+    }).catch(() => { setLoading(false); setTranslatingLang(false); });
     startTimeRef.current = Date.now();
   }, [courseId, lessonId, lang]);
 
@@ -475,6 +525,15 @@ export default function LessonPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in" onMouseUp={handleMouseUp}>
+      {/* Language-switch notice — shown while the translated text/audio are (re)loading
+          after the student toggles the platform language mid-lesson. */}
+      {translatingLang && (
+        <div className="flex items-center gap-2 text-xs text-cta-from bg-cta-from/10 border border-cta-from/30 rounded-lg px-3 py-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+          <span>{t.lessonPage.translatingLang}</span>
+        </div>
+      )}
+
       {/* Highlight toolbar */}
       <HighlightToolbar
         position={toolbar}
@@ -566,7 +625,7 @@ export default function LessonPage() {
               <TextToSpeechButton text={lesson.content} audioUrl={lesson.audioUrl} lessonId={lessonId} className="pb-1" />
               <div
                 className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
-                dangerouslySetInnerHTML={{ __html: lesson.content }}
+                dangerouslySetInnerHTML={{ __html: applyHighlightsToHtml(lesson.content, highlights) }}
               />
             </>
           ) : (
@@ -627,7 +686,7 @@ export default function LessonPage() {
             {lesson.points.map((point: string, i: number) => (
               <li key={i} className="flex items-start gap-3 text-sm text-gray-600">
                 <ChevronRight className="w-4 h-4 text-cta-from mt-0.5 shrink-0" />
-                <span>{applyHighlights(point, highlights)}</span>
+                <span>{applyHighlights(stripMarkup(point), highlights)}</span>
               </li>
             ))}
           </ul>

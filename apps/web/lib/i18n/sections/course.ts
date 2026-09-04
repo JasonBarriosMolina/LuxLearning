@@ -141,6 +141,7 @@ export const courseEs = {
   lessonPage: {
     lessonN: (n: number) => `LECCIÓN ${n}`,
     completed: 'Completada',
+    translatingLang: 'Cambiando el idioma de la lección — el texto y el audio se actualizan en un momento.',
     unfavorite: 'Quitar de favoritos',
     favorite: 'Agregar a favoritos',
     tabVideo: 'Video',
@@ -300,6 +301,7 @@ export const courseEn = {
   lessonPage: {
     lessonN: (n: number) => `LESSON ${n}`,
     completed: 'Completed',
+    translatingLang: 'Switching the lesson language — text and audio will update in a moment.',
     unfavorite: 'Remove from favorites',
     favorite: 'Add to favorites',
     tabVideo: 'Video',
