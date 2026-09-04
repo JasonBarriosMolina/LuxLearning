@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
 import { PlanCard } from './PlanCard';
+import { groupItemsByCourse } from './WeeklyGrid.helpers';
 import type { StudyPlan } from '../types';
 import { useLanguage } from '@/lib/i18n';
 
@@ -90,15 +91,34 @@ function DayColumn({
           </p>
         ) : (
           <>
-            {visibleItems.map((item) => (
-              <PlanCard
-                key={item.id}
-                item={item}
-                locked={locked}
-                onTogglePin={(id, pinned) => onTogglePin(plan.weekOf, id, pinned)}
-                onToggleDone={(id, done) => onToggleDone(plan.weekOf, id, done)}
-                onRemove={(id) => onRemove(plan.weekOf, id)}
-              />
+            {/* Course grouping (Trello Nk0XDBvJ, 2026-08-18 — Mack: "resolver la
+                ambigüedad ... donde las lecciones ... se muestran mezcladas sin
+                identificar a qué curso corresponden"). Grouped AFTER the existing
+                MAX_VISIBLE slice, not before — keeps the "+N más" pagination exactly
+                as it worked before; a course header is purely a visual wrapper around
+                whichever items were already going to render. */}
+            {groupItemsByCourse(visibleItems).map((group, gi) => (
+              <div key={group.courseId ?? `ungrouped-${gi}`} className="flex flex-col gap-2">
+                {group.courseTitle && (
+                  <div className={`flex items-center gap-1.5 pt-1 ${gi > 0 ? 'border-t border-gray-200 dark:border-white/10 -mx-3 px-3' : ''}`}>
+                    <BookOpen className="w-3 h-3 text-gray-400 shrink-0" />
+                    <p className="text-xs font-semibold text-[#17527E] dark:text-blue-300 truncate flex-1" title={group.courseTitle}>
+                      {group.courseTitle}
+                    </p>
+                    <span className="text-[10px] text-gray-400 shrink-0">{group.items.length}</span>
+                  </div>
+                )}
+                {group.items.map((item) => (
+                  <PlanCard
+                    key={item.id}
+                    item={item}
+                    locked={locked}
+                    onTogglePin={(id, pinned) => onTogglePin(plan.weekOf, id, pinned)}
+                    onToggleDone={(id, done) => onToggleDone(plan.weekOf, id, done)}
+                    onRemove={(id) => onRemove(plan.weekOf, id)}
+                  />
+                ))}
+              </div>
             ))}
             {overflow > 0 && !isExpanded && (
               <button

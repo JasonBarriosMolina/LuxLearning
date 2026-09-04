@@ -78,12 +78,14 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
     if (items && items.length > 0) {
       for (const item of items) {
         const dayIdx = Math.max(0, Math.min(6, item.dayIndex));
+        const itemCourse = item.courseId ? courses.find((c: any) => c.id === item.courseId) : undefined;
         days[dayIdx].items.push({
           id: createId(),
           type: (item.type as any) ?? 'custom',
           title: String(item.title).slice(0, 120),
           description: item.description ? String(item.description).slice(0, 300) : undefined,
           courseId: item.courseId,
+          courseTitle: itemCourse?.title,
           moduleId: item.moduleId,
           pinned: true,
           completed: false,
@@ -98,7 +100,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       const maxDayIdx = wp.pace === 'catchup' ? 6 : 4;
 
       // Collect pending work per module (sequential guarantees one module fully scheduled before the next)
-      type PendingWork = { type: 'lesson' | 'quiz'; title: string; courseId: string; moduleId: string; lessonId?: string; estimatedMinutes: number; description: string };
+      type PendingWork = { type: 'lesson' | 'quiz'; title: string; courseId: string; courseTitle: string; moduleId: string; lessonId?: string; estimatedMinutes: number; description: string };
       const pendingWork: PendingWork[] = [];
 
       for (const course of courses) {
@@ -131,7 +133,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
           for (const lesson of pendingLessons) {
             pendingWork.push({
               type: 'lesson', title: lesson.title,
-              courseId: course.id, moduleId: mod.id, lessonId: lesson.id,
+              courseId: course.id, courseTitle: course.title, moduleId: mod.id, lessonId: lesson.id,
               estimatedMinutes: parseDurationMin((lesson as any).duration),
               description: `Módulo: ${mod.title} — ${course.title}`,
             });
@@ -139,7 +141,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
           if (needsQuiz) {
             pendingWork.push({
               type: 'quiz', title: `Quiz — ${mod.title}`,
-              courseId: course.id, moduleId: mod.id,
+              courseId: course.id, courseTitle: course.title, moduleId: mod.id,
               estimatedMinutes: 20,
               description: `Quiz pendiente en ${course.title}`,
             });
@@ -170,6 +172,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
           title: work.title,
           description: work.description,
           courseId: work.courseId,
+          courseTitle: work.courseTitle,
           moduleId: work.moduleId,
           ...(work.lessonId ? { lessonId: work.lessonId } : {}),
           pinned: true,

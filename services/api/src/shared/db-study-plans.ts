@@ -9,6 +9,11 @@ export interface PlanItem {
   title: string;
   description?: string;
   courseId?: string;
+  // Trello Nk0XDBvJ, 2026-08-18 (Mack): "agrupar las tarjetas por courseId/courseName" —
+  // course.title was already available at generation time (baked into `description`
+  // as free text) but not as its own field, so the frontend had no clean way to group
+  // or badge by course without string-parsing the description.
+  courseTitle?: string;
   moduleId?: string;
   lessonId?: string;
   pinned: boolean;

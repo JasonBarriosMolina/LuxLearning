@@ -119,11 +119,24 @@ export function PlanCard({ item, locked, onTogglePin, onToggleDone, onRemove }: 
         )}
       </div>
 
-      {/* Row 2: type badge + time + pin indicator */}
-      <div className="flex items-center gap-2 pl-6">
+      {/* Row 2: type badge + course badge + time + pin indicator. Course badge is the
+          "doble validación" from Trello Nk0XDBvJ (2026-08-18 — Mack): the day column
+          already groups cards under a course header, but a card scrolled mid-group (or
+          expanded on its own) still identifies its course without needing that header
+          in view. Deliberately gray/neutral, not colored — Mack's own constraint: "CERO
+          Colores Adicionales por Curso". */}
+      <div className="flex items-center gap-2 pl-6 flex-wrap">
         <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
           {TYPE_LABEL[item.type] ?? item.type}
         </span>
+        {item.courseTitle && (
+          <span
+            className="text-[10px] text-[#17527E] dark:text-blue-300 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded px-1.5 py-0.5 truncate max-w-[110px]"
+            title={item.courseTitle}
+          >
+            {item.courseTitle}
+          </span>
+        )}
         {item.estimatedMinutes && (
           <span className="text-[10px] text-gray-400">{item.estimatedMinutes} min</span>
         )}
