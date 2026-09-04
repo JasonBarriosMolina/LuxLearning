@@ -41,7 +41,7 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/courses/wizard/generate-instruction — sync AI for EVIDENCE ────
   if (path === '/admin/courses/wizard/generate-instruction' && method === 'POST') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
-    const { courseTitle, evalName, syllabusInput = '', weekTopics = '', isProject = false, courseType = '' } = body as any;
+    const { courseTitle, evalName, syllabusInput = '', weekTopics = '', isProject = false, courseType = '', sessionIndex, sessionCount } = body as any;
     if (!courseTitle || !evalName) return badRequest('courseTitle y evalName son requeridos');
     const syllabusSnippet = (syllabusInput as string).slice(0, 400);
     // Trello DmPpbrff, 2026-09-02 21:43/21:48 (Mack): "genera una entrega muy
@@ -67,16 +67,27 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
             : 'Adapta la naturaleza del proyecto (teórica o práctica) según lo que el temario del curso sugiera.')
       : '';
 
+    // Multi-session PROYECTO (Trello DmPpbrff, 2026-09-04 — Mack: "si son 4 semanas...
+    // deben haber 4 entregables lógicos... cada uno debe ser un paso a paso secuencial
+    // y lógico lograble"). sessionIndex/sessionCount are only set when the evaluator's
+    // count > 1 — each call generates ONE session's instruction, told which step it is
+    // in the arc so consecutive sessions build on each other instead of repeating.
+    const isMultiSession = isProject && sessionCount > 1;
+    const sessionHint = isMultiSession
+      ? `Este es un proyecto de ${sessionCount} sesiones/entregas secuenciales — estás generando la instrucción de la SESIÓN ${sessionIndex} de ${sessionCount}. Debe ser un paso lógico y alcanzable dentro de la progresión completa: sesión 1 suele ser propuesta/investigación inicial, las sesiones intermedias avances concretos que construyen sobre la anterior, y la última sesión (${sessionCount}) la entrega final/integradora que reúne el trabajo de las sesiones previas. NO repitas el alcance de otra sesión — cada una debe cubrir una parte distinta y progresiva del proyecto.`
+      : '';
+
     const prompt = isProject
       ? `Eres un diseñador instruccional experto. Genera una instrucción clara para el PROYECTO FINAL (capstone) de un curso universitario — debe integrar y evaluar todo lo visto durante el curso completo, no solo una parte.
 
 Curso: ${courseTitle}
 Nombre de la evaluación: ${evalName}
 ${natureHint}
+${sessionHint}
 ${syllabusSnippet ? `Extracto del temario completo del curso:\n${syllabusSnippet}` : ''}
 
 Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
-{"instruction":"<2-4 oraciones de instrucción para el estudiante, específica, accionable, y que abarque el curso completo>"}`
+{"instruction":"<2-4 oraciones de instrucción para el estudiante, específica, accionable${isMultiSession ? ', enfocada SOLO en el alcance de esta sesión específica' : ', y que abarque el curso completo'}>"}`
       : `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega de Evidencia en un curso universitario.
 
 Curso: ${courseTitle}
@@ -229,11 +240,15 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     // one shared instructions field) — no way to give each deliverable its own due
     // date + instructions. Jason (2026-09-02, option 1): each instance now becomes
     // its own EvaluationEvent, splitting the category's weight evenly across them.
+    // PROYECTO (2026-09-04 — Mack: multi-session project, "4 semanas... 4 entregables
+    // lógicos") gets the same split — the frontend's count stepper + per-instance
+    // instruction editor already work for PROYECTO (EvidenceInstructionsEditor has no
+    // type restriction), this backend split was the only place still EVIDENCE-only.
     // Every other type keeps the original one-row-per-item behavior unchanged.
     let evalEventOrder = 0;
     for (let i = 0; i < evaluationItems.length; i++) {
       const item = evaluationItems[i];
-      const instances = item.type === 'EVIDENCE' && Number(item.count) > 1 ? Number(item.count) : 1;
+      const instances = (item.type === 'EVIDENCE' || item.type === 'PROYECTO') && Number(item.count) > 1 ? Number(item.count) : 1;
       const perInstanceWeight = parseFloat(String(item.weight ?? 0)) / instances;
       for (let idx = 0; idx < instances; idx++) {
         const dueDateStr = item.dueDates?.[idx] ?? item.dueDates?.[0];

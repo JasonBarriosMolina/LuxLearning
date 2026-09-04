@@ -107,6 +107,13 @@ export function StepEvaluacion({
       const weekNum = !isProject && dueDateStr ? getWeekNumberForDate(dueDateStr, step1.startDate) : null;
       const week = weekNum != null ? step4.weeklyPlan.find((w) => w.weekNum === weekNum) : null;
       const weekTopics = week ? week.topics.join(', ') : undefined;
+      // Multi-session PROYECTO (Trello DmPpbrff, 2026-09-04 — Mack: "4 semanas... 4
+      // entregables lógicos... cada uno debe ser un paso a paso secuencial y lógico
+      // lograble"): when count > 1, tell the model which session this is and how many
+      // total, so it plans a coherent step-by-step arc instead of N unrelated prompts.
+      const item = step3.items.find((it) => it.id === itemId);
+      const sessionIndex = isProject && idx != null ? idx + 1 : undefined;
+      const sessionCount = isProject && item && item.count > 1 ? item.count : undefined;
       const res = await api.admin.courses.generateInstruction({
         courseTitle: step1.title,
         evalName,
@@ -114,6 +121,8 @@ export function StepEvaluacion({
         weekTopics,
         isProject,
         courseType: isProject ? (step1.courseType || undefined) : undefined,
+        sessionIndex,
+        sessionCount,
       }) as any;
       const instruction = res?.data?.instruction ?? res?.instruction ?? '';
       if (instruction) {
@@ -176,7 +185,20 @@ export function StepEvaluacion({
                       {SELECTABLE_EVAL_TYPES.map((t) => {
                         const m = EVAL_TYPE_META[t];
                         return (
-                          <button key={t} onClick={() => updateItem(item.id, { type: t })}
+                          <button key={t} onClick={() => {
+                            // Trello DmPpbrff, 2026-09-04 (Mack): sessions "según lo que
+                            // dure el curso... el evaluador puede poner un máximo" — default
+                            // the count to the course's total weeks when switching TO
+                            // PROYECTO (one session per week), only if still at the
+                            // untouched default of 1; the existing +/- stepper is the "max"
+                            // the evaluator adjusts from there, no separate cap needed.
+                            const patch: Partial<EvalItem> = { type: t };
+                            if (t === 'PROYECTO' && item.count === 1 && step2.totalWeeks > 1) {
+                              patch.count = step2.totalWeeks;
+                              patch.dueDates = Array(step2.totalWeeks).fill('');
+                            }
+                            updateItem(item.id, patch);
+                          }}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${item.type === t ? m.color + ' border-current' : 'border-border text-gray-400 hover:border-gray-300'}`}>
                             {m.icon}{planEN ? m.labelEN : m.label}
                           </button>
