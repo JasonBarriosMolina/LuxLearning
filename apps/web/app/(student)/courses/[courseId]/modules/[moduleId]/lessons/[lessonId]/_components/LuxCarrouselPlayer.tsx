@@ -159,12 +159,13 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
 
   // Ducking: low and steady while narration is speaking, rises during the silence
   // between slides (see musicDuckGain's own doc comment for why this simpler,
-  // deterministic approach was chosen over real-time amplitude analysis).
+  // deterministic approach was chosen over real-time amplitude analysis). Rest
+  // volume 20% per Mack's request (2026-09-04, Trello DmPpbrff) — was 45%/12%.
   useEffect(() => {
     const music = musicRef.current;
     if (!music) return;
     const msIntoSlide = activeSlide ? currentMs - activeSlide.startMs : 0;
-    music.volume = musicDuckGain({ isNarrationPlaying: isPlaying, msIntoSlide, duckedGain: 0.12, restGain: 0.45, fadeMs: 400 });
+    music.volume = musicDuckGain({ isNarrationPlaying: isPlaying, msIntoSlide, duckedGain: 0.06, restGain: 0.20, fadeMs: 400 });
   }, [currentMs, isPlaying, activeSlide]);
 
   return (
