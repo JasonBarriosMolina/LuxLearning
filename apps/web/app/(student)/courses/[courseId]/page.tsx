@@ -243,33 +243,40 @@ export default function CoursePage() {
         </button>
       </div>
 
-      {/* Resources section — anchor always rendered so scroll button works */}
+      {/* Resources section — anchor always rendered so scroll button works. Was
+          rendering nothing at all when resources.length === 0 (Trello DmPpbrff —
+          Mack, 2026-09-04: "Recursos me sigue llevando al mismo dashboard del
+          curso") — the button scrolled to an empty div with zero visual change,
+          indistinguishable from the click doing nothing. Always show the card
+          now, with an empty-state message when there's nothing to list. */}
       <div id="course-resources">
-      {resources.length > 0 && (
         <div className="card p-5 space-y-3">
           <h3 className="font-heading font-bold text-base text-charcoal flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-indigo-500" /> {t.courseDetail.resourcesSection}
           </h3>
-          <div className="space-y-2">
-            {resources.map((r: any) => (
-              <a
-                key={r.resourceId}
-                href={r.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-indigo-200 hover:bg-indigo-50/50 transition-colors"
-              >
-                <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-charcoal truncate">{r.title}</p>
-                  {r.description && <p className="text-xs text-gray-500 truncate">{r.description}</p>}
-                </div>
-                <Link2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-              </a>
-            ))}
-          </div>
+          {resources.length > 0 ? (
+            <div className="space-y-2">
+              {resources.map((r: any) => (
+                <a
+                  key={r.resourceId}
+                  href={r.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-indigo-200 hover:bg-indigo-50/50 transition-colors"
+                >
+                  <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-charcoal truncate">{r.title}</p>
+                    {r.description && <p className="text-xs text-gray-500 truncate">{r.description}</p>}
+                  </div>
+                  <Link2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">{t.courseDetail.resourcesEmpty}</p>
+          )}
         </div>
-      )}
       </div>
 
       {/* Course completion banner */}
