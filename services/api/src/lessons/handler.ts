@@ -25,6 +25,7 @@ import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '.
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
 import { generateLessonAudio, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
+import { handleLessonNotes } from './notes';
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 
@@ -42,6 +43,11 @@ export const handler = async (event: Event) => {
   const path = event.rawPath;
 
   try {
+    // ── Notes (Trello DmPpbrff, 2026-09-04) — split out of this file, 600-line
+    // domain-module limit; return null falls through to the routes below.
+    const notesRes = await handleLessonNotes(event, userId, method, path);
+    if (notesRes) return notesRes;
+
     // ── Lesson progress ───────────────────────────────────────────────────────
 
     // GET /lessons/progress?courseId=xxx

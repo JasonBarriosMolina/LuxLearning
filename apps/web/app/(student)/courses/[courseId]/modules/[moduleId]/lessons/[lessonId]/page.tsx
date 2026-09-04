@@ -13,32 +13,8 @@ import { Button } from '@/components/ui/Button';
 import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 import { useLanguage } from '@/lib/i18n';
 import { LuxCarrouselPlayer } from './_components/LuxCarrouselPlayer';
-
-// ── Highlight colors ──────────────────────────────────────────────────────────
-const COLORS: Record<string, { bg: string; label: string }> = {
-  yellow: { bg: '#FEF08A', label: '🟡' },
-  green:  { bg: '#BBF7D0', label: '🟢' },
-  blue:   { bg: '#BFDBFE', label: '🔵' },
-  pink:   { bg: '#FBCFE8', label: '🩷' },
-};
-
-interface HighlightItem { id: string; text: string; color: string; createdAt: string; }
-
-// "Puntos clave" are rendered as plain text (no dangerouslySetInnerHTML, no markdown
-// parser) — Bedrock's output for this field isn't always clean plain text (Trello
-// DmPpbrff, 2026-09-04 — Mack: "hay partes de código desplegado" in Puntos clave, e.g.
-// "**1**Tras <em>L'Orfeo</em>..."), so raw markdown bold markers and HTML tags leaked
-// through verbatim instead of being either rendered or omitted. Strips both classes of
-// markup before display; doesn't touch the main lesson body, which already renders as
-// real HTML deliberately.
-export function stripMarkup(text: string): string {
-  return text
-    .replace(/<[^>]+>/g, '')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/^#{1,6}\s+/gm, '')
-    .trim();
-}
+import { NotesPanel } from './_components/NotesPanel';
+import { COLORS, stripMarkup, applyHighlightsToHtml, type HighlightItem } from './lessonHighlights';
 
 // Apply highlights to plain text → render as ReactNode
 function applyHighlights(text: string, highlights: HighlightItem[]): React.ReactNode {
@@ -69,29 +45,6 @@ function applyHighlights(text: string, highlights: HighlightItem[]): React.React
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
   return <>{parts}</>;
-}
-
-// Body highlights (Trello DmPpbrff, 2026-09-04 — Mack: "el resaltador de texto no está
-// funcionando en los textos de las lecciones, solo en los puntos clave"): selecting text
-// in the body and saving a highlight worked — the body is just re-rendered from raw
-// lesson.content via dangerouslySetInnerHTML every time, with no mechanism to inject the
-// saved highlight back in, so it visually never appeared. applyHighlights (above) returns
-// React children, which can't mix with dangerouslySetInnerHTML — this instead injects
-// <mark> directly into the HTML string, splitting on tags first so a highlight's text is
-// only ever matched inside real text nodes, never inside a tag name or attribute.
-export function applyHighlightsToHtml(html: string, highlights: HighlightItem[]): string {
-  if (!highlights.length) return html;
-  const segments = html.split(/(<[^>]+>)/);
-  return segments.map((seg) => {
-    if (seg.startsWith('<')) return seg; // an actual tag — leave untouched
-    let result = seg;
-    for (const h of highlights) {
-      if (!h.text) continue;
-      const markOpen = `<mark style="background-color:${COLORS[h.color]?.bg ?? '#FEF08A'};border-radius:3px;padding:0 2px;">`;
-      result = result.split(h.text).join(`${markOpen}${h.text}</mark>`);
-    }
-    return result;
-  }).join('');
 }
 
 // ── Lightweight markdown renderer (for Mentor chat responses) ────────────────
@@ -216,7 +169,6 @@ function HighlightToolbar({ position, onHighlight, onClose, label }: ToolbarProp
 
 // ── Progress Gate ─────────────────────────────────────────────────────────────
 import { computeGate } from './lessonProgressGate';
-export { computeGate }; // Re-export for backwards compatibility
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
@@ -715,6 +667,14 @@ export default function LessonPage() {
           )}
         </div>
       )}
+
+      {/* Notes — server-persisted, Trello DmPpbrff (Mack, 2026-09-02 scoping) */}
+      <NotesPanel
+        contextType="lesson"
+        contextId={lessonId}
+        lessonTitle={lesson.title}
+        highlightsForSummary={highlights.map((h) => h.text)}
+      />
 
       {/* Tip */}
       {lesson.tip && (
