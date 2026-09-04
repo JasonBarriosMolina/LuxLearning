@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   findActiveSlideIndex, slideProgress, musicDuckGain, canScrub,
-  findActiveCaptionIndex, buildCarouselTranscript, type CarouselSlide, type SpeechMark,
+  findActiveCaptionIndex, buildCarouselTranscript, pickBgmTrack, BGM_TRACKS,
+  type CarouselSlide, type SpeechMark, type BgmTrack,
 } from './LuxCarrouselPlayer.helpers';
 
 const slides: CarouselSlide[] = [
@@ -120,5 +121,37 @@ describe('buildCarouselTranscript', () => {
   it('drops empty/whitespace-only marks without leaving double spaces', () => {
     const withBlank: SpeechMark[] = [{ time: 0, value: 'Uno.' }, { time: 100, value: '   ' }, { time: 200, value: 'Dos.' }];
     expect(buildCarouselTranscript(withBlank)).toBe('Uno. Dos.');
+  });
+});
+
+describe('pickBgmTrack', () => {
+  it('returns null for an empty track list', () => {
+    expect(pickBgmTrack('lesson-1', [])).toBeNull();
+  });
+
+  it('always returns the same track for the same lessonId (stable across replays)', () => {
+    const a = pickBgmTrack('lesson-abc-123');
+    const b = pickBgmTrack('lesson-abc-123');
+    expect(a).toEqual(b);
+  });
+
+  it('picks a track that is actually a member of the given list', () => {
+    const picked = pickBgmTrack('lesson-xyz');
+    expect(BGM_TRACKS).toContainEqual(picked);
+  });
+
+  it('spreads different lessonIds across a small custom list (not always index 0)', () => {
+    const tracks: BgmTrack[] = [
+      { id: 'a', title: 'A', url: 'https://x/a.mp3' },
+      { id: 'b', title: 'B', url: 'https://x/b.mp3' },
+      { id: 'c', title: 'C', url: 'https://x/c.mp3' },
+    ];
+    const ids = new Set(['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8'].map((id) => pickBgmTrack(id, tracks)?.id));
+    expect(ids.size).toBeGreaterThan(1);
+  });
+
+  it('exposes exactly the 6 curated tracks Mack sent (royalty-free, manually curated — no music API exists)', () => {
+    expect(BGM_TRACKS).toHaveLength(6);
+    expect(BGM_TRACKS.every((t) => t.url.startsWith('https://lux-learning-images.s3.amazonaws.com/audio/bgm/'))).toBe(true);
   });
 });

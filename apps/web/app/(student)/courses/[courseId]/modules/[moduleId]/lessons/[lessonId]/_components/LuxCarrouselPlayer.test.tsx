@@ -17,6 +17,7 @@ vi.mock('lucide-react', () => ({
   Lock: () => null, Download: () => null, Play: () => null, Pause: () => null,
   Maximize: () => null, Minimize: () => null, ChevronRight: () => null,
   Captions: () => null, FileText: () => null, ChevronDown: () => null, ChevronUp: () => null,
+  Music: () => null, VolumeX: () => null,
 }));
 vi.mock('@/lib/api', () => ({ api: { lessons: { carouselRecap: vi.fn() } } }));
 
@@ -71,6 +72,28 @@ describe('LuxCarrouselPlayer — close captions toggle', () => {
     render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore speechMarks={speechMarks} />);
     fireEvent.click(screen.getByTitle('Mostrar subtítulos'));
     expect(screen.getByTitle('Ocultar subtítulos')).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('LuxCarrouselPlayer — background music toggle', () => {
+  it('renders a music toggle button, off by default', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    expect(screen.getByTitle('Reproducir música de fondo')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('toggles aria-pressed and title when clicked (narration not playing, so no autoplay attempt)', () => {
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    fireEvent.click(screen.getByTitle('Reproducir música de fondo'));
+    expect(screen.getByTitle('Silenciar música de fondo')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('always picks the same curated track for a given lessonId (renders the same <audio> src across mounts)', () => {
+    const { unmount, container } = render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    const firstSrc = container.querySelectorAll('audio')[1]?.getAttribute('src'); // [0] is narration, [1] is bgm
+    unmount();
+    const { container: container2 } = render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    expect(container2.querySelectorAll('audio')[1]?.getAttribute('src')).toBe(firstSrc);
+    expect(firstSrc).toContain('lux-learning-images.s3.amazonaws.com/audio/bgm/');
   });
 });
 
