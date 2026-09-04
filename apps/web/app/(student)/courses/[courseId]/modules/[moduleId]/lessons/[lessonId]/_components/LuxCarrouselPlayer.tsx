@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight, Captions, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight, Captions, FileText, ChevronDown, ChevronUp, Music, VolumeX } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
   findActiveSlideIndex, slideProgress, canScrub, findActiveCaptionIndex, buildCarouselTranscript,
-  type CarouselSlide, type SpeechMark,
+  musicDuckGain, pickBgmTrack, type CarouselSlide, type SpeechMark,
 } from './LuxCarrouselPlayer.helpers';
 
 interface Props {
@@ -44,6 +44,15 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   // button. Post-class transcript — collapsed by default, shown once the carousel ends.
   const [ccEnabled, setCcEnabled] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  // Background music (Trello DmPpbrff, 2026-09-04 — Mack: "Ni música... con opción de
+  // reproducirse"): off by default (a browser gesture is required to start audio
+  // anyway, and not every student wants music under a study lesson) — same convention
+  // as captions above. musicRef is a second, independent <audio> element; its volume
+  // is continuously ducked under the narration via musicDuckGain (LuxCarrouselPlayer.
+  // helpers.ts), not synced in *position* to it — it just loops in the background.
+  const musicRef = useRef<HTMLAudioElement | null>(null);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const bgmTrack = pickBgmTrack(lessonId);
 
   // Trello DmPpbrff, 2026-09-02 22:12 (Mack): "si ya el carrusel se vio... el botón
   // de continuar debería aparecer automáticamente" — it didn't, because the parent
@@ -126,6 +135,38 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
     if (isPlaying) audio.pause(); else audio.play().catch(() => {});
   };
 
+  // Explicit, synchronous play()/pause() right inside the click handler (not only in
+  // the effect below) — browsers require a direct user-gesture call stack to allow
+  // audio playback; deferring the very first play() to an effect risks it being
+  // silently blocked as unprompted autoplay.
+  const toggleMusic = () => {
+    const music = musicRef.current;
+    if (!music) return;
+    const next = !musicEnabled;
+    setMusicEnabled(next);
+    if (next && isPlaying) music.play().catch(() => {});
+    else music.pause();
+  };
+
+  // Keeps the music in lockstep with the narration's own play/pause (e.g. the student
+  // pauses narration via the main play button, or it ends) without needing its own
+  // duplicate play/pause controls.
+  useEffect(() => {
+    const music = musicRef.current;
+    if (!music || !musicEnabled) return;
+    if (isPlaying) music.play().catch(() => {}); else music.pause();
+  }, [isPlaying, musicEnabled]);
+
+  // Ducking: low and steady while narration is speaking, rises during the silence
+  // between slides (see musicDuckGain's own doc comment for why this simpler,
+  // deterministic approach was chosen over real-time amplitude analysis).
+  useEffect(() => {
+    const music = musicRef.current;
+    if (!music) return;
+    const msIntoSlide = activeSlide ? currentMs - activeSlide.startMs : 0;
+    music.volume = musicDuckGain({ isNarrationPlaying: isPlaying, msIntoSlide, duckedGain: 0.12, restGain: 0.45, fadeMs: 400 });
+  }, [currentMs, isPlaying, activeSlide]);
+
   return (
     <div className="rounded-2xl overflow-hidden border border-border bg-black">
       {/* Slide stage */}
@@ -165,6 +206,20 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
           </div>
         )}
         <div className="absolute top-3 right-3 flex items-center gap-2">
+          {/* Background music toggle (Trello DmPpbrff, 2026-09-04 — Mack: "Ni música
+              como se conversó... con opción de reproducirse") */}
+          {bgmTrack && (
+            <button
+              onClick={toggleMusic}
+              className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                musicEnabled ? 'bg-cta-from text-white' : 'bg-black/50 text-white hover:bg-black/70'
+              }`}
+              title={musicEnabled ? 'Silenciar música de fondo' : 'Reproducir música de fondo'}
+              aria-pressed={musicEnabled}
+            >
+              {musicEnabled ? <Music className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          )}
           {/* Close captions toggle (Trello DmPpbrff, 2026-09-04 — Mack: "No hay close
               captions en los carrouseles") */}
           {speechMarks.length > 0 && (
@@ -209,6 +264,7 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
           </>
         )}
       </div>
+      {bgmTrack && <audio ref={musicRef} src={bgmTrack.url} loop className="hidden" />}
 
       {ended && (
         <div className="bg-surface px-4 py-3 space-y-3">
