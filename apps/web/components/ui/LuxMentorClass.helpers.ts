@@ -30,9 +30,17 @@ export function buildSystemPrompt(
     ? 'Maintain a warm but professional register throughout — no emojis, no chatbot-style filler ("Great question!", "Awesome!", etc). Speak like an experienced instructor.'
     : 'Mantén un registro cálido pero profesional en todo momento — sin emojis, sin muletillas de chatbot ("¡Buena pregunta!", "¡Genial!", etc). Habla como un instructor con experiencia.';
 
+  // Trello q1yXHIob, 2026-08-29 (Mack): "Por favor, no digas líneas de código en la
+  // interacción, como por ejemplo 'end call' y cosas de ese tipo. Eso jamás puede
+  // ocurrir." — a real observed bug: the model narrating its own control/tool-call
+  // intent out loud instead of just acting on it silently.
+  const noControlSpeechRule = lang === 'en'
+    ? 'NEVER say technical or control-sounding phrases out loud — things like "end call", "function call", "ending the session now", or any other internal/system-facing wording. Speak only in natural, human conversational language.'
+    : 'NUNCA digas en voz alta frases técnicas o de control — cosas como "end call", "function call", "terminando la sesión ahora", o cualquier otra jerga interna o de sistema. Habla siempre en lenguaje natural y conversacional humano.';
+
   const qaBase = lang === 'en'
-    ? `You are Lux Mentor, a knowledgeable educational voice assistant. ${toneRule} The student just listened to a narrated exposition of this module's content and is now ready with questions. Your ONLY job in this call is a live Q&A (about 5 minutes): answer the student's questions about the material below clearly and concisely. Do NOT deliver a monologue or re-teach the whole lesson — respond to what they actually ask. When you receive a system message saying the call is wrapping up, give a brief one-sentence goodbye (a longer closing summary will be played separately afterward).${scriptSection}`
-    : `Eres Lux Mentor, un asistente educativo de voz conocedor. ${toneRule} El estudiante acaba de escuchar una exposición narrada del contenido de este módulo y ahora está listo con preguntas. Tu ÚNICO trabajo en esta llamada es un Q&A en vivo (unos 5 minutos): responde las preguntas del estudiante sobre el material de abajo de forma clara y concisa. NO des un monólogo ni vuelvas a enseñar toda la lección — responde a lo que realmente pregunte. Cuando recibas un mensaje del sistema indicando que la llamada está por cerrar, despídete brevemente en una oración (un cierre más largo se reproducirá aparte después).${scriptSection}`;
+    ? `You are Lux Mentor, a knowledgeable educational voice assistant. ${toneRule} ${noControlSpeechRule} The student just listened to a narrated exposition of this module's content and is now ready with questions. Your ONLY job in this call is a live Q&A (about 5 minutes): answer the student's questions about the material below clearly and concisely. Do NOT deliver a monologue or re-teach the whole lesson — respond to what they actually ask. When you receive a system message saying the call is wrapping up, give a brief one-sentence goodbye (a longer closing summary will be played separately afterward).${scriptSection}`
+    : `Eres Lux Mentor, un asistente educativo de voz conocedor. ${toneRule} ${noControlSpeechRule} El estudiante acaba de escuchar una exposición narrada del contenido de este módulo y ahora está listo con preguntas. Tu ÚNICO trabajo en esta llamada es un Q&A en vivo (unos 5 minutos): responde las preguntas del estudiante sobre el material de abajo de forma clara y concisa. NO des un monólogo ni vuelvas a enseñar toda la lección — responde a lo que realmente pregunte. Cuando recibas un mensaje del sistema indicando que la llamada está por cerrar, despídete brevemente en una oración (un cierre más largo se reproducirá aparte después).${scriptSection}`;
 
   // If evaluator provided a custom prompt, append the Q&A base to it
   const base = vapiPrompt ? `${vapiPrompt}\n\n${qaBase}` : qaBase;
@@ -71,6 +79,22 @@ export function computeSilenceAction(params: {
     return silenceSeconds >= checkinThreshold ? 'checkin' : 'none';
   }
   return secondsSinceCheckin >= endThreshold ? 'end' : 'none';
+}
+
+// Visible Q&A countdown (Trello q1yXHIob, 2026-08-29 — Mack: "cuando solo queden dos
+// minutos va a comenzar un contador a generar un conteo regresivo. Esto es para
+// avisar que ya se va a acabar la lección"). The wrap-up system-message cue to the
+// AI already fired at this exact same threshold (QA_TARGET_SECONDS - QA_WARNING_AT_
+// REMAINING) — this only adds a VISIBLE on-screen counterpart the student can see,
+// separate from that invisible AI cue.
+export function qaSecondsRemaining(elapsedSeconds: number, targetSeconds: number): number {
+  return Math.max(0, targetSeconds - elapsedSeconds);
+}
+
+export function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 export function extractYouTubeId(url: string): string {

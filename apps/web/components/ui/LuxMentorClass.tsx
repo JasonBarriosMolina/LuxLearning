@@ -1,13 +1,17 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { PlayCircle, CheckCircle, Mic, MicOff, Volume2, BookOpen, Loader2, AlertCircle, WifiOff, Ban } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { LuxMentorClassReview } from './LuxMentorClassReview';
 import { LuxMentorClassNarration } from './LuxMentorClassNarration';
-import { buildSystemPrompt, extractYouTubeId, computeSilenceAction, type SpeechMark } from './LuxMentorClass.helpers';
+import { LuxMentorClassActive } from './LuxMentorClassActive';
+import { LuxMentorClassContent } from './LuxMentorClassContent';
+import { LuxMentorClassIdle } from './LuxMentorClassIdle';
+import { LuxMentorClassClosing, LuxMentorClassEnded, LuxMentorClassError } from './LuxMentorClassEndStates';
+import { buildSystemPrompt, computeSilenceAction, qaSecondsRemaining, type SpeechMark } from './LuxMentorClass.helpers';
 import type Vapi from '@vapi-ai/web';
 
 interface ClassSession {
@@ -75,6 +79,10 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
   const [startData, setStartData] = useState<StartData | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [volume, setVolume] = useState(0);
+  // Visible Q&A countdown (Trello q1yXHIob, 2026-08-29 — Mack): null until the last
+  // QA_WARNING_AT_REMAINING seconds, then counts down — separate from the invisible
+  // system-message cue sent to the AI at that same threshold (below).
+  const [visibleCountdown, setVisibleCountdown] = useState<number | null>(null);
   const systemMsgSentRef = useRef(false);
   const callStartTimeRef = useRef<number>(0);
   const sessionCompletedRef = useRef(false); // guard: prevent double-update when timer + call-end both fire
@@ -111,11 +119,16 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       systemMsgSentRef.current = false;
       silenceCheckinSentRef.current = false;
       silenceEndingRef.current = false;
+      setVisibleCountdown(null);
       return;
     }
     callStartTimeRef.current = Date.now();
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
+
+      // Visible countdown — same threshold as the invisible AI wrap-up cue below.
+      const remaining = qaSecondsRemaining(elapsed, QA_TARGET_SECONDS);
+      setVisibleCountdown(remaining <= QA_WARNING_AT_REMAINING ? remaining : null);
 
       // Silence handling — active for the whole call now (no separate monologue phase).
       if (vapiRef.current && !silenceEndingRef.current) {
@@ -348,7 +361,8 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     );
   }
 
-  // ── CLOSING — plays the Polly module recap after the Q&A call ends ──────────
+  // ── CLOSING / ENDED / ERROR — extracted to LuxMentorClassEndStates.tsx
+  // (code review, 2026-09-04, size limit) ──────────────────────────────────────
   if (phase === 'closing') {
     const closingAudioUrl = startData?.closingAudioUrl;
     if (!closingAudioUrl) {
@@ -356,66 +370,27 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       return null;
     }
     return (
-      <div className="border border-border rounded-xl p-6 text-center space-y-4">
-        <audio
-          ref={closingAudioRef}
-          src={closingAudioUrl}
-          autoPlay
-          onEnded={() => setPhase('ended')}
-          // Found in code review (2026-09-01): same stuck-forever risk as the narration
-          // audio above — a failed closing clip must still let the student finish.
-          onError={() => setPhase('ended')}
-        />
-        <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto">
-          <Volume2 className="w-7 h-7 text-blue-600" />
-        </div>
-        <div>
-          <p className="font-semibold text-charcoal">{s('Cerrando la clase…', 'Wrapping up the class…')}</p>
-          <p className="text-sm text-gray-500 mt-1">{s('Lux Mentor está resumiendo lo visto en el módulo.', 'Lux Mentor is recapping what the module covered.')}</p>
-        </div>
-      </div>
+      <LuxMentorClassClosing
+        closingAudioUrl={closingAudioUrl}
+        audioRef={closingAudioRef}
+        onEnded={() => setPhase('ended')}
+        s={s}
+      />
     );
   }
 
-  // ── ENDED — "received" screen ─────────────────────────────────────────────────
   if (phase === 'ended') {
-    return (
-      <div className="border border-border rounded-xl p-6 text-center space-y-4">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto">
-          <CheckCircle className="w-7 h-7 text-emerald-600" />
-        </div>
-        <div>
-          <p className="font-semibold text-charcoal">{s('¡Clase completada!', 'Class completed!')}</p>
-          <p className="text-sm text-gray-500 mt-1">{s('Tu evaluador revisará tu sesión pronto.', 'Your evaluator will review your session soon.')}</p>
-        </div>
-        <button onClick={() => { setPhase('idle'); onCompleted(); }} className="btn-primary inline-flex items-center gap-2 mx-auto">
-          {s('Continuar', 'Continue')}
-        </button>
-      </div>
-    );
+    return <LuxMentorClassEnded onContinue={() => { setPhase('idle'); onCompleted(); }} s={s} />;
   }
 
-  // ── ERROR state ───────────────────────────────────────────────────────────────
   if (phase === 'error') {
     return (
-      <div className="border border-border rounded-xl p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-charcoal">{s('Error en la clase', 'Class error')}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{error}</p>
-          </div>
-          <button onClick={() => { setPhase('idle'); setError(''); }} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
-            {s('Cerrar', 'Close')}
-          </button>
-        </div>
-        {voidedOnly && (
-          <div className="flex items-start gap-2 bg-amber-50 rounded-lg p-3">
-            <WifiOff className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">{s('Detectamos un fallo de red anterior. Puedes reintentar.', 'We detected a previous network failure. You can retry.')}</p>
-          </div>
-        )}
-      </div>
+      <LuxMentorClassError
+        error={error}
+        voidedOnly={voidedOnly}
+        onClose={() => { setPhase('idle'); setError(''); }}
+        s={s}
+      />
     );
   }
 
@@ -438,150 +413,45 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
     );
   }
 
-  // ── ACTIVE / CONNECTING — animated logo, no visible countdown ────────────────
+  // ── ACTIVE / CONNECTING — animated logo + visible wrap-up countdown ──────────
+  // (extracted to LuxMentorClassActive.tsx — code review, 2026-09-04, size limit)
   if (phase === 'active' || phase === 'connecting') {
     return (
-      <div className="border border-border rounded-xl overflow-hidden">
-        {/* Animated logo area */}
-        <div className="bg-gradient-to-br from-[#17527E] to-[#7B2FBE] px-4 py-6 flex flex-col items-center gap-4">
-          {/* Concentric rings reacting to volume */}
-          <div className="relative flex items-center justify-center">
-            {[1, 2, 3].map((ring) => (
-              <div
-                key={ring}
-                className="absolute rounded-full border border-white/20 transition-all duration-150"
-                style={{
-                  width: `${48 + ring * (isSpeaking ? 20 + volume * 30 * ring : 16)}px`,
-                  height: `${48 + ring * (isSpeaking ? 20 + volume * 30 * ring : 16)}px`,
-                  opacity: isSpeaking ? 0.6 - ring * 0.15 : 0.25 - ring * 0.06,
-                }}
-              />
-            ))}
-            <div className={`w-12 h-12 rounded-full bg-white/20 border border-white/40 flex items-center justify-center z-10 transition-transform duration-200 ${isSpeaking ? 'scale-110' : 'scale-100'}`}>
-              <Mic className="w-5 h-5 text-white" />
-            </div>
-          </div>
-          <div className="text-center">
-            <p className="text-white font-semibold text-sm">Lux Mentor</p>
-            <p className="text-white/70 text-xs mt-0.5">
-              {phase === 'connecting'
-                ? s('Conectando…', 'Connecting…')
-                : isSpeaking ? s('Hablando…', 'Speaking…') : s('Escuchando…', 'Listening…')}
-            </p>
-          </div>
-          {phase === 'active' && (
-            <div className="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 text-xs text-white/80">
-              <Mic className="w-3 h-3" />
-              {s('Sesión de preguntas — tu micrófono está activo', 'Q&A session — your mic is active')}
-            </div>
-          )}
-        </div>
-        <div className="p-4 flex items-center justify-between">
-          <p className="text-xs text-gray-500">{s('Sesión con Lux Mentor en curso', 'Lux Mentor session in progress')}</p>
-          {phase === 'active' && (
-            <button
-              onClick={() => { cleanup(); if (sessionIdRef.current) api.classes.update(sessionIdRef.current, { status: 'completed' }).catch(() => {}); setPhase('closing'); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition-colors"
-            >
-              <MicOff className="w-3.5 h-3.5" />
-              {s('Terminar', 'End')}
-            </button>
-          )}
-        </div>
-      </div>
+      <LuxMentorClassActive
+        phase={phase}
+        isSpeaking={isSpeaking}
+        volume={volume}
+        visibleCountdown={visibleCountdown}
+        onEndClick={() => { cleanup(); if (sessionIdRef.current) api.classes.update(sessionIdRef.current, { status: 'completed' }).catch(() => {}); setPhase('closing'); }}
+        s={s}
+      />
     );
   }
 
   // ── CONTENT phase — static material, then narration + Q&A ────────────────────
+  // (extracted to LuxMentorClassContent.tsx — code review, 2026-09-04, size limit)
   if (phase === 'content' && startData) {
     return (
-      <div className="border border-border rounded-xl overflow-hidden">
-        <div className="bg-surface px-4 py-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center">
-            <Volume2 className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-charcoal">{s('Contenido de la lección', 'Lesson Content')}</p>
-            <p className="text-xs text-gray-500">{s('Lux Mentor te la leerá en voz alta y luego podrás hacer preguntas', 'Lux Mentor will read it aloud, then you can ask questions')}</p>
-          </div>
-        </div>
-        <div className="p-4 space-y-4">
-          {startData.lessonVideoUrl && (
-            <div className="rounded-xl overflow-hidden bg-black aspect-video">
-              {startData.lessonVideoUrl.includes('youtube.com') || startData.lessonVideoUrl.includes('youtu.be') ? (
-                <iframe
-                  src={`https://www.youtube.com/embed/${extractYouTubeId(startData.lessonVideoUrl)}`}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : (
-                <video src={startData.lessonVideoUrl} controls className="w-full h-full" />
-              )}
-            </div>
-          )}
-          {startData.lessonScript && !startData.lessonVideoUrl && (
-            <div className="bg-gray-50 rounded-xl p-4 max-h-56 overflow-y-auto">
-              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">{s('Contenido', 'Content')}</p>
-              <p className="text-sm text-charcoal leading-relaxed whitespace-pre-wrap">{startData.lessonScript}</p>
-            </div>
-          )}
-          <button onClick={startNarration} className="btn-primary w-full flex items-center justify-center gap-2">
-            <Volume2 className="w-4 h-4" />
-            {s('Iniciar clase con Lux Mentor', 'Start class with Lux Mentor')}
-          </button>
-          <p className="text-xs text-gray-400 text-center">
-            {s(`Sesión de voz · ${startData.attemptsMax ?? 2} intentos máx`, `Voice session · max ${startData.attemptsMax ?? 2} attempts`)}
-            {(startData.attemptsUsed ?? 0) > 0
-              ? s(` · ${startData.attemptsUsed} usado${(startData.attemptsUsed ?? 0) !== 1 ? 's' : ''}`, ` · ${startData.attemptsUsed} used`)
-              : ''}
-          </p>
-        </div>
-      </div>
+      <LuxMentorClassContent
+        lessonVideoUrl={startData.lessonVideoUrl}
+        lessonScript={startData.lessonScript}
+        attemptsMax={startData.attemptsMax}
+        attemptsUsed={startData.attemptsUsed}
+        onStart={startNarration}
+        s={s}
+      />
     );
   }
 
   // ── IDLE / LOADING ────────────────────────────────────────────────────────────
+  // (extracted to LuxMentorClassIdle.tsx — code review, 2026-09-04, size limit)
   return (
-    <div className="border border-border rounded-xl overflow-hidden">
-      <div className="bg-surface px-4 py-3 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center">
-          <Mic className="w-4 h-4 text-indigo-600" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-charcoal">{s('Clase con Lux Mentor', 'Lux Mentor Class')}</p>
-          <p className="text-xs text-gray-500">{s('Exposición narrada + preguntas en vivo', 'Narrated exposition + live Q&A')}</p>
-        </div>
-      </div>
-      <div className="p-4 space-y-3">
-        {voidedOnly && (
-          <div className="flex items-start gap-2 bg-amber-50 rounded-lg p-3">
-            <WifiOff className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">{s('Tu sesión anterior falló por red. Puedes reintentar.', 'Your previous session failed due to network. You can retry.')}</p>
-          </div>
-        )}
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>{s('Contenido → Exposición narrada → Preguntas (~5 min)', 'Content → Narrated exposition → Questions (~5 min)')}</span>
-        </div>
-        <button
-          onClick={startFlow}
-          disabled={phase === 'loading'}
-          className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60"
-        >
-          {phase === 'loading' ? (
-            <><Loader2 className="w-4 h-4 animate-spin" />{s('Cargando…', 'Loading…')}</>
-          ) : (
-            <><PlayCircle className="w-4 h-4" />{voidedOnly ? s('Reintentar clase', 'Retry class') : s('Iniciar clase', 'Start class')}</>
-          )}
-        </button>
-        {sessions.length > 0 && !voidedOnly && (
-          <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
-            <Ban className="w-3 h-3" />
-            {s('Esta clase puede tomarse una sola vez', 'This class can only be taken once')}
-          </p>
-        )}
-      </div>
-    </div>
+    <LuxMentorClassIdle
+      loading={phase === 'loading'}
+      voidedOnly={voidedOnly}
+      hasSessions={sessions.length > 0}
+      onStart={startFlow}
+      s={s}
+    />
   );
 }
