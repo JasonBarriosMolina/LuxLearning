@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, extractYouTubeId, computeSilenceAction, findActiveCaptionIndex } from './LuxMentorClass.helpers';
+import {
+  buildSystemPrompt, extractYouTubeId, computeSilenceAction, findActiveCaptionIndex,
+  qaSecondsRemaining, formatCountdown,
+} from './LuxMentorClass.helpers';
 
 describe('buildSystemPrompt — tone constraint', () => {
   // Trello DmPpbrff item 6 (2026-08-30 20:24): Lux Mentor's on-screen/spoken content
@@ -35,6 +38,39 @@ describe('buildSystemPrompt — tone constraint', () => {
     const prompt = buildSystemPrompt('Enfócate en ejemplos musicales.', null, 'es', null);
     expect(prompt).toContain('Enfócate en ejemplos musicales.');
     expect(prompt).toMatch(/sin emojis/i);
+  });
+
+  // Trello q1yXHIob, 2026-08-29 (Mack): "no digas líneas de código en la interacción,
+  // como por ejemplo 'end call' ... Eso jamás puede ocurrir" — a real observed bug.
+  it('forbids saying technical/control phrases like "end call" out loud, in Spanish', () => {
+    const prompt = buildSystemPrompt(null, null, 'es', null);
+    expect(prompt).toMatch(/end call/i);
+    expect(prompt).toMatch(/nunca digas/i);
+  });
+
+  it('forbids saying technical/control phrases like "end call" out loud, in English', () => {
+    const prompt = buildSystemPrompt(null, null, 'en', null);
+    expect(prompt).toMatch(/end call/i);
+    expect(prompt).toMatch(/never say/i);
+  });
+});
+
+describe('qaSecondsRemaining / formatCountdown — visible Q&A countdown', () => {
+  it('counts down toward zero as elapsed time approaches the target', () => {
+    expect(qaSecondsRemaining(0, 300)).toBe(300);
+    expect(qaSecondsRemaining(180, 300)).toBe(120);
+    expect(qaSecondsRemaining(299, 300)).toBe(1);
+  });
+
+  it('never goes negative past the target', () => {
+    expect(qaSecondsRemaining(400, 300)).toBe(0);
+  });
+
+  it('formats seconds as m:ss', () => {
+    expect(formatCountdown(120)).toBe('2:00');
+    expect(formatCountdown(65)).toBe('1:05');
+    expect(formatCountdown(9)).toBe('0:09');
+    expect(formatCountdown(0)).toBe('0:00');
   });
 });
 
