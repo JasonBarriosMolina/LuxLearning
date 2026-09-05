@@ -314,6 +314,13 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
     // body.order: [{ id: moduleId, order: number }, ...]
     const { order } = body as { order?: Array<{ id: string; order: number }> };
     if (!Array.isArray(order) || order.length === 0) return badRequest('order array required');
+    // Not currently called from the frontend (no `api.*.reorder` client method exists —
+    // the UI uses the up/down arrows on individual modules instead) — left here for
+    // whenever bulk drag-and-drop reordering gets built. NOTE if that day comes: this
+    // Promise.all has the same @@unique([courseId, order]) collision risk found and
+    // fixed for the up/down arrows (Trello DmPpbrff, 2026-09-05, apps/web/lib/reorder.ts)
+    // — a real reorder needs each item moved through a temporary negative order first,
+    // sequentially, not applied in parallel.
     await Promise.all(
       order.map(({ id, order: newOrder }) =>
         prisma.module.update({ where: { id, courseId }, data: { order: Number(newOrder) } })

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { swapOrderSequential } from '@/lib/reorder';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -332,19 +333,17 @@ export default function AdminCourseDetailPage() {
               onMoveUp={async () => {
                 const prev = course.modules[mi - 1];
                 if (!prev) return;
-                await Promise.all([
-                  api.admin.modules.update(mod.id, { order: prev.order }),
-                  api.admin.modules.update(prev.id, { order: mod.order }),
-                ]);
+                // Sequential 3-step swap, not Promise.all (Trello DmPpbrff, 2026-09-05
+                // — Mack: "las flechas ... no funcionan") — Module has
+                // @@unique([courseId, order]), and two parallel updates always collide
+                // mid-swap. See lib/reorder.ts for the full explanation.
+                await swapOrderSequential((id, order) => api.admin.modules.update(id, { order }), mod, prev);
                 await load();
               }}
               onMoveDown={async () => {
                 const next = course.modules[mi + 1];
                 if (!next) return;
-                await Promise.all([
-                  api.admin.modules.update(mod.id, { order: next.order }),
-                  api.admin.modules.update(next.id, { order: mod.order }),
-                ]);
+                await swapOrderSequential((id, order) => api.admin.modules.update(id, { order }), mod, next);
                 await load();
               }}
             />
