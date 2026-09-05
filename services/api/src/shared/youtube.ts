@@ -73,6 +73,27 @@ export async function searchYoutubeVideo(
   }
 }
 
+/** Finds YouTube video links embedded as `<a href="...">label</a>` inside lesson HTML
+ *  content — specifically the "🎥 Videos Sugeridos" section `ai-wizard-worker.ts` appends
+ *  to a module's last text lesson (module-level video suggestions, separate from a
+ *  lesson's own `youtubeId` field). The admin's "Validar videos" button only ever checked
+ *  `youtubeId` — Trello DmPpbrff, 2026-09-05 (Mack): "debería validar también los videos
+ *  que se sugieren dentro de las sugerencias de cada uno de los módulos." A link without a
+ *  real 11-char id (the search-results fallback used when YOUTUBE_API_KEY isn't set) is
+ *  skipped — it was never meant to point at one specific video, so it isn't a "broken
+ *  video" to report. */
+export function extractSuggestedVideoLinks(content: string | null | undefined): { videoId: string; label: string }[] {
+  if (!content) return [];
+  const found: { videoId: string; label: string }[] = [];
+  const anchorRe = /<a\s[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = anchorRe.exec(content)) !== null) {
+    const videoId = extractYoutubeId(m[1]);
+    if (videoId) found.push({ videoId, label: m[2] ?? '' });
+  }
+  return found;
+}
+
 /** Checks whether a YouTube video is actually available via the public oEmbed endpoint —
  *  no API key needed. Returns false on any non-200 response or network error (removed,
  *  private, age-restricted-without-embed, or a malformed/non-existent ID all resolve to a

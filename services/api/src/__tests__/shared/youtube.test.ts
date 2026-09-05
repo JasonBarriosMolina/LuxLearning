@@ -5,7 +5,7 @@
  * URL pasted into the "YouTube ID" field was never normalized before checking.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extractYoutubeId, isYoutubeVideoAvailable, searchYoutubeVideo, escapeHtml } from '../../shared/youtube';
+import { extractYoutubeId, isYoutubeVideoAvailable, searchYoutubeVideo, escapeHtml, extractSuggestedVideoLinks } from '../../shared/youtube';
 
 describe('extractYoutubeId', () => {
   it('passes through a bare 11-char ID unchanged', () => {
@@ -98,6 +98,44 @@ describe('searchYoutubeVideo', () => {
   it('returns null (not throws) on a network error', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down')) as any;
     expect(await searchYoutubeVideo('cualquier cosa', 'fake-key')).toBeNull();
+  });
+});
+
+// Trello DmPpbrff, 2026-09-05 (Mack): "Validar videos" only checked lesson.youtubeId —
+// module-level video suggestions (ai-wizard-worker.ts' "🎥 Videos Sugeridos" section) live
+// as <a href> links inside a lesson's own content HTML instead, and never got validated.
+describe('extractSuggestedVideoLinks', () => {
+  it('finds a real YouTube link embedded in the "Videos Sugeridos" section', () => {
+    const html = '<section class="lesson-resources"><h3>🎥 Videos Sugeridos</h3><ul><li><a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" target="_blank" rel="noopener noreferrer">Historia de la Música Barroca</a></li></ul></section>';
+    expect(extractSuggestedVideoLinks(html)).toEqual([{ videoId: 'dQw4w9WgXcQ', label: 'Historia de la Música Barroca' }]);
+  });
+
+  it('finds multiple links across multiple <li> entries', () => {
+    const html = '<ul><li><a href="https://youtu.be/aaaaaaaaaaa">A</a></li><li><a href="https://www.youtube.com/watch?v=bbbbbbbbbbb">B</a></li></ul>';
+    expect(extractSuggestedVideoLinks(html)).toEqual([
+      { videoId: 'aaaaaaaaaaa', label: 'A' },
+      { videoId: 'bbbbbbbbbbb', label: 'B' },
+    ]);
+  });
+
+  it('skips the keyword-search fallback link (no real video id, not a "broken video")', () => {
+    const html = '<a href="https://youtube.com/results?search_query=historia%20barroca">historia barroca</a>';
+    expect(extractSuggestedVideoLinks(html)).toEqual([]);
+  });
+
+  it('ignores non-YouTube anchors entirely', () => {
+    const html = '<a href="https://example.com/some-article">An article</a>';
+    expect(extractSuggestedVideoLinks(html)).toEqual([]);
+  });
+
+  it('returns empty for null/undefined/empty content', () => {
+    expect(extractSuggestedVideoLinks(null)).toEqual([]);
+    expect(extractSuggestedVideoLinks(undefined)).toEqual([]);
+    expect(extractSuggestedVideoLinks('')).toEqual([]);
+  });
+
+  it('returns empty when the lesson content has no <a> tags at all', () => {
+    expect(extractSuggestedVideoLinks('<p>Solo texto, sin enlaces.</p>')).toEqual([]);
   });
 });
 
