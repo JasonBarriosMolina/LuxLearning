@@ -93,6 +93,11 @@ export const BGM_TRACKS: BgmTrack[] = [
   { id: 'lofi-study-session', title: 'Lofi Study Session', url: `${BGM_BASE_URL}/lofi-study-session.mp3` },
   { id: 'lofi-relax', title: 'Lofi Relax', url: `${BGM_BASE_URL}/lofi-relax.mp3` },
   { id: 'no-copyright-bg', title: 'Ambient Background', url: `${BGM_BASE_URL}/no-copyright-bg.mp3` },
+  // Second batch, 2026-09-05 (Mack)
+  { id: 'lofi-study-rainy-night', title: 'Lofi Study Rainy Night', url: `${BGM_BASE_URL}/lofi-study-rainy-night.mp3` },
+  { id: 'lofi-cocktail-bar', title: 'Lofi Cocktail Bar', url: `${BGM_BASE_URL}/lofi-cocktail-bar.mp3` },
+  { id: 'lofi-midnight-club', title: 'Lofi Midnight Club', url: `${BGM_BASE_URL}/lofi-midnight-club.mp3` },
+  { id: 'lofi-smooth', title: 'Lofi Smooth', url: `${BGM_BASE_URL}/lofi-smooth.mp3` },
 ];
 
 /** Deterministic per-lesson track pick — same lesson always plays the same track (no

@@ -150,8 +150,11 @@ describe('pickBgmTrack', () => {
     expect(ids.size).toBeGreaterThan(1);
   });
 
-  it('exposes exactly the 6 curated tracks Mack sent (royalty-free, manually curated — no music API exists)', () => {
-    expect(BGM_TRACKS).toHaveLength(6);
+  it('exposes the curated tracks Mack sent (royalty-free, manually curated — no music API exists), at least the first batch of 6', () => {
+    expect(BGM_TRACKS.length).toBeGreaterThanOrEqual(6);
     expect(BGM_TRACKS.every((t) => t.url.startsWith('https://lux-learning-images.s3.amazonaws.com/audio/bgm/'))).toBe(true);
+    // Every id must be unique — a duplicate would silently overwrite/confuse the
+    // deterministic per-lesson pick above.
+    expect(new Set(BGM_TRACKS.map((t) => t.id)).size).toBe(BGM_TRACKS.length);
   });
 });
