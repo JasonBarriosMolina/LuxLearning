@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
+import { swapOrderSequential } from '@/lib/reorder';
 import { ConfirmDelete } from './ConfirmDelete';
 import { LessonRow } from './LessonRow';
 import { QuestionRow } from './QuestionRow';
@@ -323,19 +324,17 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
                 onMoveUp={async () => {
                   const prev = mod.lessons[li - 1];
                   if (!prev) return;
-                  await Promise.all([
-                    api.admin.lessons.update(lesson.id, { order: prev.order }),
-                    api.admin.lessons.update(prev.id, { order: lesson.order }),
-                  ]);
+                  // Sequential 3-step swap, not Promise.all (Trello DmPpbrff, 2026-09-05
+                  // — Mack: "las flechas ... no funcionan") — Lesson has
+                  // @@unique([moduleId, order]), and two parallel updates always collide
+                  // mid-swap. See lib/reorder.ts for the full explanation.
+                  await swapOrderSequential((id, order) => api.admin.lessons.update(id, { order }), lesson, prev);
                   onRefresh();
                 }}
                 onMoveDown={async () => {
                   const next = mod.lessons[li + 1];
                   if (!next) return;
-                  await Promise.all([
-                    api.admin.lessons.update(lesson.id, { order: next.order }),
-                    api.admin.lessons.update(next.id, { order: lesson.order }),
-                  ]);
+                  await swapOrderSequential((id, order) => api.admin.lessons.update(id, { order }), lesson, next);
                   onRefresh();
                 }}
               />
