@@ -27,7 +27,7 @@ const generateLessonAudioMock = vi.fn();
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Danielle' : 'Mia'),
-  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Sergio'),
+  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Pedro'),
 }));
 
 import { handler } from '../../quiz/handler';
@@ -104,7 +104,7 @@ describe('POST /quiz/question-audio', () => {
       expect(res.statusCode).toBe(200);
       const body = await bodyOf(res);
       expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-male.mp3');
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('question-q1', expect.any(String), 'Sergio');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('question-q1', expect.any(String), 'Pedro');
       expect(questionUpdateMock).toHaveBeenCalledWith({ where: { id: 'q1' }, data: { audioUrlMale: 'https://s3.example.com/fresh-male.mp3' } });
     });
 

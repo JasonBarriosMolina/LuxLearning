@@ -180,10 +180,13 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
             style={{ transform: `scale(${kenBurnsScale}) translateX(${kenBurnsTranslate}%)` }}
           />
         )}
-        {/* Close captions (Trello DmPpbrff, 2026-09-04) — sits above the always-on
-            title/bullets overlay below, so the two never occupy the same line. */}
+        {/* Close captions (Trello DmPpbrff, 2026-09-04/05 — Mack, 09-05 follow-up:
+            "deberían estar a una altura diferente para que no interrumpan con lo que ya
+            está escrito ... un poco más altos"): raised further above the always-on
+            title/bullets overlay below — that overlay's height varies with how many
+            bullets a slide has, so bottom-24 wasn't always enough clearance. */}
         {ccEnabled && activeCaption && (
-          <div className="absolute inset-x-0 bottom-24 flex justify-center px-4 pointer-events-none z-10">
+          <div className="absolute inset-x-0 bottom-36 flex justify-center px-4 pointer-events-none z-10">
             <p className="max-w-[90%] text-center text-white text-sm md:text-base font-medium bg-black/75 rounded-lg px-3 py-1.5">
               {activeCaption}
             </p>

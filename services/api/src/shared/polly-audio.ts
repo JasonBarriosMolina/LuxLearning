@@ -28,8 +28,12 @@ export function defaultVoiceForLanguage(planLanguage: string | null | undefined)
 
 // Male neural voice per language — Lux Mentor Class narration specifically asked for a
 // male voice (Trello DmPpbrff, 2026-08-31 04:01: "en una voz masculina, específicamente").
+// Spanish default changed from Sergio (es-ES, Spain) to Pedro (es-US, Latin American) —
+// Trello DmPpbrff, 2026-09-05 (Mack): "El modelo de voz en español es un español de
+// España; quiero que sea ... latinoamericano." The female default (Mia, es-MX) was
+// already Latin American — only the male voice had this problem.
 export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefined): string {
-  return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Sergio';
+  return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Pedro';
 }
 
 export async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mia'): Promise<string | null> {
