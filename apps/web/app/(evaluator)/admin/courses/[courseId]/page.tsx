@@ -368,12 +368,18 @@ export default function AdminCourseDetailPage() {
               }
             </div>
             <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-              {validateResult.videos.map((v: any) => (
-                <div key={v.lessonId} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${v.ok ? 'bg-green-50 dark:bg-green-900/10' : 'bg-red-50 dark:bg-red-900/10'}`}>
+              {validateResult.videos.map((v: any, i: number) => (
+                <div key={`${v.source}-${v.lessonId}-${v.youtubeId}-${i}`} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${v.ok ? 'bg-green-50 dark:bg-green-900/10' : 'bg-red-50 dark:bg-red-900/10'}`}>
                   {v.ok
                     ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
                     : <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
                   }
+                  {/* Trello DmPpbrff, 2026-09-05 (Mack): distinguish videos embedded via
+                      "Videos Sugeridos" (module resources) from a lesson's own video —
+                      same validation, different source, worth telling apart in the list. */}
+                  {v.source === 'suggestion' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cta-from/10 border border-cta-from/20 text-cta-from font-medium shrink-0">Sugerido</span>
+                  )}
                   <span className={`flex-1 truncate ${v.ok ? 'text-gray-700 dark:text-gray-200' : 'text-red-700 dark:text-red-300 font-medium'}`}>{v.title}</span>
                   <a href={`https://www.youtube.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-gray-400 hover:text-cta-from flex items-center gap-0.5 shrink-0">
@@ -382,7 +388,7 @@ export default function AdminCourseDetailPage() {
                 </div>
               ))}
               {validateResult.total === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">Este curso no tiene lecciones con youtubeId.</p>
+                <p className="text-sm text-gray-400 text-center py-4">Este curso no tiene videos (youtubeId ni sugerencias de módulo) para validar.</p>
               )}
             </div>
             <div className="flex justify-end pt-2 gap-2">

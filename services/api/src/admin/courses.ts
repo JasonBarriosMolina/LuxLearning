@@ -5,7 +5,7 @@ import { getAiJob, createNotification } from '../shared/db-dynamo';
 import { batchTranslate, invalidateTranslation } from '../shared/translate';
 import { sendTemplatedEmail } from '../shared/email';
 import { upsertChat } from '../shared/db-messages';
-import { extractYoutubeId, isYoutubeVideoAvailable } from '../shared/youtube';
+import { extractYoutubeId, isYoutubeVideoAvailable, extractSuggestedVideoLinks } from '../shared/youtube';
 import { ok, created, badRequest, forbidden, notFound } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName,
@@ -130,7 +130,7 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
     const courseId = validateVideosMatch[1]!;
     const course = await prisma.course.findUnique({
       where: { id: courseId },
-      include: { modules: { include: { lessons: { select: { id: true, title: true, youtubeId: true, order: true, moduleId: true } } } } },
+      include: { modules: { include: { lessons: { select: { id: true, title: true, youtubeId: true, content: true, order: true, moduleId: true } } } } },
     });
     if (!course) return notFound('Curso no encontrado');
 
@@ -138,20 +138,42 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
       m.lessons.filter((l: any) => l.youtubeId && l.youtubeId.trim())
     );
 
-    const results = await Promise.allSettled(
-      allLessons.map(async (l: any) => {
-        // Normalize before checking — a full URL pasted into the "YouTube ID" field
-        // (instead of just the ID) used to hit oEmbed with a malformed lookup URL and
-        // always fail, reporting a perfectly fine video as "unavailable" (Trello
-        // Nk0XDBvJ comment 6a926aaa).
-        const videoId = extractYoutubeId(l.youtubeId);
-        if (!videoId) return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok: false, status: 0 };
-        const ok = await isYoutubeVideoAvailable(videoId);
-        return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, ok, status: ok ? 200 : 0 };
-      })
+    // Trello DmPpbrff, 2026-09-05 (Mack): "debería validar también los videos que se
+    // sugieren dentro de las sugerencias de cada uno de los módulos" — those live as
+    // <a href> links baked into a lesson's own `content` HTML (ai-wizard-worker.ts'
+    // "🎥 Videos Sugeridos" section), not in the `youtubeId` field this button already
+    // checked. One list entry per suggestion link found, tagged `source` so the modal can
+    // tell a lesson's own video apart from a module-suggested one.
+    const suggestedLinks = course.modules.flatMap((m: any) =>
+      m.lessons.flatMap((l: any) =>
+        extractSuggestedVideoLinks(l.content).map((link) => ({ lessonId: l.id, lessonTitle: l.title, ...link }))
+      )
     );
 
-    const videos = results.map((r: any) => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
+    const [lessonResults, suggestionResults] = await Promise.all([
+      Promise.allSettled(
+        allLessons.map(async (l: any) => {
+          // Normalize before checking — a full URL pasted into the "YouTube ID" field
+          // (instead of just the ID) used to hit oEmbed with a malformed lookup URL and
+          // always fail, reporting a perfectly fine video as "unavailable" (Trello
+          // Nk0XDBvJ comment 6a926aaa).
+          const videoId = extractYoutubeId(l.youtubeId);
+          if (!videoId) return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, source: 'lesson', ok: false, status: 0 };
+          const ok = await isYoutubeVideoAvailable(videoId);
+          return { lessonId: l.id, title: l.title, youtubeId: l.youtubeId, source: 'lesson', ok, status: ok ? 200 : 0 };
+        })
+      ),
+      Promise.allSettled(
+        suggestedLinks.map(async (s) => {
+          const ok = await isYoutubeVideoAvailable(s.videoId);
+          return { lessonId: s.lessonId, title: s.label || s.lessonTitle, youtubeId: s.videoId, source: 'suggestion', ok, status: ok ? 200 : 0 };
+        })
+      ),
+    ]);
+
+    const videos = [...lessonResults, ...suggestionResults]
+      .map((r: any) => r.status === 'fulfilled' ? r.value : null)
+      .filter(Boolean);
     return ok({ videos, broken: videos.filter((v: any) => !v!.ok).length, total: videos.length });
   }
 
