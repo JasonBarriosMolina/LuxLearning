@@ -462,7 +462,12 @@ function CourseWizardInner() {
   const step1Valid = step1.title.trim().length > 0 && step1.courseType !== '' && step1.modality !== '' && step1.startDate !== '';
   const step2Valid = step2.totalWeeks >= 1;
   const step3Valid = step3.items.length > 0 && weightOk;
-  const step4Valid = step4.status !== 'loading';
+  // Trello DmPpbrff, 2026-09-05 (Mack): "no me tiene que dejar la opción de darle
+  // 'Siguiente' si no se ha generado un plan con LuxPlanner" — this only checked
+  // "not currently loading", which is true before the student/evaluator has ever
+  // clicked "Generar" at all (status starts at 'idle', not 'loading'), so Next was
+  // enabled from the moment Step 3 was reached, plan or no plan.
+  const step4Valid = step4.status !== 'loading' && step4.weeklyPlan.length > 0;
 
   // Order: 1=Identidad, 2=Calendario, 3=Planeamiento(LuxPlanner), 4=Evaluación, 5=Resumen Lux Planner
   const canNext = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step4Valid : step === 4 ? step3Valid : false;
