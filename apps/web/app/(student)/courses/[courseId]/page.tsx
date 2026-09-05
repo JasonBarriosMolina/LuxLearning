@@ -120,12 +120,17 @@ export default function CoursePage() {
         <ArrowLeft className="w-4 h-4" /> {t.courseDetail.breadcrumb}
       </Link>
 
-      {/* Course header */}
+      {/* Course header — Trello DmPpbrff, 2026-09-05 (Mack): cardColor/cardBorderColor
+          must also identify the course "dentro del curso", not just the list. Same
+          fallback-branch bug as courses/page.tsx (cardColor never rendered when there's
+          a cover image) — fixed by tinting the header with cardColor whenever set, and
+          adding a persistent left accent bar from cardBorderColor on the info card below
+          (this page has no hover state to attach it to, unlike the course list). */}
       <div className="rounded-2xl overflow-hidden h-48 shadow-card">
         {course.imageUrl
           ? <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
           : (
-            <div className="w-full h-full bg-cta-gradient flex items-center justify-center">
+            <div className={`w-full h-full flex items-center justify-center ${!course.cardColor ? 'bg-cta-gradient' : ''}`} style={course.cardColor ? { background: course.cardColor } : undefined}>
               <div className="text-center text-white">
                 <BookOpen className="w-12 h-12 mx-auto mb-2 opacity-80" />
                 <p className="font-heading font-bold text-lg opacity-90">{course.title}</p>
@@ -135,7 +140,7 @@ export default function CoursePage() {
         }
       </div>
 
-      <div className="card">
+      <div className="card" style={course.cardBorderColor ? { borderLeft: `4px solid ${course.cardBorderColor}` } : undefined}>
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h1 className="font-heading font-bold text-2xl text-charcoal">{course.title}</h1>

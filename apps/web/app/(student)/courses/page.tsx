@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { BookOpen, ArrowRight, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -45,8 +45,26 @@ export default function CoursesPage() {
             const totalDuration = course.modules?.reduce(
               (acc: number, m: any) => acc + parseInt(m.duration ?? '0', 10), 0
             ) ?? 0;
+            // Trello DmPpbrff, 2026-09-05 (Mack): "el color de tinte y el color de borde
+            // hover no está generando ningún cambio en ningún lado" — cardColor only ever
+            // applied to the fallback placeholder block, invisible for the common case
+            // (a course WITH a generated cover image never rendered that branch at all),
+            // and cardBorderColor was a permanently-visible border, not a hover effect.
+            // Fixed: cardColor is now a small always-visible accent bar (works with or
+            // without an image); cardBorderColor is a real :hover-only border via a CSS
+            // custom property (inline styles can't express :hover directly), base border
+            // transparent so there's no layout shift when it appears.
+            const hoverBorderStyle = course.cardBorderColor
+              ? ({ '--course-hover-border': course.cardBorderColor } as CSSProperties)
+              : undefined;
             return (
-              <Link key={course.id} href={`/courses/${course.id}`} className="card-hover flex flex-col gap-4" style={course.cardBorderColor ? { borderColor: course.cardBorderColor } : undefined}>
+              <Link
+                key={course.id}
+                href={`/courses/${course.id}`}
+                className={`card-hover flex flex-col gap-4 border-2 border-transparent ${course.cardBorderColor ? 'hover:border-[var(--course-hover-border)]' : ''}`}
+                style={hoverBorderStyle}
+              >
+                {course.cardColor && <div className="h-1.5 -mt-6 -mx-6 mb-2 rounded-t-2xl" style={{ background: course.cardColor }} />}
                 {course.imageUrl ? (
                   <div className="rounded-xl overflow-hidden h-40">
                     <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
