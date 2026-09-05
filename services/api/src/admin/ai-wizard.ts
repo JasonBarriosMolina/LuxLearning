@@ -8,7 +8,7 @@ import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { saveAiJob } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
 import { upsertChat } from '../shared/db-messages';
-import { ok, created, badRequest, forbidden, serverError } from '../shared/response';
+import { ok, created, badRequest, forbidden, serverError, buildContentDisposition } from '../shared/response';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName,
   S3_IMAGES_BUCKET, lambdaClient, s3Client, invokeBedrockForJson,
@@ -140,7 +140,7 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
     // Descriptive filename (Trello DmPpbrff 6a92658b) — no teacher-profile lookup here
     // (lightweight refresh endpoint), so it's omitted rather than fetched from Cognito.
     const fileName = buildPlanFileName(course.title, course.academicPeriod ?? undefined, '');
-    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${fileName}"` }), { expiresIn: 3600 });
+    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: buildContentDisposition(fileName) }), { expiresIn: 3600 });
     return ok({ url });
   }
 

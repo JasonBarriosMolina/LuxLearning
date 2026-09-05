@@ -1,5 +1,41 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 
+// Trello DmPpbrff, 2026-09-05 (Mack): "No puedo descargar el documento editable" — root
+// cause found in CloudWatch: TypeError [ERR_INVALID_CHAR]: Invalid character in header
+// content ["content-disposition"]. A Content-Disposition/ResponseContentDisposition
+// header value is sent as a raw HTTP header, which Node rejects outright for any
+// non-ASCII byte (accents, ñ, emoji, etc) — course titles and teacher names routinely
+// have those. buildPlanFileName() only stripped filesystem-invalid characters
+// (\ / : * ? " < > |), never non-ASCII ones, so any accented course title (the common
+// case in Spanish) crashed doc generation entirely — the download button then simply
+// never appeared, since generateWizardPlanDocument treats this as non-fatal and
+// swallows it. Fixed with the standard RFC 6266 / RFC 5987 dual form: an ASCII-safe
+// `filename=` for old clients, plus the real name UTF-8-percent-encoded in `filename*=`
+// for everything that actually renders it (every current browser).
+const COMBINING_DIACRITICS = new RegExp('[̀-ͯ]', 'g'); // é→e, ñ→n, etc, after NFD decomposition
+
+function asciiSafeFileName(fileName: string): string {
+  // Strip the base name and extension separately — the extension (.docx, .pdf, ...) is
+  // always plain ASCII letters and would otherwise make the "any letters survived?"
+  // check below pass even when the actual title was 100% non-Latin (e.g. "日本語.docx").
+  const ext = fileName.match(/\.[A-Za-z0-9]+$/)?.[0] ?? '';
+  const base = ext ? fileName.slice(0, -ext.length) : fileName;
+  const strippedBase = base
+    .normalize('NFD').replace(COMBINING_DIACRITICS, '')
+    .replace(/[^\x20-\x7E]/g, '') // drop anything still non-ASCII (emoji, CJK, etc)
+    .replace(/"/g, '')            // quotes would break the header's own quoting
+    .trim();
+  const safeBase = /[A-Za-z0-9]/.test(strippedBase) ? strippedBase : 'documento';
+  return `${safeBase}${ext}`;
+}
+
+/** Builds a Content-Disposition/ResponseContentDisposition header value that's safe to
+ *  hand directly to Node's http client, even when fileName has accents or other
+ *  non-ASCII characters — see the comment above for the bug this fixes. */
+export function buildContentDisposition(fileName: string, type: 'attachment' | 'inline' = 'attachment'): string {
+  return `${type}; filename="${asciiSafeFileName(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
 const ALLOWED_ORIGINS = [
   'https://luxlearning.academy',
   'https://www.luxlearning.academy',

@@ -7,7 +7,7 @@ import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getE
 import { listMyClassSessions, listMyClassSessionsForCourse } from '../shared/db-classes';
 import { handleClasses } from './classes';
 import { handleVapiWebhook } from './vapi-webhook';
-import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden } from '../shared/response';
+import { ok, notFound, serverError, cors, setRequestOrigin, badRequest, forbidden, buildContentDisposition } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { batchTranslate, type TranslatableFields } from '../shared/translate';
 
@@ -315,7 +315,7 @@ export const handler = async (event: Event) => {
             await Promise.all(planResources.map(async (r) => {
               r.fileUrl = await getSignedUrl(
                 s3,
-                new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key!, ResponseContentDisposition: `attachment; filename="${r.fileName || `plan-${courseId}.docx`}"` }),
+                new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key!, ResponseContentDisposition: buildContentDisposition(r.fileName || `plan-${courseId}.docx`) }),
                 { expiresIn: 3600 },
               ).catch(() => r.fileUrl);
             }));

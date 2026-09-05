@@ -6,6 +6,7 @@ import { saveResource, batchCreateCalendarEvents, deleteWizardCalendarEvents } f
 import type { CalendarEvent } from '../shared/db-calendar';
 import { AdminCtx, S3_IMAGES_BUCKET, s3Client, invokeBedrockForJson, cognito, USER_POOL_ID } from './ctx';
 import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { buildContentDisposition } from '../shared/response';
 
 // Placeholder until real multi-tenant institution data exists (Trello DmPpbrff comment
 // 6a92658b). Single institution today — move to an env var or DB field once there's more
@@ -188,8 +189,8 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
     // human-readable now.
     const downloadFileName = buildPlanFileName(title, academicPeriod, teacherName);
     const s3Key = `plans/${course.id}/plan-${planLanguage.toLowerCase()}.docx`;
-    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: `attachment; filename="${downloadFileName}"` }));
-    docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: `attachment; filename="${downloadFileName}"` }), { expiresIn: 604800 });
+    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, Body: buffer, ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: buildContentDisposition(downloadFileName) }));
+    docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: s3Key, ResponseContentDisposition: buildContentDisposition(downloadFileName) }), { expiresIn: 604800 });
     await prisma.course.update({ where: { id: course.id }, data: { planDocumentS3Key: s3Key } });
     const now = new Date().toISOString();
     await saveResource({
@@ -218,7 +219,7 @@ export async function generateWizardPlanDocument(ctx: AdminCtx, p: WizardDocPara
       // rebuild the name from a failed generation, but course/title/teacherName are
       // still in scope here regardless of which branch produced docPublicUrl.
       const fallbackFileName = buildPlanFileName(title, academicPeriod, teacherName);
-      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${fallbackFileName}"` }), { expiresIn: 604800 });
+      docPublicUrl = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: buildContentDisposition(fallbackFileName) }), { expiresIn: 604800 });
     } catch { /* non-fatal — download link just won't appear */ }
   }
   return { docPublicUrl };
