@@ -23,6 +23,9 @@ vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
 }));
 vi.mock('jsonrepair', () => ({ jsonrepair: (x: string) => x }));
 
+const { applyLuxWatermarkMock } = vi.hoisted(() => ({ applyLuxWatermarkMock: vi.fn() }));
+vi.mock('../../shared/lux-watermark', () => ({ applyLuxWatermark: applyLuxWatermarkMock }));
+
 function makeBedrockBody(text: string) {
   return Buffer.from(JSON.stringify({ content: [{ text }] }));
 }
@@ -169,5 +172,91 @@ describe('generateLessonInfographic', () => {
     });
     await generateLessonInfographic('Test', 'Módulo', '');
     expect(capturedBody?.max_tokens).toBe(8192);
+  });
+});
+
+// ── generateLessonImage ────────────────────────────────────────────────────────
+// Trello DmPpbrff, 2026-09-05 (Mack): "íconos extraños" / "cosas ... encima de las
+// letras" — root-caused to the negative_prompt fighting the 'diagram' style's own
+// positive prompt (excluding "diagram, chart, infographic" while asking for exactly
+// that), plus a prompt-imagined fake watermark replaced with a real composited one.
+describe('generateLessonImage', () => {
+  let bedrockImageClient: any;
+  let s3Client: any;
+  let generateLessonImage: typeof import('../../admin/ai-image-helpers').generateLessonImage;
+
+  function makeStabilityBody(base64Image: string) {
+    return Buffer.from(JSON.stringify({ images: [base64Image] }));
+  }
+
+  const fakeImageB64 = Buffer.from('fake-jpeg-bytes').toString('base64');
+
+  beforeEach(async () => {
+    const ctx = await import('../../admin/ctx');
+    const helpers = await import('../../admin/ai-image-helpers');
+    bedrockImageClient = ctx.bedrockImageClient;
+    s3Client = ctx.s3Client;
+    generateLessonImage = helpers.generateLessonImage;
+    vi.spyOn(bedrockImageClient, 'send');
+    vi.spyOn(s3Client, 'send').mockResolvedValue({});
+    applyLuxWatermarkMock.mockReset();
+  });
+
+  it('drops "diagram/chart/infographic" from the negative prompt for style=diagram (they contradict its own positive prompt)', async () => {
+    applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
+    let capturedBody: any = null;
+    vi.mocked(bedrockImageClient.send).mockImplementationOnce((cmd: any) => {
+      capturedBody = JSON.parse(cmd?.body ?? '{}');
+      return Promise.resolve({ body: makeStabilityBody(fakeImageB64) });
+    });
+    await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x', style: 'diagram' });
+    expect(capturedBody.negative_prompt).not.toMatch(/\bdiagram\b/);
+    expect(capturedBody.negative_prompt).not.toMatch(/\bchart\b/);
+    expect(capturedBody.negative_prompt).not.toMatch(/\binfographic\b/);
+    // Still excludes actual legible text/UI artifacts regardless of style.
+    expect(capturedBody.negative_prompt).toMatch(/\btext\b/);
+  });
+
+  it('keeps "diagram/chart/infographic" in the negative prompt for non-diagram styles', async () => {
+    applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
+    let capturedBody: any = null;
+    vi.mocked(bedrockImageClient.send).mockImplementationOnce((cmd: any) => {
+      capturedBody = JSON.parse(cmd?.body ?? '{}');
+      return Promise.resolve({ body: makeStabilityBody(fakeImageB64) });
+    });
+    await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x', style: 'illustration' });
+    expect(capturedBody.negative_prompt).toMatch(/\bdiagram\b/);
+    expect(capturedBody.negative_prompt).toMatch(/\binfographic\b/);
+  });
+
+  it('uploads the watermarked buffer, not the raw Stability output, when watermarking succeeds', async () => {
+    const watermarked = Buffer.from('watermarked-bytes');
+    applyLuxWatermarkMock.mockResolvedValue(watermarked);
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody(fakeImageB64) });
+    await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+    const putCall = vi.mocked(s3Client.send).mock.calls.at(-1)![0] as any;
+    expect(putCall.Body).toEqual(watermarked);
+  });
+
+  it('falls back to the un-watermarked image when applyLuxWatermark rejects (e.g. sharp native binding missing) — non-fatal', async () => {
+    applyLuxWatermarkMock.mockRejectedValue(new Error('sharp native binding missing for this platform'));
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody(fakeImageB64) });
+    const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+    expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
+    const putCall = vi.mocked(s3Client.send).mock.calls.at(-1)![0] as any;
+    expect(putCall.Body).toEqual(Buffer.from(fakeImageB64, 'base64')); // the original, un-watermarked bytes
+  });
+
+  it('returns null when Stability returns no image', async () => {
+    applyLuxWatermarkMock.mockResolvedValue(Buffer.from('x'));
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: Buffer.from(JSON.stringify({ images: [] })) });
+    const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+    expect(result).toBeNull();
+  });
+
+  it('returns null (not a crash) when Bedrock/Stability throws', async () => {
+    vi.mocked(bedrockImageClient.send).mockRejectedValueOnce(new Error('Stability timeout'));
+    const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+    expect(result).toBeNull();
   });
 });
