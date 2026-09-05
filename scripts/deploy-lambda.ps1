@@ -5,7 +5,8 @@
 #         .\scripts\deploy-lambda.ps1 all -Env staging (deploy to staging environment)
 #
 # Lambdas that use Prisma automatically get node_modules/@prisma/client
-# and .prisma/client bundled into the zip.
+# and .prisma/client bundled into the zip. Lambdas flagged usesSharp
+# (only lux-admin today) get sharp + its linux-arm64 native binary bundled too.
 
 param(
   [Parameter(ValueFromRemainingArguments)][string[]]$targets,
@@ -25,9 +26,23 @@ $PRISMA_PKG    = "$MODULES\@prisma\client"
 $PRISMA_GEN    = "$MODULES\.prisma\client"
 $PRISMA_ENGINE = "$PRISMA_GEN\libquery_engine-linux-arm64-openssl-3.0.x.so.node"
 
-# Map: lambda-name -> [ entrypoint, usesPrisma ]
+# sharp (used by admin/ai-image-helpers.ts for the real Lux Learning watermark
+# composite, Trello DmPpbrff 2026-09-05) is a native module — like Prisma's query
+# engine, its binary must match the Lambda's actual runtime (linux-arm64, glibc),
+# not whatever platform this machine installed it for. The dev machine here is
+# Windows, so `@img/sharp-linux-arm64` + `@img/sharp-libvips-linux-arm64` were
+# force-installed alongside the normal win32 ones (`npm install --force`, since
+# npm refuses a foreign-platform package otherwise) specifically so they exist on
+# disk to be staged into the zip below.
+$SHARP_PKG          = "$MODULES\sharp"
+$SHARP_LINUX_ARM64   = "$MODULES\@img\sharp-linux-arm64"
+$SHARP_LIBVIPS_ARM64 = "$MODULES\@img\sharp-libvips-linux-arm64"
+
+# Map: lambda-name -> [ entrypoint, usesPrisma, usesSharp? ]
+# (usesSharp omitted = false; only lux-admin needs it today — ai-image-helpers.ts
+# is only ever imported through the admin domain chain)
 $LAMBDAS = [ordered]@{
-  "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true)
+  "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true, $true)
   "lux-attendance"  = @("$API_SRC\attendance\handler.ts",   $true)
   "lux-reflection"  = @("$API_SRC\reflection\handler.ts",   $true)
   "lux-evaluator"   = @("$API_SRC\evaluator\handler.ts",    $true)
@@ -78,6 +93,7 @@ function Deploy-Lambda([string]$name) {
   $targetName = "$name$ENV_SUFFIX"   # e.g. lux-admin-test
   $entry      = $LAMBDAS[$name][0]
   $usesPrisma = $LAMBDAS[$name][1]
+  $usesSharp  = if ($LAMBDAS[$name].Count -gt 2) { $LAMBDAS[$name][2] } else { $false }
   $outDir     = "$DIST\$($name -replace 'lux-','')"
   $stage      = "$outDir\_stage"
   $zipPath    = "$outDir\$name.zip"
@@ -126,6 +142,16 @@ function Deploy-Lambda([string]$name) {
     Remove-Item "$stage\node_modules\.prisma\client\query_engine-windows.dll.node" -ErrorAction SilentlyContinue
     # @prisma/client JS package
     Copy-Item $PRISMA_PKG "$stage\node_modules\@prisma\client" -Recurse
+  }
+
+  if ($usesSharp) {
+    if (-not (Test-Path $SHARP_LINUX_ARM64) -or -not (Test-Path $SHARP_LIBVIPS_ARM64)) {
+      throw 'sharp linux-arm64 binaries are missing from node_modules. From services\api, run: npm install --save-exact --force "@img/sharp-linux-arm64@<version>" "@img/sharp-libvips-linux-arm64@<version>" (pin the exact versions from sharp own optionalDependencies, e.g. npm view sharp optionalDependencies)'
+    }
+    New-Item -ItemType Directory "$stage\node_modules\@img" -Force | Out-Null
+    Copy-Item $SHARP_PKG "$stage\node_modules\sharp" -Recurse
+    Copy-Item $SHARP_LINUX_ARM64 "$stage\node_modules\@img\sharp-linux-arm64" -Recurse
+    Copy-Item $SHARP_LIBVIPS_ARM64 "$stage\node_modules\@img\sharp-libvips-linux-arm64" -Recurse
   }
 
   # 3. Zip
