@@ -109,7 +109,7 @@ export function NotesPanel({ contextType, contextId, lessonTitle, highlightsForS
     : notes;
 
   return (
-    <div className="fixed bottom-24 right-36 z-50 w-80 h-[70vh] flex flex-col bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl border border-border animate-fade-in overflow-hidden">
+    <div className="fixed bottom-24 right-20 z-50 w-80 h-[70vh] flex flex-col bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl border border-border animate-fade-in overflow-hidden">
       {/* Header — matches the Mentor chat / forum overlays' convention exactly */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-purple-500 to-fuchsia-500 shrink-0">
         <div className="flex items-center gap-2">

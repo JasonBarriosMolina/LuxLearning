@@ -16,6 +16,11 @@ import { LuxCarrouselPlayer } from './_components/LuxCarrouselPlayer';
 import { NotesPanel } from './_components/NotesPanel';
 import { COLORS, stripMarkup, applyHighlightsToHtml, type HighlightItem } from './lessonHighlights';
 
+// Trello DmPpbrff, 2026-09-05 (Mack): "Elimina el botón 'Foro de la lección'.
+// Escóndelo. No debería de verse." Hidden behind this flag rather than deleted —
+// flip back to true to restore it instantly if that's reversed later.
+const FORUM_ENABLED = false;
+
 // Apply highlights to plain text → render as ReactNode
 function applyHighlights(text: string, highlights: HighlightItem[]): React.ReactNode {
   if (!highlights.length) return text;
@@ -754,8 +759,13 @@ export default function LessonPage() {
         {chatOpen ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
       </button>
 
-      {/* Forum panel (fixed overlay) */}
-      {forumOpen && (
+      {/* Forum panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack): "Elimina
+          el botón 'Foro de la lección'. Escóndelo. No debería de verse." Hidden, not
+          deleted — FORUM_ENABLED below is the only thing gating it, so it comes back
+          instantly if this is reversed. forumOpen can never become true with the
+          button gone, so gating just the button below is enough, but the guard here
+          too makes the intent obvious at a glance. */}
+      {FORUM_ENABLED && forumOpen && (
         <div className="fixed bottom-24 right-20 z-50 w-80 h-[70vh] flex flex-col bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl border border-border animate-fade-in overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-emerald-500 to-teal-500">
             <div className="flex items-center gap-2">
@@ -807,14 +817,16 @@ export default function LessonPage() {
         </div>
       )}
 
-      {/* Floating forum button */}
-      <button
-        onClick={() => setForumOpen((prev) => !prev)}
-        title="Foro"
-        className="fixed bottom-6 right-20 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
-      >
-        {forumOpen ? <X className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
-      </button>
+      {/* Floating forum button — hidden per Mack's request above */}
+      {FORUM_ENABLED && (
+        <button
+          onClick={() => setForumOpen((prev) => !prev)}
+          title="Foro"
+          className="fixed bottom-6 right-20 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+        >
+          {forumOpen ? <X className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
+        </button>
+      )}
 
       {/* Notes panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack): redesigned
           from a static inline card into a chat-style floating panel. */}
@@ -831,7 +843,7 @@ export default function LessonPage() {
       <button
         onClick={() => setNotesOpen((prev) => !prev)}
         title={t.notesPanel.title}
-        className="fixed bottom-6 right-36 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+        className="fixed bottom-6 right-20 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
       >
         {notesOpen ? <X className="w-5 h-5" /> : <NotebookPen className="w-5 h-5" />}
       </button>
