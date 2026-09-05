@@ -6,7 +6,7 @@ import {
   getResourcesByEvaluator, saveResource, updateResource, getResourcesByCourse,
   getSignature, saveSignature, getCertificatesByUser,
 } from '../shared/db-dynamo';
-import { ok, badRequest } from '../shared/response';
+import { ok, badRequest, buildContentDisposition } from '../shared/response';
 
 const s3 = new S3Client({ region: 'us-east-1' });
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
@@ -24,7 +24,7 @@ async function resolvePlanLinks(resources: any[], prisma: any): Promise<any[]> {
       if (course?.planDocumentS3Key) {
         r.fileUrl = await getSignedUrl(
           s3,
-          new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: `attachment; filename="${r.fileName || `plan-${courseId}.docx`}"` }),
+          new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: course.planDocumentS3Key, ResponseContentDisposition: buildContentDisposition(r.fileName || `plan-${courseId}.docx`) }),
           { expiresIn: 3600 },
         );
       }
