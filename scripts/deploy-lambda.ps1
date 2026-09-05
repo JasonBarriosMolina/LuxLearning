@@ -38,23 +38,35 @@ $SHARP_PKG          = "$MODULES\sharp"
 $SHARP_LINUX_ARM64   = "$MODULES\@img\sharp-linux-arm64"
 $SHARP_LIBVIPS_ARM64 = "$MODULES\@img\sharp-libvips-linux-arm64"
 
-# Map: lambda-name -> [ entrypoint, usesPrisma, usesSharp? ]
-# (usesSharp omitted = false; only lux-admin needs it today — ai-image-helpers.ts
-# is only ever imported through the admin domain chain)
+# pdfkit (shared/carousel-pdf.ts for lux-lessons, certificates/handler.ts for
+# lux-certs) is pure JS but ships its standard-font metrics as separate .afm data
+# files (node_modules/pdfkit/js/data/*.afm) loaded via a path relative to pdfkit's
+# OWN file at runtime. esbuild bundles pdfkit's code straight into index.js by
+# default (no native binary, nothing stopped it) — but that rewrites __dirname to
+# /var/task/, and the .afm files were never staged there, so any PDF build (Lux
+# Recap carousel PDF, certificates) throws ENOENT the first time it needs a font.
+# Trello DmPpbrff, 2026-09-05 (Mack: "carousel-recap ... 500") — found by matching
+# a well-known pdfkit+bundler gotcha against the reported endpoint, not from a
+# CloudWatch stack trace (none turned up in the retention window). Fixed the same
+# way as Prisma/sharp: mark pdfkit --external, stage the real folder into the zip.
+$PDFKIT_PKG = "$MODULES\pdfkit"
+
+# Map: lambda-name -> [ entrypoint, usesPrisma, usesSharp?, usesPdfkit? ]
+# (usesSharp/usesPdfkit omitted = false)
 $LAMBDAS = [ordered]@{
-  "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true, $true)
+  "lux-admin"       = @("$API_SRC\admin\handler.ts",        $true, $true, $false)
   "lux-attendance"  = @("$API_SRC\attendance\handler.ts",   $true)
   "lux-reflection"  = @("$API_SRC\reflection\handler.ts",   $true)
   "lux-evaluator"   = @("$API_SRC\evaluator\handler.ts",    $true)
   "lux-courses"     = @("$API_SRC\courses\handler.ts",      $true)
   "lux-quiz"        = @("$API_SRC\quiz\handler.ts",         $true)
-  "lux-certs"       = @("$API_SRC\certificates\handler.ts", $true)
+  "lux-certs"       = @("$API_SRC\certificates\handler.ts", $true, $false, $true)
   "lux-analysis"    = @("$API_SRC\analysis\handler.ts",     $true)
   "lux-reminders"   = @("$API_SRC\reminders\handler.ts",    $true)
   "lux-reports"     = @("$API_SRC\reports\handler.ts",      $true)
   "lux-messages"    = @("$API_SRC\messages\handler.ts",     $false)
   "lux-sqsconsumer" = @("$API_SRC\reflection\sqs-consumer.ts", $false)
-  "lux-lessons"     = @("$API_SRC\lessons\handler.ts",      $true)
+  "lux-lessons"     = @("$API_SRC\lessons\handler.ts",      $true, $false, $true)
   "lux-tasks"       = @("$API_SRC\tasks\handler.ts",        $false)
   "lux-notifs"      = @("$API_SRC\notifications\handler.ts",$false)
   "lux-push"        = @("$API_SRC\push\handler.ts",         $false)
@@ -94,6 +106,7 @@ function Deploy-Lambda([string]$name) {
   $entry      = $LAMBDAS[$name][0]
   $usesPrisma = $LAMBDAS[$name][1]
   $usesSharp  = if ($LAMBDAS[$name].Count -gt 2) { $LAMBDAS[$name][2] } else { $false }
+  $usesPdfkit = if ($LAMBDAS[$name].Count -gt 3) { $LAMBDAS[$name][3] } else { $false }
   $outDir     = "$DIST\$($name -replace 'lux-','')"
   $stage      = "$outDir\_stage"
   $zipPath    = "$outDir\$name.zip"
@@ -106,7 +119,7 @@ function Deploy-Lambda([string]$name) {
   $esbuildArgs = @(
     $entry,
     "--bundle", "--platform=node", "--target=node20",
-    "--external:@prisma/client", "--external:sharp",
+    "--external:@prisma/client", "--external:sharp", "--external:pdfkit",
     "--external:@aws-sdk/client-secrets-manager",
     "--outfile=$outDir\index.js", "--minify"
   )
@@ -152,6 +165,12 @@ function Deploy-Lambda([string]$name) {
     Copy-Item $SHARP_PKG "$stage\node_modules\sharp" -Recurse
     Copy-Item $SHARP_LINUX_ARM64 "$stage\node_modules\@img\sharp-linux-arm64" -Recurse
     Copy-Item $SHARP_LIBVIPS_ARM64 "$stage\node_modules\@img\sharp-libvips-linux-arm64" -Recurse
+  }
+
+  if ($usesPdfkit) {
+    if (-not (Test-Path $PDFKIT_PKG)) { throw 'pdfkit is missing from node_modules - run npm install in services\api' }
+    # Pure JS, no native binary — a straight folder copy is enough (unlike sharp).
+    Copy-Item $PDFKIT_PKG "$stage\node_modules\pdfkit" -Recurse
   }
 
   # 3. Zip
