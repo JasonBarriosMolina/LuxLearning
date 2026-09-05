@@ -133,10 +133,6 @@ Responde ÚNICAMENTE con JSON válido:
         return badRequest(`Reflection must be at least ${MIN_WORDS} words. Current: ${wordCount}`);
       }
 
-      // Verify quiz was passed
-      const quizPassed = await hasPassedQuiz(userId, moduleId);
-      if (!quizPassed) return forbidden('You must pass the quiz before submitting a reflection');
-
       // Check module unlock
       const module = await prisma.module.findUnique({
         where: { id: moduleId },
@@ -163,6 +159,18 @@ Responde ÚNICAMENTE con JSON válido:
           .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
           .map((e: any) => e.moduleId as string),
       );
+
+      // Verify quiz was passed — only when THIS module actually has a quiz planned.
+      // Trello DmPpbrff, 2026-09-05 (Mack): a module with no quiz at all permanently
+      // blocked its reflection with "You must pass the quiz" — hasPassedQuiz checks
+      // QuizAttempts, which can never have a passed attempt for a quiz that doesn't
+      // exist. Same quizPlannedModuleIds signal already used by isModuleUnlocked's
+      // own quiz gate below, for consistency.
+      if (quizPlannedModuleIds.has(moduleId)) {
+        const quizPassed = await hasPassedQuiz(userId, moduleId);
+        if (!quizPassed) return forbidden('You must pass the quiz before submitting a reflection');
+      }
+
       const reflectionLessonProgress = await getLessonProgress(userId, module.course.id);
       const completedLessonIds = new Set(reflectionLessonProgress.map((p) => p.lessonId));
       const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs, {
