@@ -6,17 +6,32 @@
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { bedrock, bedrockImageClient, s3Client, S3_IMAGES_BUCKET } from './ctx';
+import { applyLuxWatermark } from '../shared/lux-watermark';
 
 // ── Image generation ─────────────────────────────────────────────────────────
 export const STYLE_SUFFIXES: Record<string, string> = {
   realistic:    ', photorealistic, high detail, professional photography',
   illustration: ', flat illustration, colorful, modern vector art style',
-  diagram:      ', clean technical illustration, professional schematic, flat design',
+  // Trello DmPpbrff, 2026-09-05 (Mack): "¿Recuerda usar flechas, como si fuera un mapa
+  // conceptual, inclusive líneas de tiempo?" — the old suffix ("clean technical
+  // illustration, professional schematic") was too vague and left Stability free to draw
+  // arbitrary, sometimes odd-looking icon shapes ("íconos extraños"). Steered explicitly
+  // toward the concrete diagram vocabulary she asked for.
+  diagram:      ', clean flat-design educational diagram, simple geometric icons, connecting arrows and lines, conceptual map / mind-map layout, timeline elements, minimal color palette, professional infographic aesthetic (no readable text)',
   comic:        ', comic book style, bold outlines, vibrant colors, graphic novel',
   minimal:      ', minimal design, clean white background, simple shapes',
   colorful:     ', vibrant multicolor palette, energetic, dynamic composition',
   corporate:    ', professional corporate style, blue and gray tones, business',
 };
+
+// Trello DmPpbrff, 2026-09-05 (Mack): the same negative_prompt was used for every style,
+// including 'diagram' — but it excluded "diagram, chart, infographic, icons with labels",
+// directly fighting the 'diagram' style's own positive prompt above. That tug-of-war is
+// a real contributor to the inconsistent/odd results she flagged. Diagram-style requests
+// drop just those terms from the negative list; every style still excludes actual
+// legible text (Stability can never render that reliably) and UI/screenshot artifacts.
+const NEGATIVE_PROMPT_BASE = 'text, words, letters, labels, captions, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, user interface, app screenshot, screen mockup, dashboard, menu bar, toolbar, buttons with text, software application, table, banner, poster, signs, blurry, low quality, distorted, cluttered icons, overlapping elements';
+const NEGATIVE_PROMPT_NON_DIAGRAM = `${NEGATIVE_PROMPT_BASE}, icons with labels, infographic, chart, diagram`;
 
 // Converts arbitrary user text (may contain "infografía", "diagrama", etc.) into a
 // diffusion-safe visual scene description. Prevents pseudo-text hallucination.
@@ -129,9 +144,7 @@ export async function generateLessonImage(
   if (override?.style && STYLE_SUFFIXES[override.style]) {
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }
-  // Branding: append Lux Learning watermark instruction to every image prompt
-  const LUX_WATERMARK = ', bottom-right corner overlay: semi-transparent white circular minimalist icon at 45% opacity as brand watermark, flat solid colors no gradients';
-  prompt = prompt + LUX_WATERMARK;
+  const isDiagram = override?.style === 'diagram';
   try {
     // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
     const resp = await bedrockImageClient.send(new InvokeModelCommand({
@@ -140,7 +153,7 @@ export async function generateLessonImage(
       accept: 'application/json',
       body: JSON.stringify({
         prompt,
-        negative_prompt: 'text, words, letters, labels, captions, writing, typography, fonts, pseudo-text, fake text, illegible text, handwriting, script, headline, subtitle, ui, interface, user interface, app screenshot, screen mockup, dashboard, menu bar, toolbar, buttons with text, icons with labels, software application, infographic, chart, diagram, table, banner, poster, signs, blurry, low quality, distorted',
+        negative_prompt: isDiagram ? NEGATIVE_PROMPT_BASE : NEGATIVE_PROMPT_NON_DIAGRAM,
         mode: 'text-to-image',
         aspect_ratio: '1:1',
         output_format: 'jpeg',
@@ -149,8 +162,18 @@ export async function generateLessonImage(
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
     if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
-    const imgBuffer = Buffer.from(base64, 'base64');
+    let imgBuffer = Buffer.from(base64, 'base64');
     if (imgBuffer.length === 0) return null;
+    // Real Lux Learning icon composited onto the image, not an AI-imagined watermark
+    // (Trello DmPpbrff, 2026-09-05 — Mack: "utilizando el Lux Learning Icon Full Color").
+    // Previously this was just a prompt instruction asking Stability to hallucinate its
+    // own generic watermark shape — a real contributor to the "íconos extraños ... encima
+    // de las letras" complaint. Non-fatal: falls back to the un-watermarked image on any
+    // failure (e.g. sharp's native binding missing for this Lambda's architecture).
+    imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
+      console.error('[ImageGen] Watermark compositing failed, using unwatermarked image:', err);
+      return imgBuffer;
+    });
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
