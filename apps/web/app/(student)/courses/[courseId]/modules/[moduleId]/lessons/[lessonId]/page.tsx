@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound, NotebookPen,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -213,6 +213,10 @@ export default function LessonPage() {
 
   // Transcript
   const [transcript, setTranscript] = useState<string | null>(null);
+
+  // Notes — floating panel (Trello DmPpbrff, 2026-09-05 — Mack: "burbuja ... tipo
+  // chatbot"), same open/close convention as Chat and Forum below.
+  const [notesOpen, setNotesOpen] = useState(false);
 
   // Chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -669,13 +673,6 @@ export default function LessonPage() {
         </div>
       )}
 
-      {/* Notes — server-persisted, Trello DmPpbrff (Mack, 2026-09-02 scoping) */}
-      <NotesPanel
-        contextType="lesson"
-        contextId={lessonId}
-        lessonTitle={lesson.title}
-        highlightsForSummary={highlights.map((h) => h.text)}
-      />
 
       {/* Tip */}
       {lesson.tip && (
@@ -817,6 +814,26 @@ export default function LessonPage() {
         className="fixed bottom-6 right-20 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
       >
         {forumOpen ? <X className="w-5 h-5" /> : <UsersRound className="w-5 h-5" />}
+      </button>
+
+      {/* Notes panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack): redesigned
+          from a static inline card into a chat-style floating panel. */}
+      {notesOpen && (
+        <NotesPanel
+          contextType="lesson"
+          contextId={lessonId}
+          lessonTitle={lesson.title}
+          highlightsForSummary={highlights.map((h) => h.text)}
+        />
+      )}
+
+      {/* Floating notes button */}
+      <button
+        onClick={() => setNotesOpen((prev) => !prev)}
+        title={t.notesPanel.title}
+        className="fixed bottom-6 right-36 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+      >
+        {notesOpen ? <X className="w-5 h-5" /> : <NotebookPen className="w-5 h-5" />}
       </button>
 
       {/* Navigation + Complete */}

@@ -8,6 +8,7 @@ import { NotesPanel } from './NotesPanel';
 
 vi.mock('lucide-react', () => ({
   Sparkles: () => null, Trash2: () => null, Search: () => null, Tag: () => null, Loader2: () => null,
+  NotebookPen: () => null,
 }));
 
 const notesMock = vi.fn();
