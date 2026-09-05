@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound, NotebookPen,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound, NotebookPen, Music, VolumeX,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -15,6 +15,7 @@ import { useLanguage } from '@/lib/i18n';
 import { LuxCarrouselPlayer } from './_components/LuxCarrouselPlayer';
 import { NotesPanel } from './_components/NotesPanel';
 import { COLORS, stripMarkup, applyHighlightsToHtml, type HighlightItem } from './lessonHighlights';
+import { pickBgmTrack } from './_components/LuxCarrouselPlayer.helpers';
 
 // Trello DmPpbrff, 2026-09-05 (Mack): "Elimina el botón 'Foro de la lección'.
 // Escóndelo. No debería de verse." Hidden behind this flag rather than deleted —
@@ -222,6 +223,16 @@ export default function LessonPage() {
   // Notes — floating panel (Trello DmPpbrff, 2026-09-05 — Mack: "burbuja ... tipo
   // chatbot"), same open/close convention as Chat and Forum below.
   const [notesOpen, setNotesOpen] = useState(false);
+
+  // Background music for text lessons (Trello DmPpbrff, 2026-09-05 — Mack:
+  // "Agreguemos la opción de escuchar la música del sistema mientras se está en las
+  // lecciones de texto"). Reuses the same curated library already built for the
+  // carousel (LuxCarrouselPlayer.helpers.ts) — deterministic per-lesson pick, off by
+  // default. No ducking here (unlike the carousel): there's no single always-playing
+  // narration track to duck under on a text lesson — TextToSpeechButton manages its
+  // own audio independently — so this just loops at a fixed low volume.
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const musicRef = useRef<HTMLAudioElement | null>(null);
 
   // Chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -847,6 +858,34 @@ export default function LessonPage() {
       >
         {notesOpen ? <X className="w-5 h-5" /> : <NotebookPen className="w-5 h-5" />}
       </button>
+
+      {/* Background music (Trello DmPpbrff, 2026-09-05 — Mack: música también en
+          lecciones de texto). Off by default; toggled directly here (synchronous
+          play() inside the click handler, not in an effect — browsers require a
+          direct user-gesture call stack to allow audio playback). */}
+      {(() => {
+        const bgmTrack = pickBgmTrack(lessonId);
+        if (!bgmTrack) return null;
+        return (
+          <>
+            <audio ref={musicRef} src={bgmTrack.url} loop className="hidden" />
+            <button
+              onClick={() => {
+                const music = musicRef.current;
+                if (!music) return;
+                const next = !musicEnabled;
+                setMusicEnabled(next);
+                if (next) { music.volume = 0.2; music.play().catch(() => {}); }
+                else music.pause();
+              }}
+              title={musicEnabled ? 'Silenciar música de fondo' : 'Reproducir música de fondo'}
+              className="fixed bottom-6 right-36 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+            >
+              {musicEnabled ? <Music className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+          </>
+        );
+      })()}
 
       {/* Navigation + Complete */}
       <div className="flex items-center justify-between gap-4 pb-8">
