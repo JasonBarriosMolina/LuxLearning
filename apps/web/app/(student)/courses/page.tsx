@@ -50,21 +50,29 @@ export default function CoursesPage() {
             // applied to the fallback placeholder block, invisible for the common case
             // (a course WITH a generated cover image never rendered that branch at all),
             // and cardBorderColor was a permanently-visible border, not a hover effect.
-            // Fixed: cardColor is now a small always-visible accent bar (works with or
-            // without an image); cardBorderColor is a real :hover-only border via a CSS
-            // custom property (inline styles can't express :hover directly), base border
-            // transparent so there's no layout shift when it appears.
-            const hoverBorderStyle = course.cardBorderColor
+            // First attempt used a negative-margin "bleed" bar for cardColor and a plain
+            // `border` for the hover — Mack flagged it as "no prolijo" (2026-09-05):
+            // the bar's own rounded corners never quite matched the card's, and `border-2`
+            // fought with .card's existing `dark:border` (different width AND color on the
+            // same box). Redone with two native, conflict-free primitives instead:
+            // - cardColor → `border-top` directly on the card box. Real borders always
+            //   clip to the element's own border-radius, so no separate div/rounding math.
+            // - cardBorderColor → Tailwind `ring` (box-shadow-based) for the hover state,
+            //   which composes with the existing shadow utilities instead of competing
+            //   with `.card`'s border utilities.
+            const accentStyle: CSSProperties | undefined = course.cardColor
+              ? { borderTop: `4px solid ${course.cardColor}` }
+              : undefined;
+            const hoverRingStyle = course.cardBorderColor
               ? ({ '--course-hover-border': course.cardBorderColor } as CSSProperties)
               : undefined;
             return (
               <Link
                 key={course.id}
                 href={`/courses/${course.id}`}
-                className={`card-hover flex flex-col gap-4 border-2 border-transparent ${course.cardBorderColor ? 'hover:border-[var(--course-hover-border)]' : ''}`}
-                style={hoverBorderStyle}
+                className={`card-hover flex flex-col gap-4 ring-2 ring-transparent transition-shadow ${course.cardBorderColor ? 'hover:ring-[var(--course-hover-border)]' : ''}`}
+                style={{ ...accentStyle, ...hoverRingStyle }}
               >
-                {course.cardColor && <div className="h-1.5 -mt-6 -mx-6 mb-2 rounded-t-2xl" style={{ background: course.cardColor }} />}
                 {course.imageUrl ? (
                   <div className="rounded-xl overflow-hidden h-40">
                     <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
