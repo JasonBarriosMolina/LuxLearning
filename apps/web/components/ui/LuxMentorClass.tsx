@@ -403,9 +403,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
         lessonScript={startData.lessonScript ?? null}
         lessonAudioUrl={startData.lessonAudioUrl}
         lessonSpeechMarks={startData.lessonSpeechMarks ?? null}
-        // Found in code review (2026-09-01): must be scoped per-student, not just per-module
-        // — two students on the same device/browser would otherwise overwrite each other's notes.
-        notesStorageKey={`lux-class-notes-${userId ?? 'anon'}-${moduleId}`}
+        moduleId={moduleId}
         lang={lang}
         onEnded={connectVapi}
         onError={connectVapi}

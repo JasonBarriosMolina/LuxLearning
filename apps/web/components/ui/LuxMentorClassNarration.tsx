@@ -9,47 +9,37 @@
 // styled lessonScript content with live captions synced to lessonSpeechMarks, plus
 // a persisted notes textarea.
 import { useEffect, useRef, useState } from 'react';
-import { Volume2 } from 'lucide-react';
+import { Volume2, NotebookPen, X } from 'lucide-react';
 import { findActiveCaptionIndex, type SpeechMark } from './LuxMentorClass.helpers';
+import { NotesPanel } from '@/app/(student)/courses/[courseId]/modules/[moduleId]/lessons/[lessonId]/_components/NotesPanel';
 
 interface Props {
   lessonScript: string | null;
   lessonAudioUrl: string;
   lessonSpeechMarks: SpeechMark[] | null;
-  notesStorageKey: string;
+  moduleId: string;
   lang: string;
   onEnded: () => void;
   onError: () => void;
 }
 
 export function LuxMentorClassNarration({
-  lessonScript, lessonAudioUrl, lessonSpeechMarks, notesStorageKey, lang, onEnded, onError,
+  lessonScript, lessonAudioUrl, lessonSpeechMarks, moduleId, lang, onEnded, onError,
 }: Props) {
   const s = (es: string, en: string) => (lang === 'en' ? en : es);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeCaptionRef = useRef<HTMLParagraphElement | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
-  const [notes, setNotes] = useState('');
+  // Notes redesign (Trello DmPpbrff, 2026-09-05 — Mack: "la interfaz de las clases de
+  // las notas de LuxMentor sea como las del pop-up"): was a localStorage-only textarea
+  // (v1 scope, per-device, no backend). Now the same server-persisted popup used on
+  // the text-lesson page (NotesPanel, contextType='class') — userId scoping that used
+  // to live in the old notesStorageKey string is handled server-side via the auth
+  // token, same as every other Notes call.
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const marks = lessonSpeechMarks ?? [];
   const activeIndex = findActiveCaptionIndex(marks, currentMs);
-
-  // Notes persist per-student per-module (v1 scope: localStorage only, no backend
-  // schema — decided to bound scope this session; per-device only for now).
-  // notesStorageKey must already include the student's userId (parent's job) —
-  // found in code review (2026-09-01) that a module-only key collides between
-  // two students sharing a browser/device.
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(notesStorageKey);
-      if (saved) setNotes(saved);
-    } catch { /* private mode / storage blocked — notes just won't persist */ }
-  }, [notesStorageKey]);
-
-  const handleNotesChange = (value: string) => {
-    setNotes(value);
-    try { window.localStorage.setItem(notesStorageKey, value); } catch { /* non-fatal */ }
-  };
 
   useEffect(() => {
     activeCaptionRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
@@ -106,19 +96,19 @@ export function LuxMentorClassNarration({
         ) : null}
       </div>
 
-      {/* Mis anotaciones sobre la clase (Trello DmPpbrff, 2026-09-01 01:10) */}
-      <div className="border-t border-border p-4">
-        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">
-          {s('Mis anotaciones sobre la clase', 'My notes about the class')}
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => handleNotesChange(e.target.value)}
-          rows={3}
-          placeholder={s('Escribe aquí lo que quieras recordar…', 'Write down anything you want to remember…')}
-          className="w-full text-sm rounded-lg border border-border bg-gray-50 dark:bg-white/5 p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-[#17527E]/30"
-        />
-      </div>
+      {/* Notes panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack) */}
+      {notesOpen && (
+        <NotesPanel contextType="class" contextId={moduleId} highlightsForSummary={[]} />
+      )}
+
+      {/* Floating notes button — same convention as the text-lesson page */}
+      <button
+        onClick={() => setNotesOpen((prev) => !prev)}
+        title={s('Mis notas', 'My notes')}
+        className="fixed bottom-6 right-4 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+      >
+        {notesOpen ? <X className="w-5 h-5" /> : <NotebookPen className="w-5 h-5" />}
+      </button>
     </div>
   );
 }

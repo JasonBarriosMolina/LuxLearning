@@ -57,4 +57,37 @@ describe('applyHighlightsToHtml', () => {
     expect(result).toContain('>uno</mark>');
     expect(result).toContain('>tres</mark>');
   });
+
+  // Trello DmPpbrff, 2026-09-05 (Mack): "La opción de 'resaltar' texto no está
+  // funcionando en las lecciones" — repro'd: the toolbar appears and the save call
+  // succeeds, but nothing visibly highlights. Root cause: a real text selection made
+  // in the browser very commonly spans a tag boundary (bold word, link, etc — lesson
+  // content is rich HTML) — window.getSelection().toString() flattens that into one
+  // plain string with no tags, but this function only ever searches for a match
+  // WITHIN one already-tag-split text-node segment at a time, so a highlight whose
+  // text used to live across two segments can never be found here.
+  it('matches text that spans a tag boundary (the real reported bug — text selected across an <em>)', () => {
+    // window.getSelection().toString() flattens tags away — a selection starting
+    // mid-<em> and ending after it comes back as plain "Orfeo, la ópera", never
+    // literally containing "</em>". The OLD implementation searched for that exact
+    // string within one already-tag-split segment at a time and could never find it,
+    // since it only ever existed split across two separate segments — the highlight
+    // saved to the backend fine but silently never rendered.
+    const html = "<p>Tras <em>L'Orfeo</em>, la ópera se expande</p>";
+    const highlights = [{ id: 'h1', text: 'Orfeo, la', color: 'yellow', createdAt: '' }];
+    const result = applyHighlightsToHtml(html, highlights);
+    // Can't be one contiguous <mark> without breaking the </em> boundary — two
+    // adjacent fragments is the correct, only-valid-HTML outcome.
+    expect(result).toContain('<mark style="background-color:#FEF08A;border-radius:3px;padding:0 2px;">Orfeo</mark>');
+    expect(result).toContain('<mark style="background-color:#FEF08A;border-radius:3px;padding:0 2px;">, la</mark>');
+    expect(result).toContain('</em>'); // the tag itself must survive intact
+  });
+
+  it('still matches correctly when the selection happens to land fully inside one tag', () => {
+    const html = "<p>Tras <em>L'Orfeo</em>, la ópera se expande</p>";
+    const highlights = [{ id: 'h1', text: 'Orfeo', color: 'yellow', createdAt: '' }];
+    const result = applyHighlightsToHtml(html, highlights);
+    expect(result).toContain('<mark');
+    expect(result).toContain('>Orfeo</mark>');
+  });
 });
