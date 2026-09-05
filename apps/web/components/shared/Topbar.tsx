@@ -10,6 +10,12 @@ import { PushBell } from '@/components/ui/PushBell';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { useLanguage } from '@/lib/i18n';
 import type { Lang } from '@/lib/i18n';
+import { findNewNotifIds } from './Topbar.helpers';
+
+// Trello DmPpbrff, 2026-09-05 (Mack) — see Topbar.helpers.ts for why this can't
+// just be the Notification API's own sound (browsers don't allow a custom one).
+const NOTIF_POLL_MS = 30000;
+const NOTIF_SOUND_URL = '/notification-sound.mp3';
 
 interface TopbarProps {
   title?: string;
@@ -50,11 +56,30 @@ export function Topbar({ title, onMenuClick }: TopbarProps) {
 
   const unread = notifs.filter((n) => !n.read).length;
 
-  // Load notifications
+  // Load notifications, then poll for new ones and play a sound when a genuinely
+  // NEW one arrives (Trello DmPpbrff, 2026-09-05 — Mack). seenIdsRef starts as
+  // null so the very first load never plays a sound for notifications that were
+  // already there before the student/evaluator opened the app.
+  const seenIdsRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    api.notifications.list()
-      .then((res: any) => setNotifs((res as any).data ?? res ?? []))
-      .catch(() => {});
+    const load = (isFirstLoad: boolean) => {
+      api.notifications.list()
+        .then((res: any) => {
+          const data: Notif[] = (res as any).data ?? res ?? [];
+          setNotifs(data);
+          if (!isFirstLoad && seenIdsRef.current) {
+            const newIds = findNewNotifIds(seenIdsRef.current, data);
+            if (newIds.length > 0) {
+              new Audio(NOTIF_SOUND_URL).play().catch(() => {}); // autoplay may be blocked — non-fatal
+            }
+          }
+          seenIdsRef.current = new Set(data.map((n) => n.notifId));
+        })
+        .catch(() => {});
+    };
+    load(true);
+    const interval = setInterval(() => load(false), NOTIF_POLL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   // Close dropdowns on outside click
