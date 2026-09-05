@@ -203,6 +203,9 @@ Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el 
       isAutoevaluated: modality === 'ASINCRONICA' ? Boolean(isAutoevaluated ?? true) : false,
       planWeeklyPlan: weeklyPlan.length > 0 ? weeklyPlan : undefined,
       planSyllabusInput: syllabusInput || undefined,
+      // Trello DmPpbrff, 2026-09-05 (Mack): persist so "Editar con Lux Planner" can
+      // restore the per-module quiz/reflex/interview selectors — see schema.prisma.
+      planModules: (suggestedModules as any[]).length > 0 ? suggestedModules : undefined,
     };
 
     let course: { id: string; slug: string; planDocumentS3Key?: string | null };

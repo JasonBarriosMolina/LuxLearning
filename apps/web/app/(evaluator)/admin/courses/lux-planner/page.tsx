@@ -12,7 +12,7 @@ import {
   ExceptionItem, EvalItem, CourseTypeId, PendingException, CalendarWeek,
   EMPTY_STEP1, EMPTY_STEP2, EMPTY_STEP3, EMPTY_STEP4, EMPTY_STEP5,
   DAY_TO_JS, uid, weekStart, addDays, fmtDate, defaultEvalItems,
-  mapCourseToStep1, mapCourseToStep2, mapCourseToStep3Items,
+  mapCourseToStep1, mapCourseToStep2, mapCourseToStep3Items, mapCourseToStep4Modules,
 } from './_components/constants';
 import { suggestNextDueDate } from './_components/WeekAwareDatePicker.helpers';
 import { StepBar } from './_components/StepBar';
@@ -134,14 +134,19 @@ function CourseWizardInner() {
         setStep3((prev) => ({ ...prev, items: step3Items }));
       }
 
-      // Restore weekly plan and syllabus if previously saved
+      // Restore weekly plan, syllabus and per-module quiz/reflex/interview assignments
+      // if previously saved. The modules restore (planModules → step4.modules) is what
+      // makes StepEvaluacion's "Módulos — Quiz, Reflexión y Entrevista" section appear
+      // at all when editing — Trello DmPpbrff, 2026-09-05 (Mack).
       const savedPlan = Array.isArray(c.planWeeklyPlan) ? c.planWeeklyPlan : [];
       const savedSyllabus = typeof c.planSyllabusInput === 'string' ? c.planSyllabusInput : '';
+      const savedModules = mapCourseToStep4Modules(c);
       // Always restore — even if empty string (keeps step4 in sync with DB)
       setStep4((p) => ({
         ...p,
         syllabusInput: savedSyllabus,
         weeklyPlan: savedPlan.length > 0 ? savedPlan : p.weeklyPlan,
+        modules: savedModules.length > 0 ? savedModules : p.modules,
         status: savedPlan.length > 0 ? 'done' : 'idle',
       }));
     } catch {
