@@ -50,7 +50,7 @@ const generateLessonAudioMock = vi.fn();
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Danielle' : 'Mia'),
-  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Gregory' : 'Sergio'),
+  defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Gregory' : 'Pedro'),
 }));
 
 const batchTranslateMock = vi.fn();
@@ -144,7 +144,7 @@ describe('POST /lessons/audio', () => {
       expect(res.statusCode).toBe(200);
       const body = await bodyOf(res);
       expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-male.mp3');
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.stringContaining('Contenido'), 'Sergio');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.stringContaining('Contenido'), 'Pedro');
       expect(lessonUpdateMock).not.toHaveBeenCalled();
     });
 

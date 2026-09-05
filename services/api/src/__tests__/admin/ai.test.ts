@@ -792,10 +792,10 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
       return null;
     });
     vi.mocked(generateLessonAudio).mockImplementation(async (_id: string, _text: string, voiceId?: string) =>
-      voiceId === 'Sergio' ? 'https://s3.example.com/male-closing.mp3' : null
+      voiceId === 'Pedro' ? 'https://s3.example.com/male-closing.mp3' : null
     );
     vi.mocked(generateCarouselNarration).mockImplementation(async (_id: string, _text: string, voiceId?: string) =>
-      voiceId === 'Sergio'
+      voiceId === 'Pedro'
         ? { audioUrl: 'https://s3.example.com/male-lesson.mp3', marks: [{ time: 0, value: 'Puntos clave del módulo.' }] }
         : null
     );
@@ -830,8 +830,8 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
       }),
     }));
     // Both narration calls used the male voice, not the default female one
-    expect(generateCarouselNarration).toHaveBeenCalledWith(expect.stringContaining('class-'), expect.any(String), 'Sergio');
-    expect(generateLessonAudio).toHaveBeenCalledWith(expect.stringContaining('class-'), expect.any(String), 'Sergio');
+    expect(generateCarouselNarration).toHaveBeenCalledWith(expect.stringContaining('class-'), expect.any(String), 'Pedro');
+    expect(generateLessonAudio).toHaveBeenCalledWith(expect.stringContaining('class-'), expect.any(String), 'Pedro');
   });
 
   it('wizard-lessons-bulk also notifies the course evaluator (distinct from the creator) that it is ready for review (Trello DmPpbrff item 8)', async () => {
