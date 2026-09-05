@@ -471,6 +471,66 @@ describe('ai-wizard/save — quiz/class index desync (Fix 2)', () => {
   });
 });
 
+// Trello DmPpbrff, 2026-09-05 (Mack): "Editar con Lux Planner" reopened a course with
+// the "Módulos — Quiz, Reflexión y Entrevista" section missing entirely — suggestedModules
+// (quizWeek/reflexWeek/interviewWeek per module) was used to create modules but never
+// itself persisted anywhere for preloadCourse to restore later.
+describe('ai-wizard/save — persists suggestedModules as planModules (2026-09-05 fix)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('saves suggestedModules onto the new Course row as planModules', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const courseCreateMock = vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null });
+    const prisma = makePrisma({
+      course: { create: courseCreateMock },
+      module: { create: vi.fn().mockResolvedValue({ id: 'mod-1' }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES',
+        suggestedModules: [{ name: 'Módulo A', quizWeek: 1, reflexWeek: null, interviewWeek: null }],
+        weeklyPlan: [], evaluationItems: [],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    expect(courseCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        planModules: [{ name: 'Módulo A', quizWeek: 1, reflexWeek: null, interviewWeek: null }],
+      }),
+    }));
+  });
+
+  it('does not overwrite planModules on an edit save when the plan was skipped (suggestedModules empty)', async () => {
+    const { handleAIWizard } = await import('../../admin/ai-wizard');
+    const courseUpdateMock = vi.fn().mockResolvedValue({ id: 'course-1', slug: 'curso-1', planDocumentS3Key: null });
+    const prisma = makePrisma({
+      course: { update: courseUpdateMock },
+      module: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST',
+      path: '/admin/courses/wizard/save',
+      body: {
+        title: 'Curso de Prueba', planLanguage: 'ES', editingCourseId: 'course-1',
+        suggestedModules: [], weeklyPlan: [], evaluationItems: [],
+      },
+    });
+    ctx.prisma = prisma as any;
+
+    await handleAIWizard(ctx as any);
+
+    // undefined means "field omitted from the Prisma update" — the existing DB value
+    // is left untouched, same pattern already used for planWeeklyPlan.
+    const firstCallData = courseUpdateMock.mock.calls[0][0].data;
+    expect(firstCallData.planModules).toBeUndefined();
+  });
+});
+
 describe('ai-wizard/save — persists activeGenerationJobId on the Course (2026-08-31 status-visibility fix)', () => {
   beforeEach(() => vi.clearAllMocks());
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { defaultEvalItems, SELECTABLE_EVAL_TYPES } from './constants';
+import { defaultEvalItems, SELECTABLE_EVAL_TYPES, mapCourseToStep4Modules } from './constants';
 
 // Trello DmPpbrff, 2026-09-03 (code-review finding on the 2026-09-02 21:48 QUIZ-hiding
 // commit): defaultEvalItems() still generated 'Trabajo Cotidiano'/'Contenido Teórico'
@@ -30,5 +30,28 @@ describe('defaultEvalItems', () => {
 
   it('returns an empty array for an unknown course type', () => {
     expect(defaultEvalItems('NOT_A_REAL_TYPE' as any)).toEqual([]);
+  });
+});
+
+// Trello DmPpbrff, 2026-09-05 (Mack): "Editar con Lux Planner" reopened a course with
+// the "Módulos — Quiz, Reflexión y Entrevista" section missing entirely because nothing
+// restored step4.modules from a saved course (planModules).
+describe('mapCourseToStep4Modules', () => {
+  it('reconstructs modules with their saved quiz/reflex/interview weeks', () => {
+    const course = {
+      planModules: [
+        { name: 'Módulo 1', nameEN: 'Module 1', description: 'desc', weeks: [1, 2], quizWeek: 2, reflexWeek: null, interviewWeek: null },
+        { name: 'Módulo 2', weeks: [3], quizWeek: null, reflexWeek: 3, interviewWeek: 3 },
+      ],
+    };
+    expect(mapCourseToStep4Modules(course)).toEqual([
+      { name: 'Módulo 1', nameEN: 'Module 1', description: 'desc', descriptionEN: 'desc', weeks: [1, 2], quizWeek: 2, reflexWeek: null, interviewWeek: null },
+      { name: 'Módulo 2', nameEN: 'Módulo 2', description: '', descriptionEN: '', weeks: [3], quizWeek: null, reflexWeek: 3, interviewWeek: 3 },
+    ]);
+  });
+
+  it('returns an empty array when the course never had modules saved (older courses, pre-fix)', () => {
+    expect(mapCourseToStep4Modules({})).toEqual([]);
+    expect(mapCourseToStep4Modules({ planModules: null })).toEqual([]);
   });
 });

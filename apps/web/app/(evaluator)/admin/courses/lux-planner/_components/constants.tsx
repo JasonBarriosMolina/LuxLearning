@@ -219,6 +219,25 @@ export function mapCourseToStep3Items(c: any): EvalItem[] {
   }));
 }
 
+// Trello DmPpbrff, 2026-09-05 (Mack): "Editar con Lux Planner" reopened a course with
+// the "Módulos — Quiz, Reflexión y Entrevista" section (StepEvaluacion.tsx) missing
+// entirely — it only renders when step4.modules.length > 0, and nothing ever restored
+// that array from a saved course (mapCourseToStep1/2/3 above all existed; this one
+// didn't). Mirrors mapCourseToStep3Items' defensive field-by-field fallback shape.
+export function mapCourseToStep4Modules(c: any): SuggestedModule[] {
+  const saved = Array.isArray(c.planModules) ? c.planModules : [];
+  return saved.map((m: any) => ({
+    name: m.name ?? '',
+    nameEN: m.nameEN ?? m.name ?? '',
+    description: m.description ?? '',
+    descriptionEN: m.descriptionEN ?? m.description ?? '',
+    weeks: Array.isArray(m.weeks) ? m.weeks : [],
+    quizWeek: m.quizWeek ?? null,
+    reflexWeek: m.reflexWeek ?? null,
+    interviewWeek: m.interviewWeek ?? null,
+  }));
+}
+
 export const EMPTY_STEP1: Step1Data = { title:'', academicPeriod:'', classDays:[], classSchedule:'', classSchedules:{}, modality:'', startDate:'', planLanguage:'ES', courseType:'', description:'', imageUrl:'', cardColor:'', cardBorderColor:'', cardLabels:[], pilotoAutomatico: false, isAutoevaluated: true };
 export const EMPTY_STEP2: Step2Data = { totalWeeks: 16, exceptions: [] };
 export const EMPTY_STEP3: Step3Data = { items: [], luxMentorWeeks: [] };

@@ -51,6 +51,14 @@ model Course {
   weeklyPacingEnabled Boolean          @default(false)
   planSyllabusInput  String?
   planWeeklyPlan     Json?
+  // Trello DmPpbrff, 2026-09-05 (Mack): "Editar con Lux Planner" reopened a course with
+  // the "Módulos — Quiz, Reflexión y Entrevista" section missing entirely, so existing
+  // per-module quizWeek/reflexWeek/interviewWeek assignments couldn't be seen OR edited.
+  // Root cause: `suggestedModules` (Step4Data.modules) was sent to wizard/save and used
+  // to create modules + decide quiz/reflection/interview at THAT moment, but never
+  // itself persisted anywhere — preloadCourse had nothing to restore it from. Mirrors
+  // planWeeklyPlan above (same save/restore shape).
+  planModules        Json?
   // Set when a wizard-lessons-bulk generation job is dispatched, cleared when it reaches
   // done/done_incomplete/error — lets the admin course editor show "still generating"
   // even after the evaluator navigates away from the Lux Planner wizard screen (Trello
