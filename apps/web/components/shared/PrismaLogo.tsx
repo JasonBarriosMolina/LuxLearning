@@ -15,13 +15,28 @@ export function PrismaLogo({
 }: PrismaLogoProps) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
+      {/* Trello DmPpbrff, 2026-09-06 (Mack): "cuando vas a hacer el login, aparece un
+          ícono antiguo de Lux Learning... actualízalo con el ícono que ya tenemos
+          cuando ingresamos en la plataforma." PrismaLogo (login/register/forgot-
+          password/Topbar) still pointed at the old /lux-logo.png; Sidebar.tsx already
+          uses the current icon set — same dark-mode swap pattern as there. */}
       <Image
-        src="/lux-logo.png"
+        src="/lux-icon-fullcolor.svg"
         alt="Lux Learning"
         width={size}
         height={size}
         style={{ objectFit: 'contain' }}
         priority
+        className="block dark:hidden"
+      />
+      <Image
+        src="/lux-icon-white.svg"
+        alt="Lux Learning"
+        width={size}
+        height={size}
+        style={{ objectFit: 'contain' }}
+        priority
+        className="hidden dark:block"
       />
       {showText && (
         <span
