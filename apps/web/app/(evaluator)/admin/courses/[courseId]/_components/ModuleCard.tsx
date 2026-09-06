@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
+import { LessonTypeIcon } from './LessonTypeIcon';
 import { swapOrderSequential } from '@/lib/reorder';
 import { ConfirmDelete } from './ConfirmDelete';
 import { LessonRow } from './LessonRow';
@@ -534,7 +535,7 @@ export function ModuleCard({ mod, courseId, onRefresh, onMoveUp, onMoveDown, isF
             </p>
             {(mod.lessons ?? []).map((l: any, i: number) => (
               <div key={l.id} className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border bg-surface text-sm">
-                <PlayCircle className="w-4 h-4 text-cta-from shrink-0" />
+                <LessonTypeIcon type={l.type} className="w-4 h-4 text-cta-from shrink-0" />
                 <span className="text-gray-400 text-xs font-bold w-5 shrink-0">{i + 1}.</span>
                 <span className="text-charcoal flex-1 truncate">{l.title}</span>
                 {l.duration && <span className="text-xs text-gray-400 shrink-0">{formatCourseDuration(l.duration)}</span>}
