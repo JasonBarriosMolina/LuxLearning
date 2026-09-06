@@ -1,18 +1,41 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Loader2, Upload, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface Module { id: string; title: string; order: number; }
 interface Course { id: string; title: string; isActive: boolean; modules: Module[]; }
 
+// Trello DmPpbrff, 2026-09-06 (Mack): "LuxMentor Clases" had no way to reopen a
+// class's rich fields (prompt, objectives, script, video) once created — the only
+// "editar" available (ClassList.tsx's pencil icon) touched name/date/weight only.
+// This same component now doubles as the editor: pass `editingClass` to pre-fill
+// every field and switch handleSave to PUT instead of POST.
+export interface ClassDef {
+  id: string; courseId: string; moduleId: string | null; name: string;
+  dueDate: string | null; weight: number; instructions?: string | null;
+  vapiPrompt: string | null; vapiObjectives: string | null;
+  lessonVideoUrl: string | null; lessonScript: string | null;
+  targetStudentIds: string[];
+}
+
 interface Props {
   courses: Course[];
   onCreated: () => void;
+  editingClass?: ClassDef | null;
+  onCancelEdit?: () => void;
 }
 
-export function ClassWizard({ courses, onCreated }: Props) {
+function parseObjectives(json: string | null | undefined): string[] {
+  if (!json) return ['', '', ''];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.slice(0, 3).concat(['', '', '']).slice(0, 3) : ['', '', ''];
+  } catch { return ['', '', '']; }
+}
+
+export function ClassWizard({ courses, onCreated, editingClass, onCancelEdit }: Props) {
   const [courseId, setCourseId] = useState('');
   const [moduleId, setModuleId] = useState('');
   const [name, setName] = useState('');
@@ -29,6 +52,30 @@ export function ClassWizard({ courses, onCreated }: Props) {
   const [error, setError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Pre-fill (or reset, when switching back to "new class") every time the target
+  // class changes — keyed on id so re-selecting the same class mid-edit doesn't
+  // clobber unsaved changes.
+  useEffect(() => {
+    if (editingClass) {
+      setCourseId(editingClass.courseId);
+      setModuleId(editingClass.moduleId ?? '');
+      setName(editingClass.name);
+      setDueDate(editingClass.dueDate ? editingClass.dueDate.substring(0, 10) : '');
+      setWeight(String(editingClass.weight ?? 0));
+      setInstructions(editingClass.instructions ?? '');
+      setVapiPrompt(editingClass.vapiPrompt ?? '');
+      setVapiObjectives(parseObjectives(editingClass.vapiObjectives));
+      setLessonVideoUrl(editingClass.lessonVideoUrl ?? '');
+      setLessonScript(editingClass.lessonScript ?? '');
+      setShowAdvanced(Boolean(editingClass.vapiPrompt || editingClass.lessonScript));
+    } else {
+      setCourseId(''); setModuleId(''); setName(''); setDueDate(''); setWeight('0');
+      setInstructions(''); setVapiPrompt(''); setVapiObjectives(['', '', '']);
+      setLessonVideoUrl(''); setLessonScript(''); setShowAdvanced(false);
+    }
+    setError('');
+  }, [editingClass?.id]);
 
   const selectedCourse = courses.find((c) => c.id === courseId);
   const modules = selectedCourse?.modules ?? [];
@@ -78,7 +125,7 @@ export function ClassWizard({ courses, onCreated }: Props) {
     setError('');
     try {
       const objectivesJson = JSON.stringify(vapiObjectives.filter((o) => o.trim()));
-      await api.admin.classes.create({
+      const fields = {
         courseId,
         moduleId: moduleId || undefined,
         name: name.trim(),
@@ -89,7 +136,12 @@ export function ClassWizard({ courses, onCreated }: Props) {
         vapiObjectives: objectivesJson,
         lessonVideoUrl: lessonVideoUrl || undefined,
         lessonScript: lessonScript || undefined,
-      });
+      };
+      if (editingClass) {
+        await api.admin.classes.update(editingClass.id, fields);
+      } else {
+        await api.admin.classes.create(fields);
+      }
       onCreated();
     } catch {
       setError('Error al guardar. Intenta de nuevo.');
@@ -240,8 +292,13 @@ export function ClassWizard({ courses, onCreated }: Props) {
       <div className="flex gap-2 pt-1">
         <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 disabled:opacity-60">
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-          {saving ? 'Guardando…' : 'Crear clase'}
+          {saving ? 'Guardando…' : editingClass ? 'Guardar cambios' : 'Crear clase'}
         </button>
+        {editingClass && onCancelEdit && (
+          <button onClick={onCancelEdit} className="px-4 py-2 rounded-xl border border-border text-sm font-medium text-gray-600 hover:bg-surface">
+            Cancelar
+          </button>
+        )}
       </div>
     </div>
   );

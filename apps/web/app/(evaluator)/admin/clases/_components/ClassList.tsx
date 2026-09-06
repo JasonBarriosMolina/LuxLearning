@@ -32,36 +32,15 @@ interface Props {
   canDelete: boolean;
   onDeleted: () => void;
   onUpdated: () => void;
+  // Trello DmPpbrff, 2026-09-06 (Mack): "editar" used to only touch name/date/
+  // weight (a local 3-field mini-editor). Opens the full ClassWizard (prompt,
+  // objectives, script, video) pre-filled instead — see page.tsx.
+  onEdit: (c: ClassDef) => void;
 }
 
-export function ClassList({ classes, courses, canDelete, onDeleted, onUpdated }: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editDue, setEditDue] = useState('');
-  const [editWeight, setEditWeight] = useState('');
+export function ClassList({ classes, courses, canDelete, onDeleted, onUpdated, onEdit }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-
-  const startEdit = (c: ClassDef) => {
-    setEditingId(c.id);
-    setEditName(c.name);
-    setEditDue(c.dueDate ? c.dueDate.substring(0, 10) : '');
-    setEditWeight(String(c.weight));
-  };
-
-  const saveEdit = async (c: ClassDef) => {
-    setSaving(true);
-    try {
-      await api.admin.classes.update(c.id, {
-        name: editName,
-        dueDate: editDue || undefined,
-        weight: parseFloat(editWeight) || 0,
-      });
-      setEditingId(null);
-      onUpdated();
-    } catch { /* ignore */ } finally { setSaving(false); }
-  };
 
   const handleToggleDraft = async (c: ClassDef) => {
     try {
@@ -96,51 +75,39 @@ export function ClassList({ classes, courses, canDelete, onDeleted, onUpdated }:
         <div key={c.id} className={`border border-border rounded-xl overflow-hidden ${c.isArchived ? 'opacity-50' : ''}`}>
           {/* Header row */}
           <div className="px-4 py-3 flex items-center gap-3 bg-surface">
-            {editingId === c.id ? (
-              <div className="flex-1 flex items-center gap-2">
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} className="input flex-1 text-sm" />
-                <input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} className="input w-36 text-sm" />
-                <input type="number" value={editWeight} onChange={(e) => setEditWeight(e.target.value)} className="input w-20 text-sm" min="0" max="100" />
-                <button onClick={() => saveEdit(c)} disabled={saving} className="btn-primary text-xs px-3 py-1.5">{saving ? '…' : 'Guardar'}</button>
-                <button onClick={() => setEditingId(null)} className="text-xs text-gray-500">Cancelar</button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-semibold text-charcoal text-sm truncate">{c.name}</p>
+                {c.isDraft && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Borrador</span>}
+                {c.isArchived && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">Archivada</span>}
               </div>
-            ) : (
-              <>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-charcoal text-sm truncate">{c.name}</p>
-                    {c.isDraft && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Borrador</span>}
-                    {c.isArchived && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">Archivada</span>}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {c.moduleTitle ?? 'Nivel de curso'}
-                    {c.dueDate && ` · Límite: ${new Date(c.dueDate).toLocaleDateString('es-MX')}`}
-                    {` · ${c.weight}%`}
-                    {c.submissionCount !== undefined && ` · ${c.submissionCount} completadas`}
-                    {c.pendingCount !== undefined && c.pendingCount > 0 && ` · ${c.pendingCount} por calificar`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => startEdit(c)} title="Editar" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handleToggleDraft(c)} title={c.isDraft ? 'Publicar' : 'Hacer borrador'} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                    {c.isDraft ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                  </button>
-                  <button onClick={() => handleToggleArchive(c)} title={c.isArchived ? 'Desarchivar' : 'Archivar'} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                    <Archive className="w-3.5 h-3.5" />
-                  </button>
-                  {canDelete && (
-                    <button onClick={() => handleDelete(c.id)} disabled={deleting === c.id} title="Eliminar" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button onClick={() => setExpandedId((p) => p === c.id ? null : c.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-                    {expandedId === c.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </>
-            )}
+              <p className="text-xs text-gray-400 mt-0.5">
+                {c.moduleTitle ?? 'Nivel de curso'}
+                {c.dueDate && ` · Límite: ${new Date(c.dueDate).toLocaleDateString('es-MX')}`}
+                {` · ${c.weight}%`}
+                {c.submissionCount !== undefined && ` · ${c.submissionCount} completadas`}
+                {c.pendingCount !== undefined && c.pendingCount > 0 && ` · ${c.pendingCount} por calificar`}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => onEdit(c)} title="Editar" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleToggleDraft(c)} title={c.isDraft ? 'Publicar' : 'Hacer borrador'} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                {c.isDraft ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
+              <button onClick={() => handleToggleArchive(c)} title={c.isArchived ? 'Desarchivar' : 'Archivar'} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                <Archive className="w-3.5 h-3.5" />
+              </button>
+              {canDelete && (
+                <button onClick={() => handleDelete(c.id)} disabled={deleting === c.id} title="Eliminar" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button onClick={() => setExpandedId((p) => p === c.id ? null : c.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                {expandedId === c.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
           {/* Expanded detail */}
