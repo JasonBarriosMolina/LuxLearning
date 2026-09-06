@@ -43,8 +43,29 @@ describe('TextToSpeechButton — lazy Polly audio fetch', () => {
   it('fetches via questionAudio (not lessons.audio) when questionId is given instead of lessonId', async () => {
     questionAudioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/question-1-mia.mp3' } });
     render(<TextToSpeechButton text="¿Cuánto es 2+2?" questionId="q1" />);
-    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1'));
+    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1', undefined, undefined));
     expect(audioMock).not.toHaveBeenCalled();
+  });
+
+  // Trello DmPpbrff, 2026-09-06 (Mack): "se están leyendo en desorden" — the quiz page
+  // reshuffles options per attempt, so the CURRENT on-screen order must reach the
+  // backend instead of it narrating a stale cached/DB order.
+  it('passes optionsOrder through to questionAudio', async () => {
+    questionAudioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/question-1-shuffled.mp3' } });
+    render(<TextToSpeechButton text="¿Cuánto es 2+2?" questionId="q1" optionsOrder={['5', '3', '4']} />);
+    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1', undefined, ['5', '3', '4']));
+  });
+
+  it('re-fetches when optionsOrder changes (a retry reshuffled without remounting)', async () => {
+    questionAudioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/order-a.mp3' } });
+    const { rerender } = render(<TextToSpeechButton text="¿Cuánto es 2+2?" questionId="q1" optionsOrder={['3', '4', '5']} />);
+    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1', undefined, ['3', '4', '5']));
+
+    questionAudioMock.mockClear();
+    questionAudioMock.mockResolvedValue({ data: { audioUrl: 'https://s3.example.com/order-b.mp3' } });
+    rerender(<TextToSpeechButton text="¿Cuánto es 2+2?" questionId="q1" optionsOrder={['5', '3', '4']} />);
+
+    await waitFor(() => expect(questionAudioMock).toHaveBeenCalledWith('q1', undefined, ['5', '3', '4']));
   });
 
   it('never throws when the fetch fails — stays on the browser-voice fallback silently', async () => {

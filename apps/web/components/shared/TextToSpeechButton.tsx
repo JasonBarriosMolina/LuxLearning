@@ -19,6 +19,12 @@ interface Props {
   // browser-voice-only behavior (e.g. a caller with neither row to cache on).
   lessonId?: string;
   questionId?: string;
+  // Trello DmPpbrff, 2026-09-06 (Mack): the quiz page reshuffles a question's options
+  // fresh on every attempt — pass their CURRENT on-screen order so the backend
+  // narrates that instead of its cached, frozen-DB-order audio (which drifted out of
+  // sync with whatever this attempt actually shuffled to). questionId-only (no
+  // optionsOrder) keeps the old cached-by-DB-order behavior.
+  optionsOrder?: string[];
 }
 
 type Gender    = 'female' | 'male';
@@ -239,7 +245,7 @@ function WebSpeechPlayer({ text, rate, onRateChange, gender, appLang, voices }: 
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false, lessonId, questionId }: Props) {
+export function TextToSpeechButton({ text, audioUrl, className = '', adminMode = false, lessonId, questionId, optionsOrder }: Props) {
   const { lang } = useLanguage();
   const voices   = useVoices();
 
@@ -256,7 +262,7 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
     lessonId
       ? api.lessons.audio(lessonId, gender, lang)
       : questionId
-        ? (gender ? api.quiz.questionAudio(questionId, gender) : api.quiz.questionAudio(questionId))
+        ? api.quiz.questionAudio(questionId, gender, optionsOrder)
         : null;
 
   // Lazy on-demand Polly narration — fires on mount AND whenever `lang` changes
@@ -264,16 +270,21 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
   // there's a lessonId/questionId to cache against but no audioUrl yet. Silent/
   // background: the button keeps working via the browser voice meanwhile, then
   // quietly upgrades once ready.
+  // optionsKey: a stable string of the current visual option order — included in both
+  // effects' deps below so a quiz retry that reshuffles WITHOUT remounting this
+  // component (same currentQ across attempts) still re-fetches instead of narrating
+  // a stale attempt's order (Trello DmPpbrff, 2026-09-06 fix).
+  const optionsKey = optionsOrder?.join('|');
   const [fetchedAudioUrl, setFetchedAudioUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     if ((!lessonId && !questionId) || audioUrl) return;
-    setFetchedAudioUrl(undefined); // drop any previous-language clip immediately
+    setFetchedAudioUrl(undefined); // drop any previous-language/order clip immediately
     let cancelled = false;
     fetchAudio()
       ?.then((res) => { if (!cancelled) setFetchedAudioUrl((res as any)?.data?.audioUrl ?? (res as any)?.audioUrl); })
       .catch(() => {}); // non-fatal — WebSpeechPlayer keeps working meanwhile
     return () => { cancelled = true; };
-  }, [lessonId, questionId, audioUrl, lang]);
+  }, [lessonId, questionId, audioUrl, lang, optionsKey]);
   const femaleAudioUrl = audioUrl ?? fetchedAudioUrl;
 
   const [gender, setGender] = useState<Gender>(() =>
@@ -290,6 +301,10 @@ export function TextToSpeechButton({ text, audioUrl, className = '', adminMode =
   // 2026-09-03 migration, so it was free to include).
   const [maleAudioUrl, setMaleAudioUrl] = useState<string | undefined>(undefined);
   const [maleLoading, setMaleLoading] = useState(false);
+  // optionsKey isn't cacheable server-side (see fetchAudio/questionAudio above), so a
+  // changed order must drop the previously-fetched clip, not just skip re-fetching
+  // because maleAudioUrl is already set from a prior attempt's shuffle.
+  useEffect(() => { if (optionsOrder) setMaleAudioUrl(undefined); }, [optionsKey]);
   useEffect(() => {
     if (gender !== 'male' || (!lessonId && !questionId) || maleAudioUrl || maleLoading) return;
     setMaleLoading(true);

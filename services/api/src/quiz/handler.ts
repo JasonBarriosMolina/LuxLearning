@@ -202,13 +202,34 @@ Máximo ${Math.min(incorrect.length, 3)} gaps.`;
     // against, and quiz questions have no Lesson row). Cached on the Question row.
     if (method === 'POST' && path === '/quiz/question-audio') {
       const body = JSON.parse(event.body ?? '{}');
-      const { questionId, gender } = body as { questionId?: string; gender?: 'male' | 'female' };
+      const { questionId, gender, optionsOrder } = body as { questionId?: string; gender?: 'male' | 'female'; optionsOrder?: string[] };
       if (!questionId) return badRequest('questionId is required');
       const question = await prisma.question.findUnique({
         where: { id: questionId },
         include: { module: { select: { course: { select: { planLanguage: true } } } } },
       });
       if (!question) return notFound('Pregunta no encontrada');
+
+      // Trello DmPpbrff, 2026-09-06 (Mack): "se están leyendo en desorden." The quiz
+      // page shuffles each question's options FRESH on every attempt (client-side,
+      // `shuffleUtils.ts`), but this audio used to be synthesized once from
+      // `question.options` (its fixed DB order) and cached forever on the Question
+      // row — so any attempt whose shuffle differs from that frozen order (i.e.
+      // nearly every attempt) heard the options read in the wrong sequence relative
+      // to what was on screen. When the frontend sends the actual on-screen order
+      // (`optionsOrder`), narrate THAT and skip the cache entirely — caching would
+      // just freeze one more (still wrong, for every other attempt) order. Callers
+      // that omit it keep the old cached-by-DB-order behavior for backward compat.
+      if (optionsOrder && optionsOrder.length > 0) {
+        const voiceId = gender === 'male'
+          ? defaultMaleVoiceForLanguage(question.module?.course?.planLanguage)
+          : defaultVoiceForLanguage(question.module?.course?.planLanguage);
+        const text = [question.text, ...optionsOrder].filter(Boolean).join('. ');
+        const audioUrl = await generateLessonAudio(`question-${questionId}-${Date.now()}`, text, voiceId);
+        if (!audioUrl) return serverError('No se pudo generar el audio');
+        return ok({ audioUrl });
+      }
+
       if (gender !== 'male' && question.audioUrl) return ok({ audioUrl: question.audioUrl });
       if (gender === 'male' && question.audioUrlMale) return ok({ audioUrl: question.audioUrlMale });
 
