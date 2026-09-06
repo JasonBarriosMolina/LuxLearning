@@ -301,6 +301,26 @@ describe('POST /admin/modules/:moduleId/questions/ai-generate', () => {
     expect(res?.statusCode).toBe(400);
   });
 
+  // Trello DmPpbrff, 2026-09-06 (Mack): "la respuesta correcta generalmente es la más
+  // larga" — the prompt had no distractor-quality guidance at all.
+  it('instructs the model on distractor quality (no length tell, one close + two related-but-distinguishable wrong answers)', async () => {
+    vi.mocked(invokeBedrockForJson).mockResolvedValueOnce([
+      { text: '¿Qué es X?', options: ['A', 'B', 'C', 'D'], correctIndex: 0 },
+    ]);
+    const prisma = makePrisma({
+      module: { findUnique: vi.fn().mockResolvedValue({ title: 'Módulo 1', questions: [] }) },
+      question: { createMany: vi.fn().mockResolvedValue({ count: 1 }), findMany: vi.fn().mockResolvedValue([{ id: 'q-1' }]) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST', path: '/admin/modules/mod-1/questions/ai-generate', prisma,
+      body: { content: 'Contenido educativo extenso con más de 20 caracteres para el módulo' },
+    });
+    await handleCoursesContent(ctx);
+    const [prompt] = vi.mocked(invokeBedrockForJson).mock.calls.at(-1)!;
+    expect(prompt).toContain('extensión y nivel de detalle SIMILARES');
+    expect(prompt).toContain('distractor cercano');
+  });
+
   it('returns 404 when module not found', async () => {
     const prisma = makePrisma({ module: { findUnique: vi.fn().mockResolvedValue(null) } });
     const ctx = makeAdminCtx({
@@ -309,6 +329,31 @@ describe('POST /admin/modules/:moduleId/questions/ai-generate', () => {
     });
     const res = await handleCoursesContent(ctx);
     expect(res?.statusCode).toBe(404);
+  });
+});
+
+// Trello DmPpbrff, 2026-09-06 (Mack): same distractor-quality fix as the manual
+// ai-generate endpoint above, applied to the worker branch's own quiz prompt (LuxPlanner's
+// "add module with AI" flow — only fires when the course's evaluation plan has a QUIZ item).
+describe('POST /admin/courses/:courseId/modules/ai-generate (worker branch) — quiz prompt quality', () => {
+  it('instructs the model on distractor quality when the plan includes a QUIZ item', async () => {
+    vi.mocked(invokeBedrockForJson)
+      .mockResolvedValueOnce([{ title: 'Lección 1', order: 1, type: 'text' }]) // lessons
+      .mockResolvedValueOnce([{ text: '¿Pregunta?', options: ['A', 'B', 'C', 'D'], correctIndex: 0, order: 1 }]); // questions
+    const prisma = makePrisma({
+      course: { findUnique: vi.fn().mockResolvedValue({ evaluationConfig: [{ type: 'QUIZ' }] }) },
+      module: { count: vi.fn().mockResolvedValue(0), create: vi.fn().mockResolvedValue({ id: 'mod-new' }) },
+      lesson: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      question: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    });
+    const ctx = makeAdminCtx({
+      method: 'POST', path: '/admin/courses/course-1/modules/ai-generate', prisma,
+      body: { topic: 'Tema del módulo', _jobId: 'job-1', _courseTitle: 'Curso de Prueba' },
+    });
+    await handleCoursesContent(ctx);
+    const questionsCall = vi.mocked(invokeBedrockForJson).mock.calls.find(([prompt]) => prompt.includes('opción múltiple'));
+    expect(questionsCall?.[0]).toContain('extensión y nivel de detalle SIMILARES');
+    expect(questionsCall?.[0]).toContain('distractor cercano');
   });
 });
 

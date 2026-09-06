@@ -12,6 +12,14 @@ import {
   S3_IMAGES_BUCKET, lambdaClient, s3Client, generateLessonAudio, invokeBedrockForJson,
 } from './ctx';
 
+// Trello DmPpbrff, 2026-09-06 (Mack): "algunas preguntas son respuestas... parecen muy
+// obvias porque la respuesta correcta generalmente es la más larga." Both quiz-generation
+// prompts below had zero distractor-quality guidance — the model defaulted to writing a
+// detailed correct answer plus 3 short/generic wrong ones, an obvious tell. Shared
+// instruction block for both.
+const DISTRACTOR_QUALITY_RULES = `- Las 4 opciones deben tener una extensión y nivel de detalle SIMILARES entre sí — la respuesta correcta NUNCA debe ser notablemente más larga o específica que las demás (esa asimetría es la pista más común para adivinar sin saber el contenido).
+- De las 3 opciones incorrectas: UNA debe ser un distractor cercano (similar a la correcta, un error conceptual común o fácil de confundir con ella) y las otras DOS deben estar relacionadas con el tema pero ser claramente distinguibles de la correcta al leer con atención — ninguna opción debe ser absurda o evidentemente descartable a simple vista.`;
+
 export async function handleCoursesContent(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
 
@@ -100,7 +108,8 @@ Lecciones 2-9 tipo text con HTML rico: <h3>, <ul><li>, <blockquote>. Sin markdow
         const questionPromise = hasQuizInPlan
           ? invokeBedrockForJson(`Genera exactamente 10 preguntas de opción múltiple sobre "${modTitle}".
 Array JSON: [{"text":"¿Pregunta real?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0,"order":1}]
-10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.`, 2000)
+10 preguntas, correctIndex entre 0-3, opciones con texto real. Sin markdown.
+${DISTRACTOR_QUALITY_RULES}`, 2000)
           : Promise.resolve([]);
 
         const [rawLessons, rawQuestions] = await Promise.all([lessonPromise, questionPromise]);
@@ -333,6 +342,7 @@ REGLAS:
 - Las preguntas deben cubrir diferentes conceptos del contenido
 - Redacta en español, con lenguaje claro y preciso
 - Evalúa comprensión y aplicación, no memorización pura
+${DISTRACTOR_QUALITY_RULES}
 
 Responde ÚNICAMENTE con un array JSON (sin markdown, sin texto extra):
 [{"text":"¿Pregunta?","options":["Op A","Op B","Op C","Op D"],"correctIndex":0}]`;
