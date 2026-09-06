@@ -363,7 +363,16 @@ export default function QuizPage() {
           <p className="font-heading font-semibold text-lg text-charcoal leading-snug">
             {currentQuestion.text}
           </p>
-          <TextToSpeechButton key={currentQ} text={currentQuestion.text} questionId={currentQuestion.id} />
+          <TextToSpeechButton
+            key={currentQ}
+            text={currentQuestion.text}
+            questionId={currentQuestion.id}
+            // Narrate options in the order actually shown on screen this attempt —
+            // Trello DmPpbrff, 2026-09-06 (Mack): the audio used to always read the
+            // question's fixed DB order, drifting out of sync with the fresh
+            // per-attempt shuffle above.
+            optionsOrder={shuffleMap.map((originalIdx: number) => currentQuestion.options[originalIdx])}
+          />
 
           <div className="space-y-2">
             {shuffleMap.map((originalIdx: number, visualPos: number) => {

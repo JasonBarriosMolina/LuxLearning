@@ -92,6 +92,56 @@ describe('POST /quiz/question-audio', () => {
     expect(questionUpdateMock).not.toHaveBeenCalled();
   });
 
+  // Trello DmPpbrff, 2026-09-06 (Mack): "se están leyendo en desorden." The quiz page
+  // reshuffles a question's options fresh on every attempt, but the cached audio was
+  // always built from question.options (a fixed DB order) — narrating the WRONG
+  // sequence for every attempt whose shuffle differed from that frozen order.
+  describe('optionsOrder param — narrate the on-screen (shuffled) order, uncached', () => {
+    it('synthesizes using optionsOrder instead of question.options, ignoring an existing cache', async () => {
+      questionFindUniqueMock.mockResolvedValue({
+        id: 'q1', audioUrl: 'https://s3.example.com/cached-wrong-order.mp3',
+        text: '¿Cuánto es 2+2?', options: ['3', '4', '5'], module: { course: { planLanguage: 'ES' } },
+      });
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-shuffled.mp3');
+
+      const res = await handler(makeEvent({ questionId: 'q1', optionsOrder: ['5', '3', '4'] }));
+      expect(res.statusCode).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-shuffled.mp3');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(
+        expect.any(String), '¿Cuánto es 2+2?. 5. 3. 4', 'Mia',
+      );
+    });
+
+    it('never writes to the audioUrl/audioUrlMale cache — every attempt reshuffles differently', async () => {
+      questionFindUniqueMock.mockResolvedValue({
+        id: 'q1', audioUrl: null, text: 'Pregunta', options: ['a', 'b'], module: { course: { planLanguage: 'ES' } },
+      });
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh.mp3');
+
+      await handler(makeEvent({ questionId: 'q1', optionsOrder: ['b', 'a'] }));
+      expect(questionUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('respects gender for the on-the-fly synthesis too', async () => {
+      questionFindUniqueMock.mockResolvedValue({
+        id: 'q1', text: 'Pregunta', options: ['a', 'b'], module: { course: { planLanguage: 'ES' } },
+      });
+      generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-male.mp3');
+
+      await handler(makeEvent({ questionId: 'q1', gender: 'male', optionsOrder: ['b', 'a'] }));
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'Pedro');
+    });
+
+    it('an empty optionsOrder array falls back to the cached/DB-order behavior (not treated as "provided")', async () => {
+      questionFindUniqueMock.mockResolvedValue({ id: 'q1', audioUrl: 'https://s3.example.com/cached.mp3' });
+      const res = await handler(makeEvent({ questionId: 'q1', optionsOrder: [] }));
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/cached.mp3');
+      expect(generateLessonAudioMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('gender param — male voice requested', () => {
     it('synthesizes fresh with the male voice and caches it separately (audioUrlMale), without touching the female cache', async () => {
       questionFindUniqueMock.mockResolvedValue({

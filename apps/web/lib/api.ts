@@ -99,8 +99,12 @@ export const api = {
       request(`/quiz/${moduleId}/attempts`),
     gapAnalysis: (moduleId: string, body: { results: any[] }) =>
       request<any>(`/quiz/${moduleId}/gap-analysis`, { method: 'POST', body: JSON.stringify(body) }),
-    questionAudio: (questionId: string, gender?: 'male' | 'female') =>
-      request<{ audioUrl: string }>('/quiz/question-audio', { method: 'POST', body: JSON.stringify({ questionId, gender }) }),
+    // optionsOrder: the options in the CURRENT on-screen (shuffled) order — Trello
+    // DmPpbrff, 2026-09-06 (Mack): without it the backend narrates its cached,
+    // DB-order audio, which drifts out of sync with the freshly-reshuffled options
+    // shown for this specific attempt.
+    questionAudio: (questionId: string, gender?: 'male' | 'female', optionsOrder?: string[]) =>
+      request<{ audioUrl: string }>('/quiz/question-audio', { method: 'POST', body: JSON.stringify({ questionId, gender, optionsOrder }) }),
   },
 
   reflection: {
