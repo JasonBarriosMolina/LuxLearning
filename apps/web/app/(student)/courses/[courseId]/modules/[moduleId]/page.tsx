@@ -17,6 +17,7 @@ import { EvidenceCard } from '@/components/ui/EvidenceCard';
 import { formatCourseDuration } from '@/lib/utils';
 import type { ReflectionStatus } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
+import { computeModuleStatus } from './moduleStatus';
 
 export default function ModulePage() {
   const { courseId, moduleId } = useParams<{ courseId: string; moduleId: string }>();
@@ -156,21 +157,17 @@ export default function ModulePage() {
   const reflectionApproved = reflectionStatus === 'APPROVED';
   // interviewGate: passing the (possible) reflection step unlocks the (possible) interview.
   const interviewGate = hasReflectionPlanned ? reflectionApproved : quizGatePassed;
+  // Trello DmPpbrff, 2026-09-06 (Mack): "si todavía hay pendiente una entrevista, no
+  // debería poder continuar al siguiente módulo... veo el botón de continuar, pero no
+  // me deja porque algo está en revisión." getModuleStatus returned 'success' the
+  // moment reflectionStatus was APPROVED, never checking whether a planned interview
+  // had actually been completed — the "Continuar con el Módulo N" CTA showed (and was
+  // clickable) while the interview was still pending/in review.
+  const latestInterview = interviews[0];
+  const interviewDone = !hasInterviewPlanned || latestInterview?.status === 'completed';
 
-  const getModuleStatus = () => {
-    if (reflectionStatus === 'APPROVED') return { label: t.moduleView.statusCompleted, variant: 'success' as const };
-    if (reflectionStatus === 'PENDING_EVAL') return { label: t.moduleView.statusInReview, variant: 'pending' as const };
-    if (reflectionStatus === 'PENDING_AI') return { label: t.moduleView.reflectionStatusPendingAi, variant: 'info' as const };
-    if (reflectionStatus === 'REJECTED') return { label: t.moduleView.reflectionStatusRejected, variant: 'error' as const };
-    if (blockingStep === 'lessons') return { label: t.moduleView.statusPendingLessons, variant: 'default' as const };
-    if (blockingStep === 'class') return { label: t.moduleView.statusPendingClass, variant: 'default' as const };
-    if (blockingStep === 'quiz') return { label: t.moduleView.statusPendingQuiz, variant: 'default' as const };
-    // blockingStep === null — every planned prerequisite cleared
-    if (hasReflectionPlanned) return { label: t.moduleView.statusPendingReflection, variant: 'warning' as const };
-    return { label: t.moduleView.statusCompleted, variant: 'success' as const };
-  };
-
-  const status = getModuleStatus();
+  const statusResult = computeModuleStatus({ reflectionStatus, blockingStep, hasReflectionPlanned, hasInterviewPlanned, interviewDone });
+  const status = { label: t.moduleView[statusResult.labelKey], variant: statusResult.variant };
 
   // Big "continue to next module" CTA once this one is fully done (Trello DmPpbrff,
   // 2026-09-01 01:48 — Mack: "cuando se termina todo un módulo, debería existir un
