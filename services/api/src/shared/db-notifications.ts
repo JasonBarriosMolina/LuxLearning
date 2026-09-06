@@ -22,7 +22,14 @@ export async function getNotifications(userId: string): Promise<Notification[]> 
     ScanIndexForward: false,
     Limit: 50,
   }));
-  return (result.Items ?? []) as unknown as Notification[];
+  const items = (result.Items ?? []) as unknown as Notification[];
+  // Trello DmPpbrff, 2026-09-06 (Mack): "la notificación... tiene que venir en orden
+  // cronológico." ScanIndexForward:false above sorts by the table's actual sort key —
+  // `sk` (= notifId) — not by time. notifId formats are inconsistent across the codebase
+  // (some `createId()` cuids with no time ordering at all, some `prefix-${Date.now()}`,
+  // some `prefix-${createId()}`), so that "order" was frequently wrong. Sort explicitly
+  // by createdAt (a real attribute every notification already has) instead.
+  return items.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
 }
 
 export async function markNotificationRead(userId: string, notifId: string) {
