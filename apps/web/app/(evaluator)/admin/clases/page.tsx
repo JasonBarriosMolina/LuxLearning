@@ -32,6 +32,7 @@ export default function ClasesPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [editingClass, setEditingClass] = useState<ClassDef | null>(null);
   const [canDelete, setCanDelete] = useState(false);
 
   useEffect(() => {
@@ -70,7 +71,18 @@ export default function ClasesPage() {
 
   function handleCreated() {
     setShowWizard(false);
+    setEditingClass(null);
     loadClasses(selectedCourseId);
+  }
+
+  function handleEdit(c: ClassDef) {
+    setEditingClass(c);
+    setShowWizard(true);
+  }
+
+  function handleCancelEdit() {
+    setEditingClass(null);
+    setShowWizard(false);
   }
 
   const s = (es: string, en: string) => isEN ? en : es;
@@ -126,7 +138,7 @@ export default function ClasesPage() {
       {tab === 'gestionar' && (
         <div className="space-y-5">
           <button
-            onClick={() => setShowWizard((p) => !p)}
+            onClick={() => { if (showWizard) { handleCancelEdit(); } else { setShowWizard(true); } }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
               showWizard
                 ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
@@ -141,9 +153,9 @@ export default function ClasesPage() {
             <div className="bg-white border border-indigo-100 rounded-2xl shadow-sm p-5">
               <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
                 <Plus className="w-4 h-4 text-indigo-500" />
-                {s('Crear nueva clase', 'Create new class')}
+                {editingClass ? s('Editar clase', 'Edit class') : s('Crear nueva clase', 'Create new class')}
               </h2>
-              <ClassWizard courses={courses} onCreated={handleCreated} />
+              <ClassWizard courses={courses} onCreated={handleCreated} editingClass={editingClass} onCancelEdit={handleCancelEdit} />
             </div>
           )}
 
@@ -156,6 +168,7 @@ export default function ClasesPage() {
               canDelete={canDelete}
               onDeleted={() => loadClasses(selectedCourseId)}
               onUpdated={() => loadClasses(selectedCourseId)}
+              onEdit={handleEdit}
             />
           )}
         </div>
