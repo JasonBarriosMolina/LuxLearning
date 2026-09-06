@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
+import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
@@ -112,6 +113,14 @@ export const handler = async (event: Event) => {
             actionUrl: `${frontendUrl}/courses/${courseId}/modules/${moduleId}/quiz`,
           }).catch(() => {});
         }
+        // Trello DmPpbrff, 2026-09-06 (Mack): passing a quiz can be the LAST gate
+        // for the whole course (e.g. a course whose final module is quiz-only, no
+        // reflection/interview) — check course-wide completion here too, not only
+        // on reflection approval. Idempotent + non-fatal. Awaited (not
+        // fire-and-forget) — Lambda gives no guarantee a detached promise finishes
+        // after the handler returns its response.
+        try { await checkAndCompleteCourse(prisma, userId, courseId, email); }
+        catch (e: any) { console.error('[quiz/submit] checkAndCompleteCourse error:', e?.message); }
       }
 
       return ok({

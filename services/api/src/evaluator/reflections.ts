@@ -3,9 +3,10 @@ import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EvalCtx, bedrock, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV, resolveStudentContact, resolveStudentName } from './ctx';
 import {
   getAllReflections, getReflection, updateReflectionStatus, setReflectionPriority,
-  createNotification, getCertificateByUserAndCourse, saveCertificate,
+  createNotification, getCertificateByUserAndCourse,
   autoCompleteTasks, getPushSubscriptionsByUserId, getUserLang,
 } from '../shared/db-dynamo';
+import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from '../reflection/detect-ai';
 import { ok, badRequest, notFound, forbidden, serverError } from '../shared/response';
@@ -175,52 +176,21 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
       } catch { /* non-fatal */ }
     })();
 
-    // ── Check if all modules approved → generate certificate ─────────────────
+    // ── Check if the whole course is now complete → generate certificate ─────
+    // Trello DmPpbrff, 2026-09-06 (Mack): delegates to the shared, full completion
+    // check (lessons+class+quiz+reflection+interview per module, not just
+    // reflections) — see db-course-completion.ts. Also now notifies the
+    // evaluator + every ADMIN, not just the student.
     let certId: string | null = null;
     if (action === 'APPROVE' && module?.course) {
-      try {
-        const allModules: any[] = await prisma.module.findMany({
-          where: { courseId: module.courseId },
-          select: { id: true },
-        });
-        const allReflections = await Promise.all(
-          allModules.map((m: any) => getReflection(studentId, m.id))
-        );
-        const allApproved = allReflections.every((r: any) => r?.status === 'APPROVED');
-
-        if (allApproved) {
-          // Check if cert already exists
-          const existing = await getCertificateByUserAndCourse(studentId, module.courseId);
-          if (!existing) {
-            certId = createId();
-            const { name: studentName } = await resolveStudentContact(studentId, reflection);
-            await saveCertificate({
-              certId,
-              userId: studentId,
-              courseId: module.courseId,
-              studentName,
-              courseTitle: module.course.title,
-              issuedAt: reviewedAt,
-            });
-            // In-app notification for course completion
-            await createNotification({
-              userId: studentId,
-              notifId: createId(),
-              type: 'GENERAL',
-              message: studentLang === 'en'
-                ? `🎓 Congratulations! You completed "${module.course.title}". Your certificate is available.`
-                : `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
-              read: false,
-              createdAt: reviewedAt,
-              actionUrl: `/certificado/${certId}`,
-            });
-            console.log(`[Evaluator] Certificate generated: ${certId} for student ${studentId}`);
-          } else {
-            certId = existing.certId;
-          }
-        }
-      } catch (certErr) {
-        console.warn('[Evaluator] Certificate generation failed (non-fatal):', certErr);
+      const { email: studentEmail } = await resolveStudentContact(studentId, reflection);
+      const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, studentEmail, studentLang);
+      if (result) {
+        certId = result.certId;
+        console.log(`[Evaluator] Certificate generated: ${certId} for student ${studentId}`);
+      } else {
+        const existing = await getCertificateByUserAndCourse(studentId, module.courseId);
+        if (existing) certId = existing.certId;
       }
     }
 
@@ -297,30 +267,20 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
       actionUrl: '/student/reflections',
     });
 
-    // Check if all modules approved → generate certificate
+    // Check if the whole course is now complete → generate certificate. Trello
+    // DmPpbrff, 2026-09-06: delegates to the shared, full completion check — see
+    // db-course-completion.ts and the matching comment on the APPROVE path above.
     let certId: string | null = null;
     try {
       const module = await prisma.module.findUnique({ where: { id: moduleId }, include: { course: true } });
       if (module?.course) {
-        const allModules = await prisma.module.findMany({ where: { courseId: module.courseId }, select: { id: true } });
-        const allReflections = await Promise.all(allModules.map((m: any) => getReflection(studentId, m.id)));
-        const allApproved = allReflections.every((r: any) => r?.status === 'APPROVED');
-        if (allApproved) {
+        const { email: reconsiderStudentEmail } = await resolveStudentContact(studentId, reflection);
+        const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, reconsiderStudentEmail, reconsiderStudentLang);
+        if (result) {
+          certId = result.certId;
+        } else {
           const existing = await getCertificateByUserAndCourse(studentId, module.courseId);
-          if (!existing) {
-            certId = createId();
-            const { name: studentName } = await resolveStudentContact(studentId, reflection);
-            await saveCertificate({ certId, userId: studentId, courseId: module.courseId, studentName, courseTitle: module.course.title, issuedAt: reviewedAt });
-            await createNotification({
-              userId: studentId, notifId: createId(), type: 'GENERAL',
-              message: reconsiderStudentLang === 'en'
-                ? `🎓 Congratulations! You completed "${module.course.title}". Your certificate is available.`
-                : `🎓 ¡Felicitaciones! Completaste "${module.course.title}". Tu certificado está disponible.`,
-              read: false, createdAt: reviewedAt, actionUrl: `/certificado/${certId}`,
-            });
-          } else {
-            certId = existing.certId;
-          }
+          if (existing) certId = existing.certId;
         }
         // Send email
         try {
