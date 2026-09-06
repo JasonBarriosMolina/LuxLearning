@@ -31,7 +31,10 @@ export function ReflectionStatusBadge({ status }: { status: ReflectionStatus | n
   if (!status) return null;
 
   const config: Record<ReflectionStatus, { variant: BadgeVariant; label: string }> = {
-    PENDING_AI: { variant: 'info', label: 'Procesando IA' },
+    // Trello DmPpbrff, 2026-09-06 (Mack): "no debe decir eso directamente [IA]; debe
+    // decir como 'revisándose por Lux Mentor'." Matches the wording already used for
+    // this same status elsewhere (t.moduleView.reflectionStatusPendingAi).
+    PENDING_AI: { variant: 'info', label: 'Siendo evaluado por Lux Mentor' },
     PENDING_EVAL: { variant: 'pending', label: 'En revisión' },
     APPROVED: { variant: 'success', label: 'Aprobada' },
     REJECTED: { variant: 'error', label: 'Rechazada' },
