@@ -3,7 +3,8 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getPrismaClient } from '../shared/db-neon';
-import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, updateInterview, listMyInterviews } from '../shared/db-dynamo';
+import { isModuleUnlocked, getLessonProgress, hasPassedQuiz, getReflection, getEnrollments, getResourcesByCourse, createSubmission, listMySubmissions, listSubmissionsForModule, createInterview, updateInterview, listMyInterviews, getInterview } from '../shared/db-dynamo';
+import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { listMyClassSessions, listMyClassSessionsForCourse } from '../shared/db-classes';
 import { handleClasses } from './classes';
 import { handleVapiWebhook } from './vapi-webhook';
@@ -480,6 +481,16 @@ export const handler = async (event: Event) => {
       if (vapiCallId) patch.vapiCallId = vapiCallId;
       if (status) patch.status = status;
       if (Object.keys(patch).length) await updateInterview(userId, interviewId, patch as any);
+      // Trello DmPpbrff, 2026-09-06 (Mack): fires here too (not just the Vapi
+      // webhook) so the student/evaluator/admin see it as soon as the frontend's
+      // own "call ended" event lands, without waiting for the webhook's Bedrock
+      // analysis round-trip. Idempotent + non-fatal — see db-course-completion.ts.
+      if (status === 'completed') {
+        try {
+          const interview = await getInterview(userId, interviewId);
+          if (interview?.courseId) await checkAndCompleteCourse(prisma, userId, interview.courseId);
+        } catch (e: any) { console.error('[my-interviews PATCH] checkAndCompleteCourse error:', e?.message); }
+      }
       return ok({ updated: true });
     }
 

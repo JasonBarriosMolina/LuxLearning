@@ -13,6 +13,7 @@ import {
   getInterviewByCallId, updateInterview, getClassSessionByCallId, updateClassSession,
   getPushSubscriptionsByUserId, createNotification,
 } from '../shared/db-dynamo';
+import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { getVapidKeys } from '../shared/vapid';
 import { getVapiKeys } from '../shared/vapi-keys';
 import { ok } from '../shared/response';
@@ -120,6 +121,14 @@ export async function handleVapiWebhook(event: any, prisma: any): Promise<any> {
             const subs = await getPushSubscriptionsByUserId(classSession.userId);
             const payload = JSON.stringify({ title: 'Clase completada', body: 'Tu sesión con Lux Mentor ha sido procesada. Tu evaluador revisará tu resultado pronto.' });
             await Promise.allSettled(subs.map((sub: any) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload)));
+          }
+          // Trello DmPpbrff, 2026-09-06 (Mack): a Lux Mentor class can be the LAST
+          // gate for the whole course — same completion check as the interview
+          // branch below. Idempotent + non-fatal.
+          try {
+            await checkAndCompleteCourse(prisma, classSession.userId, classSession.courseId);
+          } catch (e) {
+            console.error('[vapi] checkAndCompleteCourse (class) failed (non-fatal):', e);
           }
           return;
         }
@@ -234,6 +243,17 @@ Responde ÚNICAMENTE con este JSON (sin markdown):
           } catch (e) {
             console.error('[vapi] evaluator interview notification failed (non-fatal):', e);
           }
+        }
+
+        // Trello DmPpbrff, 2026-09-06 (Mack): an interview can be the LAST gate for
+        // the whole course — check course-wide completion here too (this webhook is
+        // the authoritative completion signal; the frontend's optimistic PATCH to
+        // /my-interviews/:id isn't guaranteed to fire if the call drops). Idempotent
+        // + non-fatal — see db-course-completion.ts.
+        try {
+          await checkAndCompleteCourse(prisma, interview.userId, interview.courseId);
+        } catch (e) {
+          console.error('[vapi] checkAndCompleteCourse (interview) failed (non-fatal):', e);
         }
       } catch (e) {
         console.error('[vapi] webhook processing error', e);
