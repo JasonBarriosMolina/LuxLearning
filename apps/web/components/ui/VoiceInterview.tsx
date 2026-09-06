@@ -131,7 +131,14 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
         model: 'claude-haiku-4-5-20251001',
         messages: [{ role: 'system', content: systemPrompt }],
       },
-      voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: 'auto' } as any,
+      // Trello DmPpbrff, 2026-09-06 (Mack): "el modelo de voz en español es un español
+      // de España; quiero... latinoamericano." `language: 'auto'` let Vapi's voice pick
+      // its own accent from the detected text, defaulting to Spain Spanish — 'es-419'
+      // is the standard locale code for Latin American Spanish. Best-effort: Vapi's own
+      // "vapi" voice provider docs don't explicitly confirm es-419 support for every
+      // built-in voice, so this needs a live test call to confirm the accent actually
+      // shifted (can't verify audio output from here).
+      voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
       name: 'Lux Mentor',
       maxDurationSeconds: 600,
       firstMessage: lang === 'en'
