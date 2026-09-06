@@ -203,6 +203,20 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
         {latestInterview.feedback && (
           <p className="text-xs text-gray-500 border-t border-border pt-2">{latestInterview.feedback}</p>
         )}
+        {/* Trello DmPpbrff, 2026-09-06 (Mack): "no puedo ver transcripciones de
+            entrevistas" — the evaluator's own review page already shows this
+            (evaluator/interviews/page.tsx); the student never had anywhere to see
+            it at all. Same collapsed-by-default pattern. */}
+        {latestInterview.transcript && (
+          <details className="border-t border-border pt-2">
+            <summary className="cursor-pointer text-xs text-gray-400 hover:text-charcoal">
+              {s('Ver transcripción completa', 'View full transcript')}
+            </summary>
+            <div className="mt-2 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+              {latestInterview.transcript}
+            </div>
+          </details>
+        )}
       </div>
     );
   }
