@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  PlayCircle, Eye, RefreshCw, Pencil, RotateCcw, Trash2, GripVertical, ChevronUp, ChevronDown,
+  Eye, RefreshCw, Pencil, RotateCcw, Trash2, GripVertical, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
 import { ConfirmDelete } from './ConfirmDelete';
 import { LessonFields } from './LessonFields';
+import { LessonTypeIcon } from './LessonTypeIcon';
 import type { LessonForm } from './types';
 
 export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, isLast }: {
@@ -110,7 +111,7 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
           <button onClick={onMoveUp} disabled={isFirst} className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-30 transition-colors" title="Mover arriba"><ChevronUp className="w-3 h-3" /></button>
           <button onClick={onMoveDown} disabled={isLast} className="p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-30 transition-colors" title="Mover abajo"><ChevronDown className="w-3 h-3" /></button>
         </div>
-        <PlayCircle className="w-4 h-4 text-cta-from shrink-0 mt-0.5" />
+        <LessonTypeIcon type={lesson.type} className="w-4 h-4 text-cta-from shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-charcoal">{lesson.order}. {lesson.title}</p>
           <p className="text-xs text-gray-400 mt-0.5">{formatCourseDuration(lesson.duration)}</p>
