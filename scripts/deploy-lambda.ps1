@@ -37,6 +37,18 @@ $PRISMA_ENGINE = "$PRISMA_GEN\libquery_engine-linux-arm64-openssl-3.0.x.so.node"
 $SHARP_PKG          = "$MODULES\sharp"
 $SHARP_LINUX_ARM64   = "$MODULES\@img\sharp-linux-arm64"
 $SHARP_LIBVIPS_ARM64 = "$MODULES\@img\sharp-libvips-linux-arm64"
+# sharp's own runtime dependencies (its package.json "dependencies", not the platform-
+# binary optionalDependencies above) — esbuild marking sharp --external means esbuild
+# never bundles anything sharp itself requires() either, so these must be staged as
+# real folders too, same as sharp. Missing entirely until 2026-09-06 (Trello DmPpbrff,
+# Mack: "sigo sin ver las imágenes del carrusel... con la marca") — every watermark
+# attempt failed at require-time with "Cannot find module 'detect-libc'" and silently
+# fell back to the unwatermarked image (non-fatal by design, so it never crashed or
+# showed up as anything other than "watermark just isn't there"). Verify the exact set
+# with: npm view sharp dependencies --json (from services\api) if sharp is ever upgraded.
+$SHARP_SEMVER  = "$MODULES\semver"
+$SHARP_COLOUR  = "$MODULES\@img\colour"
+$SHARP_DETECT_LIBC = "$MODULES\detect-libc"
 
 # pdfkit (shared/carousel-pdf.ts for lux-lessons, certificates/handler.ts for
 # lux-certs) is pure JS but ships its standard-font metrics as separate .afm data
@@ -161,10 +173,16 @@ function Deploy-Lambda([string]$name) {
     if (-not (Test-Path $SHARP_LINUX_ARM64) -or -not (Test-Path $SHARP_LIBVIPS_ARM64)) {
       throw 'sharp linux-arm64 binaries are missing from node_modules. From services\api, run: npm install --save-exact --force "@img/sharp-linux-arm64@<version>" "@img/sharp-libvips-linux-arm64@<version>" (pin the exact versions from sharp own optionalDependencies, e.g. npm view sharp optionalDependencies)'
     }
+    if (-not (Test-Path $SHARP_SEMVER) -or -not (Test-Path $SHARP_COLOUR) -or -not (Test-Path $SHARP_DETECT_LIBC)) {
+      throw 'sharp own runtime dependencies (semver, @img/colour, detect-libc) are missing from node_modules. Run npm install at the repo root.'
+    }
     New-Item -ItemType Directory "$stage\node_modules\@img" -Force | Out-Null
     Copy-Item $SHARP_PKG "$stage\node_modules\sharp" -Recurse
     Copy-Item $SHARP_LINUX_ARM64 "$stage\node_modules\@img\sharp-linux-arm64" -Recurse
     Copy-Item $SHARP_LIBVIPS_ARM64 "$stage\node_modules\@img\sharp-libvips-linux-arm64" -Recurse
+    Copy-Item $SHARP_SEMVER "$stage\node_modules\semver" -Recurse
+    Copy-Item $SHARP_COLOUR "$stage\node_modules\@img\colour" -Recurse
+    Copy-Item $SHARP_DETECT_LIBC "$stage\node_modules\detect-libc" -Recurse
   }
 
   if ($usesPdfkit) {
