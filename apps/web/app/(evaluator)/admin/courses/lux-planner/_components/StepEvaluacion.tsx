@@ -166,11 +166,18 @@ export function StepEvaluacion({
 
           return (
             <div key={item.id} className="border border-border rounded-xl overflow-hidden">
-              <div className="bg-surface px-4 py-3 flex items-center gap-3">
+              <div className="bg-surface px-4 py-3 flex items-center gap-3 flex-wrap">
                 <GripVertical className="w-4 h-4 text-gray-300 shrink-0" />
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>{meta.icon}{planEN ? meta.labelEN : meta.label}</span>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${meta.color}`}>{meta.icon}{planEN ? meta.labelEN : meta.label}</span>
+                {/* Trello DmPpbrff, 2026-09-06 (Mack): "mira lo mal que se ven los
+                    acomodos de las letras en móvil" — a flex-1 <input> has no
+                    intrinsic shrink limit (unlike text/span), so on narrow screens
+                    it forced the whole header row wider than the card, cutting off
+                    the weight box and dragging surrounding content off-screen.
+                    min-w-0 is the standard fix: it lets a flex item shrink below
+                    its content's natural width instead of overflowing. */}
                 <input value={planEN ? item.nameEN : item.name} onChange={(e) => updateItem(item.id, planEN ? { nameEN: e.target.value } : { name: e.target.value })}
-                  className="flex-1 bg-transparent text-sm font-semibold text-charcoal border-0 outline-none focus:bg-white focus:px-2 focus:rounded focus:border focus:border-border transition-all" />
+                  className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-charcoal border-0 outline-none focus:bg-white focus:px-2 focus:rounded focus:border focus:border-border transition-all" />
                 <div className="flex items-center gap-2 shrink-0">
                   <input type="number" min={0} max={100} step={5} value={item.weight} onChange={(e) => updateItem(item.id, { weight: parseFloat(e.target.value) || 0 })} className="w-16 text-center input-field py-1 text-sm font-bold" />
                   <span className="text-xs text-gray-400">%</span>
@@ -179,9 +186,9 @@ export function StepEvaluacion({
               </div>
               <div className="px-4 py-3 space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs text-gray-400">{s('Tipo:', 'Type:')}</span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-wrap">
                       {SELECTABLE_EVAL_TYPES.map((t) => {
                         const m = EVAL_TYPE_META[t];
                         return (
@@ -343,7 +350,7 @@ export function StepEvaluacion({
                     <select
                       value={mod.quizWeek ?? ''}
                       onChange={(e) => updateModuleQuizWeek(i, e.target.value ? parseInt(e.target.value) : null)}
-                      className="input-field py-0.5 text-xs w-16"
+                      className="input-field py-0.5 text-xs w-16 min-w-0"
                     >
                       <option value="">—</option>
                       {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
@@ -352,7 +359,7 @@ export function StepEvaluacion({
                     <select
                       value={mod.reflexWeek ?? ''}
                       onChange={(e) => updateModuleReflexWeek(i, e.target.value ? parseInt(e.target.value) : null)}
-                      className="input-field py-0.5 text-xs w-16"
+                      className="input-field py-0.5 text-xs w-16 min-w-0"
                     >
                       <option value="">—</option>
                       {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
@@ -361,7 +368,7 @@ export function StepEvaluacion({
                     <select
                       value={mod.interviewWeek ?? ''}
                       onChange={(e) => updateModuleInterviewWeek(i, e.target.value ? parseInt(e.target.value) : null)}
-                      className="input-field py-0.5 text-xs w-16"
+                      className="input-field py-0.5 text-xs w-16 min-w-0"
                     >
                       <option value="">—</option>
                       {allWeekNums.map((n) => <option key={n} value={n}>{s('S', 'W')}{n}</option>)}
