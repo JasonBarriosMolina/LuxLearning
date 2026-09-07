@@ -46,22 +46,31 @@ export function CourseCard({
   t,
 }: CourseCardProps) {
   return (
-    <div className={`card flex items-center gap-4 ${course.isArchived ? 'opacity-70' : ''}`}>
-      {/* Status indicator */}
-      <div
-        className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-          course.isArchived
-            ? 'bg-gray-300'
-            : course.isDraft
-            ? 'bg-yellow-400'
-            : course.isActive
-            ? 'bg-emerald-500'
-            : 'bg-gray-300'
-        }`}
-      />
+    // Trello DmPpbrff, 2026-09-06 (Mack): "mira lo mal que se ven los acomodos de
+    // las letras en móvil" — a single non-wrapping flex row forced the info block
+    // to shrink to near-nothing on narrow screens (squeezed by ~8 shrink-0 action
+    // icons), wrapping every label into a tall, cramped single-word-per-line
+    // column, while the action icons themselves overflowed past the card edge.
+    // Stacks status+info above actions on mobile (sm:contents un-groups them back
+    // into the same flat row at sm+, so desktop layout is unchanged); actions wrap
+    // instead of overflowing at any width.
+    <div className={`card flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 ${course.isArchived ? 'opacity-70' : ''}`}>
+      <div className="flex items-start gap-3 sm:contents">
+        {/* Status indicator */}
+        <div
+          className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 sm:mt-0 ${
+            course.isArchived
+              ? 'bg-gray-300'
+              : course.isDraft
+              ? 'bg-yellow-400'
+              : course.isActive
+              ? 'bg-emerald-500'
+              : 'bg-gray-300'
+          }`}
+        />
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
+        {/* Info */}
+        <div className="flex-1 min-w-0">
         <p className="font-semibold text-charcoal truncate mb-0.5">{course.title}</p>
         <div className="flex items-center gap-2 flex-wrap">
           <select
@@ -122,10 +131,11 @@ export function CourseCard({
             </span>
           ))}
         </div>
+        </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:shrink-0">
         {course.isArchived ? (
           <>
             <Link
