@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LuxCarrouselPlayer } from './LuxCarrouselPlayer';
 
 // Trello DmPpbrff, 2026-09-02 22:12 (Mack): "si ya el carrusel se vio y lo vio el
@@ -19,7 +19,8 @@ vi.mock('lucide-react', () => ({
   Captions: () => null, FileText: () => null, ChevronDown: () => null, ChevronUp: () => null,
   Music: () => null, VolumeX: () => null,
 }));
-vi.mock('@/lib/api', () => ({ api: { lessons: { carouselRecap: vi.fn() } } }));
+const carouselRecapMock = vi.fn();
+vi.mock('@/lib/api', () => ({ api: { lessons: { carouselRecap: (...a: any[]) => carouselRecapMock(...a) } } }));
 
 const baseProps = {
   courseId: 'c1', moduleId: 'm1', lessonId: 'l1', audioUrl: 'https://example.com/a.mp3',
@@ -94,6 +95,25 @@ describe('LuxCarrouselPlayer — background music toggle', () => {
     const { container: container2 } = render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
     expect(container2.querySelectorAll('audio')[1]?.getAttribute('src')).toBe(firstSrc);
     expect(firstSrc).toContain('lux-learning-images.s3.amazonaws.com/audio/bgm/');
+  });
+});
+
+describe('LuxCarrouselPlayer — Lux Recap PDF (bug fix 2026-09-07, Mack: "ese botón no está funcionando de nada")', () => {
+  it('shows an error message instead of silently reverting when the request fails', async () => {
+    carouselRecapMock.mockRejectedValueOnce(new Error('Not Found'));
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    fireEvent.click(screen.getByText('Solicitar Lux Recap (PDF)'));
+    await waitFor(() => expect(screen.getByText('No se pudo generar el PDF. Intentá de nuevo.')).toBeInTheDocument());
+    // button is still there so the student can retry
+    expect(screen.getByText('Solicitar Lux Recap (PDF)')).toBeInTheDocument();
+  });
+
+  it('shows the download link and clears any prior error once the request succeeds', async () => {
+    carouselRecapMock.mockResolvedValueOnce({ data: { pdfRecapUrl: 'https://s3.example.com/recap.pdf' } });
+    render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
+    fireEvent.click(screen.getByText('Solicitar Lux Recap (PDF)'));
+    await waitFor(() => expect(screen.getByText('Descargar Lux Recap (PDF)')).toBeInTheDocument());
+    expect(screen.queryByText('No se pudo generar el PDF. Intentá de nuevo.')).not.toBeInTheDocument();
   });
 });
 
