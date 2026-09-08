@@ -7,6 +7,7 @@ import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { bedrock, bedrockImageClient, s3Client, S3_IMAGES_BUCKET } from './ctx';
 import { applyLuxWatermark } from '../shared/lux-watermark';
+import { generateImageWithGemini, isGeminiImageConfigured } from './ai-image-gemini';
 
 // ── Image generation ─────────────────────────────────────────────────────────
 export const STYLE_SUFFIXES: Record<string, string> = {
@@ -146,23 +147,38 @@ export async function generateLessonImage(
   }
   const isDiagram = override?.style === 'diagram';
   try {
-    // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
-    const resp = await bedrockImageClient.send(new InvokeModelCommand({
-      modelId: 'stability.stable-image-core-v1:1',
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify({
-        prompt,
-        negative_prompt: isDiagram ? NEGATIVE_PROMPT_BASE : NEGATIVE_PROMPT_NON_DIAGRAM,
-        mode: 'text-to-image',
-        aspect_ratio: '1:1',
-        output_format: 'jpeg',
-      }),
-    }));
-    const result = JSON.parse(new TextDecoder().decode(resp.body));
-    const base64 = result.images?.[0];
-    if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
-    let imgBuffer = Buffer.from(base64, 'base64');
+    // Provider selection (Trello DmPpbrff, 2026-09-08 — Jason: "adelante" on
+    // trying Nano Banana Pro / Gemini for image quality). Stability stays the
+    // default so nothing changes unless IMAGE_PROVIDER='gemini' AND a key is
+    // configured — either missing condition transparently falls back to
+    // Stability, same non-fatal convention as applyLuxWatermark below.
+    let imgBuffer: Buffer | null = null;
+    if (process.env.IMAGE_PROVIDER === 'gemini' && isGeminiImageConfigured()) {
+      try {
+        imgBuffer = await generateImageWithGemini(prompt);
+      } catch (err) {
+        console.error('[ImageGen] Gemini provider failed, falling back to Stability:', err);
+      }
+    }
+    if (!imgBuffer) {
+      // Stability Image Core — ACTIVE model in us-west-2, native Bedrock, no external API key
+      const resp = await bedrockImageClient.send(new InvokeModelCommand({
+        modelId: 'stability.stable-image-core-v1:1',
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          prompt,
+          negative_prompt: isDiagram ? NEGATIVE_PROMPT_BASE : NEGATIVE_PROMPT_NON_DIAGRAM,
+          mode: 'text-to-image',
+          aspect_ratio: '1:1',
+          output_format: 'jpeg',
+        }),
+      }));
+      const result = JSON.parse(new TextDecoder().decode(resp.body));
+      const base64 = result.images?.[0];
+      if (!base64) { console.error('[ImageGen] Stability returned no image'); return null; }
+      imgBuffer = Buffer.from(base64, 'base64');
+    }
     if (imgBuffer.length === 0) return null;
     // Real Lux Learning icon composited onto the image, not an AI-imagined watermark
     // (Trello DmPpbrff, 2026-09-05 — Mack: "utilizando el Lux Learning Icon Full Color").

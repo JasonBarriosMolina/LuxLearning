@@ -26,6 +26,15 @@ vi.mock('jsonrepair', () => ({ jsonrepair: (x: string) => x }));
 const { applyLuxWatermarkMock } = vi.hoisted(() => ({ applyLuxWatermarkMock: vi.fn() }));
 vi.mock('../../shared/lux-watermark', () => ({ applyLuxWatermark: applyLuxWatermarkMock }));
 
+const { generateImageWithGeminiMock, isGeminiImageConfiguredMock } = vi.hoisted(() => ({
+  generateImageWithGeminiMock: vi.fn(),
+  isGeminiImageConfiguredMock: vi.fn(() => false),
+}));
+vi.mock('../../admin/ai-image-gemini', () => ({
+  generateImageWithGemini: generateImageWithGeminiMock,
+  isGeminiImageConfigured: isGeminiImageConfiguredMock,
+}));
+
 function makeBedrockBody(text: string) {
   return Buffer.from(JSON.stringify({ content: [{ text }] }));
 }
@@ -200,6 +209,9 @@ describe('generateLessonImage', () => {
     vi.spyOn(bedrockImageClient, 'send');
     vi.spyOn(s3Client, 'send').mockResolvedValue({});
     applyLuxWatermarkMock.mockReset();
+    generateImageWithGeminiMock.mockReset();
+    isGeminiImageConfiguredMock.mockReset().mockReturnValue(false);
+    delete process.env.IMAGE_PROVIDER;
   });
 
   it('drops "diagram/chart/infographic" from the negative prompt for style=diagram (they contradict its own positive prompt)', async () => {
@@ -258,5 +270,52 @@ describe('generateLessonImage', () => {
     vi.mocked(bedrockImageClient.send).mockRejectedValueOnce(new Error('Stability timeout'));
     const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
     expect(result).toBeNull();
+  });
+
+  // Provider flag (Trello DmPpbrff, 2026-09-08 — Jason: "adelante" on trying
+  // Nano Banana Pro / Gemini). Stability must stay the untouched default.
+  describe('IMAGE_PROVIDER=gemini flag', () => {
+    it('still uses Stability when IMAGE_PROVIDER is unset (default, no behavior change)', async () => {
+      applyLuxWatermarkMock.mockResolvedValue(Buffer.from('w'));
+      vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody(fakeImageB64) });
+      await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+      expect(generateImageWithGeminiMock).not.toHaveBeenCalled();
+      expect(bedrockImageClient.send).toHaveBeenCalled();
+    });
+
+    it('still uses Stability when IMAGE_PROVIDER=gemini but no key is configured', async () => {
+      process.env.IMAGE_PROVIDER = 'gemini';
+      isGeminiImageConfiguredMock.mockReturnValue(false);
+      applyLuxWatermarkMock.mockResolvedValue(Buffer.from('w'));
+      vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody(fakeImageB64) });
+      await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+      expect(generateImageWithGeminiMock).not.toHaveBeenCalled();
+      expect(bedrockImageClient.send).toHaveBeenCalled();
+    });
+
+    it('uses Gemini when IMAGE_PROVIDER=gemini and a key is configured, skipping Stability entirely', async () => {
+      process.env.IMAGE_PROVIDER = 'gemini';
+      isGeminiImageConfiguredMock.mockReturnValue(true);
+      generateImageWithGeminiMock.mockResolvedValue(Buffer.from('gemini-image-bytes'));
+      applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
+      const callsBefore = vi.mocked(bedrockImageClient.send).mock.calls.length;
+      const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+      expect(generateImageWithGeminiMock).toHaveBeenCalled();
+      expect(vi.mocked(bedrockImageClient.send).mock.calls.length).toBe(callsBefore); // Stability not touched
+      expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
+      const putCall = vi.mocked(s3Client.send).mock.calls.at(-1)![0] as any;
+      expect(putCall.Body).toEqual(Buffer.from('watermarked')); // still gets the Lux watermark
+    });
+
+    it('falls back to Stability when Gemini fails, instead of returning null', async () => {
+      process.env.IMAGE_PROVIDER = 'gemini';
+      isGeminiImageConfiguredMock.mockReturnValue(true);
+      generateImageWithGeminiMock.mockRejectedValue(new Error('Gemini quota exceeded'));
+      applyLuxWatermarkMock.mockResolvedValue(Buffer.from('w'));
+      vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody(fakeImageB64) });
+      const result = await generateLessonImage('Lección', 'Módulo', 0, { lessonContent: 'x' });
+      expect(bedrockImageClient.send).toHaveBeenCalled();
+      expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
+    });
   });
 });
