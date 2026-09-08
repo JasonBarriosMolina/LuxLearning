@@ -80,14 +80,27 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   // the cached URL back instantly via the same endpoint.
   const [pdfRecapUrl, setPdfRecapUrl] = useState(initialPdfRecapUrl);
   const [pdfRequesting, setPdfRequesting] = useState(false);
+  // Bug fix (Trello DmPpbrff, 2026-09-07 — Mack: "no hay nada que me esté
+  // brindando la notificación de que se generó el Lux recap... ese botón no
+  // está funcionando de nada"): a failed request (missing route, 500 from
+  // buildRecapPdf, etc.) was swallowed by an empty catch — the button just
+  // silently reverted to "Solicitar" with zero feedback, indistinguishable
+  // from doing nothing at all. Now a failure is shown so the student knows
+  // the click registered and can retry.
+  const [pdfError, setPdfError] = useState('');
   const requestPdf = async () => {
     setPdfRequesting(true);
+    setPdfError('');
     try {
       const res = await api.lessons.carouselRecap(lessonId);
       const url = (res as any)?.data?.pdfRecapUrl ?? (res as any)?.pdfRecapUrl;
       if (url) setPdfRecapUrl(url);
-    } catch { /* let the student retry */ }
-    finally { setPdfRequesting(false); }
+      else setPdfError('No se pudo generar el PDF. Intentá de nuevo.');
+    } catch {
+      setPdfError('No se pudo generar el PDF. Intentá de nuevo.');
+    } finally {
+      setPdfRequesting(false);
+    }
   };
   const unlocked = canScrub(hasCompletedBefore);
 
@@ -303,13 +316,16 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
                 <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
               </a>
             ) : (
-              <button
-                onClick={requestPdf}
-                disabled={pdfRequesting}
-                className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline disabled:opacity-50"
-              >
-                <Download className="w-3.5 h-3.5" /> {pdfRequesting ? 'Generando PDF…' : 'Solicitar Lux Recap (PDF)'}
-              </button>
+              <>
+                <button
+                  onClick={requestPdf}
+                  disabled={pdfRequesting}
+                  className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5" /> {pdfRequesting ? 'Generando PDF…' : 'Solicitar Lux Recap (PDF)'}
+                </button>
+                {pdfError && <p className="text-xs text-red-500 mt-1">{pdfError}</p>}
+              </>
             )}
           </div>
           {/* "Continuar" CTA (Trello DmPpbrff, 2026-09-01 00:57) — the carousel branch

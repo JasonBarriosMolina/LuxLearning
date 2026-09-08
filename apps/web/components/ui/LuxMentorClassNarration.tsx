@@ -96,9 +96,20 @@ export function LuxMentorClassNarration({
         ) : null}
       </div>
 
-      {/* Notes panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack) */}
+      {/* Notes panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack).
+          Bug fix (Trello DmPpbrff, 2026-09-07 — Mack: "el botón consultar a Lux
+          Mentor no está funcionando"): highlightsForSummary was hardcoded to []
+          — audio narration has no text-selection UI like the lesson page, so the
+          button was permanently disabled. There's no manual highlight step here,
+          so "consultar" summarizes the full narrated script instead. */}
       {notesOpen && (
-        <NotesPanel contextType="class" contextId={moduleId} highlightsForSummary={[]} />
+        <NotesPanel
+          contextType="class"
+          contextId={moduleId}
+          highlightsForSummary={
+            marks.length > 0 ? [marks.map((m) => m.value).join(' ')] : lessonScript ? [lessonScript] : []
+          }
+        />
       )}
 
       {/* Floating notes button — same convention as the text-lesson page */}

@@ -117,6 +117,50 @@ describe('LuxMentorClassNarration', () => {
     expect(screen.getByText('Consultar a Lux Mentor')).toBeInTheDocument();
   });
 
+  it('bug fix (2026-09-07): "Consultar a Lux Mentor" is enabled once speech marks exist, and summarizes the full narrated script', async () => {
+    notesMock.mockResolvedValue({ data: [] });
+    render(
+      <LuxMentorClassNarration
+        {...baseProps}
+        moduleId="m-xyz"
+        lessonScript="Tema completo del guion."
+        lessonAudioUrl="https://s3.example.com/class.mp3"
+        lessonSpeechMarks={marks}
+        lang="es"
+      />,
+    );
+    fireEvent.click(screen.getByTitle('Mis notas'));
+    const btn = await screen.findByText('Consultar a Lux Mentor');
+    expect(btn.closest('button')).not.toBeDisabled();
+
+    const api = await import('@/lib/api');
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect((api.api.lessons.summarizeHighlights as any)).toHaveBeenCalledWith({
+        contextId: 'm-xyz',
+        highlights: ['Primera oración. Segunda oración.'],
+        lessonTitle: undefined,
+      }),
+    );
+  });
+
+  it('bug fix (2026-09-07): falls back to the plain lessonScript for the summary when there are no speech marks', async () => {
+    notesMock.mockResolvedValue({ data: [] });
+    render(
+      <LuxMentorClassNarration
+        {...baseProps}
+        moduleId="m-xyz"
+        lessonScript="Guion legado sin marks."
+        lessonAudioUrl="https://s3.example.com/class.mp3"
+        lessonSpeechMarks={null}
+        lang="es"
+      />,
+    );
+    fireEvent.click(screen.getByTitle('Mis notas'));
+    const btn = await screen.findByText('Consultar a Lux Mentor');
+    expect(btn.closest('button')).not.toBeDisabled();
+  });
+
   it('shows the English button title when lang="en"', () => {
     render(
       <LuxMentorClassNarration
