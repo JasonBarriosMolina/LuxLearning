@@ -9,6 +9,7 @@ import { jsonrepair } from 'jsonrepair';
 import {
   AdminCtx, isAuthorized, isAdmin, getCallerName, shuffleQuestionOptions,
   S3_IMAGES_BUCKET, lambdaClient, bedrock, generateLessonAudio, invokeBedrockForJson,
+  DISTRACTOR_QUALITY_RULES,
 } from './ctx';
 import { generateLessonImage } from './ai-image-helpers';
 
@@ -107,7 +108,8 @@ Responde ÚNICAMENTE con array JSON válido:
 {"text":"¿Novena pregunta?","options":["Op A","Op B","Op C","Op D correcta"],"correctIndex":3,"order":9},
 {"text":"¿Décima pregunta?","options":["Op A correcta","Op B","Op C","Op D"],"correctIndex":0,"order":10}
 ]
-REGLAS: exactamente 10 preguntas, opciones con texto real (no genérico), específicas al tema "${mod.title}", correctIndex entre 0-3. Sin markdown.`, 2000),
+REGLAS: exactamente 10 preguntas, opciones con texto real (no genérico), específicas al tema "${mod.title}", correctIndex entre 0-3. Sin markdown.
+${DISTRACTOR_QUALITY_RULES}`, 2000),
           ]);
 
           // Garantizar 10 lecciones completas — validar título, content y regenerar si faltan
@@ -150,7 +152,7 @@ Responde ÚNICAMENTE con JSON: {"title":"Título real específico","content":"<p
           if (finalQuestions.length < 10) {
             const missing = 10 - finalQuestions.length;
             const extraQ = await bedrockJSON(
-              `Genera ${missing} preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":${finalQuestions.length + 1}},...]. Sin markdown.`, 1000
+              `Genera ${missing} preguntas de opción múltiple sobre "${mod.title}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":${finalQuestions.length + 1}},...]. Sin markdown.\n${DISTRACTOR_QUALITY_RULES}`, 1000
             );
             if (Array.isArray(extraQ)) finalQuestions = [...finalQuestions, ...extraQ].slice(0, 10);
           }

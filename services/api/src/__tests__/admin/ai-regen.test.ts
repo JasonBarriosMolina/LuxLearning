@@ -248,6 +248,12 @@ describe('/admin/modules/_regen_worker async worker', () => {
     expect(questionCreate).toHaveBeenCalled();
     const doneCalls = vi.mocked(saveAiJob).mock.calls.filter((c) => (c[1] as any)?.status === 'done');
     expect(doneCalls.length).toBeGreaterThan(0);
+    // Trello DmPpbrff, 2026-09-07 (Mack): same distractor-quality complaint as the manual
+    // ai-generate endpoint, but this is the module-regenerate worker's own quiz prompt —
+    // it didn't share the fix from 2026-09-06 until now.
+    const questionsPrompt = vi.mocked(invokeBedrockForJson).mock.calls.find(([p]) => p.includes('opción múltiple'))?.[0];
+    expect(questionsPrompt).toContain('extensión y nivel de detalle SIMILARES');
+    expect(questionsPrompt).toContain('distractor cercano');
   });
 
   it('skips quiz generation when course has NO QUIZ eval event', async () => {

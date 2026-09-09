@@ -139,6 +139,14 @@ export function shuffleQuestionOptions(questions: any[]): any[] {
   });
 }
 
+// Trello DmPpbrff, 2026-09-06/07 (Mack): "algunas preguntas son respuestas... parecen muy
+// obvias porque la respuesta correcta generalmente es la más larga." Every quiz-generation
+// prompt across the AI wizard, regen, repair, and manual-generate flows needs this same
+// instruction — without it the model defaults to a detailed correct answer plus 3 short/
+// generic wrong ones, an obvious tell. Shared here so every quiz prompt stays consistent.
+export const DISTRACTOR_QUALITY_RULES = `- Las 4 opciones deben tener una extensión y nivel de detalle SIMILARES entre sí — la respuesta correcta NUNCA debe ser notablemente más larga o específica que las demás (esa asimetría es la pista más común para adivinar sin saber el contenido).
+- De las 3 opciones incorrectas: UNA debe ser un distractor cercano (similar a la correcta, un error conceptual común o fácil de confundir con ella) y las otras DOS deben estar relacionadas con el tema pero ser claramente distinguibles de la correcta al leer con atención — ninguna opción debe ser absurda o evidentemente descartable a simple vista.`;
+
 export function s3KeyFromUrl(url: string): string | null {
   const match = url.match(/\.amazonaws\.com\/(.+)$/);
   return match?.[1] ?? null;

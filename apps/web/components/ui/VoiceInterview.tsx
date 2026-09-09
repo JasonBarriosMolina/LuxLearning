@@ -138,7 +138,9 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       // "vapi" voice provider docs don't explicitly confirm es-419 support for every
       // built-in voice, so this needs a live test call to confirm the accent actually
       // shifted (can't verify audio output from here).
-      voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Trello DmPpbrff, 2026-09-07 (Mack): reverted voiceId to Clara — same change
+      // as LuxMentorClass.tsx, see that file for context.
+      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
       name: 'Lux Mentor',
       maxDurationSeconds: 600,
       firstMessage: lang === 'en'

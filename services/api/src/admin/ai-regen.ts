@@ -9,7 +9,7 @@ import { ok, badRequest, forbidden, notFound, serverError } from '../shared/resp
 import {
   AdminCtx, isAuthorized, isAdmin, s3KeyFromUrl, S3_IMAGES_BUCKET,
   lambdaClient, s3Client, generateLessonAudio,
-  invokeBedrockForJson, shuffleQuestionOptions,
+  invokeBedrockForJson, shuffleQuestionOptions, DISTRACTOR_QUALITY_RULES,
 } from './ctx';
 import { generateLessonImage, generateLessonInfographic } from './ai-image-helpers';
 
@@ -214,7 +214,8 @@ Lección 1 y ${targetCount}: type "video" (100-150 palabras). Lecciones intermed
         const newQuestions = await invokeBedrockForJson(
           `Genera exactamente 10 preguntas de opción múltiple para el módulo "${_moduleTitle}" del curso "${_courseTitle}".
 Las preguntas deben cubrir el contenido de estas lecciones:\n${lessonTitles}
-Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas, correctIndex entre 0-3.`, 2500);
+Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1},...]. 10 preguntas exactas, correctIndex entre 0-3.
+${DISTRACTOR_QUALITY_RULES}`, 2500);
         questions = shuffleQuestionOptions(Array.isArray(newQuestions) ? newQuestions.slice(0, 10) : []);
       }
 
