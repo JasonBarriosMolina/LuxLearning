@@ -15,6 +15,7 @@ import { formatDate } from '@/lib/utils';
 import type { Reflection } from '@lux/types';
 import { useLanguage } from '@/lib/i18n';
 import { ComplianceWidget } from './_components/ComplianceWidget';
+import { AdminEvaluatorMetrics } from './_components/AdminEvaluatorMetrics';
 
 type EnrichedReflection = Reflection & {
   moduleTitle?: string;
@@ -83,7 +84,12 @@ function StatusBarChart({ approved, rejected, pending, labels }: { approved: num
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export default function EvaluatorDashboardPage() {
-  const { email, name } = useAuth() as any;
+  const { email, name, role } = useAuth() as any;
+  // Trello DmPpbrff, 2026-09-07 (Mack): "dice 'dashboard del evaluador' cuando
+  // debería decir 'dashboard del administrador'... debería incluir información
+  // relevante... también de los evaluadores." Same page/route for both roles —
+  // ADMIN gets a different title plus the evaluator-metrics panel below.
+  const isAdminRole = role === 'ADMIN' || role === 'SUPER_ADMIN';
   const router = useRouter();
   const [reflections, setReflections] = useState<EnrichedReflection[]>([]);
   const [students, setStudents] = useState<StudentPresence[]>([]);
@@ -187,7 +193,7 @@ export default function EvaluatorDashboardPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-heading font-bold text-2xl lg:text-3xl text-charcoal">
-            {t.evaluator.dashboard}
+            {isAdminRole ? t.adminDashboard.title : t.evaluator.dashboard}
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
             {t.evaluator.greetingPrefix}<strong>{displayName}</strong>. {t.evaluator.greetingSuffix}
@@ -557,6 +563,8 @@ export default function EvaluatorDashboardPage() {
 
         {/* Right sidebar — Chart + Frequent comments */}
         <div className="space-y-4">
+          {isAdminRole && <AdminEvaluatorMetrics />}
+
           {/* Status bar chart */}
           <div className="card">
             <h2 className="font-heading font-bold text-base text-charcoal mb-4 flex items-center gap-2">
