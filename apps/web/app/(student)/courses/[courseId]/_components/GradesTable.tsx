@@ -8,6 +8,33 @@ import { Badge } from '@/components/ui/Badge';
 import { useLanguage } from '@/lib/i18n';
 import { getModulePrereq, type BlockingStep } from '../modulePrereq';
 
+// Trello DmPpbrff, 2026-09-07 (Mack): "el estudiante debe poder ver todo
+// categorizado... trabajo cotidiano todo junto, las tareas todas juntas..." —
+// EvaluationEvent has no separate "category" field; "Trabajo Cotidiano" and
+// "Tareas" are both type EVIDENCE, distinguished only by `name` (see
+// ai-wizard.ts's defaultEvalItems / EvalItem.name). When an item has more than
+// one delivery instance, each row is saved as "<name> <n>" (e.g. "Tareas 1",
+// "Tareas 2") — strip that numeric suffix to recover the shared category name.
+function categoryName(name: string): string {
+  return name.replace(/\s+\d+$/, '').trim();
+}
+
+interface EvalCategory { name: string; items: any[]; totalWeight: number }
+
+function groupByCategory(events: any[]): EvalCategory[] {
+  const order: string[] = [];
+  const map = new Map<string, any[]>();
+  for (const ev of events) {
+    const key = categoryName(ev.name ?? '');
+    if (!map.has(key)) { map.set(key, []); order.push(key); }
+    map.get(key)!.push(ev);
+  }
+  return order.map((name) => {
+    const items = map.get(name)!;
+    return { name, items, totalWeight: items.reduce((sum, ev) => sum + (Number(ev.weight) || 0), 0) };
+  });
+}
+
 // Trello DmPpbrff, 2026-09-04 (Mack): "en sistema de evaluación, debe poder verse el
 // número de semana correspondiente a la fecha del entregable" — same week math the
 // admin-side WeekAwareDatePicker already uses (course.startDate + 7-day buckets),
@@ -34,6 +61,15 @@ export function GradesTable({ course, courseId }: { course: any; courseId: strin
   // counts toward the final grade — split those into a separate, collapsed-by-
   // default section instead of mixing them into the main graded table.
   const [showNonSummative, setShowNonSummative] = useState(false);
+  // Categories default expanded — most courses have 3-4 (cotidiano/tareas/pruebas/
+  // asistencia), collapsing by default would hide grades behind an extra click for
+  // the common case. Collapsed state is opt-in per category.
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = (name: string) => setCollapsedCategories((prev) => {
+    const next = new Set(prev);
+    next.has(name) ? next.delete(name) : next.add(name);
+    return next;
+  });
 
   if ((course.evaluationEvents?.length ?? 0) === 0) return null;
 
@@ -138,6 +174,47 @@ export function GradesTable({ course, courseId }: { course: any; courseId: strin
     );
   };
 
+  const categorySection = (cat: EvalCategory) => {
+    // A category with a single, one-off item (e.g. "Examen Final", "Asistencia"
+    // with no repeated instances) has nothing to group — an accordion header
+    // would just repeat the row's own name right above it. Render it as a bare
+    // row instead; the accordion is for categories that actually have several
+    // instances ("Tareas 1", "Tareas 2"...).
+    if (cat.items.length === 1) {
+      return (
+        <div key={cat.name} className="overflow-x-auto">
+          <table className="w-full text-sm">
+            {tableHead}
+            <tbody className="divide-y divide-gray-50">{row(cat.items[0])}</tbody>
+          </table>
+        </div>
+      );
+    }
+    const collapsed = collapsedCategories.has(cat.name);
+    return (
+      <div key={cat.name} className="border border-gray-100 rounded-lg overflow-hidden">
+        <button
+          onClick={() => toggleCategory(cat.name)}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-gray-50/60 hover:bg-gray-100/60 transition-colors text-left"
+        >
+          <span className="flex items-center gap-1.5 font-semibold text-sm text-charcoal">
+            {collapsed ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-400" />}
+            {cat.name} <span className="font-normal text-gray-400">({cat.items.length})</span>
+          </span>
+          <span className="text-xs text-gray-500 font-medium">{t.courseGrades.weight(cat.totalWeight)}</span>
+        </button>
+        {!collapsed && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              {tableHead}
+              <tbody className="divide-y divide-gray-50">{cat.items.map(row)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const tableHead = (
     <thead>
       <tr className="text-xs text-gray-400 border-b border-gray-100">
@@ -156,12 +233,7 @@ export function GradesTable({ course, courseId }: { course: any; courseId: strin
         <Star className="w-4 h-4 text-amber-500" /> {t.courseGrades.title}
       </h3>
       {summative.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            {tableHead}
-            <tbody className="divide-y divide-gray-50">{summative.map(row)}</tbody>
-          </table>
-        </div>
+        <div className="space-y-2">{groupByCategory(summative).map(categorySection)}</div>
       )}
 
       {nonSummative.length > 0 && (
@@ -175,12 +247,7 @@ export function GradesTable({ course, courseId }: { course: any; courseId: strin
             <span className="font-normal text-gray-400">— {t.courseGrades.nonSummativeHint}</span>
           </button>
           {showNonSummative && (
-            <div className="overflow-x-auto mt-2">
-              <table className="w-full text-sm">
-                {tableHead}
-                <tbody className="divide-y divide-gray-50">{nonSummative.map(row)}</tbody>
-              </table>
-            </div>
+            <div className="space-y-2 mt-2">{groupByCategory(nonSummative).map(categorySection)}</div>
           )}
         </div>
       )}
