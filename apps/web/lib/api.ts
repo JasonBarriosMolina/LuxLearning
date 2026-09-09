@@ -26,12 +26,7 @@ const API_URL = getApiUrl();
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = await getIdToken();
-
+async function attemptFetch<T>(path: string, options: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
@@ -50,6 +45,40 @@ async function request<T>(
   }
 
   return res.json() as Promise<T>;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = await getIdToken();
+  try {
+    return await attemptFetch<T>(path, options, token);
+  } catch (err: any) {
+    // A raw TypeError here means fetch() never got an HTTP response at all — the
+    // browser reports this as generic "Failed to fetch" with no status code.
+    // Most common cause: the Cognito ID token expired between page load and this
+    // call, the custom authorizer denies the request at the API Gateway level,
+    // and API Gateway's automatic CORS does NOT attach headers to authorizer-denial
+    // responses (only to successful responses and preflight) — so the browser
+    // treats the CORS-less 403 as a network failure instead of a real HTTP error.
+    // Fix: retry once with a forced token refresh before giving up.
+    if (err instanceof TypeError) {
+      const freshToken = await getIdToken(true);
+      if (freshToken && freshToken !== token) {
+        try {
+          return await attemptFetch<T>(path, options, freshToken);
+        } catch (retryErr: any) {
+          if (retryErr instanceof TypeError) {
+            throw new Error('Sesión expirada o sin conexión. Volvé a iniciar sesión e intentá de nuevo.');
+          }
+          throw retryErr;
+        }
+      }
+      throw new Error('Sesión expirada. Volvé a iniciar sesión e intentá de nuevo.');
+    }
+    throw err;
+  }
 }
 
 // ─── Courses ──────────────────────────────────────────────────────────────────

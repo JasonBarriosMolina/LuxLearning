@@ -63,9 +63,9 @@ export async function getSession() {
   }
 }
 
-export async function getIdToken(): Promise<string | null> {
+export async function getIdToken(forceRefresh = false): Promise<string | null> {
   try {
-    const session = await fetchAuthSession({ forceRefresh: false });
+    const session = await fetchAuthSession({ forceRefresh });
     return session.tokens?.idToken?.toString() ?? null;
   } catch {
     return null;

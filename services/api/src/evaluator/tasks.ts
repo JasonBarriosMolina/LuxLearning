@@ -1,5 +1,5 @@
 // Tasks domain handler for lux-evaluator.
-import { QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { EvalCtx, webpush, resolveStudentContact } from './ctx';
 import {
   TABLES, ddb, createTask, getTasksForUser, updateTask, deleteTask, getPushSubscriptionsByUserId,
@@ -21,22 +21,13 @@ export async function handleTasks(ctx: EvalCtx): Promise<any | null> {
       let assignees: string[] = [];
 
       if (assignTo === 'course' && targetCourseId) {
-        // Fetch all enrolled students in a course
-        const all = await ddb.send(new QueryCommand({
+        // Enrollments has no GSI on courseId — Scan is the only option here.
+        const scan = await ddb.send(new ScanCommand({
           TableName: TABLES.ENROLLMENTS,
-          IndexName: 'courseId-users-index',
-          KeyConditionExpression: 'courseId = :cid',
+          FilterExpression: 'courseId = :cid',
           ExpressionAttributeValues: { ':cid': targetCourseId },
-        })).catch(async () => {
-          // Fallback: scan enrollments for this course
-          const scan = await ddb.send(new ScanCommand({
-            TableName: TABLES.ENROLLMENTS,
-            FilterExpression: 'courseId = :cid',
-            ExpressionAttributeValues: { ':cid': targetCourseId },
-          }));
-          return { Items: scan.Items ?? [] };
-        });
-        assignees = [...new Set((all.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))] as string[];
+        }));
+        assignees = [...new Set((scan.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))] as string[];
       } else if (targetUserId) {
         assignees = [targetUserId];
       }
