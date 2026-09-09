@@ -398,11 +398,35 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
   }
 
   // ── GET /admin/stock-photos ───────────────────────────────────────────────────
+  // Trello DmPpbrff, 2026-09-07 (Mack): "también debe existir una opción en donde
+  // yo pueda agregar imágenes de algún proveedor" — for the lesson cover picker
+  // (item 2 of that batch, Jason picked Pexels via AskUserQuestion 2026-09-08).
+  // `provider` defaults to 'unsplash' to keep every existing caller (RichTextEditor's
+  // inline-content "Buscar en stock" tab) working exactly as before.
   if (path === '/admin/stock-photos' && method === 'GET') {
     if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
     const q = event.queryStringParameters?.q ?? '';
     const page = parseInt(event.queryStringParameters?.page ?? '1', 10);
+    const provider = event.queryStringParameters?.provider === 'pexels' ? 'pexels' : 'unsplash';
     if (!q.trim()) return badRequest('q es requerido');
+
+    if (provider === 'pexels') {
+      const PEXELS_KEY = process.env.PEXELS_API_KEY ?? '';
+      if (!PEXELS_KEY) return serverError('Pexels no configurado — agregar PEXELS_API_KEY al Lambda');
+      const res = await fetch(
+        `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&page=${page}&per_page=12&orientation=landscape`,
+        { headers: { Authorization: PEXELS_KEY } },
+      );
+      if (!res.ok) return serverError('Error al buscar en Pexels');
+      const data = await res.json() as any;
+      const photos = (data.photos ?? []).map((p: any) => ({
+        id: String(p.id), thumb: p.src?.medium, full: p.src?.large2x ?? p.src?.large,
+        author: p.photographer, authorUrl: p.photographer_url,
+      }));
+      const totalPages = data.total_results ? Math.ceil(data.total_results / 12) : (data.next_page ? page + 1 : page);
+      return ok({ photos, totalPages });
+    }
+
     const UNSPLASH_KEY = process.env.UNSPLASH_ACCESS_KEY ?? '';
     if (!UNSPLASH_KEY) return serverError('Unsplash no configurado — agregar UNSPLASH_ACCESS_KEY al Lambda');
     const res = await fetch(

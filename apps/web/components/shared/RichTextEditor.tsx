@@ -74,7 +74,20 @@ function ToolbarBtn({ active, onClick, title, children }: {
 
 type ImageTab = 'ai' | 'stock' | 'upload';
 
-function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; onClose: () => void }) {
+// Exported (2026-09-08, Trello DmPpbrff item 2 — Mack: "el profesor debe poder
+// subir imágenes propias en el editor de curso... y también un proveedor
+// externo") so LessonFields can reuse the exact same AI/stock/upload picker for
+// the lesson cover image instead of its old raw "pega una URL" text input.
+// All new props are optional with defaults matching the original inline-content
+// behavior, so the RichTextEditor's own usage below is unchanged.
+export function ImageModal({
+  onInsert, onClose, title = 'Insertar imagen', confirmLabel = 'Insertar en editor',
+  stockProvider = 'unsplash', uploadFolder = 'uploads',
+}: {
+  onInsert: (url: string) => void; onClose: () => void;
+  title?: string; confirmLabel?: string;
+  stockProvider?: 'unsplash' | 'pexels'; uploadFolder?: 'tasks' | 'resources' | 'uploads' | 'photos' | 'covers' | 'editor';
+}) {
   const [tab, setTab] = useState<ImageTab>('ai');
 
   // AI tab state
@@ -114,7 +127,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
     if (!stockQ.trim()) return;
     setStockLoading(true); setStockError('');
     try {
-      const res = await api.admin.stockPhotos(stockQ.trim(), page);
+      const res = await api.admin.stockPhotos(stockQ.trim(), page, stockProvider);
       setStockPhotos((res as any)?.data?.photos ?? []);
       setStockTotalPages((res as any)?.data?.totalPages ?? 0);
       setStockPage(page);
@@ -130,7 +143,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
       reader.onload = (e) => setUploadPreview(e.target?.result as string);
       reader.readAsDataURL(file);
 
-      const presignRes = await api.admin.files.presign({ fileName: file.name, fileType: file.type, folder: 'uploads' });
+      const presignRes = await api.admin.files.presign({ fileName: file.name, fileType: file.type, folder: uploadFolder });
       const { uploadUrl: signedUrl, publicUrl } = (presignRes as any)?.data ?? {};
       await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
       setUploadUrl(publicUrl);
@@ -149,7 +162,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
       <div className="bg-white dark:bg-[#1A1A2E] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-heading font-bold text-lg text-charcoal dark:text-white">Insertar imagen</h3>
+          <h3 className="font-heading font-bold text-lg text-charcoal dark:text-white">{title}</h3>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -229,7 +242,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
                     onClick={() => onInsert(aiPreview)}
                     className="btn-primary w-full flex items-center justify-center gap-2"
                   >
-                    <Check className="w-4 h-4" /> Insertar en editor
+                    <Check className="w-4 h-4" /> {confirmLabel}
                   </button>
                 </div>
               )}
@@ -242,7 +255,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
               <div className="flex gap-2">
                 <input
                   className="input-field flex-1"
-                  placeholder="Buscar en Unsplash... (ej: educación, tecnología)"
+                  placeholder={`Buscar en ${stockProvider === 'pexels' ? 'Pexels' : 'Unsplash'}... (ej: educación, tecnología)`}
                   value={stockQ}
                   onChange={(e) => setStockQ(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') searchStock(1); }}
@@ -285,7 +298,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
                     </div>
                   )}
                   <p className="text-xs text-gray-400 text-center">
-                    Fotos de <a href="https://unsplash.com" target="_blank" rel="noopener noreferrer" className="underline">Unsplash</a>
+                    Fotos de <a href={stockProvider === 'pexels' ? 'https://pexels.com' : 'https://unsplash.com'} target="_blank" rel="noopener noreferrer" className="underline">{stockProvider === 'pexels' ? 'Pexels' : 'Unsplash'}</a>
                   </p>
                 </>
               )}
@@ -331,7 +344,7 @@ function ImageModal({ onInsert, onClose }: { onInsert: (url: string) => void; on
                       onClick={() => onInsert(uploadUrl)}
                       className="btn-primary w-full flex items-center justify-center gap-2"
                     >
-                      <Check className="w-4 h-4" /> Insertar en editor
+                      <Check className="w-4 h-4" /> {confirmLabel}
                     </button>
                   )}
                 </div>

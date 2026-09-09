@@ -470,8 +470,10 @@ export const api = {
     },
     generateImage: (body: { promptText: string; style?: string }) =>
       request<any>('/admin/generate-image', { method: 'POST', body: JSON.stringify(body) }),
-    stockPhotos: (q: string, page = 1) =>
-      request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}`),
+    // provider: 'unsplash' (default, existing RichTextEditor inline-content picker)
+    // or 'pexels' (Trello DmPpbrff, 2026-09-07 — lesson cover picker, Jason's pick)
+    stockPhotos: (q: string, page = 1, provider: 'unsplash' | 'pexels' = 'unsplash') =>
+      request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}&provider=${provider}`),
     groups: {
       list: () => request<any>('/admin/groups'),
       create: (body: { name: string; description?: string }) =>
