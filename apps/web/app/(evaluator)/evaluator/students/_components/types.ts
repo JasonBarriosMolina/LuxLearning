@@ -8,6 +8,7 @@ export type ModuleStat = {
 
 export type CourseStat = {
   courseId: string; title: string;
+  academicPeriod?: string | null;
   totalLessons: number; completedLessons: number;
   progressPct: number; modulesApproved: number;
   modules: ModuleStat[];

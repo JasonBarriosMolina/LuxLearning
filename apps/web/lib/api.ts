@@ -476,9 +476,9 @@ export const api = {
       request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}&provider=${provider}`),
     groups: {
       list: () => request<any>('/admin/groups'),
-      create: (body: { name: string; description?: string }) =>
+      create: (body: { name: string; description?: string; color?: string; academicPeriod?: string }) =>
         request<any>('/admin/groups', { method: 'POST', body: JSON.stringify(body) }),
-      update: (id: string, body: { name?: string; description?: string }) =>
+      update: (id: string, body: { name?: string; description?: string; color?: string; academicPeriod?: string }) =>
         request<any>(`/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (id: string) => request<any>(`/admin/groups/${id}`, { method: 'DELETE' }),
       members: (id: string) => request<any>(`/admin/groups/${id}/members`),

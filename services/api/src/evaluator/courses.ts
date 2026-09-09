@@ -173,6 +173,10 @@ export async function handleCourses(ctx: EvalCtx): Promise<any | null> {
         return {
           courseId: course.id,
           title: course.title,
+          // Trello DmPpbrff, 2026-09-07 (Mack): "entender... desde el perfil del
+          // estudiante en qué cursos llegó o qué semestres llevó cursos" —
+          // same academicPeriod LuxPlanner writes when creating the course.
+          academicPeriod: course.academicPeriod ?? null,
           totalLessons: allLessonIds.length,
           completedLessons: completedCount,
           progressPct: allLessonIds.length > 0 ? Math.round((completedCount / allLessonIds.length) * 100) : 0,
