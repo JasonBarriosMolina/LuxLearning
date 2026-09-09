@@ -170,6 +170,52 @@
     @apply bg-cta-gradient bg-clip-text text-transparent;
   }
 
+  /* ─── Lesson view "spotlight" treatment (Trello DmPpbrff, 2026-09-07 — Mack:
+     "se ve muy plana... parece Windows 97... rediseñemos con el concepto lux
+     de luz"). Scoped to the student lesson page only — everywhere else keeps
+     the existing flat-card system unchanged. The idea: one soft light source
+     behind the title (the literal "lux"), the content the student is actually
+     looking at reads as the lit, weighted object, and supporting info (key
+     points, transcript) recedes on a quieter tinted surface instead of
+     repeating the same stark white box three times down the page. */
+  .lesson-hero-glow {
+    @apply relative overflow-hidden rounded-3xl;
+  }
+  .lesson-hero-glow::before {
+    content: '';
+    position: absolute;
+    inset: -60% -15% auto -15%;
+    height: 260%;
+    /* Both hot spots land inside the visible header (y ~20-30% of this
+       oversized pseudo-box), not above it — a center clipped off-screen
+       leaves only its falloff tail in view, which reads as a stray smudge
+       instead of a light source. */
+    background:
+      radial-gradient(55% 55% at 20% 30%, rgba(0, 180, 216, 0.16), transparent 70%),
+      radial-gradient(45% 45% at 85% 22%, rgba(123, 47, 190, 0.12), transparent 70%);
+    pointer-events: none;
+  }
+  .dark .lesson-hero-glow::before {
+    background:
+      radial-gradient(55% 55% at 20% 30%, rgba(0, 180, 216, 0.22), transparent 70%),
+      radial-gradient(45% 45% at 85% 22%, rgba(123, 47, 190, 0.18), transparent 70%);
+  }
+
+  /* The content the student is currently looking at (video or text body) —
+     the single most visually weighted element on the page. */
+  .lesson-active-card {
+    @apply relative rounded-2xl overflow-hidden ring-1 ring-cta-from/25 shadow-card-hover
+           dark:ring-cta-from/30;
+  }
+
+  /* Supporting info (key points, etc.) — a quiet tonal wash instead of a
+     third identical white box, so it reads as secondary at a glance. */
+  .lesson-secondary-card {
+    @apply rounded-2xl border border-border p-6
+           bg-gradient-to-br from-cta-from/5 to-cta-to/5
+           dark:from-cta-from/10 dark:to-cta-to/10;
+  }
+
   /* Sidebar nav item */
   .nav-item {
     @apply flex items-center gap-3 px-4 py-3 rounded-xl font-medium

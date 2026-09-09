@@ -515,57 +515,60 @@ export default function LessonPage() {
         label={t.lessonPage.highlight}
       />
 
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href={`/courses/${courseId}/modules/${moduleId}`} className="hover:text-charcoal flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> {module?.title}
-        </Link>
-        <span>/</span>
-        <span className="text-charcoal font-medium truncate">{lesson.title}</span>
-      </div>
-
-      {/* Lesson header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-gray-400">{t.lessonPage.lessonN(lesson.order)}</span>
-            {completed && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                <CheckCircle className="w-3.5 h-3.5" /> {t.lessonPage.completed}
-              </span>
-            )}
-          </div>
-          <h1 className="font-heading font-bold text-2xl text-charcoal">{lesson.title}</h1>
-          <p className="text-sm text-gray-500 mt-1">{formatCourseDuration(lesson.duration)}</p>
+      {/* Hero — breadcrumb + title sit inside a soft two-tone glow (the "lux" in
+          Lux Learning), the one deliberately lit moment on the page. Everything
+          below reads quieter by contrast. */}
+      <div className="lesson-hero-glow px-5 pt-5 pb-6 sm:px-7 sm:pt-6">
+        <div className="relative flex items-center gap-2 text-sm text-gray-500">
+          <Link href={`/courses/${courseId}/modules/${moduleId}`} className="hover:text-charcoal flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> {module?.title}
+          </Link>
+          <span>/</span>
+          <span className="text-charcoal font-medium truncate">{lesson.title}</span>
         </div>
-        {/* Favorite star */}
-        <button
-          onClick={toggleFav}
-          disabled={favLoading}
-          title={isFavorite ? t.lessonPage.unfavorite : t.lessonPage.favorite}
-          className={`mt-1 p-2 rounded-xl transition-all ${
-            isFavorite
-              ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
-              : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'
-          }`}
-        >
-          <Star className={`w-5 h-5 ${isFavorite ? 'fill-amber-500' : ''}`} />
-        </button>
+
+        <div className="relative flex items-start justify-between gap-4 mt-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-semibold tracking-wide text-cta-from">{t.lessonPage.lessonN(lesson.order)}</span>
+              {completed && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                  <CheckCircle className="w-3.5 h-3.5" /> {t.lessonPage.completed}
+                </span>
+              )}
+            </div>
+            <h1 className="font-heading font-bold text-3xl sm:text-4xl leading-tight text-charcoal">{lesson.title}</h1>
+            <p className="text-sm text-gray-500 mt-2">{formatCourseDuration(lesson.duration)}</p>
+          </div>
+          {/* Favorite star */}
+          <button
+            onClick={toggleFav}
+            disabled={favLoading}
+            title={isFavorite ? t.lessonPage.unfavorite : t.lessonPage.favorite}
+            className={`mt-1 p-2 rounded-xl transition-all ${
+              isFavorite
+                ? 'text-amber-500 bg-amber-50 hover:bg-amber-100'
+                : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'
+            }`}
+          >
+            <Star className={`w-5 h-5 ${isFavorite ? 'fill-amber-500' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* Lesson content: video player OR text content */}
 
       {/* Tabs — only when lesson has both video and text content */}
       {lesson.youtubeId && lesson.content && !videoError && (
-        <div className="flex gap-2">
+        <div className="inline-flex gap-1 p-1 rounded-full bg-surface border border-border">
           {(['video', 'text'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 activeTab === tab
-                  ? 'bg-cta-gradient text-white'
-                  : 'bg-surface border border-border text-gray-500 hover:text-charcoal'
+                  ? 'bg-cta-gradient text-white shadow-glow'
+                  : 'text-gray-500 hover:text-charcoal'
               }`}
             >
               {tab === 'video' ? <Video className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
@@ -576,7 +579,7 @@ export default function LessonPage() {
       )}
 
       {lesson.youtubeId && !videoError && activeTab === 'video' ? (
-        <div className="aspect-video rounded-2xl overflow-hidden shadow-card bg-black">
+        <div className="lesson-active-card aspect-video bg-black">
           <iframe
             className="w-full h-full"
             src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1&enablejsapi=1`}
@@ -586,7 +589,7 @@ export default function LessonPage() {
           />
         </div>
       ) : (
-        <div className="card space-y-3" ref={bodyRef}>
+        <div className="lesson-active-card p-6 space-y-3 bg-white dark:bg-[#1A1A2E]" ref={bodyRef}>
           {videoError && (
             <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -648,7 +651,7 @@ export default function LessonPage() {
 
       {/* Key points — highlightable */}
       {lesson.points?.length > 0 && (
-        <div className="card" ref={contentRef}>
+        <div className="lesson-secondary-card" ref={contentRef}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-heading font-bold text-base text-charcoal">{t.lessonPage.keyPoints}</h2>
             {highlights.length > 0 && (
