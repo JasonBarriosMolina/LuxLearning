@@ -26,6 +26,8 @@ export default function SchedulerPage() {
   const [lunchStart, setLunchStart] = useState('12:00');
   const [lunchEnd, setLunchEnd] = useState('13:00');
   const [gapMinutes, setGapMinutes] = useState(5);
+  const [individualMinutes, setIndividualMinutes] = useState(55);
+  const [groupMinutes, setGroupMinutes] = useState(75);
   const [courses, setCourses] = useState<CourseCatalogRow[]>([]);
   const [overrides, setOverrides] = useState<CourseOverrides>({});
   const [generating, setGenerating] = useState(false);
@@ -38,7 +40,7 @@ export default function SchedulerPage() {
   const runGenerate = async () => {
     setGenerating(true); setGenerateError(''); setResult(null);
     try {
-      const res = await api.admin.scheduler.generate({ academicPeriod, courseOverrides: overrides, lunchBreak, gapMinutes });
+      const res = await api.admin.scheduler.generate({ academicPeriod, courseOverrides: overrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes });
       setResult((res as any).data);
       setStep(7);
     } catch (err: any) {
@@ -86,10 +88,12 @@ export default function SchedulerPage() {
       hideNext={step === 6 || step === 7 || step === 8}
     >
       {step === 1 && <StepPeriod academicPeriod={academicPeriod} onChange={setAcademicPeriod} />}
-      {step === 2 && <StepParams lunchStart={lunchStart} lunchEnd={lunchEnd} gapMinutes={gapMinutes} onChange={(p) => {
+      {step === 2 && <StepParams lunchStart={lunchStart} lunchEnd={lunchEnd} gapMinutes={gapMinutes} individualMinutes={individualMinutes} groupMinutes={groupMinutes} onChange={(p) => {
         if (p.lunchStart !== undefined) setLunchStart(p.lunchStart);
         if (p.lunchEnd !== undefined) setLunchEnd(p.lunchEnd);
         if (p.gapMinutes !== undefined) setGapMinutes(p.gapMinutes);
+        if (p.individualMinutes !== undefined) setIndividualMinutes(p.individualMinutes);
+        if (p.groupMinutes !== undefined) setGroupMinutes(p.groupMinutes);
       }} />}
       {step === 3 && (
         <StepCourses

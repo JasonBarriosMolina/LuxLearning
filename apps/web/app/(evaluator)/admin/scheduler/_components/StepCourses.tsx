@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
 
 export type CourseOverrides = Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
@@ -18,6 +19,12 @@ interface Props {
 export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOverrideChange }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [evaluators, setEvaluators] = useState<{ username: string; name: string }[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newEvaluatorId, setNewEvaluatorId] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
 
   useEffect(() => {
     if (!academicPeriod) return;
@@ -28,6 +35,27 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [academicPeriod]);
+
+  useEffect(() => {
+    api.admin.users.list().then((res: any) => {
+      const list: any[] = res?.data ?? [];
+      setEvaluators(list.filter((u) => u.role === 'EVALUATOR').map((u) => ({ username: u.username, name: u.name || u.email })));
+    }).catch(() => {});
+  }, []);
+
+  const handleAddCourse = async () => {
+    if (!newTitle.trim() || !newEvaluatorId) return;
+    setAdding(true); setAddError('');
+    try {
+      const res = await api.admin.scheduler.createCourse({ academicPeriod, title: newTitle.trim(), evaluatorId: newEvaluatorId });
+      onLoaded([...courses, (res as any).data]);
+      setNewTitle(''); setNewEvaluatorId(''); setShowAdd(false);
+    } catch (err: any) {
+      setAddError(err?.message ?? 'No se pudo crear el curso.');
+    } finally {
+      setAdding(false);
+    }
+  };
 
   if (loading) return (
     <div className="card flex items-center justify-center py-12 text-gray-400">
@@ -92,6 +120,32 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
             <p className="text-xs text-gray-400 mt-3">{async_.length} curso(s) asincrónico(s) no requieren clase en vivo, se excluyen automáticamente.</p>
           )}
         </div>
+      )}
+
+      {/* Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "no necesariamente tienen que estar
+          creados ya... yo pueda ponerles un nombre y crear estos cursos... el horario no
+          debería estar disponible, eso es justamente lo que esto va a resolver." Crea un
+          Course real (isDraft:true) con solo nombre+profesor — sin horario todavía. */}
+      {showAdd ? (
+        <div className="p-3 bg-surface rounded-xl border border-border space-y-2">
+          <input
+            autoFocus type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Nombre del curso" className="input-field text-sm py-1.5"
+          />
+          <select value={newEvaluatorId} onChange={(e) => setNewEvaluatorId(e.target.value)} className="input-field text-sm py-1.5">
+            <option value="">— Seleccionar profesor —</option>
+            {evaluators.map((e) => <option key={e.username} value={e.username}>{e.name}</option>)}
+          </select>
+          {addError && <p className="text-xs text-red-500">{addError}</p>}
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowAdd(false); setNewTitle(''); setNewEvaluatorId(''); }} className="text-xs text-gray-400 hover:text-gray-700 px-2">Cancelar</button>
+            <Button size="sm" onClick={handleAddCourse} loading={adding} disabled={!newTitle.trim() || !newEvaluatorId}>Crear curso</Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="secondary" size="sm" leftIcon={<Plus className="w-3.5 h-3.5" />} onClick={() => setShowAdd(true)}>
+          Curso aún no creado en Lux Learning
+        </Button>
       )}
     </div>
   );

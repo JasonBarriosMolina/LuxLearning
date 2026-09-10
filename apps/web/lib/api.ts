@@ -597,11 +597,15 @@ export const api = {
     },
     scheduler: {
       courses: (academicPeriod: string) => request<any>(`/admin/scheduler/courses?academicPeriod=${encodeURIComponent(academicPeriod)}`),
+      createCourse: (body: { academicPeriod: string; title: string; evaluatorId: string }) =>
+        request<any>('/admin/scheduler/courses', { method: 'POST', body: JSON.stringify(body) }),
       generate: (body: {
         academicPeriod: string;
         courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
         lunchBreak?: { startTime: string; endTime: string };
         gapMinutes?: number;
+        individualMinutes?: number;
+        groupMinutes?: number;
       }) => request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
       validate: (body: { sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean }) =>
         request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),

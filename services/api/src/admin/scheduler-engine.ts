@@ -45,6 +45,10 @@ export interface ScheduleInput {
   teachers: TeacherInput[];
   lunchBreak?: LunchBreak; // Saturday only, default 12:00-13:00
   gapMinutes?: number;     // soft preferred gap between a teacher's consecutive classes, default 5
+  // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "es importante que la opción de
+  // cuántos minutos exactos pueda modificarse" — was a fixed 55/75 constant.
+  individualMinutes?: number; // default 55
+  groupMinutes?: number;      // default 75
 }
 
 export interface ScheduledSession {
@@ -69,7 +73,7 @@ export interface ScheduleProposal {
 const SATURDAY = 6;
 const WEEKDAYS = [1, 2, 3, 4, 5]; // Monday-Friday
 const DEFAULT_LUNCH: LunchBreak = { startTime: '12:00', endTime: '13:00' };
-const DURATION_MIN: Record<ClassType, number> = { INDIVIDUAL: 55, GRUPAL: 75 };
+const DEFAULT_DURATION_MIN: Record<ClassType, number> = { INDIVIDUAL: 55, GRUPAL: 75 };
 const PREFERRED_GAP_MIN = 5;
 const SLOT_STEP_MIN = 5; // candidate start-time granularity
 const SATURDAY_OPEN = '08:00';
@@ -155,12 +159,13 @@ function placeCourse(
   bookings: Bookings,
   lunch: LunchBreak,
   workloadUsed: Map<string, number>,
-  gapMinutes: number
+  gapMinutes: number,
+  durationMin: Record<ClassType, number>
 ): ScheduledSession | null {
   const used = workloadUsed.get(course.evaluatorId) ?? 0;
   if (used >= teacher.maxCoursesPerWeek) return null; // hard cap, no partial exceptions
 
-  const duration = DURATION_MIN[course.classType];
+  const duration = durationMin[course.classType];
   const days = course.modality === 'PRESENCIAL' ? [SATURDAY] : WEEKDAYS;
 
   // Two passes: first require the soft gap, then relax it if nothing fit.
@@ -196,6 +201,10 @@ function placeCourse(
 function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, strategy: string): ScheduleProposal {
   const lunch = input.lunchBreak ?? DEFAULT_LUNCH;
   const gapMinutes = input.gapMinutes ?? PREFERRED_GAP_MIN;
+  const durationMin: Record<ClassType, number> = {
+    INDIVIDUAL: input.individualMinutes ?? DEFAULT_DURATION_MIN.INDIVIDUAL,
+    GRUPAL: input.groupMinutes ?? DEFAULT_DURATION_MIN.GRUPAL,
+  };
   const teacherById = new Map(input.teachers.map((t) => [t.evaluatorId, t]));
   const bookings = new Bookings();
   const workloadUsed = new Map<string, number>();
@@ -205,7 +214,7 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
   for (const course of order) {
     const teacher = teacherById.get(course.evaluatorId);
     if (!teacher) { unscheduledCourseIds.push(course.courseId); continue; }
-    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes);
+    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes, durationMin);
     if (placed) sessions.push(placed);
     else unscheduledCourseIds.push(course.courseId);
   }

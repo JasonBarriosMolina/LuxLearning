@@ -126,14 +126,50 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     })));
   }
 
+  // ── POST /admin/scheduler/courses — Paso 3, crea un curso borrador cuando
+  // todavía no existe en Lux Learning. Trello *LUX SCHEDULER*, 2026-09-10 (Mack):
+  // "los cursos no necesariamente tienen que estar creados ya... si no están
+  // los cursos creados, yo pueda ponerles un nombre y crear estos cursos... le
+  // pondría el nombre del curso y el evaluador. El horario no debería estar
+  // disponible" — un Course real con isDraft:true (mismo campo que ya usa Lux
+  // Planner para cursos sin terminar), sin classDays/classSchedule todavía;
+  // el propio Lux Scheduler es quien va a resolver ese horario.
+  if (path === '/admin/scheduler/courses' && method === 'POST') {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    const { academicPeriod, title, evaluatorId } = body as { academicPeriod?: string; title?: string; evaluatorId?: string };
+    if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
+    if (!title?.trim()) return badRequest('title es requerido');
+    if (!evaluatorId?.trim()) return badRequest('evaluatorId es requerido');
+
+    const slugBase = title.toLowerCase()
+      .normalize('NFD').replace(/[̀-͟]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    const slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const course = await prisma.course.create({
+      data: {
+        title: title.trim(), slug, description: '', evaluatorId, academicPeriod,
+        isDraft: true, isActive: false,
+      },
+      select: { id: true, title: true, evaluatorId: true, modality: true },
+    });
+    const teacherName = await resolveDisplayName(evaluatorId);
+    return ok({
+      id: course.id, title: course.title, evaluatorId: course.evaluatorId, teacherName,
+      modality: course.modality, engineModality: toEngineModality(course.modality), studentCount: 0,
+    });
+  }
+
   // ── POST /admin/scheduler/generate — synchronous, returns 2-3 candidates ────
   if (path === '/admin/scheduler/generate' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { academicPeriod, courseOverrides, lunchBreak, gapMinutes } = body as {
+    const { academicPeriod, courseOverrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes } = body as {
       academicPeriod?: string;
       courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
+      individualMinutes?: number;
+      groupMinutes?: number;
     };
     if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
 
@@ -171,7 +207,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const teacherNames: Record<string, string> = {};
     await Promise.all(evaluatorIds.map(async (id) => { teacherNames[id] = await resolveDisplayName(id); }));
 
-    const proposals = generateScheduleProposals({ courses: engineCourses, teachers, lunchBreak, gapMinutes });
+    const proposals = generateScheduleProposals({ courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes });
     return ok({ proposals, courseTitles, teacherNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 

@@ -4,24 +4,35 @@ interface Props {
   lunchStart: string;
   lunchEnd: string;
   gapMinutes: number;
-  onChange: (patch: Partial<{ lunchStart: string; lunchEnd: string; gapMinutes: number }>) => void;
+  individualMinutes: number;
+  groupMinutes: number;
+  onChange: (patch: Partial<{ lunchStart: string; lunchEnd: string; gapMinutes: number; individualMinutes: number; groupMinutes: number }>) => void;
 }
 
-export function StepParams({ lunchStart, lunchEnd, gapMinutes, onChange }: Props) {
+export function StepParams({ lunchStart, lunchEnd, gapMinutes, individualMinutes, groupMinutes, onChange }: Props) {
   return (
     <div className="space-y-4">
       <div className="card space-y-2">
-        <h2 className="font-heading font-semibold text-charcoal">Duración de bloques (fija)</h2>
+        <h2 className="font-heading font-semibold text-charcoal">Duración de bloques</h2>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="p-3 bg-surface rounded-xl">
+          <div className="p-3 bg-surface rounded-xl space-y-1.5">
             <p className="font-semibold text-charcoal">Lección individual</p>
-            <p className="text-gray-500">1 estudiante — 55 minutos exactos</p>
+            <p className="text-gray-500">1 estudiante</p>
+            <div className="flex items-center gap-2">
+              <input type="number" min={5} max={240} value={individualMinutes} onChange={(e) => onChange({ individualMinutes: Math.max(5, Number(e.target.value) || 5) })} className="input-field w-20 text-sm py-1.5" />
+              <span className="text-xs text-gray-500">minutos</span>
+            </div>
           </div>
-          <div className="p-3 bg-surface rounded-xl">
+          <div className="p-3 bg-surface rounded-xl space-y-1.5">
             <p className="font-semibold text-charcoal">Lección grupal</p>
-            <p className="text-gray-500">2+ estudiantes — 1 hora 15 minutos</p>
+            <p className="text-gray-500">2+ estudiantes</p>
+            <div className="flex items-center gap-2">
+              <input type="number" min={5} max={240} value={groupMinutes} onChange={(e) => onChange({ groupMinutes: Math.max(5, Number(e.target.value) || 5) })} className="input-field w-20 text-sm py-1.5" />
+              <span className="text-xs text-gray-500">minutos</span>
+            </div>
           </div>
         </div>
+        <p className="text-xs text-gray-400">Por defecto 55 / 75 min — ajustable por si el estándar institucional cambia.</p>
       </div>
 
       <div className="card space-y-2">

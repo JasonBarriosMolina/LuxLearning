@@ -136,6 +136,30 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
       expect(p.sessions.some((s: any) => s.courseId === 'c2')).toBe(false);
     }
   });
+
+  // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): duration must be admin-configurable,
+  // not the fixed 55/75 default.
+  it('honors a custom individualMinutes duration from the request body', async () => {
+    getAllEnrollmentsMock.mockResolvedValue([]);
+    const prisma = makePrisma({
+      course: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Virtual', evaluatorId: 'eval-1', modality: 'SINCRONICA' }]),
+      },
+      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '10:00' }]) },
+      teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/generate'),
+      method: 'POST', path: '/admin/scheduler/generate', prisma,
+      body: { academicPeriod: '2026-2', individualMinutes: 30 },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    const session = body.data.proposals[0].sessions[0];
+    const [sh, sm] = session.startTime.split(':').map(Number);
+    const [eh, em] = session.endTime.split(':').map(Number);
+    expect((eh * 60 + em) - (sh * 60 + sm)).toBe(30);
+  });
 });
 
 describe('handleScheduler — POST /admin/scheduler/approve', () => {
@@ -221,6 +245,35 @@ describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', ()
       { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', studentCount: 2 },
       { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, studentCount: 0 },
     ]);
+  });
+});
+
+describe('handleScheduler — POST /admin/scheduler/courses (Paso 3, curso aún no creado)', () => {
+  it('creates a draft Course with just title + evaluator, no schedule fields', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', modality: null });
+    const prisma = makePrisma({ course: { create } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/courses'),
+      method: 'POST', path: '/admin/scheduler/courses', prisma,
+      body: { academicPeriod: '2026-2', title: 'Curso Nuevo', evaluatorId: 'eval-1' },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ title: 'Curso Nuevo', evaluatorId: 'eval-1', academicPeriod: '2026-2', isDraft: true, isActive: false, description: '' }),
+    }));
+    expect(body.data).toEqual({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: null, engineModality: 'VIRTUAL', studentCount: 0 });
+  });
+
+  it('returns 400 when title is missing', async () => {
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/courses'),
+      method: 'POST', path: '/admin/scheduler/courses', prisma: makePrisma(),
+      body: { academicPeriod: '2026-2', evaluatorId: 'eval-1' },
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(400);
   });
 });
 
