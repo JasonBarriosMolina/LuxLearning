@@ -22,12 +22,21 @@ export async function handleTasks(ctx: EvalCtx): Promise<any | null> {
 
       if (assignTo === 'course' && targetCourseId) {
         // Enrollments has no GSI on courseId — Scan is the only option here.
-        const scan = await ddb.send(new ScanCommand({
-          TableName: TABLES.ENROLLMENTS,
-          FilterExpression: 'courseId = :cid',
-          ExpressionAttributeValues: { ':cid': targetCourseId },
-        }));
-        assignees = [...new Set((scan.Items ?? []).map((item: any) => item.userId as string).filter(Boolean))] as string[];
+        // Paginate through the full Scan (same pattern as GET /evaluator/tasks below) —
+        // a single page silently drops enrollees past DynamoDB's 1MB scan limit.
+        let lastKey: Record<string, any> | undefined;
+        const enrolled: any[] = [];
+        do {
+          const scan = await ddb.send(new ScanCommand({
+            TableName: TABLES.ENROLLMENTS,
+            FilterExpression: 'courseId = :cid',
+            ExpressionAttributeValues: { ':cid': targetCourseId },
+            ExclusiveStartKey: lastKey,
+          }));
+          enrolled.push(...(scan.Items ?? []));
+          lastKey = scan.LastEvaluatedKey;
+        } while (lastKey);
+        assignees = [...new Set(enrolled.map((item: any) => item.userId as string).filter(Boolean))] as string[];
       } else if (targetUserId) {
         assignees = [targetUserId];
       }
