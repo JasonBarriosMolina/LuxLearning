@@ -44,6 +44,7 @@ export interface ScheduleInput {
   courses: CourseInput[];
   teachers: TeacherInput[];
   lunchBreak?: LunchBreak; // Saturday only, default 12:00-13:00
+  gapMinutes?: number;     // soft preferred gap between a teacher's consecutive classes, default 5
 }
 
 export interface ScheduledSession {
@@ -153,7 +154,8 @@ function placeCourse(
   teacher: TeacherInput,
   bookings: Bookings,
   lunch: LunchBreak,
-  workloadUsed: Map<string, number>
+  workloadUsed: Map<string, number>,
+  gapMinutes: number
 ): ScheduledSession | null {
   const used = workloadUsed.get(course.evaluatorId) ?? 0;
   if (used >= teacher.maxCoursesPerWeek) return null; // hard cap, no partial exceptions
@@ -161,7 +163,7 @@ function placeCourse(
   const duration = DURATION_MIN[course.classType];
   const days = course.modality === 'PRESENCIAL' ? [SATURDAY] : WEEKDAYS;
 
-  // Two passes: first require the soft ≥5min gap, then relax it if nothing fit.
+  // Two passes: first require the soft gap, then relax it if nothing fit.
   for (const requireGap of [true, false]) {
     for (const day of days) {
       const free = baseWindowsForDay(teacher, day, lunch);
@@ -170,7 +172,7 @@ function placeCourse(
           const candidate: Window = { start, end: start + duration };
           if (!bookings.teacherFree(course.evaluatorId, day, candidate)) continue;
           if (!bookings.studentsFree(course.studentIds, day, candidate)) continue;
-          if (requireGap && bookings.teacherGapTo(course.evaluatorId, day, candidate) < PREFERRED_GAP_MIN) continue;
+          if (requireGap && bookings.teacherGapTo(course.evaluatorId, day, candidate) < gapMinutes) continue;
           bookings.book(course.evaluatorId, course.studentIds, day, candidate);
           workloadUsed.set(course.evaluatorId, used + 1);
           return {
@@ -193,6 +195,7 @@ function placeCourse(
 
 function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, strategy: string): ScheduleProposal {
   const lunch = input.lunchBreak ?? DEFAULT_LUNCH;
+  const gapMinutes = input.gapMinutes ?? PREFERRED_GAP_MIN;
   const teacherById = new Map(input.teachers.map((t) => [t.evaluatorId, t]));
   const bookings = new Bookings();
   const workloadUsed = new Map<string, number>();
@@ -202,7 +205,7 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
   for (const course of order) {
     const teacher = teacherById.get(course.evaluatorId);
     if (!teacher) { unscheduledCourseIds.push(course.courseId); continue; }
-    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed);
+    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes);
     if (placed) sessions.push(placed);
     else unscheduledCourseIds.push(course.courseId);
   }
@@ -248,4 +251,71 @@ export function generateScheduleProposals(input: ScheduleInput): ScheduleProposa
     runStrategy(input, balancedOrder, 'Opción B — Balanceada', 'balanced'),
     runStrategy(input, reverseOrder, 'Opción C — Alternativa', 'reverse'),
   ];
+}
+
+// ── Manual-edit conflict checking ───────────────────────────────────────────
+// Trello *LUX SCHEDULER*, 2026-09-10 (Mack, Paso 7): "si un movimiento manual
+// genera un choque, el sistema arroja una alerta preventiva inmediata." The
+// generator never needs this (placeCourse only ever returns conflict-free
+// slots by construction) — this is for re-checking a session list AFTER the
+// admin hand-edits a day/time in the review step, where anything goes.
+
+export type ConflictType = 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_SATURDAY_WINDOW' | 'WORKLOAD_EXCEEDED';
+
+export interface Conflict {
+  sessionIndex: number;
+  withIndex?: number; // the other session index it collides with, if applicable
+  type: ConflictType;
+  message: string;
+}
+
+export interface ConflictCheckInput {
+  sessions: ScheduledSession[];
+  lunchBreak?: LunchBreak;
+  teachers?: TeacherInput[]; // optional — pass to also flag workload-cap violations
+}
+
+export function findConflicts({ sessions, lunchBreak, teachers }: ConflictCheckInput): Conflict[] {
+  const lunch = lunchBreak ?? DEFAULT_LUNCH;
+  const conflicts: Conflict[] = [];
+
+  for (let i = 0; i < sessions.length; i++) {
+    const a = sessions[i]!;
+    for (let j = i + 1; j < sessions.length; j++) {
+      const b = sessions[j]!;
+      if (a.dayOfWeek !== b.dayOfWeek) continue;
+      if (!(a.startTime < b.endTime && b.startTime < a.endTime)) continue; // no time overlap
+      if (a.evaluatorId === b.evaluatorId) {
+        conflicts.push({ sessionIndex: i, withIndex: j, type: 'TEACHER_OVERLAP', message: `El profesor ya tiene otra clase a esa hora (choca con la sesión ${j + 1}).` });
+      }
+      if (a.studentIds.some((s) => b.studentIds.includes(s))) {
+        conflicts.push({ sessionIndex: i, withIndex: j, type: 'STUDENT_OVERLAP', message: `Un estudiante ya tiene otra clase a esa hora (choca con la sesión ${j + 1}).` });
+      }
+    }
+
+    const s = sessions[i]!;
+    if (s.dayOfWeek === SATURDAY) {
+      if (s.startTime < SATURDAY_OPEN || s.endTime > SATURDAY_CLOSE) {
+        conflicts.push({ sessionIndex: i, type: 'OUTSIDE_SATURDAY_WINDOW', message: `Fuera del horario institucional de sábado (${SATURDAY_OPEN}-${SATURDAY_CLOSE}).` });
+      }
+      if (s.startTime < lunch.endTime && lunch.startTime < s.endTime) {
+        conflicts.push({ sessionIndex: i, type: 'LUNCH_BREAK', message: `Choca con el bloque de almuerzo obligatorio (${lunch.startTime}-${lunch.endTime}).` });
+      }
+    }
+  }
+
+  if (teachers) {
+    const capByTeacher = new Map(teachers.map((t) => [t.evaluatorId, t.maxCoursesPerWeek]));
+    const countByTeacher = new Map<string, number>();
+    for (const s of sessions) countByTeacher.set(s.evaluatorId, (countByTeacher.get(s.evaluatorId) ?? 0) + 1);
+    sessions.forEach((s, i) => {
+      const cap = capByTeacher.get(s.evaluatorId);
+      const count = countByTeacher.get(s.evaluatorId) ?? 0;
+      if (cap != null && count > cap) {
+        conflicts.push({ sessionIndex: i, type: 'WORKLOAD_EXCEEDED', message: `El profesor supera su tope de ${cap} curso(s)/semana (tiene ${count}).` });
+      }
+    });
+  }
+
+  return conflicts;
 }

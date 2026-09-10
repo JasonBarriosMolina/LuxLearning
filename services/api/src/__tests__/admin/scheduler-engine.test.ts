@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateScheduleProposals, type ScheduleInput, type TeacherInput, type CourseInput } from '../../admin/scheduler-engine';
+import { generateScheduleProposals, findConflicts, type ScheduleInput, type TeacherInput, type CourseInput, type ScheduledSession } from '../../admin/scheduler-engine';
 
 function teacher(evaluatorId: string, overrides: Partial<TeacherInput> = {}): TeacherInput {
   return {
@@ -113,5 +113,73 @@ describe('generateScheduleProposals', () => {
     const proposals = generateScheduleProposals(input);
     expect(proposals).toHaveLength(3);
     expect(new Set(proposals.map((p) => p.strategy)).size).toBe(3);
+  });
+});
+
+function session(overrides: Partial<ScheduledSession> = {}): ScheduledSession {
+  return {
+    courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '08:55',
+    modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: ['s1'],
+    ...overrides,
+  };
+}
+
+// Trello *LUX SCHEDULER*, 2026-09-10 (Mack, Paso 7): manual edits need instant
+// conflict feedback — this is the re-check the review-step UI calls after a
+// hand edit, since placeCourse's own guarantees don't apply to hand-edited slots.
+describe('findConflicts', () => {
+  it('flags two sessions for the same teacher overlapping in time', () => {
+    const sessions = [
+      session({ courseId: 'c1', evaluatorId: 'eval-1', startTime: '08:00', endTime: '08:55', studentIds: ['s1'] }),
+      session({ courseId: 'c2', evaluatorId: 'eval-1', startTime: '08:30', endTime: '09:25', studentIds: ['s2'] }),
+    ];
+    const conflicts = findConflicts({ sessions });
+    expect(conflicts.some((c) => c.type === 'TEACHER_OVERLAP')).toBe(true);
+  });
+
+  it('flags a shared student across two different teachers at overlapping times', () => {
+    const sessions = [
+      session({ courseId: 'c1', evaluatorId: 'eval-1', startTime: '08:00', endTime: '08:55', studentIds: ['shared'] }),
+      session({ courseId: 'c2', evaluatorId: 'eval-2', startTime: '08:30', endTime: '09:25', studentIds: ['shared'] }),
+    ];
+    const conflicts = findConflicts({ sessions });
+    expect(conflicts.some((c) => c.type === 'STUDENT_OVERLAP')).toBe(true);
+  });
+
+  it('does not flag two non-overlapping sessions for the same teacher', () => {
+    const sessions = [
+      session({ evaluatorId: 'eval-1', startTime: '08:00', endTime: '08:55' }),
+      session({ evaluatorId: 'eval-1', startTime: '09:00', endTime: '09:55' }),
+    ];
+    expect(findConflicts({ sessions })).toEqual([]);
+  });
+
+  it('flags a Saturday session that straddles the lunch break', () => {
+    const sessions = [session({ dayOfWeek: 6, classType: 'GRUPAL', startTime: '11:30', endTime: '12:45' })];
+    const conflicts = findConflicts({ sessions });
+    expect(conflicts.some((c) => c.type === 'LUNCH_BREAK')).toBe(true);
+  });
+
+  it('flags a Saturday session moved outside the 8am-4pm institutional window', () => {
+    const sessions = [session({ dayOfWeek: 6, startTime: '17:00', endTime: '17:55' })];
+    const conflicts = findConflicts({ sessions });
+    expect(conflicts.some((c) => c.type === 'OUTSIDE_SATURDAY_WINDOW')).toBe(true);
+  });
+
+  it('flags a teacher over their weekly workload cap when teachers are provided', () => {
+    const sessions = [
+      session({ courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1 }),
+      session({ courseId: 'c2', evaluatorId: 'eval-1', dayOfWeek: 2 }),
+    ];
+    const conflicts = findConflicts({ sessions, teachers: [teacher('eval-1', { maxCoursesPerWeek: 1 })] });
+    expect(conflicts.filter((c) => c.type === 'WORKLOAD_EXCEEDED')).toHaveLength(2);
+  });
+
+  it('skips the workload check entirely when no teachers are given', () => {
+    const sessions = [
+      session({ courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1 }),
+      session({ courseId: 'c2', evaluatorId: 'eval-1', dayOfWeek: 2 }),
+    ];
+    expect(findConflicts({ sessions })).toEqual([]);
   });
 });

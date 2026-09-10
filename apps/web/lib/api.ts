@@ -596,11 +596,19 @@ export const api = {
         request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`, { method: 'PUT', body: JSON.stringify(body) }),
     },
     scheduler: {
-      generate: (body: { academicPeriod: string; courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }> }) =>
-        request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
+      courses: (academicPeriod: string) => request<any>(`/admin/scheduler/courses?academicPeriod=${encodeURIComponent(academicPeriod)}`),
+      generate: (body: {
+        academicPeriod: string;
+        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
+        lunchBreak?: { startTime: string; endTime: string };
+        gapMinutes?: number;
+      }) => request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
+      validate: (body: { sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean }) =>
+        request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),
       approve: (body: { academicPeriod: string; proposal: any }) =>
         request<any>('/admin/scheduler/approve', { method: 'POST', body: JSON.stringify(body) }),
       unpublish: (academicPeriod: string) => request<any>(`/admin/scheduler/${encodeURIComponent(academicPeriod)}`, { method: 'DELETE' }),
+      export: (academicPeriod: string) => request<any>(`/admin/scheduler/export?academicPeriod=${encodeURIComponent(academicPeriod)}`),
     },
   },
   attendance: {

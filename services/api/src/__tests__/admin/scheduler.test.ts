@@ -19,6 +19,16 @@ vi.mock('../../shared/email', () => ({ sendTemplatedEmail: sendTemplatedEmailMoc
 const getAllEnrollmentsMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock('../../shared/db-dynamo', () => ({ getAllEnrollments: getAllEnrollmentsMock }));
 
+const s3Send = vi.hoisted(() => vi.fn().mockResolvedValue({}));
+vi.mock('@aws-sdk/client-s3', () => ({
+  S3Client: function () { return { send: s3Send }; },
+  PutObjectCommand: function (x: any) { return x; },
+  GetObjectCommand: function (x: any) { return x; },
+}));
+vi.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: vi.fn().mockResolvedValue('https://s3.example.com/presigned-url'),
+}));
+
 import { handleScheduler } from '../../admin/scheduler';
 
 describe('handleScheduler — teacher availability', () => {
@@ -183,6 +193,93 @@ describe('handleScheduler — DELETE /admin/scheduler/:academicPeriod', () => {
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'DELETE', '/admin/scheduler/2026-2'),
       method: 'DELETE', path: '/admin/scheduler/2026-2', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', () => {
+  it('returns course catalog with engineModality + studentCount, before generating anything', async () => {
+    getAllEnrollmentsMock.mockResolvedValue([{ userId: 's1', courseId: 'c1' }, { userId: 's2', courseId: 'c1' }]);
+    const prisma = makePrisma({
+      course: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', modality: 'PRESENCIAL' },
+          { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', modality: 'ASINCRONICA' },
+        ]),
+      },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/courses', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/courses', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data).toEqual([
+      { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', studentCount: 2 },
+      { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, studentCount: 0 },
+    ]);
+  });
+});
+
+describe('handleScheduler — POST /admin/scheduler/validate (Paso 7 manual edit)', () => {
+  it('re-checks a hand-edited session list and returns conflicts', async () => {
+    const prisma = makePrisma();
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/validate'),
+      method: 'POST', path: '/admin/scheduler/validate', prisma,
+      body: {
+        sessions: [
+          { courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '08:55', modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: [] },
+          { courseId: 'c2', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:30', endTime: '09:25', modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: [] },
+        ],
+      },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.conflicts.some((c: any) => c.type === 'TEACHER_OVERLAP')).toBe(true);
+  });
+
+  it('returns 400 when sessions is missing', async () => {
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/validate'),
+      method: 'POST', path: '/admin/scheduler/validate', prisma: makePrisma(),
+      body: {},
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('handleScheduler — GET /admin/scheduler/export (Paso 8 CSV)', () => {
+  it('uploads a CSV to S3 and returns a presigned download URL', async () => {
+    const prisma = makePrisma({
+      scheduledClass: {
+        findMany: vi.fn().mockResolvedValue([
+          { courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '08:55', modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: ['s1'] },
+        ]),
+      },
+      course: { findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Virtual' }]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/export', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/export', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.url).toBe('https://s3.example.com/presigned-url');
+    expect(s3Send).toHaveBeenCalled();
+  });
+
+  it('returns 404 when nothing is published for that period', async () => {
+    const prisma = makePrisma({ scheduledClass: { findMany: vi.fn().mockResolvedValue([]) } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/export', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/export', prisma,
     });
     const res = await handleScheduler(ctx as any);
     expect(res.statusCode).toBe(404);
