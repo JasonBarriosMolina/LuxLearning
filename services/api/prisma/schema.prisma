@@ -190,6 +190,13 @@ model StudentGroup {
   createdAt            DateTime                @default(now())
   color                String                  @default("#17527E")
   createdByEvaluatorId String?
+  // Trello DmPpbrff, 2026-09-07 (Mack): "se puedan crear grupos base donde
+  // estén asignados a semestres específicos, que estos estén interconectados
+  // a cuando Lux Planner crea cursos" — same free-text period name as
+  // Course.academicPeriod / the AcademicPeriod reusable-dropdown model, not a
+  // separate "semester" concept, so a group and the courses created for it
+  // share one vocabulary (e.g. "2026-1"). Nullable: existing groups have none.
+  academicPeriod       String?
   evaluators           StudentGroupEvaluator[]
   members              StudentGroupMember[]
 }

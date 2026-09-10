@@ -2,7 +2,7 @@
  * Tests for admin/ai.ts domain handler.
  * Focus: routes added/restored during the monolith refactor.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeAdminCtx, makePrisma, makeEvent, bodyOf } from '../helpers/ctx';
 
 // ── Mock all external I/O so tests run offline ────────────────────────────────
@@ -302,6 +302,59 @@ describe('GET /admin/stock-photos', () => {
     const res = await handleAI(ctx);
     // No UNSPLASH key in test env → 500 with helpful message
     expect(res?.statusCode).toBe(500);
+  });
+
+  // Trello DmPpbrff, 2026-09-07 (Mack): "una opción en donde yo pueda agregar
+  // imágenes de algún proveedor" — item 2, Jason picked Pexels (2026-09-08).
+  // provider=pexels is a new branch on the same route; default stays Unsplash
+  // so every existing caller (RichTextEditor's inline-content picker) is unaffected.
+  describe('provider=pexels', () => {
+    const originalKey = process.env.PEXELS_API_KEY;
+    afterEach(() => {
+      if (originalKey === undefined) delete process.env.PEXELS_API_KEY;
+      else process.env.PEXELS_API_KEY = originalKey;
+      vi.unstubAllGlobals();
+    });
+
+    it('returns 500 when PEXELS_API_KEY is not set', async () => {
+      delete process.env.PEXELS_API_KEY;
+      const ctx = makeAdminCtx({
+        method: 'GET', path: '/admin/stock-photos',
+        event: makeEvent('ADMIN', 'GET', '/admin/stock-photos', { qs: { q: 'leadership', provider: 'pexels' } }),
+      });
+      const res = await handleAI(ctx);
+      expect(res?.statusCode).toBe(500);
+    });
+
+    it('normalizes Pexels results into the same {id, thumb, full, author, authorUrl} shape the frontend expects', async () => {
+      process.env.PEXELS_API_KEY = 'test-pexels-key';
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          total_results: 1,
+          photos: [{
+            id: 987, photographer: 'Jane Doe', photographer_url: 'https://pexels.com/@jane',
+            src: { medium: 'https://images.pexels.com/987/medium.jpg', large2x: 'https://images.pexels.com/987/large2x.jpg' },
+          }],
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const ctx = makeAdminCtx({
+        method: 'GET', path: '/admin/stock-photos',
+        event: makeEvent('ADMIN', 'GET', '/admin/stock-photos', { qs: { q: 'leadership', provider: 'pexels' } }),
+      });
+      const res = await handleAI(ctx);
+      expect(res?.statusCode).toBe(200);
+      expect(await bodyOf(res)).toEqual({
+        data: {
+          photos: [{ id: '987', thumb: 'https://images.pexels.com/987/medium.jpg', full: 'https://images.pexels.com/987/large2x.jpg', author: 'Jane Doe', authorUrl: 'https://pexels.com/@jane' }],
+          totalPages: 1,
+        },
+      });
+      // Pexels auth header is the raw key, no "Client-ID"/"Bearer" prefix (unlike Unsplash)
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('test-pexels-key');
+    });
   });
 });
 

@@ -13,6 +13,7 @@ import { adminEs, adminEn } from './sections/admin';
 import { studentEs, studentEn } from './sections/student';
 import { courseEs, courseEn } from './sections/course';
 import { studyPlanEs, studyPlanEn } from './sections/study-plan';
+import { adminDashboardEs, adminDashboardEn } from './sections/admin-dashboard';
 
 export const es = {
   ...navEs,
@@ -22,6 +23,7 @@ export const es = {
   ...studentEs,
   ...courseEs,
   ...studyPlanEs,
+  ...adminDashboardEs,
 };
 
 export const en = {
@@ -32,6 +34,7 @@ export const en = {
   ...studentEn,
   ...courseEn,
   ...studyPlanEn,
+  ...adminDashboardEn,
 };
 
 export type Translations = typeof es;

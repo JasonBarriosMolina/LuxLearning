@@ -310,7 +310,10 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       // Trello DmPpbrff, 2026-09-06 (Mack): "el modelo de voz en español es un español
       // de España; quiero... latinoamericano." See same fix + caveat in
       // VoiceInterview.tsx — needs a live test call to confirm the accent shifted.
-      voice: { provider: 'vapi', voiceId: 'Kai', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Trello DmPpbrff, 2026-09-07 (Mack): "no me gusta [Kai]; me gustaba más la
+      // anterior... latina y agradable" — reverted to Clara (the pre-2026-08-10
+      // voice, see commit 56b1ba8) while keeping the es-419 locale fix above.
+      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
       name: 'Lux Mentor',
       maxDurationSeconds: QA_HARD_LIMIT_SECONDS + 30, // absolute Vapi-side safety net above the client-side cutoff
       firstMessage: lang === 'en'

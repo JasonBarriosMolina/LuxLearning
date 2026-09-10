@@ -1,10 +1,59 @@
 // Reports domain handler for lux-admin.
+import { ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getAllReflections, getAllLessonProgress, getAllEnrollments } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
-import { AdminCtx } from './ctx';
+import { AdminCtx, isAdmin, cognito, USER_POOL_ID } from './ctx';
+
+// Trello DmPpbrff, 2026-09-07 (Mack): "el dashboard... solo brinda información
+// acerca de los estudiantes... debería incluir información relevante... también
+// de los evaluadores." Admin-only (evaluators don't need visibility into peers'
+// review load) — built from data this handler already fetches for the student-
+// facing summary above, plus one paginated Cognito group listing for names.
+async function buildEvaluatorStats(
+  allReflections: any[], allEnrollments: any[], courses: any[],
+): Promise<{ evaluatorId: string; name: string; coursesManaged: number; studentsManaged: number; totalReviewed: number; approved: number; rejected: number; avgHoursToReview: number | null }[]> {
+  const evaluators: { Username?: string; Attributes?: { Name?: string; Value?: string }[] }[] = [];
+  let token: string | undefined;
+  do {
+    const res = await cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: 'EVALUATOR', Limit: 60, NextToken: token }));
+    evaluators.push(...(res.Users ?? []));
+    token = res.NextToken;
+  } while (token);
+
+  const attr = (u: { Attributes?: { Name?: string; Value?: string }[] }, name: string) =>
+    u.Attributes?.find((a) => a.Name === name)?.Value ?? '';
+
+  return evaluators.filter((u) => u.Username).map((u) => {
+    const evaluatorId = u.Username!;
+    const name = attr(u, 'name') || attr(u, 'email') || evaluatorId;
+
+    const ownCourses = courses.filter((c: any) => c.evaluatorId === evaluatorId);
+    const ownCourseIds = new Set(ownCourses.map((c: any) => c.id));
+    const studentsManaged = new Set(allEnrollments.filter((e: any) => ownCourseIds.has(e.courseId)).map((e: any) => e.userId)).size;
+
+    const ownReflections = allReflections.filter((r: any) => r.evaluatorId === evaluatorId);
+    const reviewed = ownReflections.filter((r: any) => r.status === 'APPROVED' || r.status === 'REJECTED');
+    let totalReviewTime = 0; let reviewedWithTime = 0;
+    reviewed.forEach((r: any) => {
+      if (!r.reviewedAt || !r.submittedAt) return;
+      const ms = new Date(r.reviewedAt).getTime() - new Date(r.submittedAt).getTime();
+      if (ms > 0) { totalReviewTime += ms; reviewedWithTime++; }
+    });
+
+    return {
+      evaluatorId, name,
+      coursesManaged: ownCourses.length,
+      studentsManaged,
+      totalReviewed: reviewed.length,
+      approved: reviewed.filter((r: any) => r.status === 'APPROVED').length,
+      rejected: reviewed.filter((r: any) => r.status === 'REJECTED').length,
+      avgHoursToReview: reviewedWithTime > 0 ? Math.round(totalReviewTime / reviewedWithTime / 3600000 * 10) / 10 : null,
+    };
+  }).sort((a, b) => b.totalReviewed - a.totalReviewed);
+}
 
 export async function handleReports(ctx: AdminCtx): Promise<any | null> {
-  const { method, path, prisma } = ctx;
+  const { event, method, path, prisma } = ctx;
 
   // ── GET /admin/reports ──────────────────────────────────────────────────────
   if (path === '/admin/reports' && method === 'GET') {
@@ -99,9 +148,12 @@ export async function handleReports(ctx: AdminCtx): Promise<any | null> {
       ? Math.round(scored.reduce((sum: any, r: any) => sum + (r.qualityScore ?? 0), 0) / scored.length * 10) / 10
       : null;
 
+    const evaluatorStats = isAdmin(event) ? await buildEvaluatorStats(allReflections, allEnrollments, courses) : undefined;
+
     return ok({
       summary: { totalReflections, totalApproved, totalRejected, totalPending, overallApprovalRate, totalEnrolled, activeStudents, atRiskStudents, avgQuality },
       moduleStats,
+      evaluatorStats,
     });
   }
 

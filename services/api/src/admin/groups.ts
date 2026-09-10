@@ -20,9 +20,16 @@ export async function handleGroups(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/groups ───────────────────────────────────────────────────────
   if (method === 'POST' && path === '/admin/groups') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { name, description, color } = ctx.body as { name?: string; description?: string; color?: string };
+    const { name, description, color, academicPeriod } = ctx.body as { name?: string; description?: string; color?: string; academicPeriod?: string };
     if (!name?.trim()) return badRequest('name es requerido');
-    const group = await prisma.studentGroup.create({ data: { name: name.trim(), description: description?.trim(), color: color ?? '#17527E' } });
+    // Same reusable-dropdown period LuxPlanner writes to when creating a course
+    // (ai-wizard.ts) — upsert so a period typed here also shows up there, and
+    // vice versa (Trello DmPpbrff, 2026-09-07: "interconectados a cuando Lux
+    // Planner crea cursos").
+    if (academicPeriod?.trim()) {
+      await prisma.academicPeriod.upsert({ where: { name: academicPeriod.trim() }, update: {}, create: { name: academicPeriod.trim() } }).catch(() => {});
+    }
+    const group = await prisma.studentGroup.create({ data: { name: name.trim(), description: description?.trim(), color: color ?? '#17527E', academicPeriod: academicPeriod?.trim() || null } });
     return ok(group);
   }
 
@@ -32,9 +39,15 @@ export async function handleGroups(ctx: AdminCtx): Promise<any | null> {
   if (groupBaseMatch && method === 'PUT') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
     const groupId = groupBaseMatch[1]!;
-    const { name, description, color } = ctx.body as { name?: string; description?: string; color?: string };
+    const { name, description, color, academicPeriod } = ctx.body as { name?: string; description?: string; color?: string; academicPeriod?: string };
     if (!name?.trim()) return badRequest('name es requerido');
-    const group = await prisma.studentGroup.update({ where: { id: groupId }, data: { name: name.trim(), description: description?.trim() ?? null, ...(color ? { color } : {}) } });
+    if (academicPeriod?.trim()) {
+      await prisma.academicPeriod.upsert({ where: { name: academicPeriod.trim() }, update: {}, create: { name: academicPeriod.trim() } }).catch(() => {});
+    }
+    const group = await prisma.studentGroup.update({
+      where: { id: groupId },
+      data: { name: name.trim(), description: description?.trim() ?? null, ...(color ? { color } : {}), ...(academicPeriod !== undefined ? { academicPeriod: academicPeriod?.trim() || null } : {}) },
+    });
     return ok(group);
   }
 

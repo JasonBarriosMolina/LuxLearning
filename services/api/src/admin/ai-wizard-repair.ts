@@ -10,8 +10,10 @@ import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { createNotification, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
-  ses, cognito, FROM_EMAIL, FRONTEND_URL, USER_POOL_ID,
+  ses, cognito, FROM_EMAIL, FRONTEND_URL, USER_POOL_ID, DISTRACTOR_QUALITY_RULES,
 } from './ctx';
+
+const DISTRACTOR_QUALITY_RULES_EN = 'All 4 options must be SIMILAR in length and detail — the correct answer must never be noticeably longer or more specific than the others. Of the 3 wrong options: ONE must be a close distractor (a common conceptual mix-up), the other TWO must be topic-related but clearly distinguishable on careful reading — none should be absurd or obviously dismissible at a glance.';
 import { lessonDurationLabel } from '../shared/reading-time';
 
 async function sendPushAndInApp(userId: string, type: 'GENERAL' | 'COURSE_READY_FOR_REVIEW', message: string, courseId: string): Promise<void> {
@@ -117,8 +119,8 @@ export async function generateAndSaveQuizQuestions(
   prisma: AdminCtx['prisma'], moduleId: string, moduleTitle: string, isEN: boolean
 ): Promise<void> {
   const qPrompt = isEN
-    ? `Generate exactly 10 multiple-choice questions about "${moduleTitle}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.`
-    : `Genera exactamente 10 preguntas de opción múltiple sobre "${moduleTitle}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.`;
+    ? `Generate exactly 10 multiple-choice questions about "${moduleTitle}". JSON array: [{"text":"Question?","options":["A","B","C","D"],"correctIndex":0,"order":1}] No markdown.\n${DISTRACTOR_QUALITY_RULES_EN}`
+    : `Genera exactamente 10 preguntas de opción múltiple sobre "${moduleTitle}". Array JSON: [{"text":"¿Pregunta?","options":["A","B","C","D"],"correctIndex":0,"order":1}] Sin markdown.\n${DISTRACTOR_QUALITY_RULES}`;
   let rawQ = await invokeBedrockForJson(qPrompt, 4000);
   // Retry once if the model returned nothing usable — a planned quiz silently ending up
   // with 0 questions was one of the reliability complaints in Trello DmPpbrff comment

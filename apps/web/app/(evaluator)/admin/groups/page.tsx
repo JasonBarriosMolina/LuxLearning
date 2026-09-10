@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { Plus, Trash2, Users, UserCheck, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Users, UserCheck, ChevronRight, Loader2, CalendarRange } from 'lucide-react';
 
 const COLOR_PALETTE = [
   '#17527E', '#7C3AED', '#059669', '#DC2626',
@@ -15,6 +15,7 @@ interface Group {
   name: string;
   description?: string;
   color?: string;
+  academicPeriod?: string | null;
   createdAt: string;
   _count?: { members: number; evaluators: number };
 }
@@ -24,9 +25,14 @@ export default function AdminGroupsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', color: COLOR_PALETTE[0] });
+  const [form, setForm] = useState({ name: '', description: '', color: COLOR_PALETTE[0], academicPeriod: '' });
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // Trello DmPpbrff, 2026-09-07 (Mack): "grupos base... asignados a semestres
+  // específicos... interconectados a cuando Lux Planner crea cursos" — same
+  // AcademicPeriod reusable-dropdown LuxPlanner's Step1 reads/writes, so a
+  // period typed in either place shows up in the other.
+  const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -38,15 +44,21 @@ export default function AdminGroupsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? [])).catch(() => {});
+  }, []);
 
   const handleCreate = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await api.admin.groups.create({ name: form.name.trim(), description: form.description.trim() || undefined, color: form.color } as any);
+      await api.admin.groups.create({
+        name: form.name.trim(), description: form.description.trim() || undefined,
+        color: form.color, academicPeriod: form.academicPeriod.trim() || undefined,
+      });
       setShowModal(false);
-      setForm({ name: '', description: '', color: COLOR_PALETTE[0] });
+      setForm({ name: '', description: '', color: COLOR_PALETTE[0], academicPeriod: '' });
       load();
     } catch (e: any) {
       alert(e.message ?? 'Error al crear el grupo');
@@ -99,7 +111,14 @@ export default function AdminGroupsPage() {
                 className="flex-1 cursor-pointer"
                 onClick={() => router.push(`/admin/groups/${g.id}`)}
               >
-                <p className="font-semibold text-gray-900 dark:text-white">{g.name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-gray-900 dark:text-white">{g.name}</p>
+                  {g.academicPeriod && (
+                    <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                      <CalendarRange className="w-3 h-3" /> {g.academicPeriod}
+                    </span>
+                  )}
+                </div>
                 {g.description && <p className="text-sm text-gray-500 mt-0.5">{g.description}</p>}
                 <div className="flex items-center gap-4 mt-2">
                   <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -143,6 +162,20 @@ export default function AdminGroupsPage() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium mb-1">Semestre / período académico (opcional)</label>
+                <input
+                  list="admin-groups-periods"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="ej. 2026-1"
+                  value={form.academicPeriod}
+                  onChange={(e) => setForm({ ...form, academicPeriod: e.target.value })}
+                />
+                <datalist id="admin-groups-periods">
+                  {periods.map((p) => <option key={p.id} value={p.name} />)}
+                </datalist>
+                <p className="text-xs text-gray-400 mt-1">Los cursos creados con Lux Planner para este período quedan interconectados con el grupo.</p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium mb-1">Descripción (opcional)</label>
                 <textarea
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
@@ -169,7 +202,7 @@ export default function AdminGroupsPage() {
             </div>
             <div className="flex gap-2 mt-5">
               <button
-                onClick={() => { setShowModal(false); setForm({ name: '', description: '', color: COLOR_PALETTE[0] }); }}
+                onClick={() => { setShowModal(false); setForm({ name: '', description: '', color: COLOR_PALETTE[0], academicPeriod: '' }); }}
                 className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Cancelar

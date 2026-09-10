@@ -26,12 +26,7 @@ const API_URL = getApiUrl();
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = await getIdToken();
-
+async function attemptFetch<T>(path: string, options: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
@@ -50,6 +45,40 @@ async function request<T>(
   }
 
   return res.json() as Promise<T>;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = await getIdToken();
+  try {
+    return await attemptFetch<T>(path, options, token);
+  } catch (err: any) {
+    // A raw TypeError here means fetch() never got an HTTP response at all — the
+    // browser reports this as generic "Failed to fetch" with no status code.
+    // Most common cause: the Cognito ID token expired between page load and this
+    // call, the custom authorizer denies the request at the API Gateway level,
+    // and API Gateway's automatic CORS does NOT attach headers to authorizer-denial
+    // responses (only to successful responses and preflight) — so the browser
+    // treats the CORS-less 403 as a network failure instead of a real HTTP error.
+    // Fix: retry once with a forced token refresh before giving up.
+    if (err instanceof TypeError) {
+      const freshToken = await getIdToken(true);
+      if (freshToken && freshToken !== token) {
+        try {
+          return await attemptFetch<T>(path, options, freshToken);
+        } catch (retryErr: any) {
+          if (retryErr instanceof TypeError) {
+            throw new Error('Sesión expirada o sin conexión. Volvé a iniciar sesión e intentá de nuevo.');
+          }
+          throw retryErr;
+        }
+      }
+      throw new Error('Sesión expirada. Volvé a iniciar sesión e intentá de nuevo.');
+    }
+    throw err;
+  }
 }
 
 // ─── Courses ──────────────────────────────────────────────────────────────────
@@ -470,13 +499,15 @@ export const api = {
     },
     generateImage: (body: { promptText: string; style?: string }) =>
       request<any>('/admin/generate-image', { method: 'POST', body: JSON.stringify(body) }),
-    stockPhotos: (q: string, page = 1) =>
-      request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}`),
+    // provider: 'unsplash' (default, existing RichTextEditor inline-content picker)
+    // or 'pexels' (Trello DmPpbrff, 2026-09-07 — lesson cover picker, Jason's pick)
+    stockPhotos: (q: string, page = 1, provider: 'unsplash' | 'pexels' = 'unsplash') =>
+      request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}&provider=${provider}`),
     groups: {
       list: () => request<any>('/admin/groups'),
-      create: (body: { name: string; description?: string }) =>
+      create: (body: { name: string; description?: string; color?: string; academicPeriod?: string }) =>
         request<any>('/admin/groups', { method: 'POST', body: JSON.stringify(body) }),
-      update: (id: string, body: { name?: string; description?: string }) =>
+      update: (id: string, body: { name?: string; description?: string; color?: string; academicPeriod?: string }) =>
         request<any>(`/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (id: string) => request<any>(`/admin/groups/${id}`, { method: 'DELETE' }),
       members: (id: string) => request<any>(`/admin/groups/${id}/members`),

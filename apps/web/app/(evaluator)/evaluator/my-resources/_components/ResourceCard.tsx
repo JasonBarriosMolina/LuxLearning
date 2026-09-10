@@ -60,6 +60,7 @@ export function ResourceCard({
   onEdit, onDelete, onRestore,
 }: Props) {
   const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState('');
 
   const isPlanDoc = r.fileUrl.startsWith('plan://');
 
@@ -67,12 +68,16 @@ export function ResourceCard({
     e.preventDefault();
     if (planLoading) return;
     setPlanLoading(true);
+    setPlanError('');
     try {
       const courseId = r.fileUrl.replace('plan://', '');
       const res = await (api.admin.courses as any).wizardPlanDoc(courseId) as any;
       const url = res?.data?.url ?? res?.url;
       if (url) window.open(url, '_blank');
-    } catch { /* ignore */ } finally {
+      else setPlanError('No se encontró el archivo del plan.');
+    } catch (err: any) {
+      setPlanError(err?.message ?? 'No se pudo abrir el archivo.');
+    } finally {
       setPlanLoading(false);
     }
   };
@@ -123,9 +128,12 @@ export function ResourceCard({
         </div>
       )}
       {isPlanDoc ? (
-        <button onClick={handlePlanDownload} disabled={planLoading} className="text-xs text-indigo-500 hover:underline flex items-center gap-1 disabled:opacity-50">
-          {planLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />} {viewFileLabel}
-        </button>
+        <div>
+          <button onClick={handlePlanDownload} disabled={planLoading} className="text-xs text-indigo-500 hover:underline flex items-center gap-1 disabled:opacity-50">
+            {planLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />} {viewFileLabel}
+          </button>
+          {planError && <p className="text-xs text-red-500 mt-1">{planError}</p>}
+        </div>
       ) : (
         <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
           <Link2 className="w-3 h-3" /> {viewFileLabel}

@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Mail, BookOpen, CheckCircle, Clock } from 'lucide-react';
+import { X, Mail, BookOpen, CheckCircle, Clock, CalendarRange } from 'lucide-react';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { Student } from './types';
 
@@ -29,6 +29,10 @@ export function StudentProfileModal({ student, onClose }: Props) {
   const pendingReflections = student.courses.reduce(
     (s, c) => s + c.modules.filter((m) => m.reflectionStatus === 'PENDING_EVAL').length, 0
   );
+  // Trello DmPpbrff, 2026-09-07 (Mack): "entender... desde el perfil del
+  // estudiante en qué cursos llegó o qué semestres llevó cursos" — distinct
+  // periods across this student's courses, in the order they first appear.
+  const semesters = [...new Set(student.courses.map((c) => c.academicPeriod).filter((p): p is string => !!p))];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -53,6 +57,16 @@ export function StudentProfileModal({ student, onClose }: Props) {
               <span className={`inline-block mt-1.5 text-xs font-semibold px-2 py-0.5 rounded-full ${presence.color}`}>
                 {presence.label}
               </span>
+              {semesters.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                  <CalendarRange className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  {semesters.map((sem) => (
+                    <span key={sem} className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                      {sem}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 shrink-0">
@@ -95,6 +109,11 @@ export function StudentProfileModal({ student, onClose }: Props) {
                   <div className="flex items-center gap-2 min-w-0">
                     <BookOpen className="w-4 h-4 text-[#17527E] dark:text-blue-300 shrink-0" />
                     <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{course.title}</p>
+                    {course.academicPeriod && (
+                      <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                        {course.academicPeriod}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs font-bold text-[#17527E] dark:text-blue-300 shrink-0">{course.progressPct}%</span>
                 </div>

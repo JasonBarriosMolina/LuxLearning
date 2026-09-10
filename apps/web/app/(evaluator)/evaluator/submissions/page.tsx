@@ -25,6 +25,7 @@ export default function EvaluatorSubmissionsPage() {
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [gradeStates, setGradeStates] = useState<Record<string, GradeState>>({});
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState('');
 
   useEffect(() => {
     api.evaluator.myCourses().then((res: any) => {
@@ -90,11 +91,15 @@ export default function EvaluatorSubmissionsPage() {
   };
 
   const handleDownload = async (sub: any) => {
+    setDownloadError('');
     try {
       const res = await api.evaluator.submissions.downloadUrl(sub.submissionId, sub.s3Key);
       const url = (res as any).data?.url;
       if (url) window.open(url, '_blank');
-    } catch {}
+      else setDownloadError('No se encontró el archivo.');
+    } catch (err: any) {
+      setDownloadError(err?.message ?? 'No se pudo abrir el archivo.');
+    }
   };
 
   return (
@@ -136,6 +141,10 @@ export default function EvaluatorSubmissionsPage() {
           </div>
         </div>
       </div>
+
+      {downloadError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{downloadError}</div>
+      )}
 
       {/* Submissions list */}
       {selectedModule && (

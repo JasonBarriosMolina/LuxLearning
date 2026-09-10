@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare, ListTodo } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquare, ListTodo, UserRound } from 'lucide-react';
 import { ReflectionStatusBadge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { Student, SP } from './types';
@@ -165,6 +165,16 @@ export function StudentCard({
               </div>
               <p className="text-xs text-gray-400 mt-0.5">Tareas</p>
             </div>
+          )}
+          {onViewProfile && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onViewProfile(student); }}
+              title="Ver perfil del estudiante"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg bg-surface text-gray-500 hover:bg-[#17527E]/10 hover:text-[#17527E] transition-colors shrink-0"
+            >
+              <UserRound className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ver perfil</span>
+            </button>
           )}
           {expanded
             ? <ChevronDown className="w-4 h-4 text-gray-400" />
