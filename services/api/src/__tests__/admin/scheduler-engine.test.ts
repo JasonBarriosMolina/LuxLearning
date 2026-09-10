@@ -94,6 +94,28 @@ describe('generateScheduleProposals', () => {
     }
   });
 
+  // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): teachers should be able to narrow
+  // their own Saturday availability, not just the fixed 8am-4pm institutional window.
+  it('keeps the full institutional Saturday window when a teacher declares no Saturday blocks (default)', () => {
+    const input: ScheduleInput = {
+      teachers: [teacher('eval-1')], // no dayOfWeek:6 block at all
+      courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL' })],
+    };
+    for (const proposal of generateScheduleProposals(input)) {
+      expect(proposal.unscheduledCourseIds).toEqual([]);
+    }
+  });
+
+  it('narrows Saturday to the teacher\'s own declared block when they set one', () => {
+    const input: ScheduleInput = {
+      teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 6, startTime: '08:00', endTime: '09:00' }] })],
+      courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL' })], // 75min — doesn't fit in a 60min window
+    };
+    for (const proposal of generateScheduleProposals(input)) {
+      expect(proposal.unscheduledCourseIds).toEqual(['c1']);
+    }
+  });
+
   it('marks courses unscheduled instead of dropping them when no slot fits', () => {
     const input: ScheduleInput = {
       teachers: [teacher('eval-1', { availability: [] })], // zero weekday availability

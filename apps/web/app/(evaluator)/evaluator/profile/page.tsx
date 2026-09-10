@@ -153,8 +153,13 @@ export default function ProfilePage() {
     e.preventDefault();
     setBasicSaving(true); setBasicError('');
     try {
-      await api.profile.update({ name: basicForm.name, phone: basicForm.phone, bio: basicForm.bio });
-      setProfile((p) => p ? { ...p, ...basicForm } : p);
+      // Cognito's phone_number requires strict E.164 (+<digits>, no spaces/dashes) —
+      // the placeholder below shows a spaced-out format for readability, so strip
+      // everything but the leading + and digits before sending (2026-09-10: PUT
+      // /user/profile 500'd on a phone saved with the placeholder's own spacing).
+      const phone = basicForm.phone.trim().replace(/(?!^\+)[^\d]/g, '');
+      await api.profile.update({ name: basicForm.name, phone, bio: basicForm.bio });
+      setProfile((p) => p ? { ...p, ...basicForm, phone } : p);
       setEditingBasic(false);
       showToast(t.evaluator.profileUpdated);
     } catch (err: any) { setBasicError(err?.message ?? t.evaluator.errorSave); }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
@@ -39,7 +39,16 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   useEffect(() => {
     api.admin.users.list().then((res: any) => {
       const list: any[] = res?.data ?? [];
-      setEvaluators(list.filter((u) => u.role === 'EVALUATOR').map((u) => ({ username: u.username, name: u.name || u.email })));
+      // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "me indica que el nombre de ciertos
+      // evaluadores es un código en lugar del nombre." admin/users.ts falls back
+      // email -> username when the Cognito email attribute is unset — for an
+      // evaluator with neither name nor email set, that username IS the raw
+      // Cognito sub/UUID, which is exactly the "código" Mack saw. Never show
+      // that raw id as if it were a name; show a readable placeholder instead.
+      setEvaluators(list.filter((u) => u.role === 'EVALUATOR').map((u) => ({
+        username: u.username,
+        name: u.name || (u.email?.includes('@') ? u.email : `Evaluador sin nombre (${String(u.username).slice(0, 8)}…)`),
+      })));
     }).catch(() => {});
   }, []);
 
@@ -86,7 +95,8 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 <th className="py-2 pr-3">Profesor</th>
                 <th className="py-2 pr-3">Estudiantes</th>
                 <th className="py-2 pr-3">Modalidad</th>
-                <th className="py-2">Tipo de clase</th>
+                <th className="py-2 pr-3">Tipo de clase</th>
+                <th className="py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -105,11 +115,20 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                         <option value="VIRTUAL">Virtual (semana)</option>
                       </select>
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 pr-3">
                       <select value={classType} onChange={(e) => onOverrideChange(c.id, { ...ov, classType: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
                         <option value="INDIVIDUAL">Individual (55 min)</option>
                         <option value="GRUPAL">Grupal (1h15)</option>
                       </select>
+                    </td>
+                    <td className="py-2">
+                      <button
+                        onClick={() => onLoaded(courses.filter((x) => x.id !== c.id))}
+                        title="Quitar de este plan (no se elimina el curso de Lux Learning)"
+                        className="p-1 text-gray-300 hover:text-red-500"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 );

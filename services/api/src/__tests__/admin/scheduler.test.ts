@@ -223,6 +223,39 @@ describe('handleScheduler — DELETE /admin/scheduler/:academicPeriod', () => {
   });
 });
 
+// Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "me indica que el nombre de ciertos
+// evaluadores es un código en lugar del nombre" — a raw Cognito username/sub
+// must never surface as a "name" when email is available as a better fallback.
+describe('handleScheduler — teacher/evaluator display name fallback', () => {
+  it('falls back to email (not the raw username) when the name attribute is unset', async () => {
+    cognitoSend.mockResolvedValueOnce({ UserAttributes: [{ Name: 'email', Value: 'noname@test.com' }] });
+    const prisma = makePrisma({
+      course: { findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso', evaluatorId: 'eval-noname', modality: 'SINCRONICA' }]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/courses', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/courses', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(body.data[0].teacherName).toBe('noname@test.com');
+  });
+
+  it('only falls back to the raw username as an absolute last resort (no name, no email)', async () => {
+    cognitoSend.mockResolvedValueOnce({ UserAttributes: [] });
+    const prisma = makePrisma({
+      course: { findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso', evaluatorId: 'eval-bare-uuid', modality: 'SINCRONICA' }]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/courses', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/courses', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(body.data[0].teacherName).toBe('eval-bare-uuid');
+  });
+});
+
 describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', () => {
   it('returns course catalog with engineModality + studentCount, before generating anything', async () => {
     getAllEnrollmentsMock.mockResolvedValue([{ userId: 's1', courseId: 'c1' }, { userId: 's2', courseId: 'c1' }]);

@@ -31,10 +31,22 @@ function toEngineModality(courseModality: string | null): CourseModality | null 
   return 'VIRTUAL'; // SINCRONICA, HIBRIDA, unset
 }
 
+// Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "me indica que el nombre de ciertos
+// evaluadores es un código en lugar del nombre" — falling straight to the raw
+// Cognito username/sub when the `name` attribute is unset shows exactly that
+// "código". Try email first, only fall back to the username as a last resort.
+function bestDisplayName(username: string, attrs: { Name?: string; Value?: string }[]): string {
+  const name = attrs.find((a) => a.Name === 'name')?.Value;
+  if (name) return name;
+  const email = attrs.find((a) => a.Name === 'email')?.Value;
+  if (email) return email;
+  return username;
+}
+
 async function resolveDisplayName(username: string): Promise<string> {
   try {
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));
-    return res.UserAttributes?.find((a: any) => a.Name === 'name')?.Value ?? username;
+    return bestDisplayName(username, res.UserAttributes ?? []);
   } catch { return username; }
 }
 // One Cognito call for both fields — used in the approve fan-out where every
@@ -44,7 +56,7 @@ async function resolveContact(username: string): Promise<{ name: string; email: 
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));
     const attrs = res.UserAttributes ?? [];
     return {
-      name: attrs.find((a: any) => a.Name === 'name')?.Value ?? username,
+      name: bestDisplayName(username, attrs),
       email: attrs.find((a: any) => a.Name === 'email')?.Value ?? null,
     };
   } catch { return { name: username, email: null }; }

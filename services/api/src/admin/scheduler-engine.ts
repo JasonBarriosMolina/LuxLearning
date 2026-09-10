@@ -102,13 +102,35 @@ function subtractWindow(windows: Window[], hole: Window): Window[] {
   return out.filter((w) => w.end > w.start);
 }
 
+function intersectWindows(a: Window[], b: Window[]): Window[] {
+  const out: Window[] = [];
+  for (const wa of a) {
+    for (const wb of b) {
+      const start = Math.max(wa.start, wb.start);
+      const end = Math.min(wa.end, wb.end);
+      if (end > start) out.push({ start, end });
+    }
+  }
+  return out;
+}
+
 /** Free windows for a teacher on a given day, before subtracting already-booked slots. */
 function baseWindowsForDay(teacher: TeacherInput, dayOfWeek: number, lunch: LunchBreak): Window[] {
   if (dayOfWeek === SATURDAY) {
-    return subtractWindow(
+    const institutional = subtractWindow(
       [{ start: toMinutes(SATURDAY_OPEN), end: toMinutes(SATURDAY_CLOSE) }],
       { start: toMinutes(lunch.startTime), end: toMinutes(lunch.endTime) }
     );
+    // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "el día sábado no está incluido
+    // en la opción que los evaluadores tienen para seleccionar disponibilidad...
+    // agrega también el día sábado." A teacher who never declared a Saturday
+    // block keeps the full institutional window (unchanged default behavior);
+    // one who did narrows it to their own blocks intersected with 8am-4pm minus
+    // lunch — so declaring "solo 8-11" actually excludes the rest of Saturday.
+    const saturdayBlocks = teacher.availability
+      .filter((b) => b.dayOfWeek === SATURDAY)
+      .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }));
+    return saturdayBlocks.length ? intersectWindows(institutional, saturdayBlocks) : institutional;
   }
   return teacher.availability
     .filter((b) => b.dayOfWeek === dayOfWeek)
