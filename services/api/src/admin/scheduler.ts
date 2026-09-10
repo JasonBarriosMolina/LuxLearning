@@ -33,11 +33,17 @@ async function resolveDisplayName(username: string): Promise<string> {
     return res.UserAttributes?.find((a: any) => a.Name === 'name')?.Value ?? username;
   } catch { return username; }
 }
-async function resolveEmail(username: string): Promise<string | null> {
+// One Cognito call for both fields — used in the approve fan-out where every
+// recipient needs name+email together (avoids 2x AdminGetUserCommand per person).
+async function resolveContact(username: string): Promise<{ name: string; email: string | null }> {
   try {
     const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));
-    return res.UserAttributes?.find((a: any) => a.Name === 'email')?.Value ?? null;
-  } catch { return null; }
+    const attrs = res.UserAttributes ?? [];
+    return {
+      name: attrs.find((a: any) => a.Name === 'name')?.Value ?? username,
+      email: attrs.find((a: any) => a.Name === 'email')?.Value ?? null,
+    };
+  } catch { return { name: username, email: null }; }
 }
 
 export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
@@ -175,9 +181,8 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       for (const sid of s.studentIds) byRecipient.set(sid, [...(byRecipient.get(sid) ?? []), s]);
     }
     await Promise.allSettled([...byRecipient.entries()].map(async ([userId, sessions]) => {
-      const email = await resolveEmail(userId);
+      const { email, name } = await resolveContact(userId);
       if (!email) return;
-      const name = await resolveDisplayName(userId);
       const scheduleRows = `<ul>${sessions.map((s: typeof proposal.sessions[number]) =>
         `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'})</li>`
       ).join('')}</ul>`;
