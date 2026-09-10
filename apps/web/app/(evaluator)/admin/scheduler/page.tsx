@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CalendarClock, Loader2, Trash2 } from 'lucide-react';
+import { CalendarClock, Loader2, Trash2, Plus, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -15,6 +15,15 @@ export default function SchedulerPage() {
 
   const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
   const [academicPeriod, setAcademicPeriod] = useState('');
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "no puedo pasar de la primera sección...
+  // el periodo académico se puede agregar e incluso se puede crear desde ahí" — the
+  // dropdown only ever listed periods some Course already used, with no way to create
+  // one, so a fresh test env with zero courses in a period left the button permanently
+  // disabled. Same create-inline pattern as Lux Planner's StepIdentidad.tsx, so the
+  // period stays the one shared vocabulary across both screens.
+  const [showNewPeriod, setShowNewPeriod] = useState(false);
+  const [newPeriodInput, setNewPeriodInput] = useState('');
+  const [periodError, setPeriodError] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{
@@ -28,6 +37,20 @@ export default function SchedulerPage() {
   useEffect(() => {
     api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? [])).catch(() => {});
   }, []);
+
+  const handleCreatePeriod = async () => {
+    if (!newPeriodInput.trim()) return;
+    setPeriodError('');
+    try {
+      const res = await api.admin.periods.create(newPeriodInput.trim());
+      const created = (res as any)?.data ?? res;
+      setPeriods((p) => [created, ...p]);
+      setAcademicPeriod(created.name);
+      setNewPeriodInput(''); setShowNewPeriod(false);
+    } catch (err: any) {
+      setPeriodError(err?.message ?? 'No se pudo crear el período.');
+    }
+  };
 
   const handleGenerate = async () => {
     if (!academicPeriod) return;
@@ -87,10 +110,25 @@ export default function SchedulerPage() {
       <div className="card flex flex-wrap items-end gap-3">
         <div className="space-y-1 flex-1 min-w-[200px]">
           <label className="text-xs font-semibold text-gray-500">Período académico</label>
-          <select value={academicPeriod} onChange={(e) => setAcademicPeriod(e.target.value)} className="input-field">
-            <option value="">—</option>
-            {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
+          {showNewPeriod ? (
+            <div className="flex gap-1.5">
+              <input
+                autoFocus type="text" value={newPeriodInput} onChange={(e) => setNewPeriodInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreatePeriod(); } else if (e.key === 'Escape') { setShowNewPeriod(false); setNewPeriodInput(''); } }}
+                placeholder="Ej. I Cuatrimestre 2026" className="input-field flex-1"
+              />
+              <button onClick={() => { setShowNewPeriod(false); setNewPeriodInput(''); }} className="px-2 text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <select value={academicPeriod} onChange={(e) => setAcademicPeriod(e.target.value)} className="input-field flex-1">
+                <option value="">— Seleccionar —</option>
+                {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+              <button onClick={() => setShowNewPeriod(true)} title="Crear nuevo" className="px-2 text-cta-from hover:text-cta-to"><Plus className="w-4 h-4" /></button>
+            </div>
+          )}
+          {periodError && <p className="text-xs text-red-500">{periodError}</p>}
         </div>
         <Button onClick={handleGenerate} disabled={!academicPeriod || !isAdminRole || generating} loading={generating}>
           Generar horario
