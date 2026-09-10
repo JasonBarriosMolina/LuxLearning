@@ -67,6 +67,53 @@ model Course {
   sessions           CourseSession[]
   evaluationEvents   EvaluationEvent[]
   modules            Module[]
+  scheduledClasses   ScheduledClass[]
+}
+
+// Lux Scheduler (Trello *LUX SCHEDULER*, 2026-09-10). Disponibilidad semanal
+// auto-gestionada por el profesor — uno-a-muchos: varios bloques por día son
+// válidos (ej. mañana y tarde separados). evaluatorId = Cognito username, no
+// hay modelo User en este schema (ver admin/profile.ts, todo vive en Cognito).
+model TeacherAvailability {
+  id          String   @id @default(cuid())
+  evaluatorId String
+  dayOfWeek   Int      // 0=Domingo .. 6=Sábado
+  startTime   String   // "08:00" (HH:mm, 24h)
+  endTime     String   // "12:00"
+  createdAt   DateTime @default(now())
+
+  @@index([evaluatorId])
+}
+
+// Tope de carga semanal del profesor — tabla aparte de TeacherAvailability
+// porque es 1-a-1 (un tope) vs 1-a-muchos (varios bloques).
+model TeacherWorkload {
+  evaluatorId       String   @id
+  maxCoursesPerWeek Int      @default(5)
+  updatedAt         DateTime @updatedAt
+}
+
+// Resultado PUBLICADO — la propuesta de horario que el admin aprobó. Las 2-3
+// propuestas candidatas NO se persisten acá — viven efímeras en el resultado
+// del async job (mismo patrón preview/confirm que ai-regen.ts) hasta aprobar una.
+model ScheduledClass {
+  id             String   @id @default(cuid())
+  academicPeriod String
+  courseId       String
+  evaluatorId    String
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  modality       String   // PRESENCIAL_SABADO | VIRTUAL
+  classType      String   // INDIVIDUAL | GRUPAL
+  studentGroupId String?
+  studentIds     String[] @default([])
+  createdAt      DateTime @default(now())
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([evaluatorId])
+  @@index([academicPeriod])
 }
 
 model CourseSession {

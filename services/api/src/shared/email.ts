@@ -24,7 +24,8 @@ export type EmailTemplateType =
   | 'QUIZ_PASSED'
   | 'MODULE_COMPLETED'
   | 'WELCOME'
-  | 'ENROLLMENT';
+  | 'ENROLLMENT'
+  | 'SCHEDULE_PUBLISHED';
 
 const EMAIL_SUBJECT_PREFIX = 'Lux Learning - Notificación';
 
@@ -134,6 +135,17 @@ const DEFAULT_TEMPLATES: Record<EmailTemplateType, { subject: string; htmlBody: 
 <p>Hola <strong>{{studentName}}</strong>,</p>
 <p>Completaste todas las lecciones del módulo <strong>{{moduleTitle}}</strong> del curso <strong>{{courseTitle}}</strong>.</p>
 <p>Da click al siguiente enlace para continuar: <a href="{{actionUrl}}">Ver mi progreso</a></p>`,
+  },
+  // Lux Scheduler (Trello *LUX SCHEDULER*, 2026-09-10) — one email per teacher/student
+  // with ONLY their own sessions, never the full institutional schedule (explicit
+  // "Don't" in the spec: "Prohibido enviar información cruzada").
+  SCHEDULE_PUBLISHED: {
+    subject: 'Tu horario ya está disponible',
+    htmlBody: `<h2 style="color:#6366f1;">🗓️ Tu Horario — {{academicPeriod}}</h2>
+<p>Hola <strong>{{recipientName}}</strong>,</p>
+<p>Este es tu horario para el período <strong>{{academicPeriod}}</strong>:</p>
+{{scheduleRows}}
+<p>Da click al siguiente enlace para ver esta información: <a href="{{frontendUrl}}/dashboard">Ir al dashboard</a></p>`,
   },
 };
 

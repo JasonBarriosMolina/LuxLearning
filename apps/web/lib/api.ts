@@ -569,6 +569,19 @@ export const api = {
       delete: (id: string) => request<any>(`/admin/classes/${id}`, { method: 'DELETE' }),
       students: (courseId: string) => request<any>(`/admin/classes/students?courseId=${courseId}`),
     },
+    // Lux Scheduler (Trello *LUX SCHEDULER*, 2026-09-10)
+    teachers: {
+      getAvailability: (evaluatorId: string) => request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`),
+      setAvailability: (evaluatorId: string, body: { blocks: { dayOfWeek: number; startTime: string; endTime: string }[]; maxCoursesPerWeek: number }) =>
+        request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    scheduler: {
+      generate: (body: { academicPeriod: string; courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }> }) =>
+        request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
+      approve: (body: { academicPeriod: string; proposal: any }) =>
+        request<any>('/admin/scheduler/approve', { method: 'POST', body: JSON.stringify(body) }),
+      unpublish: (academicPeriod: string) => request<any>(`/admin/scheduler/${encodeURIComponent(academicPeriod)}`, { method: 'DELETE' }),
+    },
   },
   attendance: {
     // Evaluator/Admin

@@ -11,6 +11,7 @@ import { changePassword } from '@/lib/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/i18n';
+import { AvailabilityEditor } from './_components/AvailabilityEditor';
 
 // Dynamic import — react-signature-canvas uses document APIs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -437,6 +438,9 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {/* ── Disponibilidad Lux Scheduler ── */}
+      {profile && <AvailabilityEditor username={profile.username} />}
 
       {/* ── Firma digital ── */}
       <div className="card">

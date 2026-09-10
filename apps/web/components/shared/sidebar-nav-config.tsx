@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, TrendingUp, ClipboardList, Users,
   UserCog, UserCircle, Settings2, BarChart2, CalendarCheck, CalendarDays,
   UserPlus, MessageSquare, Mail, FolderOpen, FolderKanban,
-  FileCheck, Mic, BookCheck, ListTodo, Download,
+  FileCheck, Mic, BookCheck, ListTodo, Download, CalendarClock,
 } from 'lucide-react';
 import React from 'react';
 
@@ -16,7 +16,7 @@ export type NavKey =
   | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
   | 'communications' | 'myResources' | 'adminCerts' | 'groups' | 'submissions'
-  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases';
+  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases' | 'luxScheduler';
 
 export interface NavItem {
   href: string;
@@ -149,6 +149,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { href: '/admin/clases',           labelKey: 'luxMentorClases', icon: <BookOpen   className="w-5 h-5" /> },
       { href: '/evaluator/my-resources', labelKey: 'myResources',    icon: <FolderOpen className="w-5 h-5" /> },
       { href: '/admin/assign-courses',   labelKey: 'assignCourses',  icon: <UserPlus   className="w-5 h-5" /> },
+      { href: '/admin/scheduler',        labelKey: 'luxScheduler',   icon: <CalendarClock className="w-5 h-5" /> },
     ],
   },
   {
