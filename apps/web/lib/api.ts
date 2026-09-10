@@ -1,4 +1,4 @@
-import { getIdToken } from './auth';
+import { getIdToken, logout } from './auth';
 import type {
   GetCoursesResponse,
   GetCourseResponse,
@@ -25,6 +25,16 @@ const API_URL = getApiUrl();
 
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
+
+// Guards against every failing request on the page (Topbar polling, heartbeat, etc.)
+// independently calling signOut/redirect at once — only the first one acts.
+let signingOut = false;
+async function forceSignOutAndRedirect(): Promise<void> {
+  if (signingOut || typeof window === 'undefined' || window.location.pathname.startsWith('/login')) return;
+  signingOut = true;
+  try { await logout(); } catch { /* best-effort — redirect regardless */ }
+  window.location.href = '/login';
+}
 
 async function attemptFetch<T>(path: string, options: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -70,11 +80,21 @@ async function request<T>(
           return await attemptFetch<T>(path, options, freshToken);
         } catch (retryErr: any) {
           if (retryErr instanceof TypeError) {
+            await forceSignOutAndRedirect();
             throw new Error('Sesión expirada o sin conexión. Volvé a iniciar sesión e intentá de nuevo.');
           }
           throw retryErr;
         }
       }
+      // freshToken === token (forceRefresh returned the SAME token) means the
+      // session itself is broken, not just near-expiry — a plain refresh can't
+      // fix it (e.g. Trello *LUX SCHEDULER*, 2026-09-10 — Mack: every route 403'd
+      // with authorizer log "unexpected aud claim value", a stuck Amplify session
+      // signed under a different/stale Cognito app client than the one this build
+      // expects; retrying just gets another token from that same wrong client).
+      // Sign out immediately instead of leaving every component on the page to
+      // independently retry-and-fail against the same dead session.
+      await forceSignOutAndRedirect();
       throw new Error('Sesión expirada. Volvé a iniciar sesión e intentá de nuevo.');
     }
     throw err;
