@@ -38,6 +38,41 @@ describe('POST /admin/groups — academicPeriod', () => {
   });
 });
 
+// Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "no me está cargando los períodos
+// que se mencionan directamente desde los cursos... ese período debe
+// automáticamente estar disponible" — the registry only ever gets a name from
+// an explicit upsert; a course/group whose academicPeriod was set any other way
+// never showed up. GET now unions the registry with actual distinct values.
+describe('GET /admin/periods — union with actual Course/StudentGroup values', () => {
+  it('includes a period only present on a Course, not yet in the registry', async () => {
+    const prisma = makePrisma({
+      academicPeriod: { findMany: vi.fn().mockResolvedValue([{ id: 'p1', name: '2026-1' }]) },
+      course: { findMany: vi.fn().mockResolvedValue([{ academicPeriod: '2026-1' }, { academicPeriod: 'Segundo Semestre 2026' }]) },
+      studentGroup: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({ event: makeEvent('ADMIN', 'GET', '/admin/periods'), method: 'GET', path: '/admin/periods', prisma });
+    const res = await handleGroups(ctx);
+    const body = await bodyOf(res);
+    const names = body.data.map((p: any) => p.name);
+    expect(names).toContain('2026-1');
+    expect(names).toContain('Segundo Semestre 2026'); // was missing before the fix
+    expect(names).toHaveLength(2); // no duplicate for '2026-1'
+  });
+
+  it('dedupes a period that appears on both a Course and a StudentGroup', async () => {
+    const prisma = makePrisma({
+      academicPeriod: { findMany: vi.fn().mockResolvedValue([]) },
+      course: { findMany: vi.fn().mockResolvedValue([{ academicPeriod: 'Verano 2026' }]) },
+      studentGroup: { findMany: vi.fn().mockResolvedValue([{ academicPeriod: 'Verano 2026' }]) },
+    });
+    const ctx = makeAdminCtx({ event: makeEvent('ADMIN', 'GET', '/admin/periods'), method: 'GET', path: '/admin/periods', prisma });
+    const res = await handleGroups(ctx);
+    const body = await bodyOf(res);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].name).toBe('Verano 2026');
+  });
+});
+
 describe('PUT /admin/groups/:id — academicPeriod', () => {
   it('updates academicPeriod when provided', async () => {
     const update = vi.fn().mockResolvedValue({ id: 'g1', academicPeriod: '2026-2' });

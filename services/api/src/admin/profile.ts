@@ -67,13 +67,29 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
         UserPoolId: USER_POOL_ID, Username: userId, UserAttributes: attrs,
       }));
     } catch (e: any) {
-      // Retry with only standard attributes if custom attributes are not defined in the schema
+      // "InvalidParameterException" covers two unrelated failures: a custom
+      // attribute not provisioned in the user pool schema (retry without it is
+      // correct), and a malformed phone_number (Cognito requires strict E.164,
+      // e.g. +50688888888 — retrying with the same bad value throws the exact
+      // same error uncaught -> 500). Distinguish by message instead of assuming
+      // every InvalidParameterException is the provisioning case (2026-09-10,
+      // Mack: PUT /user/profile 500 while editing his phone).
+      if (e?.name === 'InvalidParameterException' && /phone number/i.test(e?.message ?? '')) {
+        return badRequest('Número de teléfono inválido. Usá formato internacional, ej: +50688888888.');
+      }
       if (e?.name === 'InvalidParameterException' || e?.message?.includes('does not exist')) {
         const stdAttrs = attrs.filter((a) => !CUSTOM_NAMES.has(a.Name));
         if (stdAttrs.length === 0) return ok({ updated: true, warning: 'Custom attributes not yet provisioned in user pool' });
-        await cognito.send(new AdminUpdateUserAttributesCommand({
-          UserPoolId: USER_POOL_ID, Username: userId, UserAttributes: stdAttrs,
-        }));
+        try {
+          await cognito.send(new AdminUpdateUserAttributesCommand({
+            UserPoolId: USER_POOL_ID, Username: userId, UserAttributes: stdAttrs,
+          }));
+        } catch (retryErr: any) {
+          if (retryErr?.name === 'InvalidParameterException' && /phone number/i.test(retryErr?.message ?? '')) {
+            return badRequest('Número de teléfono inválido. Usá formato internacional, ej: +50688888888.');
+          }
+          throw retryErr;
+        }
       } else {
         throw e;
       }

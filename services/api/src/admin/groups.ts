@@ -153,8 +153,26 @@ export async function handleGroups(ctx: AdminCtx): Promise<any | null> {
   // ── GET /admin/periods ───────────────────────────────────────────────────────
   if (path === '/admin/periods' && method === 'GET') {
     if (!isAuthorized(event)) return forbidden('Se requiere autenticación');
-    const periods = await prisma.academicPeriod.findMany({ orderBy: { createdAt: 'desc' } });
-    return ok(periods);
+    // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "no me está cargando los períodos
+    // que se mencionan directamente desde los cursos... ese período debe
+    // automáticamente estar disponible también" — the registry table only ever
+    // gets a name when SOMETHING explicitly upserts into it (course save, group
+    // save); a course whose academicPeriod was set any other way (seed data, an
+    // older course from before that upsert existed) never shows up here. Union
+    // with the actual distinct values in use so the dropdown can never drift
+    // behind real data, instead of relying on every write path to stay perfect.
+    const [registry, courseValues, groupValues] = await Promise.all([
+      prisma.academicPeriod.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.course.findMany({ where: { academicPeriod: { not: null } }, select: { academicPeriod: true }, distinct: ['academicPeriod'] }),
+      prisma.studentGroup.findMany({ where: { academicPeriod: { not: null } }, select: { academicPeriod: true }, distinct: ['academicPeriod'] }),
+    ]);
+    const known = new Set(registry.map((p: any) => p.name));
+    const extra = [...courseValues, ...groupValues]
+      .map((r: any) => r.academicPeriod as string)
+      .filter((name) => name?.trim() && !known.has(name))
+      .filter((name, i, arr) => arr.indexOf(name) === i) // dedupe course/group overlap
+      .map((name) => ({ id: `derived:${name}`, name, active: true, createdAt: null }));
+    return ok([...registry, ...extra]);
   }
 
   // ── POST /admin/periods ──────────────────────────────────────────────────────

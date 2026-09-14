@@ -1,4 +1,4 @@
-import { getIdToken } from './auth';
+import { getIdToken, logout } from './auth';
 import type {
   GetCoursesResponse,
   GetCourseResponse,
@@ -25,6 +25,16 @@ const API_URL = getApiUrl();
 
 const getLang = (): string =>
   typeof window !== 'undefined' ? (localStorage.getItem('lux-lang') ?? 'es') : 'es';
+
+// Guards against every failing request on the page (Topbar polling, heartbeat, etc.)
+// independently calling signOut/redirect at once — only the first one acts.
+let signingOut = false;
+async function forceSignOutAndRedirect(): Promise<void> {
+  if (signingOut || typeof window === 'undefined' || window.location.pathname.startsWith('/login')) return;
+  signingOut = true;
+  try { await logout(); } catch { /* best-effort — redirect regardless */ }
+  window.location.href = '/login';
+}
 
 async function attemptFetch<T>(path: string, options: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -70,11 +80,21 @@ async function request<T>(
           return await attemptFetch<T>(path, options, freshToken);
         } catch (retryErr: any) {
           if (retryErr instanceof TypeError) {
+            await forceSignOutAndRedirect();
             throw new Error('Sesión expirada o sin conexión. Volvé a iniciar sesión e intentá de nuevo.');
           }
           throw retryErr;
         }
       }
+      // freshToken === token (forceRefresh returned the SAME token) means the
+      // session itself is broken, not just near-expiry — a plain refresh can't
+      // fix it (e.g. Trello *LUX SCHEDULER*, 2026-09-10 — Mack: every route 403'd
+      // with authorizer log "unexpected aud claim value", a stuck Amplify session
+      // signed under a different/stale Cognito app client than the one this build
+      // expects; retrying just gets another token from that same wrong client).
+      // Sign out immediately instead of leaving every component on the page to
+      // independently retry-and-fail against the same dead session.
+      await forceSignOutAndRedirect();
       throw new Error('Sesión expirada. Volvé a iniciar sesión e intentá de nuevo.');
     }
     throw err;
@@ -568,6 +588,31 @@ export const api = {
       }>) => request<any>(`/admin/classes/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (id: string) => request<any>(`/admin/classes/${id}`, { method: 'DELETE' }),
       students: (courseId: string) => request<any>(`/admin/classes/students?courseId=${courseId}`),
+    },
+    // Lux Scheduler (Trello *LUX SCHEDULER*, 2026-09-10)
+    teachers: {
+      getAvailability: (evaluatorId: string) => request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`),
+      setAvailability: (evaluatorId: string, body: { blocks: { dayOfWeek: number; startTime: string; endTime: string }[]; maxCoursesPerWeek: number }) =>
+        request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    scheduler: {
+      courses: (academicPeriod: string) => request<any>(`/admin/scheduler/courses?academicPeriod=${encodeURIComponent(academicPeriod)}`),
+      createCourse: (body: { academicPeriod: string; title: string; evaluatorId: string }) =>
+        request<any>('/admin/scheduler/courses', { method: 'POST', body: JSON.stringify(body) }),
+      generate: (body: {
+        academicPeriod: string;
+        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
+        lunchBreak?: { startTime: string; endTime: string };
+        gapMinutes?: number;
+        individualMinutes?: number;
+        groupMinutes?: number;
+      }) => request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
+      validate: (body: { sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean }) =>
+        request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),
+      approve: (body: { academicPeriod: string; proposal: any }) =>
+        request<any>('/admin/scheduler/approve', { method: 'POST', body: JSON.stringify(body) }),
+      unpublish: (academicPeriod: string) => request<any>(`/admin/scheduler/${encodeURIComponent(academicPeriod)}`, { method: 'DELETE' }),
+      export: (academicPeriod: string) => request<any>(`/admin/scheduler/export?academicPeriod=${encodeURIComponent(academicPeriod)}`),
     },
   },
   attendance: {
