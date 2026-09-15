@@ -195,7 +195,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
     const { academicPeriod, courseOverrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes } = body as {
       academicPeriod?: string;
-      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality; durationOverrideMin?: number }>;
+      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[] }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
@@ -226,9 +226,35 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     for (const c of courses as any[]) {
       courseTitles[c.id] = c.title;
       const override = courseOverrides?.[c.id];
+      const studentIds = studentsByCourse.get(c.id) ?? [];
+
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay cursos que pueden ser
+      // híbridos... hay estudiantes virtuales y hay estudiantes presenciales."
+      // Un curso híbrido genera DOS sesiones para el mismo courseId — una
+      // PRESENCIAL (sábado) con los alumnos marcados, otra VIRTUAL (semana)
+      // con el resto — en vez de una sola sesión mixta.
+      if (override?.modality === 'HIBRIDA') {
+        const presencialIds = override.hybridPresencialIds ?? [];
+        const virtualIds = studentIds.filter((id) => !presencialIds.includes(id));
+        if (presencialIds.length > 0) {
+          engineCourses.push({
+            courseId: c.id, evaluatorId: c.evaluatorId, modality: 'PRESENCIAL',
+            classType: presencialIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
+            studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin,
+          });
+        }
+        if (virtualIds.length > 0) {
+          engineCourses.push({
+            courseId: c.id, evaluatorId: c.evaluatorId, modality: 'VIRTUAL',
+            classType: virtualIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
+            studentIds: virtualIds, durationOverrideMin: override.durationOverrideMin,
+          });
+        }
+        continue;
+      }
+
       const modality = override?.modality ?? toEngineModality(c.modality);
       if (!modality) { skippedAsync.push(c.id); continue; } // asincrónica — no live session
-      const studentIds = studentsByCourse.get(c.id) ?? [];
       const classType: ClassType = override?.classType ?? (studentIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL');
       engineCourses.push({ courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds, durationOverrideMin: override?.durationOverrideMin });
     }

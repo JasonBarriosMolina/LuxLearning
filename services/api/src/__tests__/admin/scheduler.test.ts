@@ -215,6 +215,38 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
     const session = body.data.proposals[0].sessions[0];
     expect(session.roomId).toBe('room-1');
   });
+
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "hay cursos que pueden ser
+  // híbridos... hay estudiantes virtuales y hay estudiantes presenciales."
+  it('splits a HIBRIDA course into a PRESENCIAL session and a VIRTUAL session', async () => {
+    getAllEnrollmentsMock.mockResolvedValue([
+      { userId: 's1', courseId: 'c1' }, { userId: 's2', courseId: 'c1' }, { userId: 's3', courseId: 'c1' },
+    ]);
+    const prisma = makePrisma({
+      course: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Híbrido', evaluatorId: 'eval-1', modality: 'HIBRIDA' }]),
+      },
+      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }]) },
+      teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
+      classRoom: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/generate'),
+      method: 'POST', path: '/admin/scheduler/generate', prisma,
+      body: { academicPeriod: '2026-2', courseOverrides: { c1: { modality: 'HIBRIDA', hybridPresencialIds: ['s1'] } } },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    const sessions = body.data.proposals[0].sessions;
+    expect(sessions).toHaveLength(2);
+    const presencial = sessions.find((s: any) => s.modality === 'PRESENCIAL');
+    const virtual = sessions.find((s: any) => s.modality === 'VIRTUAL');
+    expect(presencial.studentIds).toEqual(['s1']);
+    expect(virtual.studentIds.sort()).toEqual(['s2', 's3']);
+    expect(presencial.courseId).toBe('c1');
+    expect(virtual.courseId).toBe('c1');
+  });
 });
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa

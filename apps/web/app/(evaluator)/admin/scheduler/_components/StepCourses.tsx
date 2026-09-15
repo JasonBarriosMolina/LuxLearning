@@ -1,12 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Trash2, Pencil, Check, Clock } from 'lucide-react';
+import { Loader2, Plus, X, Trash2, Pencil, Check, Clock, Users2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
 
-export type CourseOverrides = Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL'; durationOverrideMin?: number }>;
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay cursos que pueden ser
+// híbridos... hay estudiantes virtuales y hay estudiantes presenciales...
+// es bueno que pregunte eso en la sección de cursos." hybridPresencialIds
+// son los de course.studentIds marcados presencial; el resto se asume
+// virtual — el curso genera DOS sesiones (una sábado, una entre semana).
+export type CourseOverrides = Record<string, {
+  classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' | 'HIBRIDA';
+  durationOverrideMin?: number; hybridPresencialIds?: string[];
+}>;
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "es importante que aparezcan los
 // tags del tipo de curso: si es teórico, teórico-práctico, etc... también...
@@ -51,12 +59,14 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   // clase" — la excepción de duración ya no es una columna fija, es un
   // popover que se abre solo cuando se necesita.
   const [durationPopoverId, setDurationPopoverId] = useState<string | null>(null);
+  const [hybridPopoverId, setHybridPopoverId] = useState<string | null>(null);
+  const [studentNames, setStudentNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!academicPeriod) return;
     setLoading(true); setError('');
     api.admin.scheduler.courses(academicPeriod)
-      .then((res: any) => { onLoaded(res?.data?.courses ?? []); onStudentNamesLoaded?.(res?.data?.studentNames ?? {}); })
+      .then((res: any) => { onLoaded(res?.data?.courses ?? []); setStudentNames(res?.data?.studentNames ?? {}); onStudentNamesLoaded?.(res?.data?.studentNames ?? {}); })
       .catch((err: any) => setError(err?.message ?? 'No se pudieron cargar los cursos.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,10 +254,51 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                     </td>
                     <td className="py-2 pr-3 text-gray-500">{c.studentCount}</td>
                     <td className="py-2 pr-3">
-                      <select value={modality} onChange={(e) => onOverrideChange(c.id, { ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-                        <option value="PRESENCIAL">Presencial (sábado)</option>
-                        <option value="VIRTUAL">Virtual (semana)</option>
-                      </select>
+                      <div className="flex items-center gap-1 relative">
+                        <select value={modality} onChange={(e) => onOverrideChange(c.id, { ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
+                          <option value="PRESENCIAL">Presencial (sábado)</option>
+                          <option value="VIRTUAL">Virtual (semana)</option>
+                          <option value="HIBRIDA">Híbrido</option>
+                        </select>
+                        {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay
+                            cursos que pueden ser híbridos... es bueno que
+                            pregunte eso en la sección de cursos" — al elegir
+                            Híbrido, hay que decidir quién es presencial. */}
+                        {modality === 'HIBRIDA' && (
+                          <button
+                            type="button" onClick={() => setHybridPopoverId(hybridPopoverId === c.id ? null : c.id)}
+                            title="Elegir quién es presencial"
+                            className={`p-1 rounded-lg ${ov.hybridPresencialIds?.length ? 'text-amber-600 bg-amber-50' : 'text-gray-300 hover:text-gray-600'}`}
+                          >
+                            <Users2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {hybridPopoverId === c.id && (
+                          <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
+                            <p className="text-[10px] text-gray-400 mb-1.5">Marcá quién asiste presencial (sábado) — el resto va virtual.</p>
+                            <div className="max-h-32 overflow-y-auto space-y-0.5">
+                              {c.studentIds.length === 0 && <p className="text-xs text-gray-400 italic">Sin estudiantes matriculados todavía.</p>}
+                              {c.studentIds.map((sid) => {
+                                const isPresencial = ov.hybridPresencialIds?.includes(sid) ?? false;
+                                return (
+                                  <label key={sid} className="flex items-center gap-1.5 text-xs px-1 py-0.5 rounded hover:bg-surface">
+                                    <input
+                                      type="checkbox" checked={isPresencial}
+                                      onChange={(e) => {
+                                        const current = ov.hybridPresencialIds ?? [];
+                                        const next = e.target.checked ? [...current, sid] : current.filter((id) => id !== sid);
+                                        onOverrideChange(c.id, { ...ov, hybridPresencialIds: next });
+                                      }}
+                                    />
+                                    <span className="truncate">{studentNames?.[sid] ?? sid}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <button type="button" onClick={() => setHybridPopoverId(null)} className="text-xs text-cta-from hover:underline mt-1.5">Listo</button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2 pr-3">
                       <div className="flex items-center gap-1 relative">
