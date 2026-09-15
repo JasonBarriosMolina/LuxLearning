@@ -609,8 +609,15 @@ export const api = {
       }) => request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
       validate: (body: { sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean }) =>
         request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),
-      approve: (body: { academicPeriod: string; proposal: any }) =>
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): aprobar/notificar/publicar
+      // como 3 pasos separados en vez de un solo botón que publicaba y
+      // notificaba a todos de una — ver admin/scheduler.ts.
+      approve: (body: { academicPeriod: string; proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string> }) =>
         request<any>('/admin/scheduler/approve', { method: 'POST', body: JSON.stringify(body) }),
+      getApproval: (academicPeriod: string) => request<any>(`/admin/scheduler/approval?academicPeriod=${encodeURIComponent(academicPeriod)}`),
+      notify: (body: { academicPeriod: string; audience: 'students' | 'evaluators' }) =>
+        request<any>('/admin/scheduler/notify', { method: 'POST', body: JSON.stringify(body) }),
+      publish: (academicPeriod: string) => request<any>('/admin/scheduler/publish', { method: 'POST', body: JSON.stringify({ academicPeriod }) }),
       unpublish: (academicPeriod: string) => request<any>(`/admin/scheduler/${encodeURIComponent(academicPeriod)}`, { method: 'DELETE' }),
       export: (academicPeriod: string) => request<any>(`/admin/scheduler/export?academicPeriod=${encodeURIComponent(academicPeriod)}`),
     },

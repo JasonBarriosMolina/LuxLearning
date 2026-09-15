@@ -116,6 +116,26 @@ model ScheduledClass {
   @@index([academicPeriod])
 }
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa
+// que deban publicarse; deben aprobarse... cuando yo vuelva a Lux Scheduler,
+// yo tengo que tener la opción de volver a previsualizar... las opciones que
+// tengo que tener son: enviar notificación a estudiantes / a evaluadores...
+// el botón de publicar debe existir una vez se confirme esa versión, después
+// de enviar las notificaciones." Separates the old one-shot "approve" (which
+// used to write ScheduledClass rows AND email everyone at once) into three
+// steps: approve (this row, no side effects) -> notify (per audience,
+// on-demand) -> publish (writes the real ScheduledClass rows, see
+// admin/scheduler.ts). One row per academicPeriod — re-approving replaces it.
+model ScheduleApproval {
+  academicPeriod     String    @id
+  proposalJson       Json      // { proposal: ScheduleProposal, courseTitles, teacherNames } — enough to re-render StepReview without regenerating
+  status             String    @default("APPROVED") // APPROVED | PUBLISHED
+  notifiedStudents   Boolean   @default(false)
+  notifiedEvaluators Boolean   @default(false)
+  approvedAt         DateTime  @default(now())
+  publishedAt        DateTime?
+}
+
 model CourseSession {
   id          String   @id @default(cuid())
   courseId    String

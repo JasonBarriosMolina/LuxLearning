@@ -13,7 +13,7 @@ interface Props {
   result: GenerateResult;
   academicPeriod: string;
   lunchBreak: { startTime: string; endTime: string };
-  onApproved: (recipientCount: number) => void;
+  onApproved: () => void;
 }
 
 export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: Props) {
@@ -54,9 +54,12 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
     if (conflicts.length > 0) return;
     setApproving(true); setError('');
     try {
-      const res = await api.admin.scheduler.approve({ academicPeriod, proposal: { ...result.proposals[proposalIdx], sessions } });
+      await api.admin.scheduler.approve({
+        academicPeriod, proposal: { ...result.proposals[proposalIdx], sessions },
+        courseTitles: result.courseTitles, teacherNames: result.teacherNames,
+      });
       setApproved(true);
-      onApproved((res as any).data?.recipientCount ?? 0);
+      onApproved();
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo aprobar el horario.');
     } finally {

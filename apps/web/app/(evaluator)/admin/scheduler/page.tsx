@@ -56,7 +56,6 @@ export default function SchedulerPage() {
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [recipientCount, setRecipientCount] = useState(0);
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftAvailable, setDraftAvailable] = useState(false);
 
@@ -87,6 +86,27 @@ export default function SchedulerPage() {
     clearDraft();
     setDraftAvailable(false);
     setStep(1); setAcademicPeriod(''); setCourses([]); setOverrides({}); setResult(null);
+  };
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "cuando yo vuelva a Lux
+  // Scheduler, yo tengo que tener la opción de volver a previsualizar cómo
+  // quedó eso final" — si el período elegido ya tiene un candidato aprobado
+  // (o publicado), ofrecer saltar directo a revisarlo en vez de regenerar.
+  const [existingApproval, setExistingApproval] = useState<{ status: string } | null>(null);
+  useEffect(() => {
+    if (!academicPeriod || step !== 1) { setExistingApproval(null); return; }
+    api.admin.scheduler.getApproval(academicPeriod).then((res: any) => setExistingApproval(res?.data ?? null)).catch(() => setExistingApproval(null));
+  }, [academicPeriod, step]);
+
+  const resumeApproval = async () => {
+    try {
+      const res = await api.admin.scheduler.getApproval(academicPeriod);
+      const approval = (res as any)?.data;
+      if (!approval) return;
+      const { proposal, courseTitles, teacherNames } = approval.proposalJson as { proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string> };
+      setResult({ proposals: [proposal], courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {}, academicPeriod, skippedAsyncCourseIds: [] });
+      setStep(approval.status === 'PUBLISHED' ? 8 : 7);
+    } catch { /* stay on step 1 — nothing to resume */ }
   };
 
   const lunchBreak = { startTime: lunchStart, endTime: lunchEnd };
@@ -150,6 +170,14 @@ export default function SchedulerPage() {
           </button>
         </div>
       )}
+      {existingApproval && step === 1 && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <span>Ya existe un horario {existingApproval.status === 'PUBLISHED' ? 'publicado' : 'aprobado (sin publicar)'} para este período.</span>
+          <button type="button" onClick={resumeApproval} className="font-semibold text-emerald-700 hover:underline shrink-0">
+            Ver / continuar
+          </button>
+        </div>
+      )}
       <WizardShell
         step={step}
       onBack={step > 1 && step !== 8 ? () => goToStep(step === 7 ? 5 : step - 1) : undefined}
@@ -191,12 +219,13 @@ export default function SchedulerPage() {
       {step === 7 && result && (
         <StepReview
           result={result} academicPeriod={academicPeriod} lunchBreak={lunchBreak}
-          onApproved={(count) => { clearDraft(); setRecipientCount(count); setStep(8); }}
+          onApproved={() => { clearDraft(); setStep(8); }}
         />
       )}
       {step === 8 && (
         <StepReports
-          academicPeriod={academicPeriod} recipientCount={recipientCount}
+          academicPeriod={academicPeriod}
+          onBackToReview={() => setStep(7)}
           onUnpublish={() => { clearDraft(); setStep(1); setAcademicPeriod(''); setResult(null); setCourses([]); setOverrides({}); }}
         />
       )}
