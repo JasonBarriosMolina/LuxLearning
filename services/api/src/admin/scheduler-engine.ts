@@ -47,13 +47,24 @@ export interface LunchBreak {
 export interface ScheduleInput {
   courses: CourseInput[];
   teachers: TeacherInput[];
-  lunchBreak?: LunchBreak; // Saturday only, default 12:00-13:00
+  lunchBreak?: LunchBreak; // aplica a los días presenciales, default 12:00-13:00
   gapMinutes?: number;     // soft preferred gap between a teacher's consecutive classes, default 5
   // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "es importante que la opción de
   // cuántos minutos exactos pueda modificarse" — was a fixed 55/75 constant.
   individualMinutes?: number; // default 55
   groupMinutes?: number;      // default 75
   rooms?: RoomInput[];        // Trello *LUX SCHEDULER*, 2026-09-15 (Mack) — solo se usan para sesiones PRESENCIAL
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a pensar en diferentes
+  // centros educativos... que se puedan elegir los días de la semana que son
+  // cursos presenciales [y] los días que son cursos virtuales... así
+  // funcionaría con cualquier centro educativo." Antes sábado=presencial y
+  // lunes-viernes=virtual estaban fijos en el código; ahora son configurables
+  // por período, con esos mismos valores como default (domingo nunca es
+  // día de clase, en ningún caso).
+  presencialDays?: number[];    // default [6] (sábado)
+  virtualDays?: number[];       // default [1,2,3,4,5] (lunes-viernes)
+  institutionalOpen?: string;   // horario de los días presenciales, default '08:00'
+  institutionalClose?: string;  // default '16:00'
 }
 
 export interface ScheduledSession {
@@ -85,14 +96,14 @@ export interface ScheduleProposal {
   unscheduledCourseIds: string[];
 }
 
-const SATURDAY = 6;
-const WEEKDAYS = [1, 2, 3, 4, 5]; // Monday-Friday
+const DEFAULT_PRESENCIAL_DAYS = [6]; // sábado
+const DEFAULT_VIRTUAL_DAYS = [1, 2, 3, 4, 5]; // lunes-viernes
 const DEFAULT_LUNCH: LunchBreak = { startTime: '12:00', endTime: '13:00' };
 const DEFAULT_DURATION_MIN: Record<ClassType, number> = { INDIVIDUAL: 55, GRUPAL: 75 };
 const PREFERRED_GAP_MIN = 5;
 const SLOT_STEP_MIN = 5; // candidate start-time granularity
-const SATURDAY_OPEN = '08:00';
-const SATURDAY_CLOSE = '16:00';
+const DEFAULT_INSTITUTIONAL_OPEN = '08:00';
+const DEFAULT_INSTITUTIONAL_CLOSE = '16:00';
 
 // ── Time helpers (plain HH:mm strings, minutes-since-midnight math) ────────
 function toMinutes(hhmm: string): number {
@@ -130,22 +141,26 @@ function intersectWindows(a: Window[], b: Window[]): Window[] {
 }
 
 /** Free windows for a teacher on a given day, before subtracting already-booked slots. */
-function baseWindowsForDay(teacher: TeacherInput, dayOfWeek: number, lunch: LunchBreak): Window[] {
-  if (dayOfWeek === SATURDAY) {
+function baseWindowsForDay(
+  teacher: TeacherInput, dayOfWeek: number, lunch: LunchBreak,
+  presencialDays: number[], institutionalOpen: string, institutionalClose: string
+): Window[] {
+  if (presencialDays.includes(dayOfWeek)) {
     const institutional = subtractWindow(
-      [{ start: toMinutes(SATURDAY_OPEN), end: toMinutes(SATURDAY_CLOSE) }],
+      [{ start: toMinutes(institutionalOpen), end: toMinutes(institutionalClose) }],
       { start: toMinutes(lunch.startTime), end: toMinutes(lunch.endTime) }
     );
     // Trello *LUX SCHEDULER*, 2026-09-10 (Mack): "el día sábado no está incluido
     // en la opción que los evaluadores tienen para seleccionar disponibilidad...
-    // agrega también el día sábado." A teacher who never declared a Saturday
-    // block keeps the full institutional window (unchanged default behavior);
-    // one who did narrows it to their own blocks intersected with 8am-4pm minus
-    // lunch — so declaring "solo 8-11" actually excludes the rest of Saturday.
-    const saturdayBlocks = teacher.availability
-      .filter((b) => b.dayOfWeek === SATURDAY)
+    // agrega también el día sábado." A teacher who never declared a block for
+    // this presencial day keeps the full institutional window (unchanged
+    // default behavior); one who did narrows it to their own blocks
+    // intersected with the institutional window minus lunch — so declaring
+    // "solo 8-11" actually excludes the rest of that day.
+    const dayBlocks = teacher.availability
+      .filter((b) => b.dayOfWeek === dayOfWeek)
       .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }));
-    return saturdayBlocks.length ? intersectWindows(institutional, saturdayBlocks) : institutional;
+    return dayBlocks.length ? intersectWindows(institutional, dayBlocks) : institutional;
   }
   // Trello *LUX SCHEDULER* (Mack, 2026-09-15, revertido el mismo día): la
   // regla dura de "nunca antes de las 6pm entre semana" se quitó — vuelve a
@@ -201,18 +216,22 @@ function placeCourse(
   lunch: LunchBreak,
   workloadUsed: Map<string, number>,
   gapMinutes: number,
-  durationMin: Record<ClassType, number>
+  durationMin: Record<ClassType, number>,
+  presencialDays: number[],
+  virtualDays: number[],
+  institutionalOpen: string,
+  institutionalClose: string
 ): ScheduledSession | null {
   const used = workloadUsed.get(course.evaluatorId) ?? 0;
   if (used >= teacher.maxCoursesPerWeek) return null; // hard cap, no partial exceptions
 
   const duration = course.durationOverrideMin ?? durationMin[course.classType];
-  const days = course.modality === 'PRESENCIAL' ? [SATURDAY] : WEEKDAYS;
+  const days = course.modality === 'PRESENCIAL' ? presencialDays : virtualDays;
 
   // Two passes: first require the soft gap, then relax it if nothing fit.
   for (const requireGap of [true, false]) {
     for (const day of days) {
-      const free = baseWindowsForDay(teacher, day, lunch);
+      const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose);
       for (const w of free) {
         for (let start = w.start; start + duration <= w.end; start += SLOT_STEP_MIN) {
           const candidate: Window = { start, end: start + duration };
@@ -246,6 +265,10 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
     INDIVIDUAL: input.individualMinutes ?? DEFAULT_DURATION_MIN.INDIVIDUAL,
     GRUPAL: input.groupMinutes ?? DEFAULT_DURATION_MIN.GRUPAL,
   };
+  const presencialDays = input.presencialDays?.length ? input.presencialDays : DEFAULT_PRESENCIAL_DAYS;
+  const virtualDays = input.virtualDays?.length ? input.virtualDays : DEFAULT_VIRTUAL_DAYS;
+  const institutionalOpen = input.institutionalOpen ?? DEFAULT_INSTITUTIONAL_OPEN;
+  const institutionalClose = input.institutionalClose ?? DEFAULT_INSTITUTIONAL_CLOSE;
   const teacherById = new Map(input.teachers.map((t) => [t.evaluatorId, t]));
   const bookings = new Bookings();
   const workloadUsed = new Map<string, number>();
@@ -255,7 +278,7 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
   for (const course of order) {
     const teacher = teacherById.get(course.evaluatorId);
     if (!teacher) { unscheduledCourseIds.push(course.courseId); continue; }
-    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes, durationMin);
+    const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes, durationMin, presencialDays, virtualDays, institutionalOpen, institutionalClose);
     if (placed) sessions.push(placed);
     else unscheduledCourseIds.push(course.courseId);
   }
@@ -339,7 +362,7 @@ export function generateScheduleProposals(input: ScheduleInput): ScheduleProposa
 // slots by construction) — this is for re-checking a session list AFTER the
 // admin hand-edits a day/time in the review step, where anything goes.
 
-export type ConflictType = 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_SATURDAY_WINDOW' | 'WORKLOAD_EXCEEDED';
+export type ConflictType = 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_PRESENCIAL_WINDOW' | 'WORKLOAD_EXCEEDED';
 
 export interface Conflict {
   sessionIndex: number;
@@ -352,10 +375,16 @@ export interface ConflictCheckInput {
   sessions: ScheduledSession[];
   lunchBreak?: LunchBreak;
   teachers?: TeacherInput[]; // optional — pass to also flag workload-cap violations
+  presencialDays?: number[];
+  institutionalOpen?: string;
+  institutionalClose?: string;
 }
 
-export function findConflicts({ sessions, lunchBreak, teachers }: ConflictCheckInput): Conflict[] {
+export function findConflicts({ sessions, lunchBreak, teachers, presencialDays, institutionalOpen, institutionalClose }: ConflictCheckInput): Conflict[] {
   const lunch = lunchBreak ?? DEFAULT_LUNCH;
+  const presDays = presencialDays?.length ? presencialDays : DEFAULT_PRESENCIAL_DAYS;
+  const open = institutionalOpen ?? DEFAULT_INSTITUTIONAL_OPEN;
+  const close = institutionalClose ?? DEFAULT_INSTITUTIONAL_CLOSE;
   const conflicts: Conflict[] = [];
 
   for (let i = 0; i < sessions.length; i++) {
@@ -373,12 +402,12 @@ export function findConflicts({ sessions, lunchBreak, teachers }: ConflictCheckI
     }
 
     const s = sessions[i]!;
-    if (s.dayOfWeek === SATURDAY) {
-      if (s.startTime < SATURDAY_OPEN || s.endTime > SATURDAY_CLOSE) {
-        conflicts.push({ sessionIndex: i, type: 'OUTSIDE_SATURDAY_WINDOW', message: `Fuera del horario institucional de sábado (${SATURDAY_OPEN}-${SATURDAY_CLOSE}).` });
+    if (presDays.includes(s.dayOfWeek)) {
+      if (s.startTime < open || s.endTime > close) {
+        conflicts.push({ sessionIndex: i, type: 'OUTSIDE_PRESENCIAL_WINDOW', message: `Fuera del horario institucional de los días presenciales (${open}-${close}).` });
       }
       if (s.startTime < lunch.endTime && lunch.startTime < s.endTime) {
-        conflicts.push({ sessionIndex: i, type: 'LUNCH_BREAK', message: `Choca con el bloque de almuerzo obligatorio (${lunch.startTime}-${lunch.endTime}).` });
+        conflicts.push({ sessionIndex: i, type: 'LUNCH_BREAK', message: `Choca con la hora de almuerzo (${lunch.startTime}-${lunch.endTime}).` });
       }
     }
   }
