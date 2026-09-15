@@ -8,6 +8,7 @@ interface Props {
   step: number; // 1-8
   onBack?: () => void;
   onNext?: () => void;
+  onStepClick?: (step: number) => void; // jump back to an already-completed step
   nextLabel?: string;
   nextDisabled?: boolean;
   nextLoading?: boolean;
@@ -15,23 +16,30 @@ interface Props {
   children: React.ReactNode;
 }
 
-export function WizardShell({ step, onBack, onNext, nextLabel = 'Continuar', nextDisabled, nextLoading, hideNext, children }: Props) {
+export function WizardShell({ step, onBack, onNext, onStepClick, nextLabel = 'Continuar', nextDisabled, nextLoading, hideNext, children }: Props) {
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
-      {/* Stepper */}
+      {/* Stepper — completed steps are clickable to jump back (Trello *LUX SCHEDULER*,
+          Mack 2026-09-10: "no puedo ir a disponibilidad o estudiantes... se quedó pegado") */}
       <div className="flex items-center gap-1 overflow-x-auto pb-1">
         {WIZARD_STEPS.map((label, i) => {
           const n = i + 1;
           const done = n < step;
           const active = n === step;
+          const clickable = done && !!onStepClick;
           return (
             <div key={label} className="flex items-center gap-1 shrink-0">
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                active ? 'bg-cta-gradient text-white' : done ? 'bg-emerald-50 text-emerald-600' : 'bg-surface text-gray-400'
-              }`}>
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={clickable ? () => onStepClick!(n) : undefined}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  active ? 'bg-cta-gradient text-white' : done ? 'bg-emerald-50 text-emerald-600' : 'bg-surface text-gray-400'
+                } ${clickable ? 'cursor-pointer hover:bg-emerald-100' : 'cursor-default'}`}
+              >
                 {done ? <CheckCircle className="w-3.5 h-3.5" /> : <span>{n}</span>}
                 <span className="hidden sm:inline">{label}</span>
-              </div>
+              </button>
               {n < WIZARD_STEPS.length && <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0" />}
             </div>
           );

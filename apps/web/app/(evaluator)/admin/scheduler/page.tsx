@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarClock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -37,12 +37,18 @@ export default function SchedulerPage() {
 
   const lunchBreak = { startTime: lunchStart, endTime: lunchEnd };
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-10): si el admin usa el stepper para
+  // volver a un paso anterior mientras "armando rompecabezas" sigue en vuelo,
+  // no queremos que la respuesta tardía lo empuje de vuelta al paso 7.
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
   const runGenerate = async () => {
     setGenerating(true); setGenerateError(''); setResult(null);
     try {
       const res = await api.admin.scheduler.generate({ academicPeriod, courseOverrides: overrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes });
       setResult((res as any).data);
-      setStep(7);
+      if (stepRef.current === 6) setStep(7);
     } catch (err: any) {
       setGenerateError(err?.message ?? 'No se pudo generar el horario.');
     } finally {
@@ -57,6 +63,14 @@ export default function SchedulerPage() {
   }, [step]);
 
   const liveCourseCount = courses.filter((c) => c.engineModality !== null || overrides[c.id]?.modality).length;
+
+  // Volver a un paso de entrada (1-5) invalida un resultado/errror de generación
+  // previo, para que re-entrar al paso 6 dispare una regeneración fresca en vez
+  // de mostrar el resultado viejo o quedarse pegado.
+  const goToStep = (n: number) => {
+    if (n <= 5) { setResult(null); setGenerateError(''); }
+    setStep(n);
+  };
 
   if (!isAdminRole) {
     return (
@@ -75,7 +89,8 @@ export default function SchedulerPage() {
   return (
     <WizardShell
       step={step}
-      onBack={step > 1 && step !== 6 && step !== 8 ? () => setStep((s) => s - 1) : undefined}
+      onBack={step > 1 && step !== 8 ? () => goToStep(step === 7 ? 5 : step - 1) : undefined}
+      onStepClick={goToStep}
       onNext={
         step === 1 ? () => setStep(2) :
         step === 2 ? () => setStep(3) :
