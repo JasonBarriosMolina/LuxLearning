@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X } from 'lucide-react';
+import { Loader2, Plus, X, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
@@ -25,6 +25,9 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   const [newEvaluatorId, setNewEvaluatorId] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
+  const [reassigningId, setReassigningId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [rowError, setRowError] = useState('');
 
   useEffect(() => {
     if (!academicPeriod) return;
@@ -66,6 +69,38 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
     }
   };
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "para los cursos que ya creé,
+  // también tengo que tener la opción de editar o eliminar... si me equivoqué
+  // en algo, yo pueda eliminar cosas" — reasignar profesor (el dato editable
+  // más relevante en un contexto de horario) y eliminar el curso, sin salir
+  // del wizard. Reusa los mismos endpoints que Gestión de Contenido.
+  const handleReassignTeacher = async (courseId: string, evaluatorId: string) => {
+    const evaluator = evaluators.find((e) => e.username === evaluatorId);
+    if (!evaluator) return;
+    setReassigningId(courseId); setRowError('');
+    try {
+      await api.admin.courses.assignEvaluator(courseId, { evaluatorId, evaluatorName: evaluator.name });
+      onLoaded(courses.map((c) => (c.id === courseId ? { ...c, evaluatorId, teacherName: evaluator.name } : c)));
+    } catch (err: any) {
+      setRowError(err?.message ?? 'No se pudo reasignar el profesor.');
+    } finally {
+      setReassigningId(null);
+    }
+  };
+
+  const handleDeleteCourse = async (courseId: string, title: string) => {
+    if (!confirm(`¿Eliminar "${title}" de Lux Learning por completo? Esta acción no se puede deshacer.`)) return;
+    setDeletingId(courseId); setRowError('');
+    try {
+      await api.admin.courses.delete(courseId);
+      onLoaded(courses.filter((c) => c.id !== courseId));
+    } catch (err: any) {
+      setRowError(err?.message ?? 'No se pudo eliminar el curso.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) return (
     <div className="card flex items-center justify-center py-12 text-gray-400">
       <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando cursos del período…
@@ -83,6 +118,8 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
         <h2 className="font-heading font-semibold text-charcoal">Catálogo de cursos — {academicPeriod}</h2>
         <p className="text-xs text-gray-500">Extraído directamente de Lux Learning. Ajustá modalidad o tipo de clase si el motor no debe usar el valor por defecto.</p>
       </div>
+
+      {rowError && <p className="text-xs text-red-500">{rowError}</p>}
 
       {courses.length === 0 ? (
         <p className="text-sm text-gray-400 italic py-4">Ningún curso con profesor asignado en este período.</p>
@@ -107,7 +144,18 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 return (
                   <tr key={c.id}>
                     <td className="py-2 pr-3 font-medium text-charcoal">{c.title}</td>
-                    <td className="py-2 pr-3 text-gray-600">{c.teacherName}</td>
+                    <td className="py-2 pr-3">
+                      <select
+                        value={c.evaluatorId} disabled={reassigningId === c.id}
+                        onChange={(e) => handleReassignTeacher(c.id, e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 disabled:opacity-50"
+                      >
+                        {!evaluators.some((e) => e.username === c.evaluatorId) && (
+                          <option value={c.evaluatorId}>{c.teacherName}</option>
+                        )}
+                        {evaluators.map((e) => <option key={e.username} value={e.username}>{e.name}</option>)}
+                      </select>
+                    </td>
                     <td className="py-2 pr-3 text-gray-500">{c.studentCount}</td>
                     <td className="py-2 pr-3">
                       <select value={modality} onChange={(e) => onOverrideChange(c.id, { ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
@@ -122,13 +170,23 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                       </select>
                     </td>
                     <td className="py-2">
-                      <button
-                        onClick={() => onLoaded(courses.filter((x) => x.id !== c.id))}
-                        title="Quitar de este plan (no se elimina el curso de Lux Learning)"
-                        className="p-1 text-gray-300 hover:text-red-500"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => onLoaded(courses.filter((x) => x.id !== c.id))}
+                          title="Quitar de este plan (no se elimina el curso de Lux Learning)"
+                          className="p-1 text-gray-300 hover:text-amber-500"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCourse(c.id, c.title)}
+                          disabled={deletingId === c.id}
+                          title="Eliminar curso de Lux Learning por completo"
+                          className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-50"
+                        >
+                          {deletingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
