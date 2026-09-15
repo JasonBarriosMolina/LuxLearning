@@ -110,13 +110,14 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       if (!/^\d{2}:\d{2}$/.test(b.startTime) || !/^\d{2}:\d{2}$/.test(b.endTime) || b.startTime >= b.endTime) {
         return badRequest('startTime/endTime inválidos');
       }
-      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si el profesor pone una
-      // lección antes de las 6 de la tarde [entre semana], el sistema le debe
-      // indicar que está incorrecto, que esa disponibilidad no existe" — regla
-      // dura, solo aplica lunes-viernes (sábado sigue 8am-4pm institucional).
-      if (b.dayOfWeek !== 6 && b.dayOfWeek !== 0 && b.startTime < '18:00') {
-        return badRequest(`Entre semana la disponibilidad debe empezar a las 6:00 p.m. o después (bloque de ${DAY_LABEL[b.dayOfWeek]} ${b.startTime} inválido).`);
-      }
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15, revertido el mismo día):
+      // "creo que vamos a eliminar la regla... de que sea a partir de las 6
+      // de la tarde específicamente, como una hora exacta. Vamos a hacerlo
+      // más general: vamos a hacer que la persona elija. Sin embargo, se
+      // hace una mención directa en el perfil, un aviso diciendo que es la
+      // hora sugerida." La regla dura de esta misma tarde se quitó — 6pm
+      // ahora es solo una sugerencia visual en AvailabilityEditor.tsx, no
+      // una validación de backend.
     }
     await prisma.$transaction([
       prisma.teacherAvailability.deleteMany({ where: { evaluatorId } }),

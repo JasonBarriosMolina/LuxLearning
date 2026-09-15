@@ -92,21 +92,27 @@ describe('handleScheduler — teacher availability', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si el profesor pone una lección
-  // antes de las 6 de la tarde [entre semana], el sistema le debe indicar que
-  // está incorrecto."
-  it('PUT rejects a weekday block starting before 6pm', async () => {
-    const prisma = makePrisma();
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, regla implementada y revertida
+  // el mismo día): "si el profesor pone una lección antes de las 6 de la
+  // tarde [entre semana], el sistema le debe indicar que está incorrecto" —
+  // horas después: "vamos a eliminar la regla... vamos a hacerlo más
+  // general: vamos a hacer que la persona elija." Ya no hay validación de
+  // hora mínima, ni sábado ni entre semana.
+  it('PUT allows a weekday block starting before 6pm (no longer a hard rule — suggestion only)', async () => {
+    const deleteMany = vi.fn().mockResolvedValue({});
+    const createMany = vi.fn().mockResolvedValue({});
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({ teacherAvailability: { deleteMany, createMany }, teacherWorkload: { upsert } });
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'PUT', '/admin/teachers/eval-1/availability'),
       method: 'PUT', path: '/admin/teachers/eval-1/availability', prisma,
       body: { blocks: [{ dayOfWeek: 2, startTime: '14:00', endTime: '16:00' }] }, // Tuesday 2pm
     });
     const res = await handleScheduler(ctx as any);
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
   });
 
-  it('PUT still allows a Saturday block starting before 6pm (institutional 8am-4pm rule unaffected)', async () => {
+  it('PUT still allows a Saturday block before 6pm (institutional 8am-4pm rule unaffected)', async () => {
     const deleteMany = vi.fn().mockResolvedValue({});
     const createMany = vi.fn().mockResolvedValue({});
     const upsert = vi.fn().mockResolvedValue({});
