@@ -9,8 +9,18 @@ interface Props {
   onChange: (period: string) => void;
 }
 
+interface PeriodRow { id: string; name: string; createdAt?: string | null }
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-10): "deben de estar disponibles
+// también horarios anteriores de otros periodos... no es el foco principal
+// visualmente en esta sección, pero sí es importante que estén. También se
+// le pueden asignar colores en caso de ser necesario." — el backend ya
+// devuelve TODO el historial (ver admin/groups.ts GET /admin/periods); lo que
+// faltaba era la distinción visual entre recientes y antiguos.
+const RECENT_COUNT = 4;
+
 export function StepPeriod({ academicPeriod, onChange }: Props) {
-  const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
+  const [periods, setPeriods] = useState<PeriodRow[]>([]);
   const [showNewPeriod, setShowNewPeriod] = useState(false);
   const [newPeriodInput, setNewPeriodInput] = useState('');
   const [periodError, setPeriodError] = useState('');
@@ -18,6 +28,15 @@ export function StepPeriod({ academicPeriod, onChange }: Props) {
   useEffect(() => {
     api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? [])).catch(() => {});
   }, []);
+
+  // El backend ya ordena el registro por createdAt desc y agrega al final los
+  // periodos "derivados" (sin createdAt, típicamente los más antiguos/legacy)
+  // — los primeros RECENT_COUNT con fecha son "recientes", el resto "anteriores".
+  const datedCount = periods.filter((p) => p.createdAt).length;
+  const recentPeriods = periods.slice(0, Math.min(RECENT_COUNT, datedCount));
+  const olderPeriods = periods.slice(recentPeriods.length);
+  const selectedIsRecent = recentPeriods.some((p) => p.name === academicPeriod);
+  const selectedIsOlder = olderPeriods.some((p) => p.name === academicPeriod);
 
   const handleCreatePeriod = async () => {
     if (!newPeriodInput.trim()) return;
@@ -50,11 +69,27 @@ export function StepPeriod({ academicPeriod, onChange }: Props) {
           <button onClick={() => { setShowNewPeriod(false); setNewPeriodInput(''); }} className="px-2 text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
         </div>
       ) : (
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 items-center">
           <select value={academicPeriod} onChange={(e) => onChange(e.target.value)} className="input-field flex-1">
             <option value="">— Seleccionar —</option>
-            {periods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+            {recentPeriods.length > 0 && (
+              <optgroup label="Recientes">
+                {recentPeriods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </optgroup>
+            )}
+            {olderPeriods.length > 0 && (
+              <optgroup label="Anteriores">
+                {olderPeriods.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </optgroup>
+            )}
           </select>
+          {academicPeriod && (selectedIsRecent || selectedIsOlder) && (
+            <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${
+              selectedIsRecent ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+            }`}>
+              {selectedIsRecent ? 'Reciente' : 'Anterior'}
+            </span>
+          )}
           <button onClick={() => setShowNewPeriod(true)} title="Crear nuevo" className="px-2 text-cta-from hover:text-cta-to"><Plus className="w-4 h-4" /></button>
         </div>
       )}
