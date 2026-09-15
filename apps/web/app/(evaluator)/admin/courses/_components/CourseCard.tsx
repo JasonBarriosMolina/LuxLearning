@@ -29,6 +29,8 @@ interface CourseCardProps {
   onArchive: (courseId: string) => void;
   onDelete: (courseId: string) => void;
   onStatusChange: (courseId: string, status: 'active' | 'inactive' | 'archived' | 'draft') => void;
+  periods?: { id: string; name: string }[];
+  onPeriodChange?: (courseId: string, academicPeriod: string) => void;
   t: any;
 }
 
@@ -43,6 +45,8 @@ export function CourseCard({
   onArchive,
   onDelete,
   onStatusChange,
+  periods,
+  onPeriodChange,
   t,
 }: CourseCardProps) {
   return (
@@ -130,6 +134,28 @@ export function CourseCard({
               {tag}
             </span>
           ))}
+
+          {/* Tag rápido de periodo — Trello *LUX SCHEDULER* (Mack, 2026-09-10):
+              "agregarles tags... como a qué semestre pertenece" sin abrir Lux
+              Planner. Solo visible cuando el padre pasa la lista de periodos. */}
+          {onPeriodChange && (
+            <select
+              value={course.academicPeriod ?? ''}
+              onChange={(e) => onPeriodChange(course.id, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              title="Período académico"
+              className={`text-xs font-medium px-2 py-0.5 rounded-full border-0 outline-none cursor-pointer appearance-none pr-5 bg-no-repeat ${
+                course.academicPeriod ? 'bg-purple-50 text-purple-600' : 'bg-gray-100 text-gray-400'
+              }`}
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`, backgroundPosition: 'right 6px center', backgroundSize: '8px 5px' }}
+            >
+              <option value="">— Período —</option>
+              {periods?.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {course.academicPeriod && !periods?.some((p) => p.name === course.academicPeriod) && (
+                <option value={course.academicPeriod}>{course.academicPeriod}</option>
+              )}
+            </select>
+          )}
         </div>
         </div>
       </div>
