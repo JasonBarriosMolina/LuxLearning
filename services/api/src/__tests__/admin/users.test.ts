@@ -54,6 +54,7 @@ vi.mock('../../shared/email', () => ({
 }));
 
 import { handleUsers } from '../../admin/users';
+import { cognito } from '../../admin/ctx';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -148,5 +149,54 @@ describe('POST /admin/users/bulk-import', () => {
     const ctx = makeAdminCtx({ method: 'GET', path: '/admin/courses' });
     const res = await handleUsers(ctx);
     expect(res).toBeNull();
+  });
+});
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "cuando voy seleccionando los
+// estudiantes... automáticamente les está enviando un mensaje... esto no
+// puede ocurrir así... ni siquiera les avises que los inscribiste."
+describe('POST /admin/users/:username/enrollments — silent flag', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('sends the enrollment email + evaluator notification by default (silent absent)', async () => {
+    const { sendTemplatedEmail } = await import('../../shared/email');
+    const { createNotification, createEnrollment } = await import('../../shared/db-dynamo');
+    (cognito.send as any).mockResolvedValue({ UserAttributes: [{ Name: 'email', Value: 'student1@test.com' }, { Name: 'name', Value: 'Student One' }] });
+    const prisma = makePrisma({
+      course: { findUnique: vi.fn().mockResolvedValue({ title: 'Curso X', evaluatorId: 'eval-1' }) },
+      module: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/users/student-1/enrollments'),
+      method: 'POST', path: '/admin/users/student-1/enrollments', prisma,
+      body: { courseId: 'c1' },
+    });
+    const res = await handleUsers(ctx);
+    expect(res?.statusCode).toBe(200);
+    expect(createEnrollment).toHaveBeenCalledWith('student-1', 'c1');
+    expect(sendTemplatedEmail).toHaveBeenCalled();
+    expect(createNotification).toHaveBeenCalled();
+  });
+
+  it('skips email + evaluator notification when silent:true, still enrolls + joins chat', async () => {
+    const { sendTemplatedEmail } = await import('../../shared/email');
+    const { createNotification, createEnrollment } = await import('../../shared/db-dynamo');
+    const { upsertChat, upsertMembership } = await import('../../shared/db-messages');
+    const prisma = makePrisma({
+      course: { findUnique: vi.fn().mockResolvedValue({ title: 'Curso X', evaluatorId: 'eval-1' }) },
+      module: { findMany: vi.fn().mockResolvedValue([]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/users/student-1/enrollments'),
+      method: 'POST', path: '/admin/users/student-1/enrollments', prisma,
+      body: { courseId: 'c1', silent: true },
+    });
+    const res = await handleUsers(ctx);
+    expect(res?.statusCode).toBe(200);
+    expect(createEnrollment).toHaveBeenCalledWith('student-1', 'c1');
+    expect(upsertChat).toHaveBeenCalled();
+    expect(upsertMembership).toHaveBeenCalled();
+    expect(sendTemplatedEmail).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
   });
 });

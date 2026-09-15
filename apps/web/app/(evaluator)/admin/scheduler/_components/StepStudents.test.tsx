@@ -45,7 +45,7 @@ describe('StepStudents — matrícula por curso (dos columnas)', () => {
     await waitFor(() => expect(screen.getByText('Seleccionados (1)')).toBeTruthy());
 
     fireEvent.click(screen.getByText(/^Agregar 1$/));
-    await waitFor(() => expect(addEnrollmentMock).toHaveBeenCalledWith('s1', 'c1'));
+    await waitFor(() => expect(addEnrollmentMock).toHaveBeenCalledWith('s1', 'c1', { silent: true }));
     expect(onCourseUpdated).toHaveBeenCalledWith('c1', { studentIds: ['s1'], studentCount: 1 });
   });
 
