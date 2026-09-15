@@ -67,6 +67,16 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
   const proposal = result.proposals[proposalIdx]!;
   const conflictSet = new Set((conflicts ?? []).flatMap((c) => [c.sessionIndex, c.withIndex].filter((x): x is number => x != null)));
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "solo se ve una lista de cosas
+  // del sábado... no se entiende bien" — una sola tabla plana mezclando todos
+  // los días es ilegible. Agrupar por día (mismo orden lunes→sábado que usa
+  // el motor) sin inventar un componente de calendario nuevo — eso queda para
+  // una revisión de diseño aparte (ver conversación con Jason).
+  const sessionsByDay = DAY_OPTIONS.map((day) => ({
+    day,
+    rows: sessions.map((s, i) => ({ s, i })).filter(({ s }) => s.dayOfWeek === day),
+  })).filter((g) => g.rows.length > 0);
+
   return (
     <div className="space-y-4">
       {/* Proposal tabs */}
@@ -97,38 +107,43 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
             Verificar choques
           </Button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-semibold text-gray-500">
-                <th className="py-2 pr-3">Curso</th>
-                <th className="py-2 pr-3">Profesor</th>
-                <th className="py-2 pr-3">Día</th>
-                <th className="py-2 pr-3">Inicio</th>
-                <th className="py-2 pr-3">Fin</th>
-                <th className="py-2">Estudiantes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {sessions.map((s, i) => {
-                const hasConflict = conflictSet.has(i);
-                return (
-                  <tr key={i} className={hasConflict ? 'bg-red-50' : ''}>
-                    <td className="py-2 pr-3 font-medium text-charcoal">{result.courseTitles[s.courseId] ?? s.courseId}</td>
-                    <td className="py-2 pr-3 text-gray-600">{result.teacherNames[s.evaluatorId] ?? s.evaluatorId}</td>
-                    <td className="py-2 pr-3">
-                      <select value={s.dayOfWeek} onChange={(e) => updateSession(i, { dayOfWeek: Number(e.target.value) })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1">
-                        {DAY_OPTIONS.map((d) => <option key={d} value={d}>{DAY_LABEL[d]}</option>)}
-                      </select>
-                    </td>
-                    <td className="py-2 pr-3"><input type="time" value={s.startTime} onChange={(e) => updateSession(i, { startTime: e.target.value })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1 w-24" /></td>
-                    <td className="py-2 pr-3"><input type="time" value={s.endTime} onChange={(e) => updateSession(i, { endTime: e.target.value })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1 w-24" /></td>
-                    <td className="py-2 text-gray-500">{s.studentIds.length}</td>
+        <div className="space-y-4">
+          {sessionsByDay.map(({ day, rows }) => (
+            <div key={day} className="overflow-x-auto">
+              <p className="text-xs font-bold uppercase tracking-wide text-cta-from mb-1.5">{DAY_LABEL[day]} · {rows.length} clase{rows.length !== 1 ? 's' : ''}</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs font-semibold text-gray-500">
+                    <th className="py-2 pr-3">Curso</th>
+                    <th className="py-2 pr-3">Profesor</th>
+                    <th className="py-2 pr-3">Día</th>
+                    <th className="py-2 pr-3">Inicio</th>
+                    <th className="py-2 pr-3">Fin</th>
+                    <th className="py-2">Estudiantes</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {rows.map(({ s, i }) => {
+                    const hasConflict = conflictSet.has(i);
+                    return (
+                      <tr key={i} className={hasConflict ? 'bg-red-50' : ''}>
+                        <td className="py-2 pr-3 font-medium text-charcoal">{result.courseTitles[s.courseId] ?? s.courseId}</td>
+                        <td className="py-2 pr-3 text-gray-600">{result.teacherNames[s.evaluatorId] ?? s.evaluatorId}</td>
+                        <td className="py-2 pr-3">
+                          <select value={s.dayOfWeek} onChange={(e) => updateSession(i, { dayOfWeek: Number(e.target.value) })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1">
+                            {DAY_OPTIONS.map((d) => <option key={d} value={d}>{DAY_LABEL[d]}</option>)}
+                          </select>
+                        </td>
+                        <td className="py-2 pr-3"><input type="time" value={s.startTime} onChange={(e) => updateSession(i, { startTime: e.target.value })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1 w-24" /></td>
+                        <td className="py-2 pr-3"><input type="time" value={s.endTime} onChange={(e) => updateSession(i, { endTime: e.target.value })} className="text-xs border border-gray-200 rounded-lg px-1.5 py-1 w-24" /></td>
+                        <td className="py-2 text-gray-500">{s.studentIds.length}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
 
         {conflicts !== null && conflicts.length > 0 && (

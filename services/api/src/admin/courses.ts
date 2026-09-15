@@ -273,6 +273,18 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
 
     if (method === 'PUT') {
       if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "recuerda tener un botón de
+      // editar para que... se pueda modificar el nombre del curso... así no hay
+      // que eliminarlo y volver a crearlo" — un rename suelto desde el catálogo
+      // del wizard, sin los campos de la edición completa (slug/description no
+      // están disponibles ahí). Flag explícito para no interferir con isFullUpdate.
+      if (body.titleOnly === true) {
+        const newTitle = (body.title as string | undefined)?.trim();
+        if (!newTitle) return badRequest('title es requerido');
+        const course = await prisma.course.update({ where: { id: courseId }, data: { title: newTitle } });
+        await invalidateTranslation('course', courseId);
+        return ok(course);
+      }
       const { title, slug, description, imageUrl, isActive, isPilot, tags, startDate, closeDate, isDraft, isArchived, pilotoAutomatico, weeklyPacingEnabled, isAutoevaluated } = body;
       // Only validate required fields when they're part of a full update (title/slug/description explicitly sent)
       const isFullUpdate = 'title' in body || 'slug' in body || 'description' in body;

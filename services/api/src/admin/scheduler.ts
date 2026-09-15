@@ -178,7 +178,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
     const { academicPeriod, courseOverrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes } = body as {
       academicPeriod?: string;
-      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality }>;
+      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality; durationOverrideMin?: number }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
@@ -213,7 +213,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       if (!modality) { skippedAsync.push(c.id); continue; } // asincrónica — no live session
       const studentIds = studentsByCourse.get(c.id) ?? [];
       const classType: ClassType = override?.classType ?? (studentIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL');
-      engineCourses.push({ courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds });
+      engineCourses.push({ courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds, durationOverrideMin: override?.durationOverrideMin });
     }
     if (!engineCourses.length) return badRequest('Ningún curso de este período requiere clase en vivo (todos son asincrónicos)');
 

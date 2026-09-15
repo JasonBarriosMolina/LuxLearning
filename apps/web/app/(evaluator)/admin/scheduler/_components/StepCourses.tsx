@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Trash2 } from 'lucide-react';
+import { Loader2, Plus, X, Trash2, Pencil, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
 
-export type CourseOverrides = Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
+export type CourseOverrides = Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL'; durationOverrideMin?: number }>;
 
 interface Props {
   academicPeriod: string;
@@ -28,6 +28,9 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   const [reassigningId, setReassigningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [rowError, setRowError] = useState('');
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
 
   useEffect(() => {
     if (!academicPeriod) return;
@@ -60,7 +63,13 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
     setAdding(true); setAddError('');
     try {
       const res = await api.admin.scheduler.createCourse({ academicPeriod, title: newTitle.trim(), evaluatorId: newEvaluatorId });
-      onLoaded([...courses, (res as any).data]);
+      const created = (res as any).data;
+      onLoaded([...courses, created]);
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "por defecto... que sea
+      // grupal, pues automáticamente cuando se crea un curso nuevo... debe
+      // ser grupal" — un curso recién creado tiene 0 estudiantes, así que el
+      // fallback por conteo (studentCount>1) lo dejaría en Individual.
+      onOverrideChange(created.id, { classType: 'GRUPAL' });
       setNewTitle(''); setNewEvaluatorId(''); setShowAdd(false);
     } catch (err: any) {
       setAddError(err?.message ?? 'No se pudo crear el curso.');
@@ -85,6 +94,24 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
       setRowError(err?.message ?? 'No se pudo reasignar el profesor.');
     } finally {
       setReassigningId(null);
+    }
+  };
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "recuerda tener un botón de
+  // editar para que... se pueda modificar el nombre del curso... así no hay
+  // que eliminarlo y volver a crearlo".
+  const handleSaveTitle = async (courseId: string) => {
+    const title = editTitleValue.trim();
+    if (!title) return;
+    setSavingTitle(true); setRowError('');
+    try {
+      await api.admin.courses.update(courseId, { titleOnly: true, title });
+      onLoaded(courses.map((c) => (c.id === courseId ? { ...c, title } : c)));
+      setEditingTitleId(null);
+    } catch (err: any) {
+      setRowError(err?.message ?? 'No se pudo renombrar el curso.');
+    } finally {
+      setSavingTitle(false);
     }
   };
 
@@ -133,6 +160,7 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 <th className="py-2 pr-3">Estudiantes</th>
                 <th className="py-2 pr-3">Modalidad</th>
                 <th className="py-2 pr-3">Tipo de clase</th>
+                <th className="py-2 pr-3">Excepción (min)</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -143,7 +171,32 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 const classType = ov.classType ?? (c.studentCount > 1 ? 'GRUPAL' : 'INDIVIDUAL');
                 return (
                   <tr key={c.id}>
-                    <td className="py-2 pr-3 font-medium text-charcoal">{c.title}</td>
+                    <td className="py-2 pr-3 font-medium text-charcoal">
+                      {editingTitleId === c.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus type="text" value={editTitleValue} onChange={(e) => setEditTitleValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(c.id); else if (e.key === 'Escape') setEditingTitleId(null); }}
+                            className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-32"
+                          />
+                          <button onClick={() => handleSaveTitle(c.id)} disabled={savingTitle || !editTitleValue.trim()} className="p-1 text-emerald-500 hover:text-emerald-600 disabled:opacity-50">
+                            {savingTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          </button>
+                          <button onClick={() => setEditingTitleId(null)} className="p-1 text-gray-300 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 group">
+                          {c.title}
+                          <button
+                            onClick={() => { setEditingTitleId(c.id); setEditTitleValue(c.title); }}
+                            title="Renombrar curso"
+                            className="p-0.5 text-gray-300 hover:text-cta-from opacity-0 group-hover:opacity-100"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       <select
                         value={c.evaluatorId} disabled={reassigningId === c.id}
@@ -168,6 +221,19 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                         <option value="INDIVIDUAL">Individual (55 min)</option>
                         <option value="GRUPAL">Grupal (1h15)</option>
                       </select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "puede haber
+                          una excepción para un curso en especial; puede ser de
+                          1 hora o similar" — anula la duración global solo para
+                          este curso, sin tocar los parámetros del paso 2. */}
+                      <input
+                        type="number" min={15} max={240} placeholder="—"
+                        value={ov.durationOverrideMin ?? ''}
+                        onChange={(e) => onOverrideChange(c.id, { ...ov, durationOverrideMin: e.target.value ? Number(e.target.value) : undefined })}
+                        title="Duración especial para este curso (minutos) — deja vacío para usar el default"
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-16"
+                      />
                     </td>
                     <td className="py-2">
                       <div className="flex items-center gap-1">

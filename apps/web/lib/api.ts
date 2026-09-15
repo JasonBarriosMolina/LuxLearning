@@ -601,7 +601,7 @@ export const api = {
         request<any>('/admin/scheduler/courses', { method: 'POST', body: JSON.stringify(body) }),
       generate: (body: {
         academicPeriod: string;
-        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' }>;
+        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL'; durationOverrideMin?: number }>;
         lunchBreak?: { startTime: string; endTime: string };
         gapMinutes?: number;
         individualMinutes?: number;
