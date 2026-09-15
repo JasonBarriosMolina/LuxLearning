@@ -5,10 +5,12 @@ function teacher(evaluatorId: string, overrides: Partial<TeacherInput> = {}): Te
   return {
     evaluatorId,
     maxCoursesPerWeek: 5,
+    // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): weekday availability is only
+    // valid from 6pm on — these fixtures reflect that hard rule.
     availability: [
-      { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 2, startTime: '08:00', endTime: '12:00' },
-      { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
+      { dayOfWeek: 1, startTime: '18:00', endTime: '22:00' },
+      { dayOfWeek: 2, startTime: '18:00', endTime: '22:00' },
+      { dayOfWeek: 3, startTime: '18:00', endTime: '22:00' },
     ],
     ...overrides,
   };
@@ -69,7 +71,7 @@ describe('generateScheduleProposals', () => {
     // 55-min slot pattern (a single Monday morning block) — the two courses
     // cannot both use the exact same instant, so the engine must offset them.
     const input: ScheduleInput = {
-      teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 1, startTime: '08:00', endTime: '09:00' }] })],
+      teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 1, startTime: '18:00', endTime: '19:00' }] })],
       courses: [
         course('c1', 'eval-1', { studentIds: ['shared-student'] }),
         course('c2', 'eval-1', { studentIds: ['shared-student'] }),
@@ -120,6 +122,33 @@ describe('generateScheduleProposals', () => {
     const input: ScheduleInput = {
       teachers: [teacher('eval-1', { availability: [] })], // zero weekday availability
       courses: [course('c1', 'eval-1', { modality: 'VIRTUAL' })],
+    };
+    for (const proposal of generateScheduleProposals(input)) {
+      expect(proposal.sessions).toHaveLength(0);
+      expect(proposal.unscheduledCourseIds).toEqual(['c1']);
+    }
+  });
+
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "si el profesor pone una lección
+  // antes de las 6 de la tarde, el sistema le debe indicar que está incorrecto...
+  // esa disponibilidad no existe" — el motor recorta cualquier bloque de semana
+  // que empiece antes de las 6pm (segunda capa de defensa; admin/scheduler.ts ya
+  // rechaza esto al guardar).
+  it('clips a weekday block to start no earlier than 6pm, even if declared earlier', () => {
+    const input: ScheduleInput = {
+      teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 1, startTime: '14:00', endTime: '20:00' }] })],
+      courses: [course('c1', 'eval-1', { durationOverrideMin: 90 })], // needs exactly the 18:00-20:00 remainder
+    };
+    for (const proposal of generateScheduleProposals(input)) {
+      expect(proposal.unscheduledCourseIds).toEqual([]);
+      expect(proposal.sessions[0]!.startTime >= '18:00').toBe(true);
+    }
+  });
+
+  it('drops a weekday course entirely when the only declared block is fully before 6pm', () => {
+    const input: ScheduleInput = {
+      teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] })],
+      courses: [course('c1', 'eval-1')],
     };
     for (const proposal of generateScheduleProposals(input)) {
       expect(proposal.sessions).toHaveLength(0);

@@ -60,12 +60,12 @@ describe('handleScheduler — teacher availability', () => {
     const ctx = makeAdminCtx({
       event: makeEvent('EVALUATOR', 'PUT', '/admin/teachers/user-uuid/availability'),
       method: 'PUT', path: '/admin/teachers/user-uuid/availability', prisma,
-      body: { blocks: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }], maxCoursesPerWeek: 3 },
+      body: { blocks: [{ dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }], maxCoursesPerWeek: 3 },
     });
     const res = await handleScheduler(ctx as any);
     expect(res.statusCode).toBe(200);
     expect(deleteMany).toHaveBeenCalledWith({ where: { evaluatorId: 'user-uuid' } });
-    expect(createMany).toHaveBeenCalledWith({ data: [{ evaluatorId: 'user-uuid', dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] });
+    expect(createMany).toHaveBeenCalledWith({ data: [{ evaluatorId: 'user-uuid', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }] });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { evaluatorId: 'user-uuid' } }));
   });
 
@@ -90,6 +90,34 @@ describe('handleScheduler — teacher availability', () => {
     });
     const res = await handleScheduler(ctx as any);
     expect(res.statusCode).toBe(400);
+  });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si el profesor pone una lección
+  // antes de las 6 de la tarde [entre semana], el sistema le debe indicar que
+  // está incorrecto."
+  it('PUT rejects a weekday block starting before 6pm', async () => {
+    const prisma = makePrisma();
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/teachers/eval-1/availability'),
+      method: 'PUT', path: '/admin/teachers/eval-1/availability', prisma,
+      body: { blocks: [{ dayOfWeek: 2, startTime: '14:00', endTime: '16:00' }] }, // Tuesday 2pm
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PUT still allows a Saturday block starting before 6pm (institutional 8am-4pm rule unaffected)', async () => {
+    const deleteMany = vi.fn().mockResolvedValue({});
+    const createMany = vi.fn().mockResolvedValue({});
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({ teacherAvailability: { deleteMany, createMany }, teacherWorkload: { upsert } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/teachers/eval-1/availability'),
+      method: 'PUT', path: '/admin/teachers/eval-1/availability', prisma,
+      body: { blocks: [{ dayOfWeek: 6, startTime: '08:00', endTime: '12:00' }] },
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(200);
   });
 });
 
@@ -116,7 +144,7 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
           { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', modality: 'ASINCRONICA' },
         ]),
       },
-      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '10:00' }]) },
+      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }]) },
       teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
     });
     const ctx = makeAdminCtx({
@@ -145,7 +173,7 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
       course: {
         findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Virtual', evaluatorId: 'eval-1', modality: 'SINCRONICA' }]),
       },
-      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '10:00' }]) },
+      teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }]) },
       teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
     });
     const ctx = makeAdminCtx({

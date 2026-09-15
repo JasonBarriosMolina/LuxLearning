@@ -82,6 +82,14 @@ const PREFERRED_GAP_MIN = 5;
 const SLOT_STEP_MIN = 5; // candidate start-time granularity
 const SATURDAY_OPEN = '08:00';
 const SATURDAY_CLOSE = '16:00';
+// Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "si el profesor tiene horario
+// disponible... antes de las 5 de la tarde... no lo hagamos para las 5: hagámoslo
+// de las 6 de la tarde en adelante. El evaluador siempre tiene que tener cursos
+// entre semana cuando él tiene la disponibilidad" — regla dura, clases virtuales
+// entre semana nunca antes de las 6pm. admin/scheduler.ts ya rechaza esto al
+// guardar disponibilidad; este clip es una segunda capa de defensa (datos viejos,
+// u otra vía de escritura) para que el motor tampoco pueda ubicar ahí.
+const WEEKDAY_OPEN = '18:00';
 
 // ── Time helpers (plain HH:mm strings, minutes-since-midnight math) ────────
 function toMinutes(hhmm: string): number {
@@ -136,9 +144,10 @@ function baseWindowsForDay(teacher: TeacherInput, dayOfWeek: number, lunch: Lunc
       .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }));
     return saturdayBlocks.length ? intersectWindows(institutional, saturdayBlocks) : institutional;
   }
+  const weekdayFloor = toMinutes(WEEKDAY_OPEN);
   return teacher.availability
     .filter((b) => b.dayOfWeek === dayOfWeek)
-    .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }))
+    .map((b) => ({ start: Math.max(toMinutes(b.startTime), weekdayFloor), end: toMinutes(b.endTime) }))
     .filter((w) => w.end > w.start);
 }
 
