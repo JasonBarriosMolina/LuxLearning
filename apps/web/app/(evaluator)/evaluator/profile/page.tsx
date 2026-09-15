@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   UserCog, Save, Edit2, Mail, Phone, FileText, Lock, Eye, EyeOff,
-  PenLine, Trash2, Check, AlertTriangle, Upload, Link2, Plus, X, Briefcase,
+  PenLine, Trash2, Check, AlertTriangle, Upload, Link2, Plus, X, Briefcase, Type as TypeIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { changePassword } from '@/lib/auth';
@@ -89,10 +89,15 @@ export default function ProfilePage() {
   const [linkSaving, setLinkSaving] = useState(false);
   const [linkError, setLinkError] = useState('');
 
-  // Digital signature
+  // Digital signature — Trello *LUX SCHEDULER* (Mack, 2026-09-10): "debería
+  // existir la opción de subir un archivo PNG que funcione como firma, y
+  // también la opción de escribirla" (antes solo se podía dibujar a mano).
   const [sigMode, setSigMode] = useState(false);
+  const [sigTab, setSigTab] = useState<'draw' | 'upload' | 'type'>('draw');
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [sigSaving, setSigSaving] = useState(false);
+  const [typedSignatureName, setTypedSignatureName] = useState('');
+  const sigFileRef = useRef<HTMLInputElement>(null);
 
   // Password
   const [pwOpen, setPwOpen] = useState(false);
@@ -207,9 +212,7 @@ export default function ProfilePage() {
   };
 
   // ── Signature ─────────────────────────────────────────────────────────────
-  const handleSaveSignature = async () => {
-    if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) return;
-    const dataUrl = sigCanvasRef.current.toDataURL('image/png');
+  const persistSignature = async (dataUrl: string) => {
     setSigSaving(true);
     try {
       await api.evaluator.signature.save(dataUrl);
@@ -217,6 +220,43 @@ export default function ProfilePage() {
       setSigMode(false);
       showToast(t.evaluator.signatureSaved);
     } catch { /* ignore */ } finally { setSigSaving(false); }
+  };
+
+  const handleSaveSignature = () => {
+    if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) return;
+    persistSignature(sigCanvasRef.current.toDataURL('image/png'));
+  };
+
+  const handleUploadSignature = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') persistSignature(reader.result); };
+    reader.readAsDataURL(file);
+  };
+
+  // Renderiza el nombre escrito como imagen en cursiva/itálica — se guarda con
+  // el mismo formato (PNG dataURL) que el modo dibujado o subido, sin requerir
+  // cambios de backend.
+  const handleSaveTypedSignature = () => {
+    const name = typedSignatureName.trim();
+    if (!name) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 480; canvas.height = 150;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1c1c1c';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    let fontSize = 52;
+    ctx.font = `italic ${fontSize}px 'Brush Script MT', cursive`;
+    while (ctx.measureText(name).width > canvas.width - 40 && fontSize > 20) {
+      fontSize -= 2;
+      ctx.font = `italic ${fontSize}px 'Brush Script MT', cursive`;
+    }
+    ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+    persistSignature(canvas.toDataURL('image/png'));
   };
 
   // ── Password ──────────────────────────────────────────────────────────────
@@ -470,15 +510,76 @@ export default function ProfilePage() {
         )}
         {sigMode && (
           <div className="mt-4 space-y-3">
-            <p className="text-xs text-gray-500">{t.evaluator.drawHint}</p>
-            <div className="border-2 border-dashed border-border rounded-lg overflow-hidden bg-white">
-              <SignatureCanvas ref={sigCanvasRef} penColor="black" canvasProps={{ width: 480, height: 150, className: 'w-full' }} />
+            <div className="flex gap-1 border-b border-border">
+              {([
+                ['draw', t.evaluator.signatureTabDraw, PenLine],
+                ['upload', t.evaluator.signatureTabUpload, Upload],
+                ['type', t.evaluator.signatureTabType, TypeIcon],
+              ] as const).map(([tab, label, Icon]) => (
+                <button
+                  key={tab} type="button" onClick={() => setSigTab(tab)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border-b-2 -mb-px transition-colors ${
+                    sigTab === tab ? 'border-cta-from text-cta-from' : 'border-transparent text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> {label}
+                </button>
+              ))}
             </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="secondary" size="sm" leftIcon={<Trash2 className="w-4 h-4" />} onClick={() => sigCanvasRef.current?.clear()}>{t.evaluator.clearSignatureBtn}</Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setSigMode(false)}>{t.evaluator.cancelBtn}</Button>
-              <Button type="button" size="sm" loading={sigSaving} leftIcon={<Save className="w-4 h-4" />} onClick={handleSaveSignature}>{t.evaluator.saveSignatureBtn}</Button>
-            </div>
+
+            {sigTab === 'draw' && (
+              <>
+                <p className="text-xs text-gray-500">{t.evaluator.drawHint}</p>
+                <div className="border-2 border-dashed border-border rounded-lg overflow-hidden bg-white">
+                  <SignatureCanvas ref={sigCanvasRef} penColor="black" canvasProps={{ width: 480, height: 150, className: 'w-full' }} />
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" size="sm" leftIcon={<Trash2 className="w-4 h-4" />} onClick={() => sigCanvasRef.current?.clear()}>{t.evaluator.clearSignatureBtn}</Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setSigMode(false)}>{t.evaluator.cancelBtn}</Button>
+                  <Button type="button" size="sm" loading={sigSaving} leftIcon={<Save className="w-4 h-4" />} onClick={handleSaveSignature}>{t.evaluator.saveSignatureBtn}</Button>
+                </div>
+              </>
+            )}
+
+            {sigTab === 'upload' && (
+              <>
+                <p className="text-xs text-gray-500">{t.evaluator.uploadSignatureHint}</p>
+                <input ref={sigFileRef} type="file" accept="image/png,image/*" className="hidden" onChange={handleUploadSignature} data-testid="signature-file-input" />
+                <button
+                  type="button" onClick={() => sigFileRef.current?.click()}
+                  className="w-full border-2 border-dashed border-border rounded-lg bg-white py-8 flex flex-col items-center gap-2 text-gray-400 hover:border-cta-from hover:text-cta-from transition-colors"
+                >
+                  <Upload className="w-6 h-6" />
+                  <span className="text-xs">{t.evaluator.signatureTabUpload}</span>
+                </button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setSigMode(false)}>{t.evaluator.cancelBtn}</Button>
+                </div>
+                {sigSaving && <p className="text-xs text-gray-400">{t.evaluator.saveSignatureBtn}…</p>}
+              </>
+            )}
+
+            {sigTab === 'type' && (
+              <>
+                <p className="text-xs text-gray-500">{t.evaluator.typeSignatureHint}</p>
+                <Input
+                  value={typedSignatureName}
+                  onChange={(e) => setTypedSignatureName(e.target.value)}
+                  placeholder={t.evaluator.typeSignaturePlaceholder}
+                />
+                {typedSignatureName.trim() && (
+                  <div className="border border-border rounded-lg bg-white p-4 flex items-center justify-center">
+                    <span className="italic" style={{ fontFamily: "'Brush Script MT', cursive", fontSize: '2rem' }}>
+                      {typedSignatureName}
+                    </span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setSigMode(false)}>{t.evaluator.cancelBtn}</Button>
+                  <Button type="button" size="sm" loading={sigSaving} disabled={!typedSignatureName.trim()} leftIcon={<Save className="w-4 h-4" />} onClick={handleSaveTypedSignature}>{t.evaluator.saveSignatureBtn}</Button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
