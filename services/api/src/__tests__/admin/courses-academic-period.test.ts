@@ -147,6 +147,36 @@ describe('PUT /admin/courses/:courseId — courseType/modality', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('updates preferredRoomId', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', preferredRoomId: 'room-1' });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { preferredRoomId: 'room-1' },
+    });
+
+    const res = await handleCourses(ctx as any);
+    const body = await bodyOf(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { preferredRoomId: 'room-1' } });
+    expect(body.data.preferredRoomId).toBe('room-1');
+  });
+
+  it('clears preferredRoomId when sent as null', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', preferredRoomId: null });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { preferredRoomId: null },
+    });
+    const res = await handleCourses(ctx as any);
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { preferredRoomId: null } });
+  });
+
   it('clears courseType/modality when sent as an empty string', async () => {
     const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', courseType: null, modality: null });
     const prisma = makePrisma({ course: { update: updateMock } });

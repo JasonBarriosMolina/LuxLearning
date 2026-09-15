@@ -64,6 +64,12 @@ model Course {
   // even after the evaluator navigates away from the Lux Planner wizard screen (Trello
   // DmPpbrff, 2026-08-31: "no hay ninguna referencia visual... por qué porcentaje vamos").
   activeGenerationJobId String?
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+  // respete que ese Ensamble Instrumental se dé siempre en el aula de
+  // ensayos... eso bloquearía el uso de ese aula para un horario en
+  // específico directamente para ese curso." Elegido desde la sección 3 del
+  // wizard — persiste entre generaciones, no es un override de una sola vez.
+  preferredRoomId   String?
   sessions           CourseSession[]
   evaluationEvents   EvaluationEvent[]
   modules            Module[]
@@ -121,17 +127,40 @@ model ScheduledClass {
   @@index([roomId])
 }
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "la persona (la
+// institución) puede agregar aulas, puede agregar edificios... las aulas
+// tienen que estar divididas por piso... el edificio puede ser de la A a la
+// Z." Edificios agrupan aulas — opcional (una aula puede no tener edificio).
+model Building {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  createdAt DateTime    @default(now())
+  rooms     ClassRoom[]
+}
+
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "vamos a agregar la opción de
 // 'aulas'. Vamos a enumerarlas de la 1 a la 10: 3 aulas para 10 estudiantes,
 // 1 aula grande para 15 o 20, 3 aulas medianas para 5, 3 aulas individuales
 // (para clases de profesor y estudiante individuales)." Seed inicial en
-// scripts/seed-classrooms — administrable a futuro, no hay CRUD UI todavía.
+// scripts/seed-classrooms.
+// Ampliado 2026-09-15 (15:36): "si el nombre es 'Aula 101', pero se le
+// conoce internamente como 'Salón de ensayos', que esa información se pueda
+// agregar" (preferredName); "descripción... si se pueden dar cursos
+// teóricos o teórico-prácticos, o cursos de taller" (courseTypeTags, mismos
+// valores que Course.courseType — ver COURSE_TYPE_VALUES en courses.ts).
 model ClassRoom {
-  id        String           @id @default(cuid())
-  name      String
-  capacity  Int
-  createdAt DateTime         @default(now())
-  classes   ScheduledClass[]
+  id             String           @id @default(cuid())
+  name           String
+  capacity       Int
+  buildingId     String?
+  building       Building?        @relation(fields: [buildingId], references: [id])
+  floor          Int?
+  preferredName  String?
+  courseTypeTags String[]         @default([])
+  createdAt      DateTime         @default(now())
+  classes        ScheduledClass[]
+
+  @@index([buildingId])
 }
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa
