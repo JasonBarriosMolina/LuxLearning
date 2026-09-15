@@ -38,6 +38,34 @@ describe('PUT /admin/courses/:courseId — academicPeriod', () => {
     expect(body.data.academicPeriod).toBe('II Semestre 2026');
   });
 
+  it('renames a course via titleOnly without requiring slug/description', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', title: 'Nuevo Nombre' });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { titleOnly: true, title: 'Nuevo Nombre' },
+    });
+
+    const res = await handleCourses(ctx as any);
+    const body = await bodyOf(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { title: 'Nuevo Nombre' } });
+    expect(body.data.title).toBe('Nuevo Nombre');
+  });
+
+  it('rejects titleOnly with an empty title', async () => {
+    const prisma = makePrisma({ course: { update: vi.fn() } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { titleOnly: true, title: '  ' },
+    });
+    const res = await handleCourses(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+
   it('clears academicPeriod when sent as an empty string, without upserting a registry row', async () => {
     const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', academicPeriod: null });
     const upsertMock = vi.fn();

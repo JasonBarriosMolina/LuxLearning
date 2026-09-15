@@ -136,6 +136,26 @@ describe('generateScheduleProposals', () => {
     expect(proposals).toHaveLength(3);
     expect(new Set(proposals.map((p) => p.strategy)).size).toBe(3);
   });
+
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "puede haber una excepción para
+  // un curso en especial; puede ser de 1 hora o similar" — durationOverrideMin
+  // anula individualMinutes/groupMinutes SOLO para ese curso.
+  it('durationOverrideMin overrides the global duration for just that course', () => {
+    const input: ScheduleInput = {
+      teachers: [teacher('eval-1')],
+      courses: [course('c1', 'eval-1', { durationOverrideMin: 90 })],
+      individualMinutes: 55,
+    };
+    const proposals = generateScheduleProposals(input);
+    for (const p of proposals) {
+      expect(p.sessions).toHaveLength(1);
+      const s = p.sessions[0]!;
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const [eh, em] = s.endTime.split(':').map(Number);
+      const minutes = (eh! * 60 + em!) - (sh! * 60 + sm!);
+      expect(minutes).toBe(90);
+    }
+  });
 });
 
 function session(overrides: Partial<ScheduledSession> = {}): ScheduledSession {

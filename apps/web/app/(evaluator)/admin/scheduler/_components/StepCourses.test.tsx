@@ -9,10 +9,12 @@ import { StepCourses } from './StepCourses';
 
 const assignEvaluatorMock = vi.fn().mockResolvedValue({});
 const deleteMock = vi.fn().mockResolvedValue({});
+const updateMock = vi.fn().mockResolvedValue({});
+const createCourseMock = vi.fn();
 vi.mock('@/lib/api', () => ({
   api: {
     admin: {
-      scheduler: { courses: vi.fn().mockResolvedValue({ data: [] }), createCourse: vi.fn() },
+      scheduler: { courses: vi.fn().mockResolvedValue({ data: [] }), createCourse: (...a: any[]) => createCourseMock(...a) },
       users: { list: vi.fn().mockResolvedValue({ data: [
         { username: 'eval-1', role: 'EVALUATOR', name: 'Profe Uno' },
         { username: 'eval-2', role: 'EVALUATOR', name: 'Profe Dos' },
@@ -20,6 +22,7 @@ vi.mock('@/lib/api', () => ({
       courses: {
         assignEvaluator: (...a: any[]) => assignEvaluatorMock(...a),
         delete: (...a: any[]) => deleteMock(...a),
+        update: (...a: any[]) => updateMock(...a),
       },
     },
   },
@@ -27,7 +30,10 @@ vi.mock('@/lib/api', () => ({
 
 const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentCount: 3 };
 
-beforeEach(() => { assignEvaluatorMock.mockClear(); deleteMock.mockClear(); vi.spyOn(window, 'confirm').mockReturnValue(true); });
+beforeEach(() => {
+  assignEvaluatorMock.mockClear(); deleteMock.mockClear(); updateMock.mockClear(); createCourseMock.mockReset();
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+});
 
 describe('StepCourses — editar/eliminar curso', () => {
   it('reasigna el profesor y actualiza la fila localmente', async () => {
@@ -63,5 +69,34 @@ describe('StepCourses — editar/eliminar curso', () => {
     fireEvent.click(screen.getByTitle('Eliminar curso de Lux Learning por completo'));
 
     expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('renombra el curso vía titleOnly', async () => {
+    const onLoaded = vi.fn();
+    render(<StepCourses academicPeriod="2026-2" courses={[course]} overrides={{}} onLoaded={onLoaded} onOverrideChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle('Renombrar curso'));
+    const input = screen.getByDisplayValue('Curso 1');
+    fireEvent.change(input, { target: { value: 'Curso Renombrado' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith('c1', { titleOnly: true, title: 'Curso Renombrado' }));
+    expect(onLoaded).toHaveBeenCalledWith([{ ...course, title: 'Curso Renombrado' }]);
+  });
+
+  it('un curso nuevo se crea con override classType GRUPAL por defecto', async () => {
+    createCourseMock.mockResolvedValue({ data: { id: 'c2', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: null, engineModality: 'VIRTUAL', studentCount: 0 } });
+    const onLoaded = vi.fn();
+    const onOverrideChange = vi.fn();
+    render(<StepCourses academicPeriod="2026-2" courses={[]} overrides={{}} onLoaded={onLoaded} onOverrideChange={onOverrideChange} />);
+    await waitFor(() => expect(screen.getByText('Curso aún no creado en Lux Learning')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('Curso aún no creado en Lux Learning'));
+    fireEvent.change(screen.getByPlaceholderText('Nombre del curso'), { target: { value: 'Curso Nuevo' } });
+    fireEvent.change(screen.getByDisplayValue('— Seleccionar profesor —'), { target: { value: 'eval-1' } });
+    fireEvent.click(screen.getByText('Crear curso'));
+
+    await waitFor(() => expect(onOverrideChange).toHaveBeenCalledWith('c2', { classType: 'GRUPAL' }));
   });
 });

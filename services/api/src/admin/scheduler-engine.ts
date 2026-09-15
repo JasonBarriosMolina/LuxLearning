@@ -33,6 +33,10 @@ export interface CourseInput {
   classType: ClassType;
   studentIds: string[]; // already resolved (group members or individual enrollments)
   studentGroupId?: string;
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "puede haber una excepción para
+  // un curso en especial; puede ser de 1 hora o similar" — anula el
+  // individualMinutes/groupMinutes global SOLO para este curso.
+  durationOverrideMin?: number;
 }
 
 export interface LunchBreak {
@@ -187,7 +191,7 @@ function placeCourse(
   const used = workloadUsed.get(course.evaluatorId) ?? 0;
   if (used >= teacher.maxCoursesPerWeek) return null; // hard cap, no partial exceptions
 
-  const duration = durationMin[course.classType];
+  const duration = course.durationOverrideMin ?? durationMin[course.classType];
   const days = course.modality === 'PRESENCIAL' ? [SATURDAY] : WEEKDAYS;
 
   // Two passes: first require the soft gap, then relax it if nothing fit.

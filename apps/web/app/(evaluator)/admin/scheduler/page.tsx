@@ -181,7 +181,12 @@ export default function SchedulerPage() {
         />
       )}
       {step === 4 && <StepAvailability courses={courses} />}
-      {step === 5 && <StepStudents courses={courses} />}
+      {step === 5 && (
+        <StepStudents
+          courses={courses}
+          onCourseUpdated={(courseId, patch) => setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, ...patch } : c)))}
+        />
+      )}
       {step === 6 && <StepGenerate generating={generating} error={generateError} onRetry={runGenerate} />}
       {step === 7 && result && (
         <StepReview

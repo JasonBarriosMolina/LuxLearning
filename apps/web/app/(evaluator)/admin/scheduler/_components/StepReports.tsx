@@ -54,7 +54,7 @@ export function StepReports({ academicPeriod, recipientCount, onUnpublish }: Pro
 
       <div className="flex gap-3">
         <Button onClick={handleExport} loading={exporting} leftIcon={<Download className="w-4 h-4" />}>
-          Exportar horario (Word)
+          Exportar horario: documento editable
         </Button>
         <Button variant="secondary" onClick={handleUnpublish} loading={unpublishing} leftIcon={<Trash2 className="w-4 h-4" />}>
           Quitar horario publicado
