@@ -13,6 +13,12 @@ import {
 } from './ctx';
 import { handleCoursesContent } from './courses-content';
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "no puedo crear tags nuevos;
+// tienen que estar los que están ya pre-creados" — mismos valores que
+// apps/web/.../lux-planner/_components/constants.tsx COURSE_TYPES/MODALITIES.
+const COURSE_TYPE_VALUES = ['TEORICO', 'TEORICO_PRACTICO', 'PROYECTOS', 'PROGRAMA_ESPECIAL', 'CURSO_CORTO', 'LIBRE'];
+const COURSE_MODALITY_VALUES = ['PRESENCIAL', 'SINCRONICA', 'ASINCRONICA', 'HIBRIDA'];
+
 export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body, action } = ctx;
 
@@ -315,6 +321,23 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
         if (period) {
           await prisma.academicPeriod.upsert({ where: { name: period }, update: {}, create: { name: period } }).catch(() => {});
         }
+      }
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "las etiquetas... deben poder
+      // agregarse... en esta sección (la número 3 de cursos) debo tener la
+      // opción de elegir esos tags que ya tienen que estar prediseñados.
+      // Recuerda: no puedo crear tags nuevos; tienen que estar los que están
+      // ya pre-creados como modalidad de curso y como logística de curso."
+      // Mismo campo suelto que academicPeriod, restringido a los valores fijos
+      // que ya usa Lux Planner (constants.tsx COURSE_TYPES/MODALITIES).
+      if ('courseType' in body) {
+        const value = body.courseType as string | null;
+        if (value && !COURSE_TYPE_VALUES.includes(value)) return badRequest('courseType inválido');
+        updateData.courseType = value || null;
+      }
+      if ('modality' in body) {
+        const value = body.modality as string | null;
+        if (value && !COURSE_MODALITY_VALUES.includes(value)) return badRequest('modality inválido');
+        updateData.modality = value || null;
       }
       // Partial startDate/closeDate update (e.g. clearing startDate without sending full body)
       if (!isFullUpdate && 'startDate' in body) updateData.startDate = startDate ? new Date(startDate) : null;

@@ -85,3 +85,79 @@ describe('PUT /admin/courses/:courseId — academicPeriod', () => {
     expect(upsertMock).not.toHaveBeenCalled();
   });
 });
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "las etiquetas... deben poder
+// agregarse... debo tener la opción de elegir esos tags que ya tienen que
+// estar prediseñados. Recuerda: no puedo crear tags nuevos; tienen que estar
+// los que están ya pre-creados como modalidad de curso y como logística de curso."
+describe('PUT /admin/courses/:courseId — courseType/modality', () => {
+  it('updates courseType to a value from the pre-defined list', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', courseType: 'TEORICO_PRACTICO' });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { courseType: 'TEORICO_PRACTICO' },
+    });
+
+    const res = await handleCourses(ctx as any);
+    const body = await bodyOf(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { courseType: 'TEORICO_PRACTICO' } });
+    expect(body.data.courseType).toBe('TEORICO_PRACTICO');
+  });
+
+  it('rejects a courseType value not on the pre-defined list', async () => {
+    const prisma = makePrisma({ course: { update: vi.fn() } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { courseType: 'TAG_INVENTADO' },
+    });
+    const res = await handleCourses(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('updates modality to a value from the pre-defined list', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', modality: 'HIBRIDA' });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { modality: 'HIBRIDA' },
+    });
+
+    const res = await handleCourses(ctx as any);
+    const body = await bodyOf(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { modality: 'HIBRIDA' } });
+    expect(body.data.modality).toBe('HIBRIDA');
+  });
+
+  it('rejects a modality value not on the pre-defined list', async () => {
+    const prisma = makePrisma({ course: { update: vi.fn() } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { modality: 'TAG_INVENTADO' },
+    });
+    const res = await handleCourses(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('clears courseType/modality when sent as an empty string', async () => {
+    const updateMock = vi.fn().mockResolvedValue({ id: 'course-1', courseType: null, modality: null });
+    const prisma = makePrisma({ course: { update: updateMock } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'PUT', '/admin/courses/course-1'),
+      method: 'PUT', path: '/admin/courses/course-1', prisma,
+      body: { courseType: '', modality: '' },
+    });
+
+    const res = await handleCourses(ctx as any);
+    expect(res.statusCode).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith({ where: { id: 'course-1' }, data: { courseType: null, modality: null } });
+  });
+});

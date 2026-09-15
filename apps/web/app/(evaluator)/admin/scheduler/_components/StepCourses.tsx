@@ -19,9 +19,10 @@ export type CourseOverrides = Record<string, {
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "es importante que aparezcan los
 // tags del tipo de curso: si es teórico, teórico-práctico, etc... también...
 // si el curso va a ser híbrido, virtual (sincrónico o asincrónico) o
-// presencial... todo eso es lo que se jala desde la sección número 3 de
-// cursos." Informativo — ambos ya vienen de Lux Planner, se editan ahí, acá
-// solo se muestran como tags junto al resto de la fila.
+// presencial... debo tener la opción de elegir esos tags que ya tienen que
+// estar prediseñados. No puedo crear tags nuevos." Editables acá mismo (no
+// solo informativos como al principio), restringidos a los valores fijos
+// que ya usa Lux Planner — mismo campo Course.courseType/modality.
 const COURSE_TYPE_LABELS: Record<string, string> = {
   TEORICO: 'Teórico', TEORICO_PRACTICO: 'Teórico-Práctico', PROYECTOS: 'Taller/Proyectos',
   PROGRAMA_ESPECIAL: 'Programa Especial', CURSO_CORTO: 'Curso Corto', LIBRE: 'Curso Libre/Tutoría',
@@ -145,6 +146,23 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
     }
   };
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "las etiquetas... deben poder
+  // agregarse... debo tener la opción de elegir esos tags que ya tienen que
+  // estar prediseñados. No puedo crear tags nuevos" — editable acá mismo
+  // (paso 3), restringido a los valores fijos que ya usa Lux Planner.
+  const [tagSavingId, setTagSavingId] = useState<string | null>(null);
+  const handleUpdateTag = async (courseId: string, field: 'courseType' | 'modality', value: string) => {
+    setTagSavingId(courseId); setRowError('');
+    try {
+      await api.admin.courses.update(courseId, { [field]: value || null });
+      onLoaded(courses.map((c) => (c.id === courseId ? { ...c, [field]: value || null } : c)));
+    } catch (err: any) {
+      setRowError(err?.message ?? 'No se pudo actualizar el tag.');
+    } finally {
+      setTagSavingId(null);
+    }
+  };
+
   const handleDeleteCourse = async (courseId: string, title: string) => {
     if (!confirm(`¿Eliminar "${title}" de Lux Learning por completo? Esta acción no se puede deshacer.`)) return;
     setDeletingId(courseId); setRowError('');
@@ -226,16 +244,24 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                             </button>
                           </div>
                           <div className="flex items-center gap-1 mt-0.5">
-                            {c.courseType && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
-                                {COURSE_TYPE_LABELS[c.courseType] ?? c.courseType}
-                              </span>
-                            )}
-                            {c.modality && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium">
-                                {MODALITY_FULL_LABELS[c.modality] ?? c.modality}
-                              </span>
-                            )}
+                            <select
+                              value={c.courseType ?? ''} disabled={tagSavingId === c.id}
+                              onChange={(e) => handleUpdateTag(c.id, 'courseType', e.target.value)}
+                              title="Tipo de curso"
+                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium border-0 outline-none disabled:opacity-50"
+                            >
+                              <option value="">— tipo —</option>
+                              {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                            </select>
+                            <select
+                              value={c.modality ?? ''} disabled={tagSavingId === c.id}
+                              onChange={(e) => handleUpdateTag(c.id, 'modality', e.target.value)}
+                              title="Modalidad del curso"
+                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium border-0 outline-none disabled:opacity-50"
+                            >
+                              <option value="">— modalidad —</option>
+                              {Object.entries(MODALITY_FULL_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                            </select>
                           </div>
                         </div>
                       )}
