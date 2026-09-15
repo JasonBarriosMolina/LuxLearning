@@ -11,11 +11,17 @@ import { StepCourses } from './StepCourses';
 const assignEvaluatorMock = vi.fn().mockResolvedValue({});
 const deleteMock = vi.fn().mockResolvedValue({});
 const updateMock = vi.fn().mockResolvedValue({});
+const roomsListMock = vi.fn().mockResolvedValue({ data: [
+  { id: 'room-1', name: '101', capacity: 10, buildingId: null, floor: null, preferredName: 'Salón de ensayos', courseTypeTags: [] },
+] });
 const createCourseMock = vi.fn();
 vi.mock('@/lib/api', () => ({
   api: {
     admin: {
-      scheduler: { courses: vi.fn().mockResolvedValue({ data: [] }), createCourse: (...a: any[]) => createCourseMock(...a) },
+      scheduler: {
+        courses: vi.fn().mockResolvedValue({ data: [] }), createCourse: (...a: any[]) => createCourseMock(...a),
+        rooms: { list: (...a: any[]) => roomsListMock(...a) },
+      },
       users: { list: vi.fn().mockResolvedValue({ data: [
         { username: 'eval-1', role: 'EVALUATOR', name: 'Profe Uno' },
         { username: 'eval-2', role: 'EVALUATOR', name: 'Profe Dos' },
@@ -32,7 +38,7 @@ vi.mock('@/lib/api', () => ({
 const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: ['s1', 's2', 's3'], studentCount: 3 };
 
 beforeEach(() => {
-  assignEvaluatorMock.mockClear(); deleteMock.mockClear(); updateMock.mockClear(); createCourseMock.mockReset();
+  assignEvaluatorMock.mockClear(); deleteMock.mockClear(); updateMock.mockClear(); createCourseMock.mockReset(); roomsListMock.mockClear();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 
@@ -175,6 +181,25 @@ describe('StepCourses — editar/eliminar curso', () => {
   // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si es asincrónico el curso,
   // entonces no debería de existir directamente [en el horario]. Y no
   // debería de tener una afectación en términos de horario."
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+  // respete que ese Ensamble Instrumental se dé siempre en el aula de
+  // ensayos... eso bloquearía el uso de ese aula para un horario en
+  // específico directamente para ese curso."
+  it('permite fijar un aula para un curso presencial, persistida vía preferredRoomId', async () => {
+    const presencial = { ...course, engineModality: 'PRESENCIAL' as const };
+    const onLoaded = vi.fn();
+    render(<StepCourses academicPeriod="2026-2" courses={[presencial]} overrides={{}} onLoaded={onLoaded} onOverrideChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+    await waitFor(() => expect(roomsListMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTitle('Fijar un aula para este curso'));
+    const select = await screen.findByDisplayValue('— sin aula fija (auto-asignar) —');
+    fireEvent.change(select, { target: { value: 'room-1' } });
+
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith('c1', { preferredRoomId: 'room-1' }));
+    expect(onLoaded).toHaveBeenCalledWith([{ ...presencial, preferredRoomId: 'room-1' }]);
+  });
+
   it('un curso asincrónico nunca aparece en la tabla programable, ni con un override viejo de modalidad pegado', async () => {
     const async1 = { ...course, id: 'c-async', title: 'Curso Async', engineModality: null };
     render(

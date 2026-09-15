@@ -8,8 +8,30 @@ export interface CourseCatalogRow {
   modality: string | null;
   engineModality: 'PRESENCIAL' | 'VIRTUAL' | null; // null = asincrónica, no live session
   courseType: string | null; // TEORICO | TEORICO_PRACTICO | PROYECTOS | PROGRAMA_ESPECIAL | CURSO_CORTO | LIBRE — se define en Lux Planner
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+  // respete que ese Ensamble Instrumental se dé siempre en el aula de
+  // ensayos" — persiste entre generaciones, se edita desde el catálogo.
+  preferredRoomId?: string | null;
   studentIds: string[];
   studentCount: number;
+}
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "la institución puede
+// agregar aulas, puede agregar edificios... divididas por piso... nombre
+// preferencial... aforo."
+export interface Building {
+  id: string;
+  name: string;
+}
+
+export interface ClassRoomRow {
+  id: string;
+  name: string;
+  capacity: number;
+  buildingId: string | null;
+  floor: number | null;
+  preferredName: string | null;
+  courseTypeTags: string[];
 }
 
 export interface ScheduledSession {

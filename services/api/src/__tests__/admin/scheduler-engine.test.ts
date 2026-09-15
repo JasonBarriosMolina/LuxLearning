@@ -298,6 +298,54 @@ describe('generateScheduleProposals', () => {
     });
   });
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+  // respete que ese Ensamble Instrumental se dé siempre en el aula de
+  // ensayos... eso bloquearía el uso de ese aula para un horario en
+  // específico directamente para ese curso."
+  describe('pinnedRoomId', () => {
+    const rooms: RoomInput[] = [{ id: 'small', capacity: 5 }, { id: 'ensayos', capacity: 20 }];
+
+    it('assigns the pinned room directly, ignoring capacity/greedy selection', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1')],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'INDIVIDUAL', pinnedRoomId: 'ensayos' })],
+        rooms,
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.sessions[0]!.roomId).toBe('ensayos');
+      }
+    });
+
+    it('reserves the pinned room\'s slot so auto-assign never hands it to another course at an overlapping time', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 10 }), teacher('eval-2', { maxCoursesPerWeek: 10 })],
+        courses: [
+          course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: ['s1', 's2'], pinnedRoomId: 'small' }),
+          course('c2', 'eval-2', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: ['s3', 's4'] }), // no pin — must auto-assign
+        ],
+        rooms: [{ id: 'small', capacity: 20 }], // solo 1 aula, ya pineada a c1
+      };
+      for (const p of generateScheduleProposals(input)) {
+        const c1 = p.sessions.find((s) => s.courseId === 'c1')!;
+        const c2 = p.sessions.find((s) => s.courseId === 'c2');
+        expect(c1.roomId).toBe('small');
+        const sameSlot = c2 && c1.dayOfWeek === c2.dayOfWeek && c1.startTime === c2.startTime;
+        if (sameSlot) expect(c2!.roomId).toBeUndefined(); // la única aula ya está pineada a c1 a esa hora
+      }
+    });
+
+    it('does not pin a room for a VIRTUAL course even if pinnedRoomId is set', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1')],
+        courses: [course('c1', 'eval-1', { modality: 'VIRTUAL', pinnedRoomId: 'ensayos' })],
+        rooms,
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.sessions[0]!.roomId).toBeUndefined();
+      }
+    });
+  });
+
   it('returns 3 differently-labeled proposals', () => {
     const input: ScheduleInput = {
       teachers: [teacher('eval-1'), teacher('eval-2')],
@@ -394,5 +442,25 @@ describe('findConflicts', () => {
       session({ courseId: 'c2', evaluatorId: 'eval-1', dayOfWeek: 2 }),
     ];
     expect(findConflicts({ sessions })).toEqual([]);
+  });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): dos cursos pineados a la
+  // misma aula, a una hora que se solapa — placeCourse nunca lo detecta
+  // porque cada pin se escribe directo sin chequear contra el otro curso.
+  it('flags two different courses pinned to the same room at an overlapping time', () => {
+    const sessions = [
+      session({ courseId: 'c1', evaluatorId: 'eval-1', modality: 'PRESENCIAL', dayOfWeek: 6, startTime: '08:00', endTime: '08:55', roomId: 'ensayos' }),
+      session({ courseId: 'c2', evaluatorId: 'eval-2', modality: 'PRESENCIAL', dayOfWeek: 6, startTime: '08:30', endTime: '09:25', roomId: 'ensayos' }),
+    ];
+    const conflicts = findConflicts({ sessions });
+    expect(conflicts.some((c) => c.type === 'ROOM_OVERLAP')).toBe(true);
+  });
+
+  it('does not flag two sessions sharing a room at non-overlapping times', () => {
+    const sessions = [
+      session({ courseId: 'c1', modality: 'PRESENCIAL', dayOfWeek: 6, startTime: '08:00', endTime: '08:55', roomId: 'ensayos' }),
+      session({ courseId: 'c2', evaluatorId: 'eval-2', modality: 'PRESENCIAL', dayOfWeek: 6, startTime: '09:00', endTime: '09:55', roomId: 'ensayos' }),
+    ];
+    expect(findConflicts({ sessions }).some((c) => c.type === 'ROOM_OVERLAP')).toBe(false);
   });
 });

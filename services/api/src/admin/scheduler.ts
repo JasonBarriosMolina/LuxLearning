@@ -70,7 +70,7 @@ async function resolveContact(username: string): Promise<{ name: string; email: 
 async function loadCourseCatalog(prisma: any, academicPeriod: string) {
   const courses = await prisma.course.findMany({
     where: { academicPeriod, evaluatorId: { not: null }, isArchived: false },
-    select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true },
+    select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true, preferredRoomId: true },
   });
   // One full Enrollments scan, grouped in memory — cheaper than one Scan per course
   // (same lesson as the evaluator/tasks.ts course-wide-assignment fix from today).
@@ -150,6 +150,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       courses: courses.map((c) => ({
         id: c.id, title: c.title, evaluatorId: c.evaluatorId, teacherName: teacherNames[c.evaluatorId],
         modality: c.modality, engineModality: toEngineModality(c.modality), courseType: c.courseType,
+        preferredRoomId: c.preferredRoomId ?? null,
         studentIds: studentsByCourse.get(c.id) ?? [],
         studentCount: (studentsByCourse.get(c.id) ?? []).length,
       })),
@@ -199,7 +200,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       presencialDays, virtualDays, institutionalOpen, institutionalClose,
     } = body as {
       academicPeriod?: string;
-      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[] }>;
+      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
@@ -238,6 +239,12 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       courseTitles[c.id] = c.title;
       const override = courseOverrides?.[c.id];
       const studentIds = studentsByCourse.get(c.id) ?? [];
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+      // respete que ese Ensamble Instrumental se dé siempre en el aula de
+      // ensayos... eso bloquearía el uso de ese aula para un horario en
+      // específico directamente para ese curso." override.roomId permite
+      // cambiarlo solo para esta generación sin tocar el valor persistido.
+      const pinnedRoomId = override?.roomId ?? c.preferredRoomId ?? undefined;
 
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay cursos que pueden ser
       // híbridos... hay estudiantes virtuales y hay estudiantes presenciales."
@@ -251,7 +258,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
           engineCourses.push({
             courseId: c.id, evaluatorId: c.evaluatorId, modality: 'PRESENCIAL',
             classType: presencialIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
-            studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin,
+            studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin, pinnedRoomId,
           });
         }
         if (virtualIds.length > 0) {
@@ -267,7 +274,11 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       const modality = override?.modality ?? toEngineModality(c.modality);
       if (!modality) { skippedAsync.push(c.id); continue; } // asincrónica — no live session
       const classType: ClassType = override?.classType ?? (studentIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL');
-      engineCourses.push({ courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds, durationOverrideMin: override?.durationOverrideMin });
+      engineCourses.push({
+        courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds,
+        durationOverrideMin: override?.durationOverrideMin,
+        pinnedRoomId: modality === 'PRESENCIAL' ? pinnedRoomId : undefined,
+      });
     }
     if (!engineCourses.length) return badRequest('Ningún curso de este período requiere clase en vivo (todos son asincrónicos)');
 
@@ -281,9 +292,13 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const studentNames: Record<string, string> = {};
     await Promise.all(studentIds.map(async (id) => { studentNames[id] = await resolveDisplayName(id); }));
 
-    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, capacity: true } });
+    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, preferredName: true, capacity: true } });
     const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity }));
-    const roomNames: Record<string, string> = Object.fromEntries(roomRows.map((r: any) => [r.id, r.name]));
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "si el nombre es 'Aula
+    // 101', pero se le conoce internamente como 'Salón de ensayos'... que sea
+    // visible para el estudiante también y para el evaluador" — el apodo manda
+    // en cualquier vista que muestre el nombre del aula.
+    const roomNames: Record<string, string> = Object.fromEntries(roomRows.map((r: any) => [r.id, r.preferredName || r.name]));
     const proposals = generateScheduleProposals({
       courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes, rooms,
       presencialDays, virtualDays, institutionalOpen, institutionalClose,

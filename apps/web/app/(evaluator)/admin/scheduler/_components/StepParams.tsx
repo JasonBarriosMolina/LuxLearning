@@ -1,5 +1,7 @@
 'use client';
 
+import { RoomsManager } from './RoomsManager';
+
 const DAY_OPTIONS = [
   { value: 1, label: 'Lun' }, { value: 2, label: 'Mar' }, { value: 3, label: 'Mié' },
   { value: 4, label: 'Jue' }, { value: 5, label: 'Vie' }, { value: 6, label: 'Sáb' },
@@ -115,6 +117,12 @@ export function StepParams({
         </div>
         <p className="text-xs text-gray-400">El motor lo respeta cuando puede, pero permite clases seguidas si es la única forma de ubicarlas.</p>
       </div>
+
+      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "una de las cosas
+          importantes que debe existir en parámetros, tal vez como una
+          sección intermedia entre parámetros y cursos, son las aulas
+          disponibles." */}
+      <RoomsManager />
     </div>
   );
 }

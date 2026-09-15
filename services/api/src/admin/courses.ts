@@ -339,6 +339,12 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
         if (value && !COURSE_MODALITY_VALUES.includes(value)) return badRequest('modality inválido');
         updateData.modality = value || null;
       }
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+      // respete que ese Ensamble Instrumental se dé siempre en el aula de
+      // ensayos" — aula preferida, campo suelto igual que courseType/modality.
+      if ('preferredRoomId' in body) {
+        updateData.preferredRoomId = (body.preferredRoomId as string | null) || null;
+      }
       // Partial startDate/closeDate update (e.g. clearing startDate without sending full body)
       if (!isFullUpdate && 'startDate' in body) updateData.startDate = startDate ? new Date(startDate) : null;
       if (!isFullUpdate && 'closeDate' in body) updateData.closeDate = closeDate ? new Date(closeDate) : null;

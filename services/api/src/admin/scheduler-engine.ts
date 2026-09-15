@@ -37,6 +37,13 @@ export interface CourseInput {
   // un curso en especial; puede ser de 1 hora o similar" — anula el
   // individualMinutes/groupMinutes global SOLO para este curso.
   durationOverrideMin?: number;
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
+  // respete que ese Ensamble Instrumental se dé siempre en el aula de
+  // ensayos... eso bloquearía el uso de ese aula para un horario en
+  // específico directamente para ese curso." Solo aplica a PRESENCIAL — un
+  // aula pineada se asigna directo, sin pasar por assignRooms(), y bloquea
+  // ese hueco para el auto-assign de los demás cursos.
+  pinnedRoomId?: string;
 }
 
 export interface LunchBreak {
@@ -255,6 +262,9 @@ function placeCourse(
             classType: course.classType,
             studentGroupId: course.studentGroupId,
             studentIds: course.studentIds,
+            // Pineada directo acá — assignRooms() ni la toca (ver ahí cómo
+            // reserva este hueco para que no se le asigne a otro curso).
+            roomId: course.modality === 'PRESENCIAL' ? course.pinnedRoomId : undefined,
           };
         }
       }
@@ -363,6 +373,10 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
 // individuales." Asigna la aula más chica que alcance, sin chocar con otra
 // sesión el mismo día/hora — post-proceso sobre sesiones ya ubicadas (el
 // horario en sí nunca depende de si hay aula libre, solo el tag de aula).
+// Ampliado 2026-09-15 (15:36): un curso puede tener el aula PINEADA
+// (course.pinnedRoomId, ya escrita en session.roomId por placeCourse) — acá
+// no se le toca ni se valida, solo se reserva su hueco para que el
+// auto-assign no le entregue esa misma aula/horario a otro curso.
 function assignRooms(sessions: ScheduledSession[], rooms: RoomInput[]): void {
   const byCapacity = [...rooms].sort((a, b) => a.capacity - b.capacity);
   const bookedByRoom = new Map<string, Window[]>(); // roomId -> windows booked that day (day baked into window via +day*1440 offset)
@@ -370,10 +384,20 @@ function assignRooms(sessions: ScheduledSession[], rooms: RoomInput[]): void {
     .filter((s) => s.modality === 'PRESENCIAL')
     .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
 
-  for (const s of presencial) {
-    const needed = s.classType === 'INDIVIDUAL' ? 1 : s.studentIds.length;
+  const windowOf = (s: ScheduledSession): Window => {
     const dayOffset = s.dayOfWeek * 1440;
-    const window: Window = { start: dayOffset + toMinutes(s.startTime), end: dayOffset + toMinutes(s.endTime) };
+    return { start: dayOffset + toMinutes(s.startTime), end: dayOffset + toMinutes(s.endTime) };
+  };
+
+  for (const s of presencial) {
+    if (!s.roomId) continue;
+    bookedByRoom.set(s.roomId, [...(bookedByRoom.get(s.roomId) ?? []), windowOf(s)]);
+  }
+
+  for (const s of presencial) {
+    if (s.roomId) continue; // ya pineada — no se reasigna
+    const needed = s.classType === 'INDIVIDUAL' ? 1 : s.studentIds.length;
+    const window = windowOf(s);
     const room = byCapacity.find((r) => {
       if (r.capacity < needed) return false;
       const booked = bookedByRoom.get(r.id) ?? [];
@@ -432,7 +456,7 @@ export function generateScheduleProposals(input: ScheduleInput): ScheduleProposa
 // slots by construction) — this is for re-checking a session list AFTER the
 // admin hand-edits a day/time in the review step, where anything goes.
 
-export type ConflictType = 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_PRESENCIAL_WINDOW' | 'WORKLOAD_EXCEEDED';
+export type ConflictType = 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_PRESENCIAL_WINDOW' | 'WORKLOAD_EXCEEDED' | 'ROOM_OVERLAP';
 
 export interface Conflict {
   sessionIndex: number;
@@ -468,6 +492,12 @@ export function findConflicts({ sessions, lunchBreak, teachers, presencialDays, 
       }
       if (a.studentIds.some((s) => b.studentIds.includes(s))) {
         conflicts.push({ sessionIndex: i, withIndex: j, type: 'STUDENT_OVERLAP', message: `Un estudiante ya tiene otra clase a esa hora (choca con la sesión ${j + 1}).` });
+      }
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): un aula pineada a un
+      // curso se asigna directo sin pasar por assignRooms() — si dos cursos
+      // pinean la MISMA aula a una hora que se solapa, nadie más lo detecta.
+      if (a.roomId && a.roomId === b.roomId) {
+        conflicts.push({ sessionIndex: i, withIndex: j, type: 'ROOM_OVERLAP', message: `El aula ya está ocupada a esa hora (choca con la sesión ${j + 1}).` });
       }
     }
 

@@ -610,7 +610,7 @@ export const api = {
         request<any>('/admin/scheduler/courses', { method: 'POST', body: JSON.stringify(body) }),
       generate: (body: {
         academicPeriod: string;
-        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[] }>;
+        courseOverrides?: Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL' | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string }>;
         lunchBreak?: { startTime: string; endTime: string };
         gapMinutes?: number;
         individualMinutes?: number;
@@ -634,6 +634,21 @@ export const api = {
       publish: (academicPeriod: string) => request<any>('/admin/scheduler/publish', { method: 'POST', body: JSON.stringify({ academicPeriod }) }),
       unpublish: (academicPeriod: string) => request<any>(`/admin/scheduler/${encodeURIComponent(academicPeriod)}`, { method: 'DELETE' }),
       export: (academicPeriod: string) => request<any>(`/admin/scheduler/export?academicPeriod=${encodeURIComponent(academicPeriod)}`),
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "la institución puede
+      // agregar aulas, puede agregar edificios."
+      buildings: {
+        list: () => request<any>('/admin/scheduler/buildings'),
+        create: (name: string) => request<any>('/admin/scheduler/buildings', { method: 'POST', body: JSON.stringify({ name }) }),
+        delete: (id: string) => request<any>(`/admin/scheduler/buildings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      },
+      rooms: {
+        list: () => request<any>('/admin/scheduler/rooms'),
+        create: (body: { name: string; capacity: number; buildingId?: string; floor?: number; preferredName?: string; courseTypeTags?: string[] }) =>
+          request<any>('/admin/scheduler/rooms', { method: 'POST', body: JSON.stringify(body) }),
+        update: (id: string, body: Partial<{ name: string; capacity: number; buildingId: string | null; floor: number | null; preferredName: string | null; courseTypeTags: string[] }>) =>
+          request<any>(`/admin/scheduler/rooms/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+        delete: (id: string) => request<any>(`/admin/scheduler/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      },
     },
   },
   attendance: {

@@ -462,8 +462,8 @@ describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', ()
     const body = await bodyOf(res);
     expect(res.statusCode).toBe(200);
     expect(body.data.courses).toEqual([
-      { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', studentIds: ['s1', 's2'], studentCount: 2 },
-      { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, studentIds: [], studentCount: 0 },
+      { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', preferredRoomId: null, studentIds: ['s1', 's2'], studentCount: 2 },
+      { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, preferredRoomId: null, studentIds: [], studentCount: 0 },
     ]);
     // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "tampoco tengo opción de
     // eliminar estudiantes que estén en los cursos ya" — el catálogo ahora

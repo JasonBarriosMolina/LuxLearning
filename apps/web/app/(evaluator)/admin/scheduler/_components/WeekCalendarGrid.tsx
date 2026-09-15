@@ -145,6 +145,12 @@ export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, student
                   <p className="truncate">{teacherNames[s.evaluatorId] ?? s.evaluatorId}</p>
                   <p className="truncate opacity-80">{s.startTime}–{s.endTime}</p>
                   {s.roomId && <p className="truncate opacity-70">{roomNames?.[s.roomId] ?? s.roomId}</p>}
+                  {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "para los
+                      cursos que son virtuales, se le va a llamar algo similar a
+                      'Aula virtual'... que más adelante se va a llamar 'Lux
+                      Live'." Placeholder de nombre, sin producto real detrás
+                      todavía — solo una etiqueta para que no se vea en blanco. */}
+                  {s.modality === 'VIRTUAL' && <p className="truncate opacity-70">Sesión virtual (Lux Live)</p>}
                   {openId === globalId && (
                     <div className="absolute z-30 top-full left-0 mt-1 w-52 bg-white border border-border rounded-lg shadow-lg p-2 text-charcoal normal-case">
                       <div className="flex items-center justify-between mb-1">
@@ -154,6 +160,7 @@ export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, student
                       <p className="text-[11px] text-gray-500 mb-1">
                         {s.studentIds.length} estudiante{s.studentIds.length !== 1 ? 's' : ''}
                         {s.roomId && ` · ${roomNames?.[s.roomId] ?? s.roomId}`}
+                        {s.modality === 'VIRTUAL' && ' · Sesión virtual (Lux Live)'}
                       </p>
                       {s.studentIds.length > 0 && (
                         <ul className="text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
