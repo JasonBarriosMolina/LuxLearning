@@ -52,6 +52,7 @@ export default function SchedulerPage() {
   const [individualMinutes, setIndividualMinutes] = useState(55);
   const [groupMinutes, setGroupMinutes] = useState(75);
   const [courses, setCourses] = useState<CourseCatalogRow[]>([]);
+  const [studentNames, setStudentNames] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<CourseOverrides>({});
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
@@ -206,13 +207,15 @@ export default function SchedulerPage() {
           academicPeriod={academicPeriod} courses={courses} overrides={overrides}
           onLoaded={setCourses}
           onOverrideChange={(id, patch) => setOverrides((prev) => ({ ...prev, [id]: patch }))}
+          onStudentNamesLoaded={(names) => setStudentNames((prev) => ({ ...prev, ...names }))}
         />
       )}
       {step === 4 && <StepAvailability courses={courses} />}
       {step === 5 && (
         <StepStudents
-          courses={courses}
+          courses={courses} studentNames={studentNames}
           onCourseUpdated={(courseId, patch) => setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, ...patch } : c)))}
+          onStudentNamesLoaded={(names) => setStudentNames((prev) => ({ ...prev, ...names }))}
         />
       )}
       {step === 6 && <StepGenerate generating={generating} error={generateError} onRetry={runGenerate} />}
