@@ -36,4 +36,12 @@ describe('WeekCalendarGrid', () => {
     const { container } = render(<WeekCalendarGrid sessions={[]} courseTitles={{}} teacherNames={{}} />);
     expect(container.firstChild).toBeNull();
   });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "no puedo ver los minutos en
+  // cómo se ve eso en el calendario semanal."
+  it('muestra la hora de inicio y fin dentro del bloque', () => {
+    render(<WeekCalendarGrid sessions={sessions} courseTitles={courseTitles} teacherNames={teacherNames} studentNames={studentNames} />);
+    expect(screen.getByText('08:00–09:15')).toBeTruthy();
+    expect(screen.getByText('18:00–18:55')).toBeTruthy();
+  });
 });
