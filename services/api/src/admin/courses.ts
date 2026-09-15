@@ -292,6 +292,18 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
       if ('pilotoAutomatico' in body) updateData.pilotoAutomatico = pilotoAutomatico;
       if ('weeklyPacingEnabled' in body) updateData.weeklyPacingEnabled = weeklyPacingEnabled;
       if ('isAutoevaluated' in body) updateData.isAutoevaluated = isAutoevaluated;
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "es importante que yo tenga la
+      // opción, en Gestión de contenido y en cada uno de los cursos creados, de
+      // agregarles tags... no necesariamente tengo que ir a editar con Lux Planner
+      // y meterme a hacer todos los pasos" — tag de semestre editable como campo
+      // suelto, sin pasar por el wizard completo.
+      if ('academicPeriod' in body) {
+        const period = (body.academicPeriod as string | null)?.trim() || null;
+        updateData.academicPeriod = period;
+        if (period) {
+          await prisma.academicPeriod.upsert({ where: { name: period }, update: {}, create: { name: period } }).catch(() => {});
+        }
+      }
       // Partial startDate/closeDate update (e.g. clearing startDate without sending full body)
       if (!isFullUpdate && 'startDate' in body) updateData.startDate = startDate ? new Date(startDate) : null;
       if (!isFullUpdate && 'closeDate' in body) updateData.closeDate = closeDate ? new Date(closeDate) : null;

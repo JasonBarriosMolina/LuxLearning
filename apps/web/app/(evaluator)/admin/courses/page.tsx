@@ -96,6 +96,9 @@ export default function AdminCoursesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(activeTab); }, [activeTab, lang]);
 
+  const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { api.admin.periods.list().then((res: any) => setPeriods(res?.data ?? [])).catch(() => {}); }, []);
+
   const openCreate = () => {
     setEditingCourse(null);
     setForm(EMPTY_FORM);
@@ -367,6 +370,24 @@ export default function AdminCoursesPage() {
     }
   };
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "es importante que yo tenga la
+  // opción, en Gestión de contenido y en cada uno de los cursos creados, de
+  // agregarles tags... como a qué semestre pertenece... no necesariamente
+  // tengo que ir a editar con Lux Planner" — tag de periodo rápido, sin abrir
+  // el wizard completo.
+  const handlePeriodChange = async (courseId: string, academicPeriod: string) => {
+    setCourses((prev) => prev.map((c) => (c.id === courseId ? { ...c, academicPeriod } : c))); // optimistic
+    try {
+      await api.admin.courses.update(courseId, { academicPeriod });
+      if (academicPeriod && !periods.some((p) => p.name === academicPeriod)) {
+        setPeriods((prev) => [{ id: `local:${academicPeriod}`, name: academicPeriod }, ...prev]);
+      }
+    } catch (err: any) {
+      alert(err.message ?? 'Error al actualizar el período');
+      await load(); // revert to actual DB state
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
@@ -440,6 +461,8 @@ export default function AdminCoursesPage() {
               onArchive={(id) => setArchiveConfirm(id)}
               onDelete={(id) => setConfirmDelete(id)}
               onStatusChange={handleStatusChange}
+              periods={periods}
+              onPeriodChange={handlePeriodChange}
               t={t}
             />
           ))}
