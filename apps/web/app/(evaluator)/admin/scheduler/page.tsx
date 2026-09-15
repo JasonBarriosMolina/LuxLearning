@@ -15,6 +15,29 @@ import { StepReview } from './_components/StepReview';
 import { StepReports } from './_components/StepReports';
 import type { CourseCatalogRow, GenerateResult } from './_components/types';
 
+// Borrador local del wizard (Trello *LUX SCHEDULER*, Mack 2026-09-10: "debería
+// haber siempre una opción de guardar como borrador... por si le doy atrás sin
+// querer"). Solo pasos 1-6 (entrada de datos) — el resultado generado (7-8) no
+// se persiste, se regenera al volver porque la disponibilidad pudo cambiar.
+const DRAFT_KEY = 'lux-scheduler-draft-v1';
+interface Draft {
+  step: number; academicPeriod: string; lunchStart: string; lunchEnd: string;
+  gapMinutes: number; individualMinutes: number; groupMinutes: number;
+  courses: CourseCatalogRow[]; overrides: CourseOverrides;
+}
+function loadDraft(): Draft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveDraft(d: Draft) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* storage unavailable — draft is a convenience, not critical */ }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ }
+}
+
 // Lux Scheduler — wizard de 8 pasos (Trello *LUX SCHEDULER*, 2026-09-10, spec de
 // Mack completa en el card). Todo el estado vive acá, cada Step es presentacional.
 export default function SchedulerPage() {
@@ -34,6 +57,37 @@ export default function SchedulerPage() {
   const [generateError, setGenerateError] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [recipientCount, setRecipientCount] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftAvailable, setDraftAvailable] = useState(false);
+
+  // Restaurar borrador una sola vez al montar.
+  useEffect(() => {
+    const d = loadDraft();
+    if (d) {
+      setStep(Math.min(d.step, 6));
+      setAcademicPeriod(d.academicPeriod);
+      setLunchStart(d.lunchStart); setLunchEnd(d.lunchEnd);
+      setGapMinutes(d.gapMinutes); setIndividualMinutes(d.individualMinutes); setGroupMinutes(d.groupMinutes);
+      setCourses(d.courses); setOverrides(d.overrides);
+      setDraftAvailable(true);
+    }
+    setDraftRestored(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Guardar borrador en cada cambio relevante, solo mientras estamos en los
+  // pasos de entrada (1-6) y ya pasamos la restauración inicial.
+  useEffect(() => {
+    if (!draftRestored || step > 6 || !academicPeriod) return;
+    saveDraft({ step, academicPeriod, lunchStart, lunchEnd, gapMinutes, individualMinutes, groupMinutes, courses, overrides });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRestored, step, academicPeriod, lunchStart, lunchEnd, gapMinutes, individualMinutes, groupMinutes, courses, overrides]);
+
+  const discardDraft = () => {
+    clearDraft();
+    setDraftAvailable(false);
+    setStep(1); setAcademicPeriod(''); setCourses([]); setOverrides({}); setResult(null);
+  };
 
   const lunchBreak = { startTime: lunchStart, endTime: lunchEnd };
 
@@ -87,8 +141,17 @@ export default function SchedulerPage() {
   }
 
   return (
-    <WizardShell
-      step={step}
+    <div className="max-w-4xl mx-auto">
+      {draftAvailable && step <= 6 && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-cta-from/30 bg-cta-from/5 px-3 py-2 text-xs text-charcoal">
+          <span>Se restauró tu borrador guardado.</span>
+          <button type="button" onClick={discardDraft} className="font-semibold text-cta-from hover:underline shrink-0">
+            Empezar de nuevo
+          </button>
+        </div>
+      )}
+      <WizardShell
+        step={step}
       onBack={step > 1 && step !== 8 ? () => goToStep(step === 7 ? 5 : step - 1) : undefined}
       onStepClick={goToStep}
       onNext={
@@ -123,15 +186,16 @@ export default function SchedulerPage() {
       {step === 7 && result && (
         <StepReview
           result={result} academicPeriod={academicPeriod} lunchBreak={lunchBreak}
-          onApproved={(count) => { setRecipientCount(count); setStep(8); }}
+          onApproved={(count) => { clearDraft(); setRecipientCount(count); setStep(8); }}
         />
       )}
       {step === 8 && (
         <StepReports
           academicPeriod={academicPeriod} recipientCount={recipientCount}
-          onUnpublish={() => { setStep(1); setAcademicPeriod(''); setResult(null); setCourses([]); setOverrides({}); }}
+          onUnpublish={() => { clearDraft(); setStep(1); setAcademicPeriod(''); setResult(null); setCourses([]); setOverrides({}); }}
         />
       )}
-    </WizardShell>
+      </WizardShell>
+    </div>
   );
 }
