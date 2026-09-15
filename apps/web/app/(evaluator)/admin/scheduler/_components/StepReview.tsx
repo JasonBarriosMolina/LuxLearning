@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { WeekCalendarGrid } from './WeekCalendarGrid';
 import type { GenerateResult, ScheduledSession, Conflict } from './types';
 
 const DAY_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -56,7 +57,7 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
     try {
       await api.admin.scheduler.approve({
         academicPeriod, proposal: { ...result.proposals[proposalIdx], sessions },
-        courseTitles: result.courseTitles, teacherNames: result.teacherNames,
+        courseTitles: result.courseTitles, teacherNames: result.teacherNames, studentNames: result.studentNames,
       });
       setApproved(true);
       onApproved();
@@ -101,6 +102,8 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
           <span>No se pudo ubicar: {proposal.unscheduledCourseIds.map((id) => result.courseTitles[id] ?? id).join(', ')}.</span>
         </div>
       )}
+
+      <WeekCalendarGrid sessions={sessions} courseTitles={result.courseTitles} teacherNames={result.teacherNames} studentNames={result.studentNames} />
 
       {/* Editable session table */}
       <div className="card">

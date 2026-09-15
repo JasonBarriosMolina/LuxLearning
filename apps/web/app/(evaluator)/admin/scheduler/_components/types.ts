@@ -40,6 +40,7 @@ export interface GenerateResult {
   proposals: ScheduleProposal[];
   courseTitles: Record<string, string>;
   teacherNames: Record<string, string>;
+  studentNames?: Record<string, string>;
   academicPeriod: string;
   skippedAsyncCourseIds: string[];
 }

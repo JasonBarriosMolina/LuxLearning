@@ -227,8 +227,15 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const teacherNames: Record<string, string> = {};
     await Promise.all(evaluatorIds.map(async (id) => { teacherNames[id] = await resolveDisplayName(id); }));
 
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "en un dropdown yo pueda ver
+    // los estudiantes matriculados" en el calendario visual del paso 7 — nombres,
+    // no IDs crudos de Cognito.
+    const studentIds = [...new Set(engineCourses.flatMap((c) => c.studentIds))];
+    const studentNames: Record<string, string> = {};
+    await Promise.all(studentIds.map(async (id) => { studentNames[id] = await resolveDisplayName(id); }));
+
     const proposals = generateScheduleProposals({ courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes });
-    return ok({ proposals, courseTitles, teacherNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
+    return ok({ proposals, courseTitles, teacherNames, studentNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 
   // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa
@@ -243,17 +250,18 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/scheduler/approve — store the candidate, no side effects ────
   if (path === '/admin/scheduler/approve' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { academicPeriod, proposal, courseTitles, teacherNames } = body as {
+    const { academicPeriod, proposal, courseTitles, teacherNames, studentNames } = body as {
       academicPeriod?: string; proposal?: ScheduleProposal;
-      courseTitles?: Record<string, string>; teacherNames?: Record<string, string>;
+      courseTitles?: Record<string, string>; teacherNames?: Record<string, string>; studentNames?: Record<string, string>;
     };
     if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
     if (!proposal?.sessions?.length) return badRequest('proposal.sessions es requerido');
 
+    const proposalJson = { proposal, courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {}, studentNames: studentNames ?? {} };
     await prisma.scheduleApproval.upsert({
       where: { academicPeriod },
-      update: { proposalJson: { proposal, courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {} }, status: 'APPROVED', notifiedStudents: false, notifiedEvaluators: false, publishedAt: null },
-      create: { academicPeriod, proposalJson: { proposal, courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {} } },
+      update: { proposalJson, status: 'APPROVED', notifiedStudents: false, notifiedEvaluators: false, publishedAt: null },
+      create: { academicPeriod, proposalJson },
     });
     return ok({ approved: true });
   }

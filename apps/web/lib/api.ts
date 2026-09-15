@@ -612,7 +612,7 @@ export const api = {
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15): aprobar/notificar/publicar
       // como 3 pasos separados en vez de un solo botón que publicaba y
       // notificaba a todos de una — ver admin/scheduler.ts.
-      approve: (body: { academicPeriod: string; proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string> }) =>
+      approve: (body: { academicPeriod: string; proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string>; studentNames?: Record<string, string> }) =>
         request<any>('/admin/scheduler/approve', { method: 'POST', body: JSON.stringify(body) }),
       getApproval: (academicPeriod: string) => request<any>(`/admin/scheduler/approval?academicPeriod=${encodeURIComponent(academicPeriod)}`),
       notify: (body: { academicPeriod: string; audience: 'students' | 'evaluators' }) =>
