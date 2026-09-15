@@ -51,6 +51,14 @@ export default function SchedulerPage() {
   const [gapMinutes, setGapMinutes] = useState(5);
   const [individualMinutes, setIndividualMinutes] = useState(55);
   const [groupMinutes, setGroupMinutes] = useState(75);
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "que se puedan elegir los días
+  // de la semana que son cursos presenciales [y] virtuales... así
+  // funcionaría con cualquier centro educativo." Defaults = comportamiento
+  // de siempre (sábado presencial, lunes-viernes virtual, 8am-4pm).
+  const [presencialDays, setPresencialDays] = useState<number[]>([6]);
+  const [virtualDays, setVirtualDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [institutionalOpen, setInstitutionalOpen] = useState('08:00');
+  const [institutionalClose, setInstitutionalClose] = useState('16:00');
   const [courses, setCourses] = useState<CourseCatalogRow[]>([]);
   const [studentNames, setStudentNames] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<CourseOverrides>({});
@@ -121,7 +129,10 @@ export default function SchedulerPage() {
   const runGenerate = async () => {
     setGenerating(true); setGenerateError(''); setResult(null);
     try {
-      const res = await api.admin.scheduler.generate({ academicPeriod, courseOverrides: overrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes });
+      const res = await api.admin.scheduler.generate({
+        academicPeriod, courseOverrides: overrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes,
+        presencialDays, virtualDays, institutionalOpen, institutionalClose,
+      });
       setResult((res as any).data);
       if (stepRef.current === 6) setStep(7);
     } catch (err: any) {
@@ -195,13 +206,23 @@ export default function SchedulerPage() {
       hideNext={step === 6 || step === 7 || step === 8}
     >
       {step === 1 && <StepPeriod academicPeriod={academicPeriod} onChange={setAcademicPeriod} />}
-      {step === 2 && <StepParams lunchStart={lunchStart} lunchEnd={lunchEnd} gapMinutes={gapMinutes} individualMinutes={individualMinutes} groupMinutes={groupMinutes} onChange={(p) => {
-        if (p.lunchStart !== undefined) setLunchStart(p.lunchStart);
-        if (p.lunchEnd !== undefined) setLunchEnd(p.lunchEnd);
-        if (p.gapMinutes !== undefined) setGapMinutes(p.gapMinutes);
-        if (p.individualMinutes !== undefined) setIndividualMinutes(p.individualMinutes);
-        if (p.groupMinutes !== undefined) setGroupMinutes(p.groupMinutes);
-      }} />}
+      {step === 2 && (
+        <StepParams
+          lunchStart={lunchStart} lunchEnd={lunchEnd} gapMinutes={gapMinutes} individualMinutes={individualMinutes} groupMinutes={groupMinutes}
+          presencialDays={presencialDays} virtualDays={virtualDays} institutionalOpen={institutionalOpen} institutionalClose={institutionalClose}
+          onChange={(p) => {
+            if (p.lunchStart !== undefined) setLunchStart(p.lunchStart);
+            if (p.lunchEnd !== undefined) setLunchEnd(p.lunchEnd);
+            if (p.gapMinutes !== undefined) setGapMinutes(p.gapMinutes);
+            if (p.individualMinutes !== undefined) setIndividualMinutes(p.individualMinutes);
+            if (p.groupMinutes !== undefined) setGroupMinutes(p.groupMinutes);
+            if (p.presencialDays !== undefined) setPresencialDays(p.presencialDays);
+            if (p.virtualDays !== undefined) setVirtualDays(p.virtualDays);
+            if (p.institutionalOpen !== undefined) setInstitutionalOpen(p.institutionalOpen);
+            if (p.institutionalClose !== undefined) setInstitutionalClose(p.institutionalClose);
+          }}
+        />
+      )}
       {step === 3 && (
         <StepCourses
           academicPeriod={academicPeriod} courses={courses} overrides={overrides}
@@ -222,6 +243,7 @@ export default function SchedulerPage() {
       {step === 7 && result && (
         <StepReview
           result={result} academicPeriod={academicPeriod} lunchBreak={lunchBreak}
+          presencialDays={presencialDays} institutionalOpen={institutionalOpen} institutionalClose={institutionalClose}
           onApproved={() => { clearDraft(); setStep(8); }}
         />
       )}

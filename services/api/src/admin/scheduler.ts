@@ -194,13 +194,23 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/scheduler/generate — synchronous, returns 2-3 candidates ────
   if (path === '/admin/scheduler/generate' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { academicPeriod, courseOverrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes } = body as {
+    const {
+      academicPeriod, courseOverrides, lunchBreak, gapMinutes, individualMinutes, groupMinutes,
+      presencialDays, virtualDays, institutionalOpen, institutionalClose,
+    } = body as {
       academicPeriod?: string;
       courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[] }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
       groupMinutes?: number;
+      // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "que se puedan elegir los
+      // días de la semana que son cursos presenciales [y] virtuales... así
+      // funcionaría con cualquier centro educativo."
+      presencialDays?: number[];
+      virtualDays?: number[];
+      institutionalOpen?: string;
+      institutionalClose?: string;
     };
     if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
 
@@ -274,7 +284,10 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, capacity: true } });
     const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity }));
     const roomNames: Record<string, string> = Object.fromEntries(roomRows.map((r: any) => [r.id, r.name]));
-    const proposals = generateScheduleProposals({ courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes, rooms });
+    const proposals = generateScheduleProposals({
+      courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes, rooms,
+      presencialDays, virtualDays, institutionalOpen, institutionalClose,
+    });
     return ok({ proposals, courseTitles, teacherNames, studentNames, roomNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 
@@ -381,8 +394,9 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
   // ── POST /admin/scheduler/validate — Paso 7 manual-edit conflict re-check ───
   if (path === '/admin/scheduler/validate' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { sessions, lunchBreak, checkWorkload } = body as {
+    const { sessions, lunchBreak, checkWorkload, presencialDays, institutionalOpen, institutionalClose } = body as {
       sessions?: ScheduledSession[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean;
+      presencialDays?: number[]; institutionalOpen?: string; institutionalClose?: string;
     };
     if (!Array.isArray(sessions)) return badRequest('sessions es requerido (array)');
     let teachers: TeacherInput[] | undefined;
@@ -392,7 +406,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       const capByTeacher = new Map(workloadRows.map((w: any) => [w.evaluatorId, w.maxCoursesPerWeek as number]));
       teachers = evaluatorIds.map((evaluatorId) => ({ evaluatorId, availability: [], maxCoursesPerWeek: capByTeacher.get(evaluatorId) ?? 5 }));
     }
-    return ok({ conflicts: findConflicts({ sessions, lunchBreak, teachers }) });
+    return ok({ conflicts: findConflicts({ sessions, lunchBreak, teachers, presencialDays, institutionalOpen, institutionalClose }) });
   }
 
   // ── GET /admin/scheduler/export — Paso 8, Word doc of the published schedule ─

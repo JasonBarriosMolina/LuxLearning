@@ -14,10 +14,13 @@ interface Props {
   result: GenerateResult;
   academicPeriod: string;
   lunchBreak: { startTime: string; endTime: string };
+  presencialDays?: number[];
+  institutionalOpen?: string;
+  institutionalClose?: string;
   onApproved: () => void;
 }
 
-export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: Props) {
+export function StepReview({ result, academicPeriod, lunchBreak, presencialDays, institutionalOpen, institutionalClose, onApproved }: Props) {
   const [proposalIdx, setProposalIdx] = useState(0);
   const [sessions, setSessions] = useState<ScheduledSession[]>(result.proposals[0]?.sessions ?? []);
   const [conflicts, setConflicts] = useState<Conflict[] | null>(null);
@@ -41,7 +44,7 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
   const handleValidate = async () => {
     setValidating(true); setError('');
     try {
-      const res = await api.admin.scheduler.validate({ sessions, lunchBreak, checkWorkload: true });
+      const res = await api.admin.scheduler.validate({ sessions, lunchBreak, checkWorkload: true, presencialDays, institutionalOpen, institutionalClose });
       setConflicts((res as any).data.conflicts);
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo verificar choques.');

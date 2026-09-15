@@ -147,6 +147,49 @@ describe('generateScheduleProposals', () => {
     }
   });
 
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a pensar en diferentes
+  // centros educativos... que se puedan elegir los días de la semana que son
+  // cursos presenciales [y] virtuales... así funcionaría con cualquier
+  // centro educativo." Default sigue siendo sábado=presencial,
+  // lunes-viernes=virtual — esto solo prueba que también es configurable.
+  describe('presencialDays / virtualDays / institutional hours configurables', () => {
+    it('coloca clases presenciales en el día configurado (no necesariamente sábado)', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 10, availability: [] })],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL' })],
+        presencialDays: [3], // miércoles en vez de sábado
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledCourseIds).toEqual([]);
+        expect(p.sessions[0]!.dayOfWeek).toBe(3);
+      }
+    });
+
+    it('usa institutionalOpen/institutionalClose configurables en vez de 8am-4pm', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 10, availability: [] })],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL', durationOverrideMin: 60 })],
+        presencialDays: [6], institutionalOpen: '09:00', institutionalClose: '10:00', lunchBreak: { startTime: '23:00', endTime: '23:01' },
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.sessions[0]!.startTime).toBe('09:00');
+        expect(p.sessions[0]!.endTime).toBe('10:00');
+      }
+    });
+
+    it('respeta virtualDays configurado en vez del lunes-viernes por defecto', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 0, startTime: '10:00', endTime: '12:00' }] })], // domingo
+        courses: [course('c1', 'eval-1', { modality: 'VIRTUAL' })],
+        virtualDays: [0], // domingo habilitado para este centro
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledCourseIds).toEqual([]);
+        expect(p.sessions[0]!.dayOfWeek).toBe(0);
+      }
+    });
+  });
+
   // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
   // aulas... 3 para 10 estudiantes, 1 grande para 15-20, 3 medianas para 5, 3
   // individuales." La aula más chica que alcance, sin chocar en el mismo
@@ -276,7 +319,7 @@ describe('findConflicts', () => {
   it('flags a Saturday session moved outside the 8am-4pm institutional window', () => {
     const sessions = [session({ dayOfWeek: 6, startTime: '17:00', endTime: '17:55' })];
     const conflicts = findConflicts({ sessions });
-    expect(conflicts.some((c) => c.type === 'OUTSIDE_SATURDAY_WINDOW')).toBe(true);
+    expect(conflicts.some((c) => c.type === 'OUTSIDE_PRESENCIAL_WINDOW')).toBe(true);
   });
 
   it('flags a teacher over their weekly workload cap when teachers are provided', () => {

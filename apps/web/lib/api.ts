@@ -609,9 +609,14 @@ export const api = {
         gapMinutes?: number;
         individualMinutes?: number;
         groupMinutes?: number;
+        // Trello *LUX SCHEDULER* (Mack, 2026-09-15): reglas de día/hora
+        // configurables por centro educativo, en vez de sábado/8am-4pm fijos.
+        presencialDays?: number[]; virtualDays?: number[]; institutionalOpen?: string; institutionalClose?: string;
       }) => request<any>('/admin/scheduler/generate', { method: 'POST', body: JSON.stringify(body) }),
-      validate: (body: { sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean }) =>
-        request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),
+      validate: (body: {
+        sessions: any[]; lunchBreak?: { startTime: string; endTime: string }; checkWorkload?: boolean;
+        presencialDays?: number[]; institutionalOpen?: string; institutionalClose?: string;
+      }) => request<any>('/admin/scheduler/validate', { method: 'POST', body: JSON.stringify(body) }),
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15): aprobar/notificar/publicar
       // como 3 pasos separados en vez de un solo botón que publicaba y
       // notificaba a todos de una — ver admin/scheduler.ts.
