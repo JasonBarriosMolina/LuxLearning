@@ -154,4 +154,21 @@ describe('StepCourses — editar/eliminar curso', () => {
     expect(checkbox.checked).toBe(true);
     expect(screen.getByTitle('Elegir quién es presencial')).toHaveClass('text-amber-600');
   });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "¿Tienes un curso virtual que
+  // está entre semana?... sería importante si son más de 20, o entre 15 y 20,
+  // poner un aviso de un curso con muchos estudiantes."
+  it('muestra aviso de muchos estudiantes en cursos virtuales con 15 o más', async () => {
+    const big = { ...course, modality: null, studentCount: 18, studentIds: Array.from({ length: 18 }, (_, i) => `s${i}`) };
+    render(<StepCourses academicPeriod="2026-2" courses={[big]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+    expect(screen.getByTitle('Curso con muchos estudiantes (15+) para modalidad virtual entre semana')).toBeTruthy();
+  });
+
+  it('no muestra aviso de muchos estudiantes en un curso presencial', async () => {
+    const big = { ...course, modality: null, engineModality: 'PRESENCIAL' as const, studentCount: 25, studentIds: Array.from({ length: 25 }, (_, i) => `s${i}`) };
+    render(<StepCourses academicPeriod="2026-2" courses={[big]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+    expect(screen.queryByTitle('Curso con muchos estudiantes (15+) para modalidad virtual entre semana')).toBeNull();
+  });
 });
