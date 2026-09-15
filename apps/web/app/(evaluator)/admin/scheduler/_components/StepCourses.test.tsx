@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { StepCourses } from './StepCourses';
 
@@ -123,5 +124,34 @@ describe('StepCourses — editar/eliminar curso', () => {
     render(<StepCourses academicPeriod="2026-2" courses={[tagged]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Teórico-Práctico')).toBeTruthy());
     expect(screen.getByText('Híbrida')).toBeTruthy();
+  });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay cursos que pueden ser
+  // híbridos... es bueno que pregunte eso en la sección de cursos" — al
+  // elegir Híbrido se puede marcar quién es presencial.
+  it('al elegir modalidad Híbrido, permite marcar quiénes son presenciales', async () => {
+    // Wrapper con estado real de overrides — el componente en sí es
+    // controlado (recibe overrides como prop), así que hay que simular cómo
+    // page.tsx lo alimenta de vuelta tras cada onOverrideChange.
+    function Wrapper() {
+      const [overrides, setOverrides] = useState({});
+      return (
+        <StepCourses
+          academicPeriod="2026-2" courses={[course]} overrides={overrides} onLoaded={vi.fn()}
+          onOverrideChange={(id: string, patch: any) => setOverrides((prev: any) => ({ ...prev, [id]: patch }))}
+        />
+      );
+    }
+    render(<Wrapper />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+
+    const modalitySelect = screen.getAllByRole('combobox').find((el) => (el as HTMLSelectElement).value === 'VIRTUAL')!;
+    fireEvent.change(modalitySelect, { target: { value: 'HIBRIDA' } });
+
+    fireEvent.click(screen.getByTitle('Elegir quién es presencial'));
+    const checkbox = screen.getByText('s1').closest('label')!.querySelector('input') as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    expect(screen.getByTitle('Elegir quién es presencial')).toHaveClass('text-amber-600');
   });
 });
