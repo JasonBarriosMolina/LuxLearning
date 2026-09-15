@@ -184,8 +184,17 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
 
   if (error) return <div className="card bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>;
 
-  const live = courses.filter((c) => c.engineModality !== null || overrides[c.id]?.modality);
-  const async_ = courses.filter((c) => c.engineModality === null && !overrides[c.id]?.modality);
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "cuando un tag es asincrónico,
+  // se deshabilita la opción que dice 'virtual semana', o la modalidad y el
+  // tipo de clase... si es asincrónico el curso, entonces no debería de
+  // existir directamente. Y no debería de tener una afectación en términos
+  // de horario." engineModality===null <=> el tag catálogo es ASINCRONICA
+  // (toEngineModality en el backend); antes un override viejo podía colar de
+  // vuelta un curso asincrónico a la tabla programable — ahora el tag manda
+  // siempre, sin importar si quedó un override de modalidad pegado.
+  const isAsync = (c: CourseCatalogRow) => c.engineModality === null;
+  const live = courses.filter((c) => !isAsync(c));
+  const async_ = courses.filter(isAsync);
 
   return (
     <div className="card space-y-3">

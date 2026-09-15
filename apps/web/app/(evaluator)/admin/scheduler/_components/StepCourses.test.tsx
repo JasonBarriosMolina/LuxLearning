@@ -171,4 +171,20 @@ describe('StepCourses — editar/eliminar curso', () => {
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
     expect(screen.queryByTitle('Curso con muchos estudiantes (15+) para modalidad virtual entre semana')).toBeNull();
   });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si es asincrónico el curso,
+  // entonces no debería de existir directamente [en el horario]. Y no
+  // debería de tener una afectación en términos de horario."
+  it('un curso asincrónico nunca aparece en la tabla programable, ni con un override viejo de modalidad pegado', async () => {
+    const async1 = { ...course, id: 'c-async', title: 'Curso Async', engineModality: null };
+    render(
+      <StepCourses
+        academicPeriod="2026-2" courses={[async1]}
+        overrides={{ 'c-async': { modality: 'VIRTUAL' } }}
+        onLoaded={vi.fn()} onOverrideChange={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(screen.getByText(/curso\(s\) asincrónico/)).toBeTruthy());
+    expect(screen.queryByText('Curso Async')).toBeNull();
+  });
 });
