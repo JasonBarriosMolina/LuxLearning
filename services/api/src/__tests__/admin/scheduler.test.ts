@@ -360,7 +360,7 @@ describe('handleScheduler — teacher/evaluator display name fallback', () => {
     });
     const res = await handleScheduler(ctx as any);
     const body = await bodyOf(res);
-    expect(body.data[0].teacherName).toBe('noname@test.com');
+    expect(body.data.courses[0].teacherName).toBe('noname@test.com');
   });
 
   it('only falls back to the raw username as an absolute last resort (no name, no email)', async () => {
@@ -374,7 +374,7 @@ describe('handleScheduler — teacher/evaluator display name fallback', () => {
     });
     const res = await handleScheduler(ctx as any);
     const body = await bodyOf(res);
-    expect(body.data[0].teacherName).toBe('eval-bare-uuid');
+    expect(body.data.courses[0].teacherName).toBe('eval-bare-uuid');
   });
 });
 
@@ -396,10 +396,14 @@ describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', ()
     const res = await handleScheduler(ctx as any);
     const body = await bodyOf(res);
     expect(res.statusCode).toBe(200);
-    expect(body.data).toEqual([
-      { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', studentCount: 2 },
-      { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, studentCount: 0 },
+    expect(body.data.courses).toEqual([
+      { id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'PRESENCIAL', engineModality: 'PRESENCIAL', studentIds: ['s1', 's2'], studentCount: 2 },
+      { id: 'c2', title: 'Curso Async', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: 'ASINCRONICA', engineModality: null, studentIds: [], studentCount: 0 },
     ]);
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "tampoco tengo opción de
+    // eliminar estudiantes que estén en los cursos ya" — el catálogo ahora
+    // trae nombres resueltos para poder listar/quitar el roster.
+    expect(body.data.studentNames).toEqual({ s1: 'Prof Test', s2: 'Prof Test' });
   });
 });
 
@@ -418,7 +422,7 @@ describe('handleScheduler — POST /admin/scheduler/courses (Paso 3, curso aún 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ title: 'Curso Nuevo', evaluatorId: 'eval-1', academicPeriod: '2026-2', isDraft: true, isActive: false, description: '' }),
     }));
-    expect(body.data).toEqual({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: null, engineModality: 'VIRTUAL', studentCount: 0 });
+    expect(body.data).toEqual({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: null, engineModality: 'VIRTUAL', studentIds: [], studentCount: 0 });
   });
 
   it('returns 400 when title is missing', async () => {

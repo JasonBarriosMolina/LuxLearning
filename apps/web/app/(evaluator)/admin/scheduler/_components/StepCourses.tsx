@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Trash2, Pencil, Check } from 'lucide-react';
+import { Loader2, Plus, X, Trash2, Pencil, Check, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
@@ -13,10 +13,11 @@ interface Props {
   courses: CourseCatalogRow[];
   overrides: CourseOverrides;
   onLoaded: (courses: CourseCatalogRow[]) => void;
+  onStudentNamesLoaded?: (studentNames: Record<string, string>) => void;
   onOverrideChange: (courseId: string, patch: CourseOverrides[string]) => void;
 }
 
-export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOverrideChange }: Props) {
+export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOverrideChange, onStudentNamesLoaded }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [evaluators, setEvaluators] = useState<{ username: string; name: string }[]>([]);
@@ -31,12 +32,17 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editTitleValue, setEditTitleValue] = useState('');
   const [savingTitle, setSavingTitle] = useState(false);
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "no quiero que esa sección...
+  // aparezca siempre... quiero que sea un botón que se desprenda del tipo de
+  // clase" — la excepción de duración ya no es una columna fija, es un
+  // popover que se abre solo cuando se necesita.
+  const [durationPopoverId, setDurationPopoverId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!academicPeriod) return;
     setLoading(true); setError('');
     api.admin.scheduler.courses(academicPeriod)
-      .then((res: any) => onLoaded(res?.data ?? []))
+      .then((res: any) => { onLoaded(res?.data?.courses ?? []); onStudentNamesLoaded?.(res?.data?.studentNames ?? {}); })
       .catch((err: any) => setError(err?.message ?? 'No se pudieron cargar los cursos.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,7 +166,6 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 <th className="py-2 pr-3">Estudiantes</th>
                 <th className="py-2 pr-3">Modalidad</th>
                 <th className="py-2 pr-3">Tipo de clase</th>
-                <th className="py-2 pr-3">Excepción (min)</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -217,23 +222,35 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                       </select>
                     </td>
                     <td className="py-2 pr-3">
-                      <select value={classType} onChange={(e) => onOverrideChange(c.id, { ...ov, classType: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-                        <option value="INDIVIDUAL">Individual (55 min)</option>
-                        <option value="GRUPAL">Grupal (1h15)</option>
-                      </select>
-                    </td>
-                    <td className="py-2 pr-3">
-                      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "puede haber
-                          una excepción para un curso en especial; puede ser de
-                          1 hora o similar" — anula la duración global solo para
-                          este curso, sin tocar los parámetros del paso 2. */}
-                      <input
-                        type="number" min={15} max={240} placeholder="—"
-                        value={ov.durationOverrideMin ?? ''}
-                        onChange={(e) => onOverrideChange(c.id, { ...ov, durationOverrideMin: e.target.value ? Number(e.target.value) : undefined })}
-                        title="Duración especial para este curso (minutos) — deja vacío para usar el default"
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-16"
-                      />
+                      <div className="flex items-center gap-1 relative">
+                        <select value={classType} onChange={(e) => onOverrideChange(c.id, { ...ov, classType: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
+                          <option value="INDIVIDUAL">Individual (55 min)</option>
+                          <option value="GRUPAL">Grupal (1h15)</option>
+                        </select>
+                        {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "puede haber
+                            una excepción para un curso en especial; puede ser de
+                            1 hora o similar" — botón que se desprende del tipo de
+                            clase en vez de una columna fija casi siempre vacía. */}
+                        <button
+                          type="button" onClick={() => setDurationPopoverId(durationPopoverId === c.id ? null : c.id)}
+                          title="Excepción de duración para este curso"
+                          className={`p-1 rounded-lg ${ov.durationOverrideMin ? 'text-amber-600 bg-amber-50' : 'text-gray-300 hover:text-gray-600'}`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                        </button>
+                        {durationPopoverId === c.id && (
+                          <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg flex items-center gap-1.5 whitespace-nowrap">
+                            <input
+                              autoFocus type="number" min={15} max={240} placeholder="min"
+                              value={ov.durationOverrideMin ?? ''}
+                              onChange={(e) => onOverrideChange(c.id, { ...ov, durationOverrideMin: e.target.value ? Number(e.target.value) : undefined })}
+                              className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-16"
+                            />
+                            <span className="text-[10px] text-gray-400">min — vacío usa el default</span>
+                            <button type="button" onClick={() => setDurationPopoverId(null)} className="p-0.5 text-gray-300 hover:text-gray-600"><X className="w-3 h-3" /></button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2">
                       <div className="flex items-center gap-1">

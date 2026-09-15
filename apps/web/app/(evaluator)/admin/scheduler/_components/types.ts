@@ -7,6 +7,7 @@ export interface CourseCatalogRow {
   teacherName: string;
   modality: string | null;
   engineModality: 'PRESENCIAL' | 'VIRTUAL' | null; // null = asincrónica, no live session
+  studentIds: string[];
   studentCount: number;
 }
 

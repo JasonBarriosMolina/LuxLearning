@@ -139,11 +139,21 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const evaluatorIds = [...new Set(courses.map((c) => c.evaluatorId as string))] as string[];
     const teacherNames: Record<string, string> = {};
     await Promise.all(evaluatorIds.map(async (id) => { teacherNames[id] = await resolveDisplayName(id); }));
-    return ok(courses.map((c) => ({
-      id: c.id, title: c.title, evaluatorId: c.evaluatorId, teacherName: teacherNames[c.evaluatorId],
-      modality: c.modality, engineModality: toEngineModality(c.modality),
-      studentCount: (studentsByCourse.get(c.id) ?? []).length,
-    })));
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "tampoco tengo opción de
+    // eliminar estudiantes que estén en los cursos ya" — el catálogo necesita
+    // exponer el roster (no solo el conteo) para poder listarlo y quitar.
+    const allStudentIds = [...new Set([...studentsByCourse.values()].flat())];
+    const studentNames: Record<string, string> = {};
+    await Promise.all(allStudentIds.map(async (id) => { studentNames[id] = await resolveDisplayName(id); }));
+    return ok({
+      courses: courses.map((c) => ({
+        id: c.id, title: c.title, evaluatorId: c.evaluatorId, teacherName: teacherNames[c.evaluatorId],
+        modality: c.modality, engineModality: toEngineModality(c.modality),
+        studentIds: studentsByCourse.get(c.id) ?? [],
+        studentCount: (studentsByCourse.get(c.id) ?? []).length,
+      })),
+      studentNames,
+    });
   }
 
   // ── POST /admin/scheduler/courses — Paso 3, crea un curso borrador cuando
@@ -176,7 +186,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const teacherName = await resolveDisplayName(evaluatorId);
     return ok({
       id: course.id, title: course.title, evaluatorId: course.evaluatorId, teacherName,
-      modality: course.modality, engineModality: toEngineModality(course.modality), studentCount: 0,
+      modality: course.modality, engineModality: toEngineModality(course.modality), studentIds: [], studentCount: 0,
     });
   }
 

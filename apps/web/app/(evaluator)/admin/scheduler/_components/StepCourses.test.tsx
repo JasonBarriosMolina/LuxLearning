@@ -28,7 +28,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentCount: 3 };
+const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: ['s1', 's2', 's3'], studentCount: 3 };
 
 beforeEach(() => {
   assignEvaluatorMock.mockClear(); deleteMock.mockClear(); updateMock.mockClear(); createCourseMock.mockReset();
@@ -98,5 +98,20 @@ describe('StepCourses — editar/eliminar curso', () => {
     fireEvent.click(screen.getByText('Crear curso'));
 
     await waitFor(() => expect(onOverrideChange).toHaveBeenCalledWith('c2', { classType: 'GRUPAL' }));
+  });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "no quiero que esa sección...
+  // aparezca siempre... quiero que sea un botón que se desprenda del tipo de
+  // clase" — la excepción de duración es un popover, no una columna fija.
+  it('la excepción de duración es un popover que se abre desde un botón, no una columna siempre visible', async () => {
+    const onOverrideChange = vi.fn();
+    render(<StepCourses academicPeriod="2026-2" courses={[course]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={onOverrideChange} />);
+    await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
+
+    expect(screen.queryByPlaceholderText('min')).toBeNull(); // cerrado por defecto
+    fireEvent.click(screen.getByTitle('Excepción de duración para este curso'));
+    const input = screen.getByPlaceholderText('min');
+    fireEvent.change(input, { target: { value: '90' } });
+    expect(onOverrideChange).toHaveBeenCalledWith('c1', { durationOverrideMin: 90 });
   });
 });
