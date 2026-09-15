@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { CheckCircle, AlertTriangle, ShieldCheck, ChevronDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { WeekCalendarGrid } from './WeekCalendarGrid';
@@ -28,6 +28,9 @@ export function StepReview({ result, academicPeriod, lunchBreak, presencialDays,
   const [approving, setApproving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [error, setError] = useState('');
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "necesito saber por qué no se
+  // pueden ubicar... que me dé una posible solución" — popover por curso.
+  const [expandedUnscheduledId, setExpandedUnscheduledId] = useState<string | null>(null);
 
   // Switching proposals resets the working copy — edits don't carry across tabs.
   useEffect(() => {
@@ -100,9 +103,32 @@ export function StepReview({ result, academicPeriod, lunchBreak, presencialDays,
       </div>
 
       {proposal.unscheduledCourseIds.length > 0 && (
-        <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>No se pudo ubicar: {proposal.unscheduledCourseIds.map((id) => result.courseTitles[id] ?? id).join(', ')}.</span>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 space-y-1.5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="font-medium">No se pudo ubicar {proposal.unscheduledCourseIds.length} curso(s) — clic en cada uno para ver por qué y qué se puede hacer.</span>
+          </div>
+          <div className="space-y-1 pl-6">
+            {proposal.unscheduledCourseIds.map((id) => {
+              const open = expandedUnscheduledId === id;
+              return (
+                <div key={id}>
+                  <button
+                    type="button" onClick={() => setExpandedUnscheduledId(open ? null : id)}
+                    className="flex items-center gap-1 text-sm font-medium hover:underline"
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    {result.courseTitles[id] ?? id}
+                  </button>
+                  {open && (
+                    <p className="text-xs text-amber-600 pl-4.5 pb-1">
+                      {proposal.unscheduledReasons?.[id] ?? 'No se encontró un horario disponible para este curso.'}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

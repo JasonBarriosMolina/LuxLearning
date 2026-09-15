@@ -30,12 +30,15 @@ export interface ScheduleProposal {
   strategy: string;
   sessions: ScheduledSession[];
   unscheduledCourseIds: string[];
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "necesito saber por qué no se
+  // pueden ubicar... que me dé una posible solución" — frase corta por curso.
+  unscheduledReasons: Record<string, string>;
 }
 
 export interface Conflict {
   sessionIndex: number;
   withIndex?: number;
-  type: 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_SATURDAY_WINDOW' | 'WORKLOAD_EXCEEDED';
+  type: 'TEACHER_OVERLAP' | 'STUDENT_OVERLAP' | 'LUNCH_BREAK' | 'OUTSIDE_PRESENCIAL_WINDOW' | 'WORKLOAD_EXCEEDED';
   message: string;
 }
 

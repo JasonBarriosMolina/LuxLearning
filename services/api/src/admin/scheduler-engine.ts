@@ -94,6 +94,11 @@ export interface ScheduleProposal {
   strategy: string;
   sessions: ScheduledSession[];
   unscheduledCourseIds: string[];
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, reforzado 15:36): "necesito
+  // saber por qué no se pueden ubicar... ¿es un tema de estudiantes? ¿el
+  // profesor no puede?... que me dé una posible solución." Una frase corta
+  // por curso sin ubicar — no bloquea nada, es puramente informativo.
+  unscheduledReasons: Record<string, string>;
 }
 
 const DEFAULT_PRESENCIAL_DAYS = [6]; // sábado
@@ -258,6 +263,63 @@ function placeCourse(
   return null;
 }
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "necesito saber por qué no se
+// pueden ubicar: ¿es un tema de estudiantes?, ¿el profesor no puede?, ¿no hay
+// capacidad de profesores?... que me dé una posible solución." Re-recorre las
+// mismas ventanas que placeCourse pero sin reservar nada, solo para explicar
+// la causa más probable del fallo en una frase.
+function diagnoseFailure(
+  course: CourseInput, teacher: TeacherInput, bookings: Bookings, lunch: LunchBreak,
+  workloadUsed: Map<string, number>, durationMin: Record<ClassType, number>,
+  presencialDays: number[], virtualDays: number[], institutionalOpen: string, institutionalClose: string
+): string {
+  const used = workloadUsed.get(course.evaluatorId) ?? 0;
+  if (used >= teacher.maxCoursesPerWeek) {
+    return `El profesor ya alcanzó su límite semanal de ${teacher.maxCoursesPerWeek} curso(s). Sugerencia: subir el límite en su perfil o reasignar el curso a otro profesor.`;
+  }
+
+  const duration = course.durationOverrideMin ?? durationMin[course.classType];
+  const days = course.modality === 'PRESENCIAL' ? presencialDays : virtualDays;
+  let anyWindow = false;
+  let anyWindowFitsDuration = false;
+  let candidatesChecked = 0;
+  let teacherBusyCount = 0;
+  let studentBusyCount = 0;
+
+  for (const day of days) {
+    const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose);
+    if (free.length) anyWindow = true;
+    for (const w of free) {
+      if (w.end - w.start >= duration) anyWindowFitsDuration = true;
+      for (let start = w.start; start + duration <= w.end; start += SLOT_STEP_MIN) {
+        candidatesChecked++;
+        const candidate: Window = { start, end: start + duration };
+        if (!bookings.teacherFree(course.evaluatorId, day, candidate)) teacherBusyCount++;
+        if (!bookings.studentsFree(course.studentIds, day, candidate)) studentBusyCount++;
+      }
+    }
+  }
+
+  if (!anyWindow) {
+    return course.modality === 'PRESENCIAL'
+      ? 'No hay ventana institucional disponible para cursos presenciales ese día. Sugerencia: revisar el horario institucional en Parámetros.'
+      : 'El profesor no declaró disponibilidad para los días entre semana en su perfil. Sugerencia: pedirle que agregue bloques de disponibilidad entre semana.';
+  }
+  if (!anyWindowFitsDuration) {
+    return `Ningún bloque de disponibilidad del profesor es suficientemente largo para ${duration} min. Sugerencia: ampliar ese bloque o usar una excepción de duración más corta para este curso.`;
+  }
+  if (candidatesChecked === 0) {
+    return 'No hay franjas de tiempo suficientes dentro de la disponibilidad declarada para la duración de este curso.';
+  }
+  if (teacherBusyCount === candidatesChecked) {
+    return 'El profesor ya tiene otro curso en todos los horarios en que está disponible. Sugerencia: mover uno de sus otros cursos o ampliar su disponibilidad.';
+  }
+  if (studentBusyCount === candidatesChecked) {
+    return 'Uno o más estudiantes de este curso ya tienen clase en todos los horarios en que el profesor está disponible. Sugerencia: revisar si conviene mover ese grupo base a otro horario.';
+  }
+  return 'No se encontró un horario donde coincidan la disponibilidad del profesor y la de todos los estudiantes matriculados. Sugerencia: revisar disponibilidad de ambos o dividir el grupo.';
+}
+
 function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, strategy: string): ScheduleProposal {
   const lunch = input.lunchBreak ?? DEFAULT_LUNCH;
   const gapMinutes = input.gapMinutes ?? PREFERRED_GAP_MIN;
@@ -274,18 +336,26 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
   const workloadUsed = new Map<string, number>();
   const sessions: ScheduledSession[] = [];
   const unscheduledCourseIds: string[] = [];
+  const unscheduledReasons: Record<string, string> = {};
 
   for (const course of order) {
     const teacher = teacherById.get(course.evaluatorId);
-    if (!teacher) { unscheduledCourseIds.push(course.courseId); continue; }
+    if (!teacher) {
+      unscheduledCourseIds.push(course.courseId);
+      unscheduledReasons[course.courseId] = 'No se encontró un profesor asignado a este curso. Sugerencia: asigná un profesor en el catálogo de cursos.';
+      continue;
+    }
     const placed = placeCourse(course, teacher, bookings, lunch, workloadUsed, gapMinutes, durationMin, presencialDays, virtualDays, institutionalOpen, institutionalClose);
     if (placed) sessions.push(placed);
-    else unscheduledCourseIds.push(course.courseId);
+    else {
+      unscheduledCourseIds.push(course.courseId);
+      unscheduledReasons[course.courseId] = diagnoseFailure(course, teacher, bookings, lunch, workloadUsed, durationMin, presencialDays, virtualDays, institutionalOpen, institutionalClose);
+    }
   }
 
   if (input.rooms?.length) assignRooms(sessions, input.rooms);
 
-  return { label, strategy, sessions, unscheduledCourseIds };
+  return { label, strategy, sessions, unscheduledCourseIds, unscheduledReasons };
 }
 
 // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de

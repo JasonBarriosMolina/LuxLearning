@@ -129,6 +129,63 @@ describe('generateScheduleProposals', () => {
     }
   });
 
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "necesito saber por qué no se
+  // pueden ubicar: ¿es un tema de estudiantes?, ¿el profesor no puede?...
+  // que me dé una posible solución."
+  describe('unscheduledReasons', () => {
+    it('no teacher assigned', () => {
+      const input: ScheduleInput = { teachers: [], courses: [course('c1', 'ghost-eval')] };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledReasons.c1).toMatch(/no se encontró un profesor/i);
+      }
+    });
+
+    it('teacher over their weekly course cap', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 1 })],
+        courses: [course('c1', 'eval-1'), course('c2', 'eval-1')],
+      };
+      for (const p of generateScheduleProposals(input)) {
+        const failedId = p.unscheduledCourseIds[0]!;
+        expect(p.unscheduledReasons[failedId]).toMatch(/límite semanal/i);
+      }
+    });
+
+    it('teacher declared zero weekday availability', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { availability: [] })],
+        courses: [course('c1', 'eval-1', { modality: 'VIRTUAL' })],
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledReasons.c1).toMatch(/no declaró disponibilidad/i);
+      }
+    });
+
+    it('declared block shorter than the course duration', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { availability: [{ dayOfWeek: 6, startTime: '08:00', endTime: '09:00' }] })],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL' })], // 75min > 60min block
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledReasons.c1).toMatch(/ningún bloque.*suficientemente largo/i);
+      }
+    });
+
+    it('teacher fully booked by another course in every available slot', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 10, availability: [{ dayOfWeek: 1, startTime: '18:00', endTime: '19:00' }] })],
+        courses: [
+          course('c1', 'eval-1', { studentIds: ['s1'] }),
+          course('c2', 'eval-1', { studentIds: ['s2'] }), // same teacher, same only slot, different students
+        ],
+      };
+      for (const p of generateScheduleProposals(input)) {
+        if (p.unscheduledCourseIds.length === 0) continue; // strategy may offset differently
+        expect(p.unscheduledReasons[p.unscheduledCourseIds[0]!]).toMatch(/profesor ya tiene otro curso/i);
+      }
+    });
+  });
+
   // Trello *LUX SCHEDULER*, 2026-09-15 (Mack, regla implementada y revertida
   // el mismo día): "si el profesor pone una lección antes de las 6 de la
   // tarde... el sistema le debe indicar que está incorrecto" — horas después:
