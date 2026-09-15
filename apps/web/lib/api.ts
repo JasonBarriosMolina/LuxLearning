@@ -504,8 +504,14 @@ export const api = {
         request<any>(`/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
       getEnrollments: (username: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`),
-      addEnrollment: (username: string, courseId: string) =>
-        request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId }) }),
+      // silent: true — used by Lux Scheduler's step 5 (Trello *LUX SCHEDULER*,
+      // Mack 2026-09-15): "no puede ocurrir así... ni siquiera les avises que
+      // los inscribiste" — la matrícula real sí ocurre (el motor la necesita
+      // para evitar choques de horario), pero sin el correo de bienvenida ni
+      // la notificación al evaluador; eso se comunica luego, en el paso de
+      // notificar horario.
+      addEnrollment: (username: string, courseId: string, opts?: { silent?: boolean }) =>
+        request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'POST', body: JSON.stringify({ courseId, silent: opts?.silent }) }),
       removeEnrollment: (username: string, courseId: string) =>
         request<any>(`/admin/users/${encodeURIComponent(username)}/enrollments`, { method: 'DELETE', body: JSON.stringify({ courseId }) }),
       bulkImport: (body: { csv: string; courseIds?: string[]; role?: string }) =>

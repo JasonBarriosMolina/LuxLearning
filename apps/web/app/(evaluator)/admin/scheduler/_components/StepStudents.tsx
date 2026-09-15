@@ -78,7 +78,12 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
     if (toAdd.length === 0) { setRowError('Esos estudiantes ya están en el curso.'); return; }
     setBusy(true); setRowError('');
     try {
-      await Promise.all(toAdd.map((userId) => api.admin.users.addEnrollment(userId, course.id)));
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "automáticamente les está
+      // enviando un mensaje... esto no puede ocurrir así... ni siquiera les
+      // avises que los inscribiste" — silent:true salta el correo y la
+      // notificación al evaluador; el aviso real llega luego, en el paso de
+      // notificar el horario.
+      await Promise.all(toAdd.map((userId) => api.admin.users.addEnrollment(userId, course.id, { silent: true })));
       onCourseUpdated(course.id, { studentIds: [...course.studentIds, ...toAdd], studentCount: course.studentCount + toAdd.length });
       setOpenCourseId(null);
     } catch (err: any) {

@@ -326,10 +326,29 @@ export async function handleUsers(ctx: AdminCtx): Promise<any | null> {
     }
 
     if (method === 'POST') {
-      const { courseId } = body;
+      const { courseId, silent } = body;
       if (!courseId) return badRequest('courseId es requerido');
       await createEnrollment(username, courseId);
 
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "cuando voy seleccionando
+      // los estudiantes... automáticamente les está enviando un mensaje...
+      // esto no puede ocurrir así... ni siquiera les avises que los
+      // inscribiste" — Lux Scheduler paso 5 llama este mismo endpoint (para
+      // que el motor evite choques de horario) pero con silent:true, así que
+      // se salta el correo y la notificación al evaluador; el chat de grupo
+      // y las tareas sí se crean porque son necesarios para que el curso
+      // funcione una vez que la inscripción sea real.
+      if (silent === true) {
+        try {
+          if (courseId) {
+            const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
+            if (course) {
+              await upsertChat(`group_${courseId}`, { type: 'GROUP', name: `Curso: ${course.title}`, participants: [username] });
+              await upsertMembership(username, `group_${courseId}`, { chatName: `Curso: ${course.title}`, chatType: 'GROUP' });
+            }
+          }
+        } catch (e) { console.warn('Silent enrollment chat join failed:', e); }
+      } else {
       // Send enrollment notification email + add to group chat
       try {
         const [userRes, course] = await Promise.all([
@@ -369,6 +388,7 @@ export async function handleUsers(ctx: AdminCtx): Promise<any | null> {
           });
         }
       } catch (e) { console.warn('Enrollment email/chat failed:', e); }
+      }
 
       // M-7: Auto-create tasks for each module (one per module, due in 7×order days)
       try {
