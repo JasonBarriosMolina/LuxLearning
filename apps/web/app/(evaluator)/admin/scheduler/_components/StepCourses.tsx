@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, X, Trash2, Pencil, Check, Clock, Users2 } from 'lucide-react';
+import { Loader2, Plus, X, Trash2, Pencil, Check, Clock, Users2, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { CourseCatalogRow } from './types';
@@ -278,7 +278,21 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                         {evaluators.map((e) => <option key={e.username} value={e.username}>{e.name}</option>)}
                       </select>
                     </td>
-                    <td className="py-2 pr-3 text-gray-500">{c.studentCount}</td>
+                    <td className="py-2 pr-3 text-gray-500">
+                      <span className="flex items-center gap-1">
+                        {c.studentCount}
+                        {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "¿Tienes un
+                            curso virtual que está entre semana?... sería importante
+                            si son más de 20, o entre 15 y 20, poner un aviso de un
+                            curso con muchos estudiantes." Solo informativo — no
+                            bloquea nada. */}
+                        {modality === 'VIRTUAL' && c.studentCount >= 15 && (
+                          <span title="Curso con muchos estudiantes (15+) para modalidad virtual entre semana">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     <td className="py-2 pr-3">
                       <div className="flex items-center gap-1 relative">
                         <select value={modality} onChange={(e) => onOverrideChange(c.id, { ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
