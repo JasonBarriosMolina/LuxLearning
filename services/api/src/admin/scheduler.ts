@@ -17,6 +17,7 @@ import {
   generateScheduleProposals, findConflicts,
   type CourseInput, type TeacherInput, type CourseModality, type ClassType, type ScheduleProposal, type ScheduledSession,
 } from './scheduler-engine';
+import { buildScheduleDocx } from './scheduler-docx';
 
 const DAY_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
@@ -82,7 +83,7 @@ async function loadCourseCatalog(prisma: any, academicPeriod: string) {
 }
 
 export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
-  const { event, method, path, prisma, body } = ctx;
+  const { event, method, path, prisma, body, userId } = ctx;
 
   // ── GET /admin/teachers/:evaluatorId/availability ───────────────────────────
   const availMatch = path.match(/^\/admin\/teachers\/([^/]+)\/availability$/);
@@ -286,7 +287,10 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     return ok({ conflicts: findConflicts({ sessions, lunchBreak, teachers }) });
   }
 
-  // ── GET /admin/scheduler/export — Paso 8, CSV of the published schedule ─────
+  // ── GET /admin/scheduler/export — Paso 8, Word doc of the published schedule ─
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "en lugar de exportar a un CSV
+  // plano... exportes más bien un documento editable de Word, como en Lux
+  // Planner" — ver admin/scheduler-docx.ts para el generador.
   if (path === '/admin/scheduler/export' && method === 'GET') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
     const academicPeriod = event.queryStringParameters?.academicPeriod;
@@ -304,26 +308,24 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const evaluatorIds = [...new Set(classes.map((c: any) => c.evaluatorId as string))] as string[];
     const teacherNames: Record<string, string> = {};
     await Promise.all(evaluatorIds.map(async (id) => { teacherNames[id] = await resolveDisplayName(id); }));
+    const generatedByName = await resolveDisplayName(userId);
 
-    const header = ['Curso', 'Profesor', 'Día', 'Hora Inicio', 'Hora Fin', 'Modalidad', 'Tipo', 'Estudiantes'];
-    const rows = classes.map((c: any) => [
-      courseTitles.get(c.courseId) ?? c.courseId,
-      teacherNames[c.evaluatorId] ?? c.evaluatorId,
-      DAY_LABEL[c.dayOfWeek],
-      c.startTime, c.endTime,
-      c.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual',
-      c.classType === 'GRUPAL' ? 'Grupal' : 'Individual',
-      String(c.studentIds.length),
-    ]);
-    const csv = '﻿' + [header, ...rows]
-      .map((row) => row.map((cell: string) => `"${cell.replace(/"/g, '""')}"`).join(','))
-      .join('\r\n');
+    const docxRows = classes.map((c: any) => ({
+      dayOfWeek: c.dayOfWeek,
+      startTime: c.startTime, endTime: c.endTime,
+      courseTitle: courseTitles.get(c.courseId) ?? c.courseId,
+      teacherName: teacherNames[c.evaluatorId] ?? c.evaluatorId,
+      modality: c.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual',
+      classType: c.classType === 'GRUPAL' ? 'Grupal' : 'Individual',
+      studentCount: c.studentIds.length,
+    }));
+    const buffer = await buildScheduleDocx({ academicPeriod, generatedByName, rows: docxRows });
 
-    const key = `schedules/${academicPeriod.replace(/[^\w-]/g, '_')}-${Date.now()}.csv`;
-    const fileName = `Horario_${academicPeriod}.csv`;
+    const key = `schedules/${academicPeriod.replace(/[^\w-]/g, '_')}-${Date.now()}.docx`;
+    const fileName = `Horario_${academicPeriod}.docx`;
     await s3Client.send(new PutObjectCommand({
-      Bucket: S3_IMAGES_BUCKET, Key: key, Body: Buffer.from(csv, 'utf-8'),
-      ContentType: 'text/csv; charset=utf-8', ContentDisposition: buildContentDisposition(fileName),
+      Bucket: S3_IMAGES_BUCKET, Key: key, Body: buffer,
+      ContentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ContentDisposition: buildContentDisposition(fileName),
     }));
     const url = await getSignedUrl(s3Client, new GetObjectCommand({
       Bucket: S3_IMAGES_BUCKET, Key: key, ResponseContentDisposition: buildContentDisposition(fileName),
