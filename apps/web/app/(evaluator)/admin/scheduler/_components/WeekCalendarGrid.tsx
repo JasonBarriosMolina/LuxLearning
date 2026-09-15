@@ -32,24 +32,39 @@ function toMinutes(hhmm: string): number {
 
 interface PackedSession { s: ScheduledSession; col: number; cols: number }
 
-// Greedy column-packing (same idea calendar apps use) so overlapping sessions
-// on the same day sit side by side instead of stacking on top of each other.
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "sería bueno que ocupe todo el
+// espacio de ese día" cuando a esa hora hay una sola clase — la versión
+// anterior usaba el máximo de columnas de TODO el día para cada bloque, así
+// que una clase sola a las 8am se veía angosta solo porque a las 6pm había
+// 2 clases simultáneas. Ahora se agrupa por clústers de solapamiento real
+// (huecos sin clases activas cortan el clúster) y el ancho de columna se
+// calcula por clúster, no por el día completo.
 function packDay(sessions: ScheduledSession[]): PackedSession[] {
   const sorted = [...sessions].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
-  const columnEnds: number[] = []; // end time (minutes) of the last session in each column
-  const placed: { s: ScheduledSession; col: number }[] = [];
+  type Placed = { s: ScheduledSession; col: number; cols: number };
+  const placed: Placed[] = [];
+  let active: { end: number; col: number }[] = [];
+  let cluster: Placed[] = [];
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+    const cols = Math.max(...cluster.map((c) => c.col)) + 1;
+    for (const c of cluster) c.cols = cols;
+    cluster = [];
+  };
   for (const s of sorted) {
     const start = toMinutes(s.startTime);
-    let col = columnEnds.findIndex((end) => end <= start);
-    if (col === -1) { col = columnEnds.length; columnEnds.push(0); }
-    columnEnds[col] = toMinutes(s.endTime);
-    placed.push({ s, col });
+    active = active.filter((a) => a.end > start);
+    if (active.length === 0) flushCluster(); // gap with no overlapping class — new cluster
+    const usedCols = new Set(active.map((a) => a.col));
+    let col = 0;
+    while (usedCols.has(col)) col++;
+    const item: Placed = { s, col, cols: 1 };
+    active.push({ end: toMinutes(s.endTime), col });
+    cluster.push(item);
+    placed.push(item);
   }
-  // Sessions that overlap in time all share the max column count seen among them —
-  // simplification: use the day's total column count for every block's width so
-  // the grid stays regular instead of computing per-cluster overlap counts.
-  const cols = Math.max(1, columnEnds.length);
-  return placed.map((p) => ({ ...p, cols }));
+  flushCluster();
+  return placed;
 }
 
 interface Props {
@@ -91,13 +106,14 @@ export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, student
         <span className="text-xs text-gray-400">— se repite cada semana del período</span>
       </div>
       {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "los días de la semana
-          están como atrás, en lugar de estar siempre arriba, inamovibles; lo
-          que debería ser es que el scrolling sea en los horarios" — el
-          scroll vertical vive en este wrapper para que los headers `sticky
-          top-0` de cada día realmente se queden fijos mientras se hace
-          scroll por las horas; el scroll horizontal navega los días. */}
-      <div className="overflow-auto max-h-[65vh]">
-      <div className="flex" style={{ minWidth: 640 }}>
+          están como atrás... el scrolling sea en los horarios" (scroll
+          vertical, headers `sticky top-0`) y luego "la ventana de calendario
+          es muy pequeña... debe ser más grande para abarcar todos los días y
+          no hacer scrolling hacia los lados" — los 6 días llenan el 100% del
+          ancho disponible (sin min-width fijo por columna) así nunca hace
+          falta scroll horizontal para ver el sábado. */}
+      <div className="overflow-y-auto overflow-x-hidden max-h-[70vh]">
+      <div className="flex w-full">
         {/* Time gutter */}
         <div className="shrink-0 w-12 sticky left-0 bg-white z-20 relative" style={{ height: heightPx + 22 }}>
           <div className="h-[22px] sticky top-0 bg-white z-10" />
@@ -108,7 +124,7 @@ export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, student
           ))}
         </div>
         {byDay.map(({ day, packed }) => (
-          <div key={day} className="flex-1 min-w-[150px] border-l border-border relative" style={{ height: heightPx + 22 }}>
+          <div key={day} className="flex-1 min-w-0 border-l border-border relative" style={{ height: heightPx + 22 }}>
             <p className="h-[22px] text-[11px] font-semibold text-gray-500 text-center sticky top-0 bg-white z-10 py-0.5 border-b border-border">{DAY_LABEL[day]}</p>
             {hourMarks.map((m) => (
               <div key={m} className="absolute left-0 right-0 border-t border-border/60" style={{ top: 22 + (m - boundStart) * PX_PER_MIN }} />

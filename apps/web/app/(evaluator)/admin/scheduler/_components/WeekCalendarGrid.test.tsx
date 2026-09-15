@@ -44,4 +44,18 @@ describe('WeekCalendarGrid', () => {
     expect(screen.getByText('08:00–09:15')).toBeTruthy();
     expect(screen.getByText('18:00–18:55')).toBeTruthy();
   });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "sería bueno que ocupe todo el
+  // espacio de ese día" — una clase sola a las 8am no debe achicarse solo
+  // porque a otra hora del mismo día hay 2 clases simultáneas.
+  it('un bloque sin solape usa el 100% del ancho del día aunque otra hora del mismo día tenga choque', () => {
+    const mixed: ScheduledSession[] = [
+      { courseId: 'solo', evaluatorId: 'e1', dayOfWeek: 6, startTime: '08:00', endTime: '09:00', modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: [] },
+      { courseId: 'a', evaluatorId: 'e2', dayOfWeek: 6, startTime: '10:00', endTime: '11:00', modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: [] },
+      { courseId: 'b', evaluatorId: 'e3', dayOfWeek: 6, startTime: '10:00', endTime: '11:00', modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: [] },
+    ];
+    render(<WeekCalendarGrid sessions={mixed} courseTitles={{ solo: 'Solo', a: 'A', b: 'B' }} teacherNames={{ e1: 'X', e2: 'Y', e3: 'Z' }} />);
+    const soloBlock = screen.getByText('Solo').closest('button') as HTMLButtonElement;
+    expect(soloBlock.style.width).toBe('100%');
+  });
 });
