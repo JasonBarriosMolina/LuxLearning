@@ -8,6 +8,20 @@ import type { CourseCatalogRow } from './types';
 
 export type CourseOverrides = Record<string, { classType?: 'INDIVIDUAL' | 'GRUPAL'; modality?: 'PRESENCIAL' | 'VIRTUAL'; durationOverrideMin?: number }>;
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "es importante que aparezcan los
+// tags del tipo de curso: si es teórico, teórico-práctico, etc... también...
+// si el curso va a ser híbrido, virtual (sincrónico o asincrónico) o
+// presencial... todo eso es lo que se jala desde la sección número 3 de
+// cursos." Informativo — ambos ya vienen de Lux Planner, se editan ahí, acá
+// solo se muestran como tags junto al resto de la fila.
+const COURSE_TYPE_LABELS: Record<string, string> = {
+  TEORICO: 'Teórico', TEORICO_PRACTICO: 'Teórico-Práctico', PROYECTOS: 'Taller/Proyectos',
+  PROGRAMA_ESPECIAL: 'Programa Especial', CURSO_CORTO: 'Curso Corto', LIBRE: 'Curso Libre/Tutoría',
+};
+const MODALITY_FULL_LABELS: Record<string, string> = {
+  PRESENCIAL: 'Presencial', SINCRONICA: 'Sincrónica', ASINCRONICA: 'Asincrónica', HIBRIDA: 'Híbrida',
+};
+
 interface Props {
   academicPeriod: string;
   courses: CourseCatalogRow[];
@@ -190,15 +204,29 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                           <button onClick={() => setEditingTitleId(null)} className="p-1 text-gray-300 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1 group">
-                          {c.title}
-                          <button
-                            onClick={() => { setEditingTitleId(c.id); setEditTitleValue(c.title); }}
-                            title="Renombrar curso"
-                            className="p-0.5 text-gray-300 hover:text-cta-from opacity-0 group-hover:opacity-100"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
+                        <div>
+                          <div className="flex items-center gap-1 group">
+                            {c.title}
+                            <button
+                              onClick={() => { setEditingTitleId(c.id); setEditTitleValue(c.title); }}
+                              title="Renombrar curso"
+                              className="p-0.5 text-gray-300 hover:text-cta-from opacity-0 group-hover:opacity-100"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {c.courseType && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">
+                                {COURSE_TYPE_LABELS[c.courseType] ?? c.courseType}
+                              </span>
+                            )}
+                            {c.modality && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium">
+                                {MODALITY_FULL_LABELS[c.modality] ?? c.modality}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </td>

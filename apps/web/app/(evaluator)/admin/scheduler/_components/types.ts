@@ -7,6 +7,7 @@ export interface CourseCatalogRow {
   teacherName: string;
   modality: string | null;
   engineModality: 'PRESENCIAL' | 'VIRTUAL' | null; // null = asincrónica, no live session
+  courseType: string | null; // TEORICO | TEORICO_PRACTICO | PROYECTOS | PROGRAMA_ESPECIAL | CURSO_CORTO | LIBRE — se define en Lux Planner
   studentIds: string[];
   studentCount: number;
 }

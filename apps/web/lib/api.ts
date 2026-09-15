@@ -236,6 +236,9 @@ export const api = {
         request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'PUT', body: JSON.stringify(body) }),
       delete: (eventId: string, creatorId?: string) =>
         request<any>(`/evaluator/calendar/events/${eventId}`, { method: 'DELETE', body: JSON.stringify({ creatorId }) }),
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): botón "Ver mi horario" —
+      // disponibilidad declarada cruzada contra clases ya publicadas.
+      mySchedule: () => request<any>('/evaluator/my-schedule'),
     },
     signature: {
       get: () => request<any>('/evaluator/signature'),

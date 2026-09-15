@@ -7,13 +7,51 @@ import {
 import { ok, badRequest, notFound } from '../shared/response';
 import { createId } from '@paralleldrive/cuid2';
 
+const DAY_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
 export async function handleCalendar(ctx: EvalCtx): Promise<any | null> {
-  const { event, method, path, userId, role } = ctx;
+  const { event, method, path, userId, role, prisma } = ctx;
 
   // ── GET /evaluator/calendar/events ──────────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/calendar/events') {
     const calEvents = await getAllVisibleCalendarEvents(userId, role);
     return ok(calEvents);
+  }
+
+  // ── GET /evaluator/my-schedule — Trello *LUX SCHEDULER* (Mack, 2026-09-15):
+  // "como evaluador, debe existir... un botón de 'Ver mi horario'... deben
+  // verse incluidas las clases y cursos ya asignados. Si el curso aún no se
+  // ha creado, debería verse el espacio como 'bloqueado'... 'Pendiente de
+  // asignar curso a esta franja horaria'." Cruza la disponibilidad declarada
+  // del evaluador contra sus ScheduledClass ya publicadas — un bloque de
+  // disponibilidad sin clase encima es justo ese "pendiente de asignar".
+  if (method === 'GET' && path === '/evaluator/my-schedule') {
+    const [blocks, sessions] = await Promise.all([
+      prisma.teacherAvailability.findMany({ where: { evaluatorId: userId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
+      prisma.scheduledClass.findMany({ where: { evaluatorId: userId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
+    ]);
+    const courseTitles = new Map((await prisma.course.findMany({
+      where: { id: { in: [...new Set(sessions.map((s: any) => s.courseId))] } },
+      select: { id: true, title: true },
+    })).map((c: any) => [c.id, c.title]));
+
+    // Un bloque de disponibilidad "cubre" una clase si coinciden día y la
+    // clase cae dentro del rango horario declarado.
+    const overlaps = (block: any, s: any) => block.dayOfWeek === s.dayOfWeek && s.startTime >= block.startTime && s.endTime <= block.endTime;
+
+    const items = blocks.map((b: any) => {
+      const matches = sessions.filter((s: any) => overlaps(b, s));
+      return {
+        dayOfWeek: b.dayOfWeek, dayLabel: DAY_LABEL[b.dayOfWeek],
+        blockStart: b.startTime, blockEnd: b.endTime,
+        classes: matches.map((s: any) => ({
+          courseId: s.courseId, courseTitle: courseTitles.get(s.courseId) ?? 'Curso eliminado',
+          startTime: s.startTime, endTime: s.endTime, academicPeriod: s.academicPeriod,
+          modality: s.modality, classType: s.classType, studentCount: s.studentIds.length,
+        })),
+      };
+    });
+    return ok({ items, hasAvailability: blocks.length > 0 });
   }
 
   // ── POST /evaluator/calendar/events ─────────────────────────────────────────
