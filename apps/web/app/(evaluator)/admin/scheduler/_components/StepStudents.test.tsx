@@ -31,7 +31,7 @@ beforeEach(() => { addEnrollmentMock.mockClear(); removeEnrollmentMock.mockClear
 
 describe('StepStudents — matrícula por curso', () => {
   it('agrega varios estudiantes seleccionados a la vez (multi-selección)', async () => {
-    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: [], studentCount: 0 };
+    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: [], studentCount: 0 };
     const onCourseUpdated = vi.fn();
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={onCourseUpdated} />);
     fireEvent.click(screen.getByTitle('Agregar estudiantes'));
@@ -47,7 +47,7 @@ describe('StepStudents — matrícula por curso', () => {
   });
 
   it('marcar un grupo base pre-selecciona a todos sus miembros', async () => {
-    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: [], studentCount: 0 };
+    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: [], studentCount: 0 };
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Agregar estudiantes'));
     await waitFor(() => expect(screen.getByText('Grupo A (2)')).toBeTruthy());
@@ -58,7 +58,7 @@ describe('StepStudents — matrícula por curso', () => {
   });
 
   it('no deja seleccionar a un estudiante que ya está inscrito (evita duplicados)', async () => {
-    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: ['s1'], studentCount: 1 };
+    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: ['s1'], studentCount: 1 };
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Agregar estudiantes'));
     await waitFor(() => expect(screen.getByText(/ya inscrito/)).toBeTruthy());
@@ -68,7 +68,7 @@ describe('StepStudents — matrícula por curso', () => {
   });
 
   it('muestra el roster con nombres y permite quitar a un estudiante', async () => {
-    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: ['s1'], studentCount: 1 };
+    const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: ['s1'], studentCount: 1 };
     const onCourseUpdated = vi.fn();
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={onCourseUpdated} />);
     await waitFor(() => expect(screen.getAllByText('Estudiante Uno').length).toBeGreaterThan(0));

@@ -70,7 +70,7 @@ async function resolveContact(username: string): Promise<{ name: string; email: 
 async function loadCourseCatalog(prisma: any, academicPeriod: string) {
   const courses = await prisma.course.findMany({
     where: { academicPeriod, evaluatorId: { not: null }, isArchived: false },
-    select: { id: true, title: true, evaluatorId: true, modality: true },
+    select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true },
   });
   // One full Enrollments scan, grouped in memory — cheaper than one Scan per course
   // (same lesson as the evaluator/tasks.ts course-wide-assignment fix from today).
@@ -148,7 +148,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     return ok({
       courses: courses.map((c) => ({
         id: c.id, title: c.title, evaluatorId: c.evaluatorId, teacherName: teacherNames[c.evaluatorId],
-        modality: c.modality, engineModality: toEngineModality(c.modality),
+        modality: c.modality, engineModality: toEngineModality(c.modality), courseType: c.courseType,
         studentIds: studentsByCourse.get(c.id) ?? [],
         studentCount: (studentsByCourse.get(c.id) ?? []).length,
       })),
@@ -181,12 +181,12 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
         title: title.trim(), slug, description: '', evaluatorId, academicPeriod,
         isDraft: true, isActive: false,
       },
-      select: { id: true, title: true, evaluatorId: true, modality: true },
+      select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true },
     });
     const teacherName = await resolveDisplayName(evaluatorId);
     return ok({
       id: course.id, title: course.title, evaluatorId: course.evaluatorId, teacherName,
-      modality: course.modality, engineModality: toEngineModality(course.modality), studentIds: [], studentCount: 0,
+      modality: course.modality, engineModality: toEngineModality(course.modality), courseType: course.courseType, studentIds: [], studentCount: 0,
     });
   }
 

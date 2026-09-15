@@ -5,7 +5,7 @@ import { Calendar, dateFnsLocalizer, Views, SlotInfo } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { CalendarDays, Plus, Loader2 } from 'lucide-react';
+import { CalendarDays, Plus, Loader2, CalendarClock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { CalendarFiltersBar } from './_components/CalendarFiltersBar';
 import { CalendarEventDetail, CalEvent } from './_components/CalendarEventDetail';
 import { CalendarEventForm, CalendarFormState } from './_components/CalendarEventForm';
+import { MyScheduleModal } from './_components/MyScheduleModal';
 
 const localizer = dateFnsLocalizer({
   format,
@@ -92,6 +93,10 @@ function addMinutes(datetimeLocal: string, minutes: number): string {
 export default function EvaluatorCalendarPage() {
   const { role, userId: currentUserId } = useAuth();
   const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): botón "Ver mi horario" — ambos
+  // roles pueden estar asignados como docentes en Lux Scheduler.
+  const canTeach = role === 'EVALUATOR' || isAdmin;
+  const [myScheduleOpen, setMyScheduleOpen] = useState(false);
 
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -328,9 +333,16 @@ export default function EvaluatorCalendarPage() {
             </p>
           </div>
         </div>
-        <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
-          Nuevo evento
-        </Button>
+        <div className="flex items-center gap-2">
+          {canTeach && (
+            <Button variant="secondary" onClick={() => setMyScheduleOpen(true)} leftIcon={<CalendarClock className="w-4 h-4" />}>
+              Ver mi horario
+            </Button>
+          )}
+          <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
+            Nuevo evento
+          </Button>
+        </div>
       </div>
 
       {/* Layer filters + legend */}
@@ -401,6 +413,8 @@ export default function EvaluatorCalendarPage() {
           addMinutes={addMinutes}
         />
       </Modal>
+
+      {canTeach && <MyScheduleModal open={myScheduleOpen} onClose={() => setMyScheduleOpen(false)} />}
     </div>
   );
 }

@@ -28,7 +28,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, studentIds: ['s1', 's2', 's3'], studentCount: 3 };
+const course = { id: 'c1', title: 'Curso 1', evaluatorId: 'eval-1', teacherName: 'Profe Uno', modality: 'VIRTUAL', engineModality: 'VIRTUAL' as const, courseType: null, studentIds: ['s1', 's2', 's3'], studentCount: 3 };
 
 beforeEach(() => {
   assignEvaluatorMock.mockClear(); deleteMock.mockClear(); updateMock.mockClear(); createCourseMock.mockReset();
@@ -113,5 +113,15 @@ describe('StepCourses — editar/eliminar curso', () => {
     const input = screen.getByPlaceholderText('min');
     fireEvent.change(input, { target: { value: '90' } });
     expect(onOverrideChange).toHaveBeenCalledWith('c1', { durationOverrideMin: 90 });
+  });
+
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "es importante que aparezcan
+  // los tags del tipo de curso... y la modalidad... eso se jala desde la
+  // sección número 3 de cursos."
+  it('muestra tags de tipo de curso y modalidad tomados de Lux Planner', async () => {
+    const tagged = { ...course, courseType: 'TEORICO_PRACTICO', modality: 'HIBRIDA' };
+    render(<StepCourses academicPeriod="2026-2" courses={[tagged]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Teórico-Práctico')).toBeTruthy());
+    expect(screen.getByText('Híbrida')).toBeTruthy();
   });
 });
