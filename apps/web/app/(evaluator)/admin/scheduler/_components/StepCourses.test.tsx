@@ -42,7 +42,7 @@ describe('StepCourses — editar/eliminar curso', () => {
     render(<StepCourses academicPeriod="2026-2" courses={[course]} overrides={{}} onLoaded={onLoaded} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
 
-    const select = screen.getAllByRole('combobox')[0] as HTMLSelectElement; // profesor es el primer select de la fila
+    const select = screen.getAllByRole('combobox').find((el) => (el as HTMLSelectElement).value === 'eval-1') as HTMLSelectElement; // select de profesor
     fireEvent.change(select, { target: { value: 'eval-2' } });
 
     await waitFor(() => expect(assignEvaluatorMock).toHaveBeenCalledWith('c1', { evaluatorId: 'eval-2', evaluatorName: 'Profe Dos' }));
