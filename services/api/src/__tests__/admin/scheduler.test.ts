@@ -340,8 +340,8 @@ describe('handleScheduler — POST /admin/scheduler/validate (Paso 7 manual edit
   });
 });
 
-describe('handleScheduler — GET /admin/scheduler/export (Paso 8 CSV)', () => {
-  it('uploads a CSV to S3 and returns a presigned download URL', async () => {
+describe('handleScheduler — GET /admin/scheduler/export (Paso 8 Word)', () => {
+  it('uploads a .docx to S3 and returns a presigned download URL', async () => {
     const prisma = makePrisma({
       scheduledClass: {
         findMany: vi.fn().mockResolvedValue([
@@ -358,7 +358,11 @@ describe('handleScheduler — GET /admin/scheduler/export (Paso 8 CSV)', () => {
     const body = await bodyOf(res);
     expect(res.statusCode).toBe(200);
     expect(body.data.url).toBe('https://s3.example.com/presigned-url');
+    expect(body.data.fileName).toBe('Horario_2026-2.docx');
     expect(s3Send).toHaveBeenCalled();
+    const putCall = s3Send.mock.calls.find((c: any) => c[0].Key?.endsWith('.docx'));
+    expect(putCall).toBeTruthy();
+    expect(putCall[0].ContentType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   });
 
   it('returns 404 when nothing is published for that period', async () => {
