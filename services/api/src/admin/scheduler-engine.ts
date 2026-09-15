@@ -53,6 +53,7 @@ export interface ScheduleInput {
   // cuántos minutos exactos pueda modificarse" — was a fixed 55/75 constant.
   individualMinutes?: number; // default 55
   groupMinutes?: number;      // default 75
+  rooms?: RoomInput[];        // Trello *LUX SCHEDULER*, 2026-09-15 (Mack) — solo se usan para sesiones PRESENCIAL
 }
 
 export interface ScheduledSession {
@@ -65,6 +66,16 @@ export interface ScheduledSession {
   classType: ClassType;
   studentGroupId?: string;
   studentIds: string[];
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
+  // aulas" — solo para PRESENCIAL; undefined si no había aula libre con
+  // capacidad suficiente (la clase igual se ubica, solo queda sin aula
+  // asignada, en vez de marcarse como no ubicable).
+  roomId?: string;
+}
+
+export interface RoomInput {
+  id: string;
+  capacity: number;
 }
 
 export interface ScheduleProposal {
@@ -254,7 +265,36 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
     else unscheduledCourseIds.push(course.courseId);
   }
 
+  if (input.rooms?.length) assignRooms(sessions, input.rooms);
+
   return { label, strategy, sessions, unscheduledCourseIds };
+}
+
+// Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
+// aulas... 3 para 10 estudiantes, 1 grande para 15-20, 3 medianas para 5, 3
+// individuales." Asigna la aula más chica que alcance, sin chocar con otra
+// sesión el mismo día/hora — post-proceso sobre sesiones ya ubicadas (el
+// horario en sí nunca depende de si hay aula libre, solo el tag de aula).
+function assignRooms(sessions: ScheduledSession[], rooms: RoomInput[]): void {
+  const byCapacity = [...rooms].sort((a, b) => a.capacity - b.capacity);
+  const bookedByRoom = new Map<string, Window[]>(); // roomId -> windows booked that day (day baked into window via +day*1440 offset)
+  const presencial = sessions
+    .filter((s) => s.modality === 'PRESENCIAL')
+    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+
+  for (const s of presencial) {
+    const needed = s.classType === 'INDIVIDUAL' ? 1 : s.studentIds.length;
+    const dayOffset = s.dayOfWeek * 1440;
+    const window: Window = { start: dayOffset + toMinutes(s.startTime), end: dayOffset + toMinutes(s.endTime) };
+    const room = byCapacity.find((r) => {
+      if (r.capacity < needed) return false;
+      const booked = bookedByRoom.get(r.id) ?? [];
+      return !booked.some((b) => b.start < window.end && window.start < b.end);
+    });
+    if (!room) continue; // sin aula libre con capacidad suficiente — la clase queda sin aula asignada
+    bookedByRoom.set(room.id, [...(bookedByRoom.get(room.id) ?? []), window]);
+    s.roomId = room.id;
+  }
 }
 
 /**

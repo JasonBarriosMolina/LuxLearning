@@ -57,13 +57,14 @@ interface Props {
   courseTitles: Record<string, string>;
   teacherNames: Record<string, string>;
   studentNames?: Record<string, string>;
+  roomNames?: Record<string, string>;
 }
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "es importantísimo que exista un
 // apoyo visual... que se vea visualmente como un calendario, pero de una
 // única semana, ya que las semanas se repiten... con tags de colores por los
 // evaluadores... y en un dropdown yo pueda ver los estudiantes matriculados."
-export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, studentNames }: Props) {
+export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, studentNames, roomNames }: Props) {
   const [openId, setOpenId] = useState<number | null>(null);
 
   if (sessions.length === 0) return null;
@@ -127,13 +128,17 @@ export function WeekCalendarGrid({ sessions, courseTitles, teacherNames, student
                   <p className="font-semibold truncate">{courseTitles[s.courseId] ?? s.courseId}</p>
                   <p className="truncate">{teacherNames[s.evaluatorId] ?? s.evaluatorId}</p>
                   <p className="truncate opacity-80">{s.startTime}–{s.endTime}</p>
+                  {s.roomId && <p className="truncate opacity-70">{roomNames?.[s.roomId] ?? s.roomId}</p>}
                   {openId === globalId && (
                     <div className="absolute z-30 top-full left-0 mt-1 w-52 bg-white border border-border rounded-lg shadow-lg p-2 text-charcoal normal-case">
                       <div className="flex items-center justify-between mb-1">
                         <p className="font-semibold text-xs">{s.startTime}–{s.endTime}</p>
                         <X className="w-3 h-3 text-gray-400" />
                       </div>
-                      <p className="text-[11px] text-gray-500 mb-1">{s.studentIds.length} estudiante{s.studentIds.length !== 1 ? 's' : ''}</p>
+                      <p className="text-[11px] text-gray-500 mb-1">
+                        {s.studentIds.length} estudiante{s.studentIds.length !== 1 ? 's' : ''}
+                        {s.roomId && ` · ${roomNames?.[s.roomId] ?? s.roomId}`}
+                      </p>
                       {s.studentIds.length > 0 && (
                         <ul className="text-[11px] space-y-0.5 max-h-24 overflow-y-auto">
                           {s.studentIds.map((sid) => <li key={sid} className="truncate">{studentNames?.[sid] ?? sid}</li>)}

@@ -146,6 +146,7 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
       },
       teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }]) },
       teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
+      classRoom: { findMany: vi.fn().mockResolvedValue([]) },
     });
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'POST', '/admin/scheduler/generate'),
@@ -175,6 +176,7 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
       },
       teacherAvailability: { findMany: vi.fn().mockResolvedValue([{ evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '20:00' }]) },
       teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
+      classRoom: { findMany: vi.fn().mockResolvedValue([]) },
     });
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'POST', '/admin/scheduler/generate'),
@@ -187,6 +189,31 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
     const [sh, sm] = session.startTime.split(':').map(Number);
     const [eh, em] = session.endTime.split(':').map(Number);
     expect((eh * 60 + em) - (sh * 60 + sm)).toBe(30);
+  });
+
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
+  // aulas."
+  it('fetches rooms and assigns one to a PRESENCIAL session, returning roomNames', async () => {
+    getAllEnrollmentsMock.mockResolvedValue([{ userId: 's1', courseId: 'c1' }]);
+    const prisma = makePrisma({
+      course: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Presencial', evaluatorId: 'eval-1', modality: 'PRESENCIAL' }]),
+      },
+      teacherAvailability: { findMany: vi.fn().mockResolvedValue([]) }, // sin bloques -> queda el default institucional de sábado
+      teacherWorkload: { findMany: vi.fn().mockResolvedValue([]) },
+      classRoom: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1', name: 'Aula 1', capacity: 10 }]) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/generate'),
+      method: 'POST', path: '/admin/scheduler/generate', prisma,
+      body: { academicPeriod: '2026-2' },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.roomNames).toEqual({ 'room-1': 'Aula 1' });
+    const session = body.data.proposals[0].sessions[0];
+    expect(session.roomId).toBe('room-1');
   });
 });
 

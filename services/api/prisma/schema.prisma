@@ -110,10 +110,28 @@ model ScheduledClass {
   studentIds     String[] @default([])
   createdAt      DateTime @default(now())
   course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "vamos a agregar la opción de
+  // aulas" — solo aplica a sesiones PRESENCIAL (sábado); null para virtuales.
+  roomId         String?
+  room           ClassRoom? @relation(fields: [roomId], references: [id])
 
   @@index([courseId])
   @@index([evaluatorId])
   @@index([academicPeriod])
+  @@index([roomId])
+}
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "vamos a agregar la opción de
+// 'aulas'. Vamos a enumerarlas de la 1 a la 10: 3 aulas para 10 estudiantes,
+// 1 aula grande para 15 o 20, 3 aulas medianas para 5, 3 aulas individuales
+// (para clases de profesor y estudiante individuales)." Seed inicial en
+// scripts/seed-classrooms — administrable a futuro, no hay CRUD UI todavía.
+model ClassRoom {
+  id        String           @id @default(cuid())
+  name      String
+  capacity  Int
+  createdAt DateTime         @default(now())
+  classes   ScheduledClass[]
 }
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa

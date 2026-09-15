@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateScheduleProposals, findConflicts, type ScheduleInput, type TeacherInput, type CourseInput, type ScheduledSession } from '../../admin/scheduler-engine';
+import { generateScheduleProposals, findConflicts, type ScheduleInput, type TeacherInput, type CourseInput, type ScheduledSession, type RoomInput } from '../../admin/scheduler-engine';
 
 function teacher(evaluatorId: string, overrides: Partial<TeacherInput> = {}): TeacherInput {
   return {
@@ -154,6 +154,57 @@ describe('generateScheduleProposals', () => {
       expect(proposal.sessions).toHaveLength(0);
       expect(proposal.unscheduledCourseIds).toEqual(['c1']);
     }
+  });
+
+  // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
+  // aulas... 3 para 10 estudiantes, 1 grande para 15-20, 3 medianas para 5, 3
+  // individuales." La aula más chica que alcance, sin chocar en el mismo
+  // horario; nunca afecta si la clase se ubica o no.
+  describe('assignRooms (via generateScheduleProposals)', () => {
+    const rooms: RoomInput[] = [
+      { id: 'small', capacity: 5 }, { id: 'medium', capacity: 10 }, { id: 'large', capacity: 20 },
+    ];
+
+    it('assigns the smallest room that fits a PRESENCIAL group class', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1')],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: ['s1', 's2', 's3', 's4', 's5', 's6'] })],
+        rooms,
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.sessions[0]!.roomId).toBe('medium'); // 6 estudiantes no caben en "small" (cap 5)
+      }
+    });
+
+    it('never double-books a room at an overlapping day/time', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1', { maxCoursesPerWeek: 10 }), teacher('eval-2', { maxCoursesPerWeek: 10 })],
+        courses: [
+          course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: ['s1', 's2'] }),
+          course('c2', 'eval-2', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: ['s3', 's4'] }),
+        ],
+        rooms: [{ id: 'only-room', capacity: 20 }], // solo 1 aula disponible
+      };
+      for (const p of generateScheduleProposals(input)) {
+        const withRoom = p.sessions.filter((s) => s.roomId);
+        // Si ambas clases cayeron en el mismo día/hora exacto, la única aula
+        // no puede estar en las dos — como mucho una la consigue.
+        const sameSlot = p.sessions[0]!.dayOfWeek === p.sessions[1]?.dayOfWeek && p.sessions[0]!.startTime === p.sessions[1]?.startTime;
+        if (sameSlot) expect(withRoom.length).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it('leaves roomId unset (class still placed) when no room has enough capacity', () => {
+      const input: ScheduleInput = {
+        teachers: [teacher('eval-1')],
+        courses: [course('c1', 'eval-1', { modality: 'PRESENCIAL', classType: 'GRUPAL', studentIds: Array.from({ length: 25 }, (_, i) => `s${i}`) })],
+        rooms, // ninguna aula tiene capacidad 25
+      };
+      for (const p of generateScheduleProposals(input)) {
+        expect(p.unscheduledCourseIds).toEqual([]); // se ubica igual
+        expect(p.sessions[0]!.roomId).toBeUndefined();
+      }
+    });
   });
 
   it('returns 3 differently-labeled proposals', () => {

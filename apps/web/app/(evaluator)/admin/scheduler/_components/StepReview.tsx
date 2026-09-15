@@ -57,7 +57,7 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
     try {
       await api.admin.scheduler.approve({
         academicPeriod, proposal: { ...result.proposals[proposalIdx], sessions },
-        courseTitles: result.courseTitles, teacherNames: result.teacherNames, studentNames: result.studentNames,
+        courseTitles: result.courseTitles, teacherNames: result.teacherNames, studentNames: result.studentNames, roomNames: result.roomNames,
       });
       setApproved(true);
       onApproved();
@@ -103,7 +103,7 @@ export function StepReview({ result, academicPeriod, lunchBreak, onApproved }: P
         </div>
       )}
 
-      <WeekCalendarGrid sessions={sessions} courseTitles={result.courseTitles} teacherNames={result.teacherNames} studentNames={result.studentNames} />
+      <WeekCalendarGrid sessions={sessions} courseTitles={result.courseTitles} teacherNames={result.teacherNames} studentNames={result.studentNames} roomNames={result.roomNames} />
 
       {/* Editable session table */}
       <div className="card">

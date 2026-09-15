@@ -22,6 +22,7 @@ export interface ScheduledSession {
   classType: 'INDIVIDUAL' | 'GRUPAL';
   studentGroupId?: string;
   studentIds: string[];
+  roomId?: string; // solo PRESENCIAL — ver WeekCalendarGrid/StepReview
 }
 
 export interface ScheduleProposal {
@@ -43,6 +44,7 @@ export interface GenerateResult {
   courseTitles: Record<string, string>;
   teacherNames: Record<string, string>;
   studentNames?: Record<string, string>;
+  roomNames?: Record<string, string>;
   academicPeriod: string;
   skippedAsyncCourseIds: string[];
 }
