@@ -34,8 +34,9 @@ describe('StepReview — agrupación por día', () => {
 
     expect(screen.getByText('Sábado · 2 clases')).toBeTruthy();
     expect(screen.getByText('Martes · 1 clase')).toBeTruthy();
-    expect(screen.getByText('Curso Sábado 1')).toBeTruthy();
-    expect(screen.getByText('Curso Martes')).toBeTruthy();
+    // Aparece dos veces: en la tabla agrupada por día y en el calendario visual.
+    expect(screen.getAllByText('Curso Sábado 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Curso Martes').length).toBeGreaterThan(0);
   });
 
   it('no muestra un encabezado para días sin clases', () => {

@@ -103,8 +103,8 @@ export default function SchedulerPage() {
       const res = await api.admin.scheduler.getApproval(academicPeriod);
       const approval = (res as any)?.data;
       if (!approval) return;
-      const { proposal, courseTitles, teacherNames } = approval.proposalJson as { proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string> };
-      setResult({ proposals: [proposal], courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {}, academicPeriod, skippedAsyncCourseIds: [] });
+      const { proposal, courseTitles, teacherNames, studentNames } = approval.proposalJson as { proposal: any; courseTitles?: Record<string, string>; teacherNames?: Record<string, string>; studentNames?: Record<string, string> };
+      setResult({ proposals: [proposal], courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {}, studentNames: studentNames ?? {}, academicPeriod, skippedAsyncCourseIds: [] });
       setStep(approval.status === 'PUBLISHED' ? 8 : 7);
     } catch { /* stay on step 1 — nothing to resume */ }
   };
