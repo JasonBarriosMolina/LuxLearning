@@ -110,6 +110,13 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       if (!/^\d{2}:\d{2}$/.test(b.startTime) || !/^\d{2}:\d{2}$/.test(b.endTime) || b.startTime >= b.endTime) {
         return badRequest('startTime/endTime inválidos');
       }
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si el profesor pone una
+      // lección antes de las 6 de la tarde [entre semana], el sistema le debe
+      // indicar que está incorrecto, que esa disponibilidad no existe" — regla
+      // dura, solo aplica lunes-viernes (sábado sigue 8am-4pm institucional).
+      if (b.dayOfWeek !== 6 && b.dayOfWeek !== 0 && b.startTime < '18:00') {
+        return badRequest(`Entre semana la disponibilidad debe empezar a las 6:00 p.m. o después (bloque de ${DAY_LABEL[b.dayOfWeek]} ${b.startTime} inválido).`);
+      }
     }
     await prisma.$transaction([
       prisma.teacherAvailability.deleteMany({ where: { evaluatorId } }),

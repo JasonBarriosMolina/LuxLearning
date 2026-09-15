@@ -49,7 +49,14 @@ export function AvailabilityEditor({ username }: { username: string }) {
       .finally(() => setLoading(false));
   }, [username]);
 
-  const addBlock = () => setBlocks((b) => [...b, { dayOfWeek: 1, startTime: '08:00', endTime: '10:00' }]);
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si el profesor tiene horario
+  // disponible... antes de las 6 de la tarde [entre semana], el sistema le
+  // debe indicar que está incorrecto" — regla dura, solo lunes-viernes (sábado
+  // sigue el horario institucional 8am-4pm).
+  const WEEKDAY_FLOOR = '18:00';
+  const isWeekday = (dayOfWeek: number) => dayOfWeek !== 6;
+
+  const addBlock = () => setBlocks((b) => [...b, { dayOfWeek: 1, startTime: WEEKDAY_FLOOR, endTime: addTwoHours(WEEKDAY_FLOOR) }]);
   const removeBlock = (i: number) => setBlocks((b) => b.filter((_, idx) => idx !== i));
   const updateBlock = (i: number, patch: Partial<Block>) =>
     setBlocks((b) => b.map((blk, idx) => (idx === i ? { ...blk, ...patch } : blk)));
@@ -57,9 +64,27 @@ export function AvailabilityEditor({ username }: { username: string }) {
   // disponible se va a correr 2 horas más" — picking a start time jumps the end
   // time 2h ahead by default (still freely editable after).
   const updateStartTime = (i: number, startTime: string) => updateBlock(i, { startTime, endTime: addTwoHours(startTime) });
+  // Cambiar de sábado a un día de semana con una hora ya puesta antes de las
+  // 6pm la sube automáticamente al piso permitido, en vez de dejar guardar
+  // algo que el backend va a rechazar de todas formas.
+  const updateDay = (i: number, dayOfWeek: number) => {
+    setBlocks((b) => b.map((blk, idx) => {
+      if (idx !== i) return blk;
+      if (isWeekday(dayOfWeek) && blk.startTime < WEEKDAY_FLOOR) {
+        return { ...blk, dayOfWeek, startTime: WEEKDAY_FLOOR, endTime: addTwoHours(WEEKDAY_FLOOR) };
+      }
+      return { ...blk, dayOfWeek };
+    }));
+  };
 
   const handleSave = async () => {
-    setSaving(true); setError(''); setSaved(false);
+    setError(''); setSaved(false);
+    const invalid = blocks.find((b) => isWeekday(b.dayOfWeek) && b.startTime < WEEKDAY_FLOOR);
+    if (invalid) {
+      setError(`Entre semana la disponibilidad debe empezar a las 6:00 p.m. o después (${DAYS.find((d) => d.value === invalid.dayOfWeek)?.label} ${invalid.startTime} no es válido).`);
+      return;
+    }
+    setSaving(true);
     try {
       await api.admin.teachers.setAvailability(username, { blocks, maxCoursesPerWeek });
       setSaved(true);
@@ -87,16 +112,17 @@ export function AvailabilityEditor({ username }: { username: string }) {
 
       <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
         ⚠️ Cada bloque debería durar al menos <strong>2 horas</strong> — hay clases que pueden empezar a la media hora (ej. 7:30–8:45),
-        así que un bloque corto puede quedar sin uso real. Para clases virtuales, lo ideal es disponibilidad después de las 5pm.
+        así que un bloque corto puede quedar sin uso real. Entre semana (lunes a viernes), la disponibilidad debe empezar a
+        las <strong>6:00 p.m. o después</strong> — es una regla obligatoria, no una sugerencia.
       </p>
 
       <div className="space-y-2">
         {blocks.map((b, i) => (
           <div key={i} className="flex items-center gap-2 p-3 bg-surface rounded-xl">
-            <select value={b.dayOfWeek} onChange={(e) => updateBlock(i, { dayOfWeek: Number(e.target.value) })} className="input-field text-sm py-1.5 flex-1">
+            <select value={b.dayOfWeek} onChange={(e) => updateDay(i, Number(e.target.value))} className="input-field text-sm py-1.5 flex-1">
               {DAYS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
-            <input type="time" value={b.startTime} onChange={(e) => updateStartTime(i, e.target.value)} className="input-field text-sm py-1.5 w-28" />
+            <input type="time" value={b.startTime} min={isWeekday(b.dayOfWeek) ? WEEKDAY_FLOOR : undefined} onChange={(e) => updateStartTime(i, e.target.value)} className="input-field text-sm py-1.5 w-28" />
             <span className="text-gray-400 text-sm">–</span>
             <input type="time" value={b.endTime} onChange={(e) => updateBlock(i, { endTime: e.target.value })} className="input-field text-sm py-1.5 w-28" />
             <button onClick={() => removeBlock(i)} className="p-1.5 text-gray-400 hover:text-red-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
