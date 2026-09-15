@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserPlus, Users, Loader2, X } from 'lucide-react';
+import { UserPlus, Users, Loader2, X, Search, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { CourseCatalogRow } from './types';
 
@@ -29,6 +29,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
   const [busy, setBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [rowError, setRowError] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     api.evaluator.groups.studentPool().then((res: any) => {
@@ -44,7 +45,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
   const empty = courses.filter((c) => c.studentCount === 0);
 
   const openPanel = (courseId: string) => {
-    setOpenCourseId(courseId); setSelectedGroup(''); setChecked(new Set()); setRowError('');
+    setOpenCourseId(courseId); setSelectedGroup(''); setChecked(new Set()); setRowError(''); setSearch('');
   };
 
   const toggleChecked = (userId: string) => {
@@ -133,36 +134,75 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
               </ul>
             )}
 
-            {openCourseId === c.id && (
-              <div className="p-2 bg-white rounded-lg border border-border space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                  <select value={selectedGroup} onChange={(e) => handleSelectGroup(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 flex-1">
-                    <option value="">— Marcar todo un grupo base —</option>
-                    {groups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>)}
-                  </select>
+            {openCourseId === c.id && (() => {
+              const alreadyEnrolled = new Set(c.studentIds);
+              const availablePool = pool.filter((s) => !alreadyEnrolled.has(s.userId) && !checked.has(s.userId) && s.name.toLowerCase().includes(search.toLowerCase()));
+              const stagedPool = pool.filter((s) => checked.has(s.userId));
+              return (
+                <div className="p-2 bg-white rounded-lg border border-border space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <select value={selectedGroup} onChange={(e) => handleSelectGroup(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 flex-1">
+                      <option value="">— Marcar todo un grupo base —</option>
+                      {groups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>)}
+                    </select>
+                  </div>
+
+                  {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "me gustaría
+                      que visualmente esta sección fuera como cuando yo elijo
+                      en 'asignar los cursos': en un lado están los
+                      estudiantes, y en la otra columna están los estudiantes
+                      que se acaban de agregar." Click para mover en vez de
+                      arrastrar — mismo resultado, menos superficie de bugs. */}
+                  <div className="grid grid-cols-2 gap-2 border-t border-border pt-1.5">
+                    <div>
+                      <div className="flex items-center gap-1 mb-1">
+                        <Search className="w-3 h-3 text-gray-300 shrink-0" />
+                        <input
+                          type="text" placeholder="Disponibles…" value={search} onChange={(e) => setSearch(e.target.value)}
+                          className="text-[11px] border border-gray-200 rounded-lg px-1.5 py-0.5 flex-1 min-w-0"
+                        />
+                      </div>
+                      <div className="max-h-32 overflow-y-auto space-y-0.5">
+                        {availablePool.map((s) => (
+                          <button
+                            key={s.userId} type="button" onClick={() => toggleChecked(s.userId)}
+                            className="w-full flex items-center justify-between gap-1 text-[11px] px-1.5 py-1 rounded hover:bg-surface text-left"
+                          >
+                            <span className="truncate">{s.name}</span>
+                            <ArrowRight className="w-3 h-3 text-gray-300 shrink-0" />
+                          </button>
+                        ))}
+                        {availablePool.length === 0 && <p className="text-[11px] text-gray-400 italic px-1.5 py-1">{search ? 'Sin resultados' : 'Nada disponible'}</p>}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-500 mb-1 px-0.5">Seleccionados {stagedPool.length > 0 ? `(${stagedPool.length})` : ''}</p>
+                      <div className="max-h-32 overflow-y-auto space-y-0.5">
+                        {stagedPool.map((s) => (
+                          <button
+                            key={s.userId} type="button" onClick={() => toggleChecked(s.userId)}
+                            className="w-full flex items-center justify-between gap-1 text-[11px] px-1.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-left"
+                          >
+                            <span className="truncate">{s.name}</span>
+                            <X className="w-3 h-3 shrink-0" />
+                          </button>
+                        ))}
+                        {stagedPool.length === 0 && <p className="text-[11px] text-gray-400 italic px-1.5 py-1">Nada seleccionado</p>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={() => setOpenCourseId(null)} className="text-xs text-gray-400 hover:text-gray-700 px-2">Cerrar</button>
+                    <button onClick={() => handleAddSelected(c)} disabled={busy || checked.size === 0} className="text-xs px-2 py-1 rounded-lg bg-cta-gradient text-white disabled:opacity-50">
+                      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Agregar ${checked.size || ''}`.trim()}
+                    </button>
+                  </div>
+                  {rowError && <p className="text-xs text-red-500">{rowError}</p>}
                 </div>
-                <div className="max-h-40 overflow-y-auto space-y-0.5 border-t border-border pt-1.5">
-                  {pool.map((s) => {
-                    const alreadyEnrolled = c.studentIds.includes(s.userId);
-                    return (
-                      <label key={s.userId} className={`flex items-center gap-1.5 text-xs px-1 py-0.5 rounded ${alreadyEnrolled ? 'opacity-40' : 'hover:bg-surface'}`}>
-                        <input type="checkbox" disabled={alreadyEnrolled} checked={checked.has(s.userId)} onChange={() => toggleChecked(s.userId)} />
-                        <span className="truncate">{s.name}{alreadyEnrolled ? ' (ya inscrito)' : ''}</span>
-                      </label>
-                    );
-                  })}
-                  {pool.length === 0 && <p className="text-xs text-gray-400 italic px-1">Sin estudiantes en el pool todavía.</p>}
-                </div>
-                <div className="flex gap-2 justify-end pt-1">
-                  <button onClick={() => setOpenCourseId(null)} className="text-xs text-gray-400 hover:text-gray-700 px-2">Cerrar</button>
-                  <button onClick={() => handleAddSelected(c)} disabled={busy || checked.size === 0} className="text-xs px-2 py-1 rounded-lg bg-cta-gradient text-white disabled:opacity-50">
-                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : `Agregar ${checked.size || ''}`.trim()}
-                  </button>
-                </div>
-                {rowError && <p className="text-xs text-red-500">{rowError}</p>}
-              </div>
-            )}
+              );
+            })()}
           </div>
         ))}
       </div>
