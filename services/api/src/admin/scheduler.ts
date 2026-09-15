@@ -231,50 +231,102 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     return ok({ proposals, courseTitles, teacherNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 
-  // ── POST /admin/scheduler/approve — persist one proposal + notify ───────────
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa
+  // que deban publicarse; deben aprobarse... las opciones que tengo que tener
+  // son: enviar notificación a estudiantes / a evaluadores... el botón de
+  // publicar debe existir una vez se confirme, después de enviar las
+  // notificaciones." Split the old one-shot approve (DB write + email to
+  // everyone at once) into three steps below — approve just stores the
+  // candidate (see ScheduleApproval), notify/publish are separate, explicit
+  // actions the admin triggers on demand.
+
+  // ── POST /admin/scheduler/approve — store the candidate, no side effects ────
   if (path === '/admin/scheduler/approve' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { academicPeriod, proposal } = body as { academicPeriod?: string; proposal?: ScheduleProposal };
+    const { academicPeriod, proposal, courseTitles, teacherNames } = body as {
+      academicPeriod?: string; proposal?: ScheduleProposal;
+      courseTitles?: Record<string, string>; teacherNames?: Record<string, string>;
+    };
     if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
     if (!proposal?.sessions?.length) return badRequest('proposal.sessions es requerido');
 
-    // Re-approving the same period replaces its previously published schedule —
+    await prisma.scheduleApproval.upsert({
+      where: { academicPeriod },
+      update: { proposalJson: { proposal, courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {} }, status: 'APPROVED', notifiedStudents: false, notifiedEvaluators: false, publishedAt: null },
+      create: { academicPeriod, proposalJson: { proposal, courseTitles: courseTitles ?? {}, teacherNames: teacherNames ?? {} } },
+    });
+    return ok({ approved: true });
+  }
+
+  // ── GET /admin/scheduler/approval — re-preview an already-approved candidate ─
+  if (path === '/admin/scheduler/approval' && method === 'GET') {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    const academicPeriod = event.queryStringParameters?.academicPeriod;
+    if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
+    const approval = await prisma.scheduleApproval.findUnique({ where: { academicPeriod } });
+    if (!approval) return notFound('No hay un horario aprobado para ese período');
+    return ok(approval);
+  }
+
+  // ── POST /admin/scheduler/notify — email one audience on demand ─────────────
+  if (path === '/admin/scheduler/notify' && method === 'POST') {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    const { academicPeriod, audience } = body as { academicPeriod?: string; audience?: 'students' | 'evaluators' };
+    if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
+    if (audience !== 'students' && audience !== 'evaluators') return badRequest("audience debe ser 'students' o 'evaluators'");
+    const approval = await prisma.scheduleApproval.findUnique({ where: { academicPeriod } });
+    if (!approval) return notFound('Aprobá un horario para este período antes de notificar');
+
+    const { proposal, courseTitles: rawTitles } = approval.proposalJson as unknown as { proposal: ScheduleProposal; courseTitles: Record<string, string> };
+    const courseTitles = new Map(Object.entries(rawTitles ?? {}));
+    const byRecipient = new Map<string, ScheduledSession[]>();
+    for (const s of proposal.sessions) {
+      const ids = audience === 'evaluators' ? [s.evaluatorId] : s.studentIds;
+      for (const id of ids) byRecipient.set(id, [...(byRecipient.get(id) ?? []), s]);
+    }
+    await Promise.allSettled([...byRecipient.entries()].map(async ([userId, sessions]) => {
+      const { email, name } = await resolveContact(userId);
+      if (!email) return;
+      const scheduleRows = `<ul>${sessions.map((s) =>
+        `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'})</li>`
+      ).join('')}</ul>`;
+      await sendTemplatedEmail(email, 'SCHEDULE_PUBLISHED', { recipientName: name, academicPeriod, scheduleRows }).catch(() => {});
+    }));
+
+    await prisma.scheduleApproval.update({
+      where: { academicPeriod },
+      data: audience === 'evaluators' ? { notifiedEvaluators: true } : { notifiedStudents: true },
+    });
+    return ok({ notified: true, audience, recipientCount: byRecipient.size });
+  }
+
+  // ── POST /admin/scheduler/publish — final lock-in, writes the real rows ─────
+  if (path === '/admin/scheduler/publish' && method === 'POST') {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    const { academicPeriod } = body as { academicPeriod?: string };
+    if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
+    const approval = await prisma.scheduleApproval.findUnique({ where: { academicPeriod } });
+    if (!approval) return notFound('Aprobá un horario para este período antes de publicar');
+    if (!approval.notifiedStudents && !approval.notifiedEvaluators) {
+      return badRequest('Enviá al menos una notificación (estudiantes o evaluadores) antes de publicar');
+    }
+    const { proposal } = approval.proposalJson as unknown as { proposal: ScheduleProposal };
+
+    // Re-publishing the same period replaces its previously published schedule —
     // idempotent, matches the "publicar el escenario ideal" one-active-schedule spec.
     await prisma.$transaction([
       prisma.scheduledClass.deleteMany({ where: { academicPeriod } }),
       prisma.scheduledClass.createMany({
-        data: proposal.sessions.map((s: typeof proposal.sessions[number]) => ({
+        data: proposal.sessions.map((s) => ({
           academicPeriod, courseId: s.courseId, evaluatorId: s.evaluatorId,
           dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime,
           modality: s.modality, classType: s.classType,
           studentGroupId: s.studentGroupId ?? null, studentIds: s.studentIds,
         })),
       }),
+      prisma.scheduleApproval.update({ where: { academicPeriod }, data: { status: 'PUBLISHED', publishedAt: new Date() } }),
     ]);
-
-    // Fan-out email — each recipient gets ONLY their own sessions (explicit "Don't" in the
-    // spec: never a full institutional dump). Non-fatal per-recipient, same convention as
-    // evaluator/groups.ts enroll.
-    const courseTitles = new Map((await prisma.course.findMany({
-      where: { id: { in: [...new Set(proposal.sessions.map((s: typeof proposal.sessions[number]) => s.courseId))] } },
-      select: { id: true, title: true },
-    })).map((c: any) => [c.id, c.title]));
-
-    const byRecipient = new Map<string, typeof proposal.sessions>();
-    for (const s of proposal.sessions) {
-      byRecipient.set(s.evaluatorId, [...(byRecipient.get(s.evaluatorId) ?? []), s]);
-      for (const sid of s.studentIds) byRecipient.set(sid, [...(byRecipient.get(sid) ?? []), s]);
-    }
-    await Promise.allSettled([...byRecipient.entries()].map(async ([userId, sessions]) => {
-      const { email, name } = await resolveContact(userId);
-      if (!email) return;
-      const scheduleRows = `<ul>${sessions.map((s: typeof proposal.sessions[number]) =>
-        `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'})</li>`
-      ).join('')}</ul>`;
-      await sendTemplatedEmail(email, 'SCHEDULE_PUBLISHED', { recipientName: name, academicPeriod, scheduleRows }).catch(() => {});
-    }));
-
-    return ok({ published: true, sessionCount: proposal.sessions.length, recipientCount: byRecipient.size });
+    return ok({ published: true, sessionCount: proposal.sessions.length });
   }
 
   // ── POST /admin/scheduler/validate — Paso 7 manual-edit conflict re-check ───
@@ -347,6 +399,9 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const academicPeriod = decodeURIComponent(unpublishMatch[1]!);
     const { count } = await prisma.scheduledClass.deleteMany({ where: { academicPeriod } });
     if (count === 0) return notFound('No hay horario publicado para ese período');
+    // Limpia también el candidato aprobado — "volver a editar" empieza de cero,
+    // no arrastra notificaciones ya marcadas como enviadas de la versión anterior.
+    await prisma.scheduleApproval.deleteMany({ where: { academicPeriod } }).catch(() => {});
     return ok({ deleted: count });
   }
 

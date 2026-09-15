@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SchedulerPage from './page';
 
 // Trello *LUX SCHEDULER* (Mack, 2026-09-10): "debería haber siempre una opción
@@ -11,8 +11,9 @@ vi.mock('@/lib/hooks/useAuth', () => ({
   useAuth: () => ({ role: 'ADMIN' }),
 }));
 
+const getApprovalMock = vi.fn().mockResolvedValue({ data: null });
 vi.mock('@/lib/api', () => ({
-  api: { admin: { scheduler: { generate: vi.fn() } } },
+  api: { admin: { scheduler: { generate: vi.fn(), getApproval: (...a: any[]) => getApprovalMock(...a) } } },
 }));
 
 vi.mock('./_components/WizardShell', () => ({
@@ -34,7 +35,7 @@ vi.mock('./_components/StepReports', () => ({ StepReports: () => <div>reports</d
 const DRAFT_KEY = 'lux-scheduler-draft-v1';
 
 describe('SchedulerPage — borrador local', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => { localStorage.clear(); getApprovalMock.mockClear(); getApprovalMock.mockResolvedValue({ data: null }); });
   afterEach(() => localStorage.clear());
 
   it('guarda un borrador en localStorage cuando se define el período académico', async () => {
@@ -64,5 +65,37 @@ describe('SchedulerPage — borrador local', () => {
     fireEvent.click(screen.getByText('Empezar de nuevo'));
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(screen.getByLabelText('periodo')).toHaveValue('');
+  });
+});
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "cuando yo vuelva a Lux
+// Scheduler, yo tengo que tener la opción de volver a previsualizar cómo
+// quedó eso final."
+describe('SchedulerPage — resume de horario ya aprobado/publicado', () => {
+  beforeEach(() => { localStorage.clear(); getApprovalMock.mockClear(); });
+  afterEach(() => localStorage.clear());
+
+  it('muestra el banner de resume cuando el período ya tiene una aprobación', async () => {
+    getApprovalMock.mockResolvedValue({ data: { status: 'APPROVED', proposalJson: { proposal: { sessions: [] }, courseTitles: {}, teacherNames: {} } } });
+    render(<SchedulerPage />);
+    fireEvent.change(screen.getByLabelText('periodo'), { target: { value: 'II Semestre 2026' } });
+    await waitFor(() => expect(screen.getByText(/aprobado \(sin publicar\)/)).toBeTruthy());
+  });
+
+  it('"Ver / continuar" salta al paso de revisión con el candidato guardado', async () => {
+    getApprovalMock.mockResolvedValue({ data: { status: 'APPROVED', proposalJson: { proposal: { label: 'A', sessions: [] }, courseTitles: {}, teacherNames: {} } } });
+    render(<SchedulerPage />);
+    fireEvent.change(screen.getByLabelText('periodo'), { target: { value: 'II Semestre 2026' } });
+    await waitFor(() => expect(screen.getByText('Ver / continuar')).toBeTruthy());
+    fireEvent.click(screen.getByText('Ver / continuar'));
+    await waitFor(() => expect(screen.getByText('review')).toBeTruthy());
+  });
+
+  it('no muestra el banner cuando no hay nada aprobado para ese período', async () => {
+    getApprovalMock.mockResolvedValue({ data: null });
+    render(<SchedulerPage />);
+    fireEvent.change(screen.getByLabelText('periodo'), { target: { value: 'Nunca Usado 2099' } });
+    await waitFor(() => expect(getApprovalMock).toHaveBeenCalled());
+    expect(screen.queryByText('Ver / continuar')).toBeNull();
   });
 });

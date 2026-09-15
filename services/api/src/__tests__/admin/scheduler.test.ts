@@ -190,41 +190,33 @@ describe('handleScheduler — POST /admin/scheduler/generate', () => {
   });
 });
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "probar los horarios no significa
+// que deban publicarse; deben aprobarse... las opciones que tengo que tener
+// son: enviar notificación a estudiantes / a evaluadores... el botón de
+// publicar debe existir... después de enviar las notificaciones." Approve now
+// only stores a candidate (ScheduleApproval) — no DB write to ScheduledClass,
+// no emails, until notify/publish are called explicitly.
+const sampleProposal = {
+  label: 'Opción A', strategy: 'compact', unscheduledCourseIds: [],
+  sessions: [{
+    courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '18:00', endTime: '18:55',
+    modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: ['student-1'],
+  }],
+};
+
 describe('handleScheduler — POST /admin/scheduler/approve', () => {
-  it('persists ScheduledClass rows and emails only each recipient\'s own sessions', async () => {
-    const deleteMany = vi.fn().mockResolvedValue({});
-    const createMany = vi.fn().mockResolvedValue({});
-    const prisma = makePrisma({
-      scheduledClass: { deleteMany, createMany },
-      course: { findMany: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Curso Virtual' }]) },
-    });
+  it('stores the candidate as ScheduleApproval, no ScheduledClass write and no emails', async () => {
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({ scheduleApproval: { upsert } });
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'POST', '/admin/scheduler/approve'),
       method: 'POST', path: '/admin/scheduler/approve', prisma,
-      body: {
-        academicPeriod: '2026-2',
-        proposal: {
-          label: 'Opción A', strategy: 'compact', unscheduledCourseIds: [],
-          sessions: [{
-            courseId: 'c1', evaluatorId: 'eval-1', dayOfWeek: 1, startTime: '08:00', endTime: '08:55',
-            modality: 'VIRTUAL', classType: 'INDIVIDUAL', studentIds: ['student-1'],
-          }],
-        },
-      },
+      body: { academicPeriod: '2026-2', proposal: sampleProposal, courseTitles: { c1: 'Curso Virtual' }, teacherNames: { 'eval-1': 'Profe' } },
     });
     const res = await handleScheduler(ctx as any);
-    const body = await bodyOf(res);
     expect(res.statusCode).toBe(200);
-    expect(body.data.sessionCount).toBe(1);
-    expect(body.data.recipientCount).toBe(2); // teacher + 1 student
-    expect(deleteMany).toHaveBeenCalledWith({ where: { academicPeriod: '2026-2' } });
-    expect(createMany).toHaveBeenCalled();
-    // Each recipient gets exactly one email with only their own session, never a full dump.
-    expect(sendTemplatedEmailMock).toHaveBeenCalledTimes(2);
-    for (const call of sendTemplatedEmailMock.mock.calls) {
-      expect(call[1]).toBe('SCHEDULE_PUBLISHED');
-      expect(call[2].scheduleRows).toContain('Curso Virtual');
-    }
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { academicPeriod: '2026-2' } }));
+    expect(sendTemplatedEmailMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the proposal has no sessions', async () => {
@@ -239,6 +231,93 @@ describe('handleScheduler — POST /admin/scheduler/approve', () => {
   });
 });
 
+describe('handleScheduler — GET /admin/scheduler/approval', () => {
+  it('returns the stored candidate for re-preview', async () => {
+    const stored = { academicPeriod: '2026-2', proposalJson: { proposal: sampleProposal, courseTitles: {}, teacherNames: {} }, status: 'APPROVED' };
+    const prisma = makePrisma({ scheduleApproval: { findUnique: vi.fn().mockResolvedValue(stored) } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/approval', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/approval', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.status).toBe('APPROVED');
+  });
+
+  it('returns 404 when nothing was approved for that period', async () => {
+    const prisma = makePrisma({ scheduleApproval: { findUnique: vi.fn().mockResolvedValue(null) } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'GET', '/admin/scheduler/approval', { qs: { academicPeriod: '2026-2' } }),
+      method: 'GET', path: '/admin/scheduler/approval', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('handleScheduler — POST /admin/scheduler/notify', () => {
+  it('emails only the requested audience and marks it notified', async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const stored = { academicPeriod: '2026-2', proposalJson: { proposal: sampleProposal, courseTitles: { c1: 'Curso Virtual' } } };
+    const prisma = makePrisma({ scheduleApproval: { findUnique: vi.fn().mockResolvedValue(stored), update } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/notify'),
+      method: 'POST', path: '/admin/scheduler/notify', prisma,
+      body: { academicPeriod: '2026-2', audience: 'students' },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.recipientCount).toBe(1); // only the 1 student, not the teacher
+    expect(sendTemplatedEmailMock).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({ where: { academicPeriod: '2026-2' }, data: { notifiedStudents: true } });
+  });
+
+  it('returns 404 when there is no approved candidate yet', async () => {
+    const prisma = makePrisma({ scheduleApproval: { findUnique: vi.fn().mockResolvedValue(null) } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/notify'),
+      method: 'POST', path: '/admin/scheduler/notify', prisma,
+      body: { academicPeriod: '2026-2', audience: 'evaluators' },
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('handleScheduler — POST /admin/scheduler/publish', () => {
+  it('rejects publishing before any notification was sent', async () => {
+    const stored = { academicPeriod: '2026-2', proposalJson: { proposal: sampleProposal }, notifiedStudents: false, notifiedEvaluators: false };
+    const prisma = makePrisma({ scheduleApproval: { findUnique: vi.fn().mockResolvedValue(stored) } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/publish'),
+      method: 'POST', path: '/admin/scheduler/publish', prisma,
+      body: { academicPeriod: '2026-2' },
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('writes ScheduledClass rows and marks the approval PUBLISHED once notified', async () => {
+    const stored = { academicPeriod: '2026-2', proposalJson: { proposal: sampleProposal }, notifiedStudents: true, notifiedEvaluators: false };
+    const prisma = makePrisma({
+      scheduleApproval: { findUnique: vi.fn().mockResolvedValue(stored), update: vi.fn().mockResolvedValue({}) },
+      scheduledClass: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'POST', '/admin/scheduler/publish'),
+      method: 'POST', path: '/admin/scheduler/publish', prisma,
+      body: { academicPeriod: '2026-2' },
+    });
+    const res = await handleScheduler(ctx as any);
+    const body = await bodyOf(res);
+    expect(res.statusCode).toBe(200);
+    expect(body.data.sessionCount).toBe(1);
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+});
+
 describe('handleScheduler — DELETE /admin/scheduler/:academicPeriod', () => {
   it('unpublishes and returns 404 when nothing was published for that period', async () => {
     const prisma = makePrisma({ scheduledClass: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) } });
@@ -248,6 +327,21 @@ describe('handleScheduler — DELETE /admin/scheduler/:academicPeriod', () => {
     });
     const res = await handleScheduler(ctx as any);
     expect(res.statusCode).toBe(404);
+  });
+
+  it('also clears the stored ScheduleApproval so a re-edit starts clean', async () => {
+    const scheduleApprovalDeleteMany = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({
+      scheduledClass: { deleteMany: vi.fn().mockResolvedValue({ count: 3 }) },
+      scheduleApproval: { deleteMany: scheduleApprovalDeleteMany },
+    });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'DELETE', '/admin/scheduler/2026-2'),
+      method: 'DELETE', path: '/admin/scheduler/2026-2', prisma,
+    });
+    const res = await handleScheduler(ctx as any);
+    expect(res.statusCode).toBe(200);
+    expect(scheduleApprovalDeleteMany).toHaveBeenCalledWith({ where: { academicPeriod: '2026-2' } });
   });
 });
 
