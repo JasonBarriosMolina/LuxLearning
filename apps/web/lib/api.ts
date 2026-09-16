@@ -686,6 +686,10 @@ export const api = {
       university?: string; career?: string; semester?: string;
       title?: string; specialty?: string; experience?: string;
       socialLinks?: { platform: string; url: string }[];
+      // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "en el perfil de los
+      // estudiantes, que se diga si es un estudiante virtual, un estudiante
+      // presencial, o un estudiante híbrido."
+      studentModality?: 'VIRTUAL' | 'PRESENCIAL' | 'HIBRIDA' | '';
     }) => request<any>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
   },
   messages: {

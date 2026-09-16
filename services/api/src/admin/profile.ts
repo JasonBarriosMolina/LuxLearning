@@ -4,7 +4,13 @@ import {
   AdminUpdateUserAttributesCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { ok, badRequest, forbidden } from '../shared/response';
+import { getUserProfile, saveUserProfile } from '../shared/db-dynamo';
 import { AdminCtx, cognito, USER_POOL_ID } from './ctx';
+
+// Trello *LUX SCHEDULER* (Mack, 2026-09-15): "en el perfil de los
+// estudiantes, que se diga si es un estudiante virtual, un estudiante
+// presencial, o un estudiante híbrido."
+const STUDENT_MODALITY_VALUES = ['VIRTUAL', 'PRESENCIAL', 'HIBRIDA'];
 
 /** Any authenticated user (including students) — just needs a userId from the authorizer. */
 function isAuthenticated(event: any): boolean {
@@ -18,7 +24,10 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
   if (path === '/user/profile' && method === 'GET') {
     if (!isAuthenticated(event)) return forbidden('No autorizado');
     if (!userId) return badRequest('userId no disponible');
-    const res = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId }));
+    const [res, extended] = await Promise.all([
+      cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: userId })),
+      getUserProfile(userId),
+    ]);
     const attr = (name: string) => res.UserAttributes?.find((a: any) => a.Name === name)?.Value ?? '';
     const socialLinksRaw = attr('custom:socialLinks');
     return ok({
@@ -35,6 +44,7 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
       specialty: attr('custom:specialty'),
       experience: attr('custom:experience'),
       socialLinks: socialLinksRaw ? (() => { try { return JSON.parse(socialLinksRaw); } catch { return []; } })() : [],
+      studentModality: extended?.studentModality ?? null,
     });
   }
 
@@ -42,12 +52,23 @@ export async function handleProfile(ctx: AdminCtx): Promise<any | null> {
   if (path === '/user/profile' && method === 'PUT') {
     if (!isAuthenticated(event)) return forbidden('No autorizado');
     if (!userId) return badRequest('userId no disponible');
-    const { name, phone, bio, picture, university, career, semester, title, specialty, experience, socialLinks } = body as {
+    const { name, phone, bio, picture, university, career, semester, title, specialty, experience, socialLinks, studentModality } = body as {
       name?: string; phone?: string; bio?: string; picture?: string;
       university?: string; career?: string; semester?: string;
       title?: string; specialty?: string; experience?: string;
       socialLinks?: { platform: string; url: string }[];
+      studentModality?: string;
     };
+    if (studentModality !== undefined && studentModality !== null && studentModality !== '' && !STUDENT_MODALITY_VALUES.includes(studentModality)) {
+      return badRequest('studentModality inválido');
+    }
+    if (studentModality !== undefined) {
+      await saveUserProfile(userId, { studentModality: (studentModality || undefined) as any });
+      // Trello *LUX SCHEDULER*: un PUT que solo trae studentModality (nada de
+      // Cognito) es válido por sí solo — no debe caer en "No hay campos".
+      const onlyModality = Object.keys(body).every((k) => k === 'studentModality');
+      if (onlyModality) return ok({ updated: true });
+    }
     const attrs: { Name: string; Value: string }[] = [];
     if (name !== undefined) attrs.push({ Name: 'name', Value: name });
     if (phone !== undefined) attrs.push({ Name: 'phone_number', Value: phone });

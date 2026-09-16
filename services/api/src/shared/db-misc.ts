@@ -101,6 +101,13 @@ export interface UserProfileExtended {
   specialty?: string;
   experience?: string;
   socialLinks?: { platform: string; url: string }[];
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "en el perfil de los
+  // estudiantes, que se diga si es un estudiante virtual, un estudiante
+  // presencial, o un estudiante híbrido, para que esos permisos y esas
+  // limitantes no existan." Vía DDB, no Cognito custom attribute — ver
+  // admin/profile.ts (los custom:* ya tienen un fallback silencioso porque
+  // no están provisionados en el User Pool; esta tabla sí escribe de verdad).
+  studentModality?: 'VIRTUAL' | 'PRESENCIAL' | 'HIBRIDA';
   updatedAt?: string;
 }
 
