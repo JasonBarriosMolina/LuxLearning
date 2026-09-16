@@ -78,7 +78,12 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
     setTagSaving(true);
     try {
       await api.admin.courses.update(c.id, { [field]: value || null });
-      onUpdated({ [field]: value || null } as Partial<CourseCatalogRow>);
+      const patch: Partial<CourseCatalogRow> = { [field]: value || null } as any;
+      // Keep engineModality in sync so StepCourses' isAsync filter reacts immediately.
+      if (field === 'modality') {
+        patch.engineModality = value === 'PRESENCIAL' ? 'PRESENCIAL' : value === 'ASINCRONICA' ? null : 'VIRTUAL';
+      }
+      onUpdated(patch);
     } catch (err: any) {
       onError(err?.message ?? 'No se pudo actualizar el tag.');
     } finally {
