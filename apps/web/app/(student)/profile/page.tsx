@@ -12,6 +12,7 @@ import { changePassword } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 import QRCodeLib from 'qrcode';
+import { ModalityField } from './_components/ModalityField';
 
 interface ProfileData {
   username: string;
@@ -24,6 +25,8 @@ interface ProfileData {
   career: string;
   semester: string;
   socialLinks: { platform: string; url: string }[];
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-15): virtual/presencial/híbrido.
+  studentModality: string | null;
 }
 
 // Country dial codes (most common first, then alphabetical)
@@ -405,6 +408,8 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      <ModalityField value={profile?.studentModality ?? null} onSaved={(m) => setProfile((p) => (p ? { ...p, studentModality: m } : p))} />
 
       {/* ── Redes sociales ── */}
       <div className="card">
