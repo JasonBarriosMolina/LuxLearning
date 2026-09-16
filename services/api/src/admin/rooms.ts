@@ -102,6 +102,11 @@ export async function handleRooms(ctx: AdminCtx): Promise<any | null> {
       // ScheduledClass.roomId apuntando a un aula que ya no existe.
       const inUse = await prisma.scheduledClass.count({ where: { roomId: id } });
       if (inUse > 0) return badRequest('No se puede eliminar: hay clases publicadas usando esta aula.');
+      // Revisión de bugs (Jason, 2026-09-16): un curso con esta aula fijada
+      // como preferredRoomId (ver CourseRow.tsx) quedaba con una referencia
+      // colgante tras borrar el aula — el próximo horario generado la
+      // pineaba igual con un id que ya no existe, sin nombre para mostrar.
+      await prisma.course.updateMany({ where: { preferredRoomId: id }, data: { preferredRoomId: null } });
       await prisma.classRoom.delete({ where: { id } }).catch(() => null);
       return ok({ deleted: true });
     }
