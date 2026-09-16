@@ -162,6 +162,22 @@ describe('DELETE /admin/scheduler/rooms/:id', () => {
     expect(res.statusCode).toBe(200);
     expect(del).toHaveBeenCalledWith({ where: { id: 'r1' } });
   });
+
+  // Bug encontrado en revisión (Jason, 2026-09-16): borrar un aula dejaba
+  // Course.preferredRoomId colgando en cualquier curso que la tuviera fijada.
+  it('clears preferredRoomId on any course pointing at the deleted room', async () => {
+    const count = vi.fn().mockResolvedValue(0);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const del = vi.fn().mockResolvedValue({});
+    const prisma = makePrisma({ scheduledClass: { count }, course: { updateMany }, classRoom: { delete: del } });
+    const ctx = makeAdminCtx({
+      event: makeEvent('ADMIN', 'DELETE', '/admin/scheduler/rooms/r1'),
+      method: 'DELETE', path: '/admin/scheduler/rooms/r1', prisma,
+    });
+    const res = await handleRooms(ctx as any);
+    expect(res.statusCode).toBe(200);
+    expect(updateMany).toHaveBeenCalledWith({ where: { preferredRoomId: 'r1' }, data: { preferredRoomId: null } });
+  });
 });
 
 describe('handleRooms — unrelated routes', () => {
