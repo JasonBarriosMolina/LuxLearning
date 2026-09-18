@@ -1,24 +1,22 @@
 'use client';
 
+// Trello *LUX SCHEDULER* (Mack, 2026-09-16): "la opción de edificio y todo
+// eso sería mejor que se guarde en el perfil del administrador para que quede
+// directamente ahí y no tal vez en el aire en el planificador."
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Building2, DoorOpen, Pencil, Check, X as XIcon } from 'lucide-react';
+import { Building2, Check, DoorOpen, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
-import type { Building, ClassRoomRow } from './types';
 
-// Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "una de las cosas
-// importantes que debe existir en parámetros, tal vez como una sección
-// intermedia entre parámetros y cursos, son las aulas disponibles... la
-// institución puede agregar aulas, puede agregar edificios y edificios que
-// contengan aulas... divididas por piso... nombre preferencial... aforo...
-// descripción de qué tipo de cursos se pueden dar." Vive al final de
-// StepParams.tsx (paso 2) — justo antes del paso 3 de Cursos.
 const COURSE_TYPE_LABELS: Record<string, string> = {
   TEORICO: 'Teórico', TEORICO_PRACTICO: 'Teórico-Práctico', PROYECTOS: 'Taller/Proyectos',
   PROGRAMA_ESPECIAL: 'Programa Especial', CURSO_CORTO: 'Curso Corto', LIBRE: 'Curso Libre/Tutoría',
 };
 
-export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
+interface Building { id: string; name: string; }
+interface ClassRoomRow { id: string; name: string; capacity: number; buildingId: string | null; floor: number | null; preferredName: string | null; courseTypeTags: string[]; }
+
+export function BuildingsSection() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<ClassRoomRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +32,7 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
   const [roomCapacity, setRoomCapacity] = useState('');
   const [roomBuildingId, setRoomBuildingId] = useState('');
   const [roomFloor, setRoomFloor] = useState('');
-  const [roomPreferredName, setRoomPreferredName] = useState('');
+  const [roomDescription, setRoomDescription] = useState('');
   const [roomTags, setRoomTags] = useState<string[]>([]);
   const [addingRoom, setAddingRoom] = useState(false);
 
@@ -85,9 +83,6 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
     }
   };
 
-  // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "si el edificio es A y
-  // tiene 3 pisos, las aulas del piso 1 deberían llamarse 101, 102... cuando
-  // es el piso 2: 201, 202..." — sugerencia de nombre, editable antes de crear.
   const suggestName = (floor: string) => {
     const f = Number(floor);
     if (!f) return '';
@@ -104,11 +99,11 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
         name: roomName.trim(), capacity,
         buildingId: roomBuildingId || undefined,
         floor: roomFloor ? Number(roomFloor) : undefined,
-        preferredName: roomPreferredName.trim() || undefined,
+        preferredName: roomDescription.trim() || undefined,
         courseTypeTags: roomTags,
       });
       setRooms([...rooms, (res as any).data]);
-      setRoomName(''); setRoomCapacity(''); setRoomBuildingId(''); setRoomFloor(''); setRoomPreferredName(''); setRoomTags([]);
+      setRoomName(''); setRoomCapacity(''); setRoomBuildingId(''); setRoomFloor(''); setRoomDescription(''); setRoomTags([]);
       setShowAddRoom(false);
     } catch (err: any) {
       setError(err?.message ?? 'No se pudo crear el aula.');
@@ -127,44 +122,31 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
     }
   };
 
-  const buildingName = (id: string | null) => buildings.find((b) => b.id === id)?.name;
-
   if (loading) return (
-    <div className="card flex items-center justify-center py-8 text-gray-400">
-      <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando aulas…
+    <div className="flex items-center gap-2 py-4 text-gray-400 text-sm">
+      <Loader2 className="w-4 h-4 animate-spin" /> Cargando aulas y edificios…
     </div>
   );
 
-  if (readOnly && rooms.length === 0) return (
-    <p className="text-xs text-gray-400 italic">Ningún aula registrada aún. Agregalas desde tu perfil.</p>
-  );
-
   return (
-    <div className={readOnly ? 'space-y-3' : 'card space-y-4'}>
-      {!readOnly && (
-        <div>
-          <h2 className="font-heading font-semibold text-charcoal flex items-center gap-1.5"><DoorOpen className="w-4 h-4" /> Aulas y edificios</h2>
-          <p className="text-xs text-gray-500">Solo aplica a cursos presenciales. Cada curso puede fijar un aula específica desde el catálogo (paso 3).</p>
-        </div>
-      )}
-
-      {error && <p className="text-xs text-red-500">{error}</p>}
+    <div className="space-y-6">
+      {error && <p className="text-sm text-red-500">{error}</p>}
 
       {/* Edificios */}
-      {!readOnly && <div className="space-y-2">
-        <p className="text-xs font-semibold text-charcoal flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> Edificios</p>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-charcoal flex items-center gap-2"><Building2 className="w-4 h-4" /> Edificios</p>
+        <div className="flex flex-wrap gap-2">
           {buildings.map((b) => (
-            <span key={b.id} className="flex items-center gap-1 text-xs bg-surface border border-border rounded-full pl-2.5 pr-1 py-1">
+            <span key={b.id} className="flex items-center gap-1.5 text-sm bg-surface border border-border rounded-full pl-3 pr-1.5 py-1">
               {editingBuildingId === b.id ? (
                 <>
                   <input
                     autoFocus type="text" value={editingBuildingName} onChange={(e) => setEditingBuildingName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleRenameBuilding(b.id); else if (e.key === 'Escape') setEditingBuildingId(null); }}
-                    className="text-xs border border-gray-200 rounded-md px-1.5 py-0.5 w-24"
+                    className="text-sm border border-gray-200 rounded-md px-2 py-0.5 w-32"
                   />
-                  <button onClick={() => handleRenameBuilding(b.id)} className="p-0.5 text-emerald-500 hover:text-emerald-600"><Check className="w-3 h-3" /></button>
-                  <button onClick={() => setEditingBuildingId(null)} className="p-0.5 text-gray-300 hover:text-gray-600"><XIcon className="w-3 h-3" /></button>
+                  <button onClick={() => handleRenameBuilding(b.id)} className="p-0.5 text-emerald-500 hover:text-emerald-600"><Check className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setEditingBuildingId(null)} className="p-0.5 text-gray-300 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
                 </>
               ) : (
                 <>
@@ -175,23 +157,23 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
               )}
             </span>
           ))}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <input
               type="text" value={newBuildingName} onChange={(e) => setNewBuildingName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddBuilding(); }}
-              placeholder="Edificio A" className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-28"
+              placeholder="Nuevo edificio" className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-36"
             />
-            <button onClick={handleAddBuilding} disabled={addingBuilding || !newBuildingName.trim()} className="p-1 text-gray-400 hover:text-cta-from disabled:opacity-50">
-              {addingBuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            <button onClick={handleAddBuilding} disabled={addingBuilding || !newBuildingName.trim()} className="p-1.5 text-gray-400 hover:text-cta-from disabled:opacity-50">
+              {addingBuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             </button>
           </div>
         </div>
-      </div>}
+      </div>
 
       {/* Aulas agrupadas por edificio */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-charcoal">Aulas ({rooms.length})</p>
-        {rooms.length > 0 && (() => {
+      <div className="space-y-4">
+        <p className="text-sm font-semibold text-charcoal flex items-center gap-2"><DoorOpen className="w-4 h-4" /> Aulas ({rooms.length})</p>
+        {(() => {
           const grouped: { building: Building | null; rooms: ClassRoomRow[] }[] = [];
           buildings.forEach((b) => {
             const br = rooms.filter((r) => r.buildingId === b.id);
@@ -199,56 +181,61 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
           });
           const unassigned = rooms.filter((r) => !r.buildingId);
           if (unassigned.length) grouped.push({ building: null, rooms: unassigned });
-          return grouped.map(({ building: b, rooms: gr }) => (
-            <div key={b?.id ?? '__none__'} className="space-y-1">
-              <p className="text-[11px] font-semibold text-gray-400 flex items-center gap-1">
-                <Building2 className="w-3 h-3" />{b?.name ?? 'Sin edificio'}
-              </p>
-              <table className="w-full text-xs">
-                <tbody className="divide-y divide-border">
+          return grouped.length === 0 && rooms.length === 0 ? (
+            <p className="text-sm text-gray-400 italic">No hay aulas registradas aún.</p>
+          ) : (
+            grouped.map(({ building: b, rooms: gr }) => (
+              <div key={b?.id ?? '__none__'} className="space-y-1">
+                <p className="text-xs font-semibold text-gray-400 flex items-center gap-1 uppercase tracking-wide">
+                  <Building2 className="w-3.5 h-3.5" />{b?.name ?? 'Sin edificio'}
+                </p>
+                <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
                   {gr.map((r) => (
-                    <tr key={r.id}>
-                      <td className="py-1.5 pr-3 font-medium text-charcoal">
-                        {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
-                        {r.floor != null && <span className="text-gray-400 font-normal"> · piso {r.floor}</span>}
-                      </td>
-                      <td className="py-1.5 pr-3 text-gray-500">cap. {r.capacity}</td>
-                      <td className="py-1.5 pr-3 text-gray-500">{r.courseTypeTags.length ? r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ') : '—'}</td>
-                      {!readOnly && <td className="py-1.5">
-                        <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </td>}
-                    </tr>
+                    <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-charcoal">
+                          {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
+                          {r.floor != null && <span className="text-gray-400 font-normal text-xs ml-1">piso {r.floor}</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Aforo: {r.capacity}
+                          {r.courseTypeTags.length > 0 && ` · ${r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ')}`}
+                        </p>
+                      </div>
+                      <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          ));
+                </div>
+              </div>
+            ))
+          );
         })()}
 
-        {!readOnly && showAddRoom ? (
-          <div className="p-3 bg-surface rounded-xl border border-border space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <select value={roomBuildingId} onChange={(e) => setRoomBuildingId(e.target.value)} className="input-field text-xs py-1.5">
+        {showAddRoom ? (
+          <div className="p-4 bg-surface rounded-xl border border-border space-y-3">
+            <p className="text-sm font-medium text-charcoal">Nueva aula</p>
+            <div className="grid grid-cols-2 gap-3">
+              <select value={roomBuildingId} onChange={(e) => setRoomBuildingId(e.target.value)} className="input-field text-sm">
                 <option value="">— sin edificio —</option>
                 {buildings.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
               <input
                 type="number" min={1} value={roomFloor}
                 onChange={(e) => { setRoomFloor(e.target.value); if (!roomName) setRoomName(suggestName(e.target.value)); }}
-                placeholder="Piso (opcional)" className="input-field text-xs py-1.5"
+                placeholder="Piso (opcional)" className="input-field text-sm"
               />
-              <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Nombre (ej. 101)" className="input-field text-xs py-1.5" />
-              <input type="number" min={1} value={roomCapacity} onChange={(e) => setRoomCapacity(e.target.value)} placeholder="Aforo" className="input-field text-xs py-1.5" />
-              <input type="text" value={roomPreferredName} onChange={(e) => setRoomPreferredName(e.target.value)} placeholder="Descripción (ej. Sala de ensayos, opcional)" className="input-field text-xs py-1.5 col-span-2" />
+              <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Nombre (ej. 101)" className="input-field text-sm" />
+              <input type="number" min={1} value={roomCapacity} onChange={(e) => setRoomCapacity(e.target.value)} placeholder="Aforo" className="input-field text-sm" />
+              <input type="text" value={roomDescription} onChange={(e) => setRoomDescription(e.target.value)} placeholder="Descripción (ej. Sala de ensayos, opcional)" className="input-field text-sm col-span-2" />
             </div>
             <div>
-              <p className="text-[11px] text-gray-400 mb-1">Tipos de curso que se pueden dar acá (opcional):</p>
-              <div className="flex flex-wrap gap-1">
+              <p className="text-xs text-gray-400 mb-2">Tipos de curso que se pueden dar acá (opcional):</p>
+              <div className="flex flex-wrap gap-1.5">
                 {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => (
                   <button
                     key={id} type="button"
                     onClick={() => setRoomTags(roomTags.includes(id) ? roomTags.filter((t) => t !== id) : [...roomTags, id])}
-                    className={`px-2 py-0.5 rounded-full text-[11px] border ${roomTags.includes(id) ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-border'}`}
+                    className={`px-2.5 py-1 rounded-full text-xs border ${roomTags.includes(id) ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-border'}`}
                   >
                     {label}
                   </button>
@@ -256,15 +243,15 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
               </div>
             </div>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAddRoom(false)} className="text-xs text-gray-400 hover:text-gray-700 px-2">Cancelar</button>
-              <Button size="sm" onClick={handleAddRoom} loading={addingRoom} disabled={!roomName.trim() || !roomCapacity}>Crear aula</Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddRoom(false)}>Cancelar</Button>
+              <Button type="button" size="sm" onClick={handleAddRoom} loading={addingRoom} disabled={!roomName.trim() || !roomCapacity}>Crear aula</Button>
             </div>
           </div>
-        ) : !readOnly ? (
-          <Button variant="secondary" size="sm" leftIcon={<Plus className="w-3.5 h-3.5" />} onClick={() => setShowAddRoom(true)}>
+        ) : (
+          <Button variant="secondary" size="sm" leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowAddRoom(true)}>
             Agregar aula
           </Button>
-        ) : null}
+        )}
       </div>
     </div>
   );

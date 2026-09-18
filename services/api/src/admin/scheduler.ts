@@ -259,6 +259,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
             courseId: c.id, evaluatorId: c.evaluatorId, modality: 'PRESENCIAL',
             classType: presencialIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
             studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin, pinnedRoomId,
+            courseType: c.courseType ?? undefined,
           });
         }
         if (virtualIds.length > 0) {
@@ -278,6 +279,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
         courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds,
         durationOverrideMin: override?.durationOverrideMin,
         pinnedRoomId: modality === 'PRESENCIAL' ? pinnedRoomId : undefined,
+        courseType: c.courseType ?? undefined,
       });
     }
     if (!engineCourses.length) return badRequest('Ningún curso de este período requiere clase en vivo (todos son asincrónicos)');
@@ -292,8 +294,8 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const studentNames: Record<string, string> = {};
     await Promise.all(studentIds.map(async (id) => { studentNames[id] = await resolveDisplayName(id); }));
 
-    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, preferredName: true, capacity: true } });
-    const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity }));
+    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, preferredName: true, capacity: true, courseTypeTags: true } });
+    const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity, courseTypeTags: r.courseTypeTags ?? [] }));
     // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "si el nombre es 'Aula
     // 101', pero se le conoce internamente como 'Salón de ensayos'... que sea
     // visible para el estudiante también y para el evaluador" — el apodo manda

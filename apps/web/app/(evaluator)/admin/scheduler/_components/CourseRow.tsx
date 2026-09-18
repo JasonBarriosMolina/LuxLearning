@@ -298,7 +298,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
           )}
         </div>
       </td>
-      <td className="py-2">
+      <td className="py-2 sticky right-0 bg-white dark:bg-card">
         <div className="flex items-center gap-1">
           <button
             onClick={onRemoveFromPlan}

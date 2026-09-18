@@ -37,6 +37,7 @@ export interface CourseInput {
   // un curso en especial; puede ser de 1 hora o similar" — anula el
   // individualMinutes/groupMinutes global SOLO para este curso.
   durationOverrideMin?: number;
+  courseType?: string | null; // Trello *LUX SCHEDULER* (Mack, 2026-09-16): used to prefer rooms whose tags match
   // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera que se
   // respete que ese Ensamble Instrumental se dé siempre en el aula de
   // ensayos... eso bloquearía el uso de ese aula para un horario en
@@ -84,6 +85,7 @@ export interface ScheduledSession {
   classType: ClassType;
   studentGroupId?: string;
   studentIds: string[];
+  courseType?: string | null; // forwarded from CourseInput for room-matching in assignRooms
   // Trello *LUX SCHEDULER*, 2026-09-15 (Mack): "vamos a agregar la opción de
   // aulas" — solo para PRESENCIAL; undefined si no había aula libre con
   // capacidad suficiente (la clase igual se ubica, solo queda sin aula
@@ -94,6 +96,7 @@ export interface ScheduledSession {
 export interface RoomInput {
   id: string;
   capacity: number;
+  courseTypeTags?: string[]; // Trello *LUX SCHEDULER* (Mack, 2026-09-16): prefer rooms whose tags match the course's courseType
 }
 
 export interface ScheduleProposal {
@@ -262,6 +265,7 @@ function placeCourse(
             classType: course.classType,
             studentGroupId: course.studentGroupId,
             studentIds: course.studentIds,
+            courseType: course.courseType,
             // Pineada directo acá — assignRooms() ni la toca (ver ahí cómo
             // reserva este hueco para que no se le asigne a otro curso).
             roomId: course.modality === 'PRESENCIAL' ? course.pinnedRoomId : undefined,
@@ -377,6 +381,9 @@ function runStrategy(input: ScheduleInput, order: CourseInput[], label: string, 
 // (course.pinnedRoomId, ya escrita en session.roomId por placeCourse) — acá
 // no se le toca ni se valida, solo se reserva su hueco para que el
 // auto-assign no le entregue esa misma aula/horario a otro curso.
+// Trello *LUX SCHEDULER* (Mack, 2026-09-16): prefer rooms whose courseTypeTags
+// match the course's courseType; minimize room changes per professor (same
+// evaluator should stay in same room across their sessions whenever possible).
 function assignRooms(sessions: ScheduledSession[], rooms: RoomInput[]): void {
   const byCapacity = [...rooms].sort((a, b) => a.capacity - b.capacity);
   const bookedByRoom = new Map<string, Window[]>(); // roomId -> windows booked that day (day baked into window via +day*1440 offset)
@@ -394,18 +401,52 @@ function assignRooms(sessions: ScheduledSession[], rooms: RoomInput[]): void {
     bookedByRoom.set(s.roomId, [...(bookedByRoom.get(s.roomId) ?? []), windowOf(s)]);
   }
 
+  // Track the preferred room per evaluator (first successful assignment wins)
+  const evaluatorRoom = new Map<string, string>();
+
+  const isFree = (roomId: string, window: Window) => {
+    const booked = bookedByRoom.get(roomId) ?? [];
+    return !booked.some((b) => b.start < window.end && window.start < b.end);
+  };
+
+  const fits = (r: RoomInput, needed: number, courseType: string | null | undefined) => {
+    if (r.capacity < needed) return false;
+    // If room has courseTypeTags set, only match if the course type is listed (or room has no restrictions)
+    if (r.courseTypeTags?.length && courseType && !r.courseTypeTags.includes(courseType)) return false;
+    return true;
+  };
+
   for (const s of presencial) {
     if (s.roomId) continue; // ya pineada — no se reasigna
     const needed = s.classType === 'INDIVIDUAL' ? 1 : s.studentIds.length;
     const window = windowOf(s);
-    const room = byCapacity.find((r) => {
-      if (r.capacity < needed) return false;
-      const booked = bookedByRoom.get(r.id) ?? [];
-      return !booked.some((b) => b.start < window.end && window.start < b.end);
-    });
+    const courseType = s.courseType;
+
+    let room: RoomInput | undefined;
+
+    // 1) Try evaluator's preferred room first (professor stability)
+    const preferredId = evaluatorRoom.get(s.evaluatorId);
+    if (preferredId) {
+      const preferred = rooms.find((r) => r.id === preferredId);
+      if (preferred && fits(preferred, needed, courseType) && isFree(preferredId, window)) {
+        room = preferred;
+      }
+    }
+
+    // 2) Try rooms with matching courseTypeTags (smallest that fits first)
+    if (!room && courseType) {
+      room = byCapacity.find((r) => r.courseTypeTags?.includes(courseType) && fits(r, needed, courseType) && isFree(r.id, window));
+    }
+
+    // 3) Fall back to any room that fits (no courseType restriction)
+    if (!room) {
+      room = byCapacity.find((r) => r.capacity >= needed && isFree(r.id, window));
+    }
+
     if (!room) continue; // sin aula libre con capacidad suficiente — la clase queda sin aula asignada
     bookedByRoom.set(room.id, [...(bookedByRoom.get(room.id) ?? []), window]);
     s.roomId = room.id;
+    if (!evaluatorRoom.has(s.evaluatorId)) evaluatorRoom.set(s.evaluatorId, room.id);
   }
 }
 

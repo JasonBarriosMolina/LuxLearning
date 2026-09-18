@@ -132,7 +132,7 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
                 <th className="py-2 pr-3">Estudiantes</th>
                 <th className="py-2 pr-3">Modalidad</th>
                 <th className="py-2 pr-3">Tipo de clase</th>
-                <th className="py-2"></th>
+                <th className="py-2 sticky right-0 bg-white dark:bg-card"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

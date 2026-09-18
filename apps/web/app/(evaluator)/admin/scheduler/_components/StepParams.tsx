@@ -1,6 +1,7 @@
 'use client';
 
 import { RoomsManager } from './RoomsManager';
+import Link from 'next/link';
 
 const DAY_OPTIONS = [
   { value: 1, label: 'Lun' }, { value: 2, label: 'Mar' }, { value: 3, label: 'Mié' },
@@ -120,11 +121,20 @@ export function StepParams({
         <p className="text-xs text-gray-400">El motor lo respeta cuando puede, pero permite clases seguidas si es la única forma de ubicarlas.</p>
       </div>
 
-      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "una de las cosas
-          importantes que debe existir en parámetros, tal vez como una
-          sección intermedia entre parámetros y cursos, son las aulas
-          disponibles." */}
-      <RoomsManager />
+      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-16): "la opción de edificio y
+          todo eso sería mejor que se guarde en el perfil del administrador."
+          RoomsManager sigue disponible para edición completa ahí; acá solo
+          resumen de lectura + enlace rápido. */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading font-semibold text-charcoal text-sm">Aulas y Edificios</h2>
+          <Link href="/admin/profile#aulas" className="text-xs text-cta-from hover:underline">
+            Gestionar →
+          </Link>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">El catálogo completo se administra desde tu perfil. Los cambios aplican automáticamente al generar el horario.</p>
+        <RoomsManager readOnly />
+      </div>
     </div>
   );
 }

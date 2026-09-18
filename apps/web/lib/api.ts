@@ -639,6 +639,7 @@ export const api = {
       buildings: {
         list: () => request<any>('/admin/scheduler/buildings'),
         create: (name: string) => request<any>('/admin/scheduler/buildings', { method: 'POST', body: JSON.stringify({ name }) }),
+        update: (id: string, name: string) => request<any>(`/admin/scheduler/buildings/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ name }) }),
         delete: (id: string) => request<any>(`/admin/scheduler/buildings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
       },
       rooms: {
