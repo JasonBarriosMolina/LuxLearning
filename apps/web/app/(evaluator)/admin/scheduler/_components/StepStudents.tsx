@@ -38,7 +38,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
       setPool(list);
       onStudentNamesLoaded?.(Object.fromEntries(list.map((s: any) => [s.userId, s.name])));
     }).catch(() => {});
-    api.evaluator.groups.list().then((res: any) => setGroups(res?.data ?? [])).catch(() => {});
+    api.admin.groups.list().then((res: any) => setGroups(res?.data ?? [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
