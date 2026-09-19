@@ -51,8 +51,9 @@ export default function PresentationPage() {
     setLoading(true);
     try {
       const res = await api.evaluator.presentation.get(courseId, moduleId);
-      setSlides((res as any).slides ?? []);
-      setGeneratedAt((res as any).generatedAt ?? null);
+      const payload = (res as any).data ?? res as any;
+      setSlides(payload.slides ?? []);
+      setGeneratedAt(payload.generatedAt ?? null);
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, [courseId, moduleId]);
@@ -63,8 +64,9 @@ export default function PresentationPage() {
     setGenerating(true);
     try {
       const res = await api.evaluator.presentation.generate(courseId, moduleId);
-      setSlides((res as any).slides ?? []);
-      setGeneratedAt((res as any).generatedAt ?? null);
+      const payload = (res as any).data ?? res as any;
+      setSlides(payload.slides ?? []);
+      setGeneratedAt(payload.generatedAt ?? null);
       setCurrent(0);
     } catch { /* silent */ }
     finally { setGenerating(false); }
@@ -75,7 +77,7 @@ export default function PresentationPage() {
     setRegenLoading(true);
     try {
       const res = await api.evaluator.presentation.regenerate(courseId, moduleId, { slideIndex: current, feedback: regenFeedback });
-      const updated = (res as any).slide as Slide;
+      const updated = ((res as any).data?.slide ?? (res as any).slide) as Slide;
       if (updated) {
         setSlides((prev) => prev.map((s) => s.index === current ? { ...updated, index: current } : s));
         setRegenFeedback('');
