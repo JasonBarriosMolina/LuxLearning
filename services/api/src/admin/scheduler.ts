@@ -392,11 +392,13 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
           const studentList = s.studentIds.length
             ? `<ul style="margin:0;padding-left:16px;">${s.studentIds.map((sid) => `<li style="font-size:13px;">${studentNames.get(sid) ?? sid}</li>`).join('')}</ul>`
             : '<span style="font-size:12px;color:#6b7280;">Sin estudiantes asignados</span>';
+          const courseUrl = `${process.env.FRONTEND_URL ?? 'https://lux-learning-mentor.vercel.app'}/admin/courses/${s.courseId}`;
           return `<tr style="vertical-align:top;border-bottom:1px solid #e5e7eb;">
             <td style="padding:10px 16px 10px 0;width:55%;">
-              <strong style="font-size:14px;">${courseTitles.get(s.courseId) ?? s.courseId}</strong><br>
+              <strong style="font-size:14px;"><a href="${courseUrl}" style="color:#6366f1;text-decoration:none;">${courseTitles.get(s.courseId) ?? s.courseId}</a></strong><br>
               <span style="color:#374151;font-size:13px;">${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime}</span><br>
-              <span style="color:#6b7280;font-size:12px;">${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? ` · ${room}` : ''}</span>
+              <span style="color:#6b7280;font-size:12px;">${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? ` · ${room}` : ''}</span><br>
+              <a href="${courseUrl}" style="font-size:11px;color:#6366f1;">Crear/editar contenido del curso →</a>
             </td>
             <td style="padding:10px 0;">${studentList}</td>
           </tr>`;

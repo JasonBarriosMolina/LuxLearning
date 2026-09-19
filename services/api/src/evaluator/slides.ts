@@ -148,10 +148,10 @@ export async function handleSlides(ctx: EvalCtx): Promise<any | null> {
       const course = await prisma.course.findFirst({ where: { id: courseId, evaluatorId: userId }, select: { id: true } });
       if (!course) return badRequest('No autorizado para este curso');
     }
-    const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true, course: { select: { language: true } } } });
+    const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, description: true, course: { select: { planLanguage: true } } } });
     if (!mod) return badRequest('Módulo no encontrado');
 
-    const lang = mod.course?.language ?? 'ES';
+    const lang = mod.course?.planLanguage ?? 'ES';
     const slides = await generateSlides(mod.title, mod.description ?? mod.title, lang);
     if (!slides.length) return serverError(new Error('No se pudo generar el contenido de las diapositivas'));
 
@@ -179,8 +179,8 @@ export async function handleSlides(ctx: EvalCtx): Promise<any | null> {
     const current = slides[slideIndex];
     if (!current) return badRequest('Diapositiva no encontrada');
 
-    const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, course: { select: { language: true } } } });
-    const isES = (mod?.course?.language ?? 'ES') !== 'EN';
+    const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { title: true, course: { select: { planLanguage: true } } } });
+    const isES = (mod?.course?.planLanguage ?? 'ES') !== 'EN';
 
     const prompt = isES
       ? `Eres un diseñador instruccional. Tienes esta diapositiva de una presentación de "${mod?.title ?? 'módulo'}":
