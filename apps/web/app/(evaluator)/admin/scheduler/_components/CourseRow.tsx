@@ -198,7 +198,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
       <td className="py-2 pr-3">
         <div className="flex items-center gap-1 relative">
           <select value={modality} onChange={(e) => onOverrideChange({ ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-            <option value="PRESENCIAL">Presencial (sábado)</option>
+            <option value="PRESENCIAL">Presencial ({ov.preferredDay ? ['','lun','mar','mié','jue','vie','sáb'][ov.preferredDay] : 'sábado'})</option>
             <option value="VIRTUAL">Virtual (semana)</option>
             <option value="HIBRIDA">Híbrido</option>
           </select>
@@ -227,9 +227,9 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
               <DoorOpen className="w-3.5 h-3.5" />
             </button>
           )}
-          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-18): cursos cortos presenciales
-              pueden darse cualquier día de la semana — selector de día específico. */}
-          {c.courseType === 'CURSO_CORTO' && modality === 'PRESENCIAL' && (
+          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-19): Cursos Libres pueden darse
+              cualquier día de la semana — selector de día específico. */}
+          {c.courseType === 'LIBRE' && modality === 'PRESENCIAL' && (
             <button
               type="button" onClick={() => setDayOpen(!dayOpen)}
               title={ov.preferredDay ? `Día fijo: ${['','Lun','Mar','Mié','Jue','Vie','Sáb'][ov.preferredDay]}` : 'Elegir día de la semana'}
