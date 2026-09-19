@@ -45,12 +45,12 @@ export default function CoursePresentation() {
           <ArrowLeft className="w-4 h-4" /> Mis cursos
         </Link>
         <span>/</span>
-        <span className="text-charcoal font-medium">{course?.title ?? 'Diapositivas'}</span>
+        <span className="text-charcoal font-medium">{course?.title ?? 'Lux Slides'}</span>
       </div>
 
       <div>
         <h1 className="font-heading font-bold text-2xl text-charcoal">{course?.title}</h1>
-        <p className="text-sm text-gray-500 mt-1">Selecciona un módulo para ver o generar su presentación</p>
+        <p className="text-sm text-gray-500 mt-1">Lux Slides — selecciona un módulo para ver o generar su presentación</p>
       </div>
 
       <div className="space-y-2">

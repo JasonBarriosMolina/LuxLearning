@@ -201,7 +201,7 @@ export default function MyCoursesPage() {
                         className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
                       >
                         <Presentation className="w-4 h-4 text-gray-400" />
-                        Diapositivas IA
+                        Lux Slides
                       </Link>
                       <div className="border-t border-border my-1" />
                       <button

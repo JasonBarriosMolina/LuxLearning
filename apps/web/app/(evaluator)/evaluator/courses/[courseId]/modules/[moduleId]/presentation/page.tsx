@@ -102,6 +102,7 @@ export default function PresentationPage() {
         <Link href="/evaluator/my-courses" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-charcoal">
           <ArrowLeft className="w-4 h-4" /> Mis cursos
         </Link>
+        <span className="text-xs font-semibold tracking-wide text-cta-from uppercase ml-auto">Lux Slides</span>
         <button
           onClick={handleGenerate}
           disabled={generating}
