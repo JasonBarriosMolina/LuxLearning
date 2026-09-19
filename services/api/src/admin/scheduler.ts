@@ -369,8 +369,13 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const approval = await prisma.scheduleApproval.findUnique({ where: { academicPeriod } });
     if (!approval) return notFound('Aprobá un horario para este período antes de notificar');
 
-    const { proposal, courseTitles: rawTitles } = approval.proposalJson as unknown as { proposal: ScheduleProposal; courseTitles: Record<string, string> };
+    const { proposal, courseTitles: rawTitles, studentNames: rawStudentNames, roomNames: rawRoomNames } = approval.proposalJson as unknown as {
+      proposal: ScheduleProposal; courseTitles: Record<string, string>;
+      studentNames: Record<string, string>; roomNames: Record<string, string>;
+    };
     const courseTitles = new Map(Object.entries(rawTitles ?? {}));
+    const studentNames = new Map(Object.entries(rawStudentNames ?? {}));
+    const roomNames = new Map(Object.entries(rawRoomNames ?? {}));
     const byRecipient = new Map<string, ScheduledSession[]>();
     for (const s of proposal.sessions) {
       const ids = audience === 'evaluators' ? [s.evaluatorId] : s.studentIds;
@@ -379,9 +384,36 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     await Promise.allSettled([...byRecipient.entries()].map(async ([userId, sessions]) => {
       const { email, name } = await resolveContact(userId);
       if (!email) return;
-      const scheduleRows = `<ul>${sessions.map((s) =>
-        `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'})</li>`
-      ).join('')}</ul>`;
+      let scheduleRows: string;
+      if (audience === 'evaluators') {
+        // Table layout: course+schedule+room left, students right
+        const rows = sessions.map((s) => {
+          const room = s.roomId ? roomNames.get(s.roomId) : null;
+          const studentList = s.studentIds.length
+            ? `<ul style="margin:0;padding-left:16px;">${s.studentIds.map((sid) => `<li style="font-size:13px;">${studentNames.get(sid) ?? sid}</li>`).join('')}</ul>`
+            : '<span style="font-size:12px;color:#6b7280;">Sin estudiantes asignados</span>';
+          return `<tr style="vertical-align:top;border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 16px 10px 0;width:55%;">
+              <strong style="font-size:14px;">${courseTitles.get(s.courseId) ?? s.courseId}</strong><br>
+              <span style="color:#374151;font-size:13px;">${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime}</span><br>
+              <span style="color:#6b7280;font-size:12px;">${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? ` · ${room}` : ''}</span>
+            </td>
+            <td style="padding:10px 0;">${studentList}</td>
+          </tr>`;
+        }).join('');
+        scheduleRows = `<table style="width:100%;border-collapse:collapse;margin-top:8px;">
+          <thead><tr style="border-bottom:2px solid #6366f1;">
+            <th style="text-align:left;padding:8px 16px 8px 0;font-size:12px;color:#6366f1;text-transform:uppercase;letter-spacing:.05em;">Curso / Horario / Aula</th>
+            <th style="text-align:left;padding:8px 0;font-size:12px;color:#6366f1;text-transform:uppercase;letter-spacing:.05em;">Estudiantes</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      } else {
+        scheduleRows = `<ul>${sessions.map((s) => {
+          const room = s.roomId ? roomNames.get(s.roomId) : null;
+          return `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? `, ${room}` : ''})</li>`;
+        }).join('')}</ul>`;
+      }
       await sendTemplatedEmail(email, 'SCHEDULE_PUBLISHED', { recipientName: name, academicPeriod, scheduleRows }).catch(() => {});
     }));
 

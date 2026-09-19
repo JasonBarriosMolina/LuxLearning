@@ -16,6 +16,14 @@ const COURSE_TYPE_LABELS: Record<string, string> = {
 interface Building { id: string; name: string; }
 interface ClassRoomRow { id: string; name: string; capacity: number; buildingId: string | null; floor: number | null; preferredName: string | null; courseTypeTags: string[]; }
 
+interface EditRoomState {
+  name: string;
+  capacity: string;
+  floor: string;
+  description: string;
+  tags: string[];
+}
+
 export function BuildingsSection() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<ClassRoomRow[]>([]);
@@ -35,6 +43,10 @@ export function BuildingsSection() {
   const [roomDescription, setRoomDescription] = useState('');
   const [roomTags, setRoomTags] = useState<string[]>([]);
   const [addingRoom, setAddingRoom] = useState(false);
+
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [editRoom, setEditRoom] = useState<EditRoomState>({ name: '', capacity: '', floor: '', description: '', tags: [] });
+  const [savingRoom, setSavingRoom] = useState(false);
 
   const load = () => {
     setLoading(true); setError('');
@@ -122,6 +134,49 @@ export function BuildingsSection() {
     }
   };
 
+  const startEditRoom = (r: ClassRoomRow) => {
+    setEditingRoomId(r.id);
+    setEditRoom({
+      name: r.name,
+      capacity: String(r.capacity),
+      floor: r.floor != null ? String(r.floor) : '',
+      description: r.preferredName ?? '',
+      tags: [...r.courseTypeTags],
+    });
+  };
+
+  const handleSaveRoom = async (id: string) => {
+    const capacity = Number(editRoom.capacity);
+    if (!editRoom.name.trim() || !capacity || capacity < 1) return;
+    setSavingRoom(true); setError('');
+    try {
+      await api.admin.scheduler.rooms.update(id, {
+        name: editRoom.name.trim(),
+        capacity,
+        floor: editRoom.floor ? Number(editRoom.floor) : null,
+        preferredName: editRoom.description.trim() || null,
+        courseTypeTags: editRoom.tags,
+      });
+      setRooms(rooms.map((r) =>
+        r.id === id
+          ? { ...r, name: editRoom.name.trim(), capacity, floor: editRoom.floor ? Number(editRoom.floor) : null, preferredName: editRoom.description.trim() || null, courseTypeTags: editRoom.tags }
+          : r
+      ));
+      setEditingRoomId(null);
+    } catch (err: any) {
+      setError(err?.message ?? 'No se pudo guardar el aula.');
+    } finally {
+      setSavingRoom(false);
+    }
+  };
+
+  const toggleEditTag = (tag: string) => {
+    setEditRoom((prev) => ({
+      ...prev,
+      tags: prev.tags.includes(tag) ? prev.tags.filter((t) => t !== tag) : [...prev.tags, tag],
+    }));
+  };
+
   if (loading) return (
     <div className="flex items-center gap-2 py-4 text-gray-400 text-sm">
       <Loader2 className="w-4 h-4 animate-spin" /> Cargando aulas y edificios…
@@ -129,12 +184,14 @@ export function BuildingsSection() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       {/* Edificios */}
       <div className="space-y-3">
-        <p className="text-sm font-semibold text-charcoal flex items-center gap-2"><Building2 className="w-4 h-4" /> Edificios</p>
+        <p className="text-sm font-semibold text-charcoal flex items-center gap-2">
+          <Building2 className="w-4 h-4" /> Edificios
+        </p>
         <div className="flex flex-wrap gap-2">
           {buildings.map((b) => (
             <span key={b.id} className="flex items-center gap-1.5 text-sm bg-surface border border-border rounded-full pl-3 pr-1.5 py-1">
@@ -171,8 +228,10 @@ export function BuildingsSection() {
       </div>
 
       {/* Aulas agrupadas por edificio */}
-      <div className="space-y-4">
-        <p className="text-sm font-semibold text-charcoal flex items-center gap-2"><DoorOpen className="w-4 h-4" /> Aulas ({rooms.length})</p>
+      <div className="space-y-5">
+        <p className="text-sm font-semibold text-charcoal flex items-center gap-2">
+          <DoorOpen className="w-4 h-4" /> Aulas ({rooms.length})
+        </p>
         {(() => {
           const grouped: { building: Building | null; rooms: ClassRoomRow[] }[] = [];
           buildings.forEach((b) => {
@@ -185,24 +244,104 @@ export function BuildingsSection() {
             <p className="text-sm text-gray-400 italic">No hay aulas registradas aún.</p>
           ) : (
             grouped.map(({ building: b, rooms: gr }) => (
-              <div key={b?.id ?? '__none__'} className="space-y-1">
+              <div key={b?.id ?? '__none__'} className="space-y-2">
                 <p className="text-xs font-semibold text-gray-400 flex items-center gap-1 uppercase tracking-wide">
                   <Building2 className="w-3.5 h-3.5" />{b?.name ?? 'Sin edificio'}
                 </p>
                 <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
                   {gr.map((r) => (
-                    <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-charcoal">
-                          {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
-                          {r.floor != null && <span className="text-gray-400 font-normal text-xs ml-1">piso {r.floor}</span>}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Aforo: {r.capacity}
-                          {r.courseTypeTags.length > 0 && ` · ${r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ')}`}
-                        </p>
-                      </div>
-                      <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    <div key={r.id}>
+                      {editingRoomId === r.id ? (
+                        /* ── Inline edit form ── */
+                        <div className="px-4 py-4 bg-surface space-y-3">
+                          <p className="text-xs font-semibold text-charcoal">Editar aula</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <input
+                              autoFocus type="text" value={editRoom.name}
+                              onChange={(e) => setEditRoom((p) => ({ ...p, name: e.target.value }))}
+                              placeholder="Nombre (ej. 101)" className="input-field text-sm"
+                            />
+                            <input
+                              type="number" min={1} value={editRoom.capacity}
+                              onChange={(e) => setEditRoom((p) => ({ ...p, capacity: e.target.value }))}
+                              placeholder="Aforo" className="input-field text-sm"
+                            />
+                            <input
+                              type="number" value={editRoom.floor}
+                              onChange={(e) => setEditRoom((p) => ({ ...p, floor: e.target.value }))}
+                              placeholder="Piso (opcional)" className="input-field text-sm"
+                            />
+                            <input
+                              type="text" value={editRoom.description}
+                              onChange={(e) => setEditRoom((p) => ({ ...p, description: e.target.value }))}
+                              placeholder="Descripción (opcional)" className="input-field text-sm"
+                            />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-2">Tipos de curso:</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => (
+                                <button
+                                  key={id} type="button" onClick={() => toggleEditTag(id)}
+                                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${editRoom.tags.includes(id) ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-gray-500 border-border hover:border-gray-300'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button type="button" variant="secondary" size="sm" onClick={() => setEditingRoomId(null)}>Cancelar</Button>
+                            <Button
+                              type="button" size="sm"
+                              onClick={() => handleSaveRoom(r.id)}
+                              loading={savingRoom}
+                              disabled={!editRoom.name.trim() || !editRoom.capacity}
+                            >
+                              Guardar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── Room display row with tooltip ── */
+                        <div
+                          className="group flex items-start gap-3 px-4 py-3 hover:bg-surface/60 transition-colors relative"
+                          title={[
+                            r.preferredName ? `"${r.preferredName}"` : null,
+                            r.floor != null ? `Piso ${r.floor}` : null,
+                            `Aforo: ${r.capacity}`,
+                            r.courseTypeTags.length ? `Tipos: ${r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ')}` : null,
+                          ].filter(Boolean).join(' · ')}
+                        >
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <p className="text-sm font-semibold text-charcoal leading-snug">
+                              {r.name}
+                              {r.preferredName && <span className="text-gray-500 font-normal"> — {r.preferredName}</span>}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                              {r.floor != null && <span>Piso {r.floor}</span>}
+                              <span>Aforo: <span className="font-medium text-charcoal">{r.capacity}</span></span>
+                              {r.courseTypeTags.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {r.courseTypeTags.map((t) => (
+                                    <span key={t} className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-medium border border-indigo-100">
+                                      {COURSE_TYPE_LABELS[t] ?? t}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <button onClick={() => startEditRoom(r)} className="p-1.5 rounded-lg text-gray-400 hover:text-cta-from hover:bg-surface" title="Editar aula">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteRoom(r.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50" title="Eliminar aula">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
