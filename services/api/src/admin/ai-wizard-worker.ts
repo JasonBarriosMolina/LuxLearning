@@ -17,6 +17,7 @@ import {
   isPlaceholderContent, verifyAndRepairModule,
 } from './ai-wizard-repair';
 import { searchYoutubeVideo, isYoutubeVideoAvailable, escapeHtml } from '../shared/youtube';
+import { generateModuleChallenges } from './ai-wizard-challenges';
 
 export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
   const { prisma, body } = ctx;
@@ -290,6 +291,12 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
           return sum + (isNaN(m) ? 7 : m);
         }, 0);
         await prisma.module.update({ where: { id: moduleId }, data: { duration: `${totalMin} min` } });
+
+        // Trello DmPpbrff (Mack, 2026-09-18): generar retos de atención por módulo
+        // (máx 2, aleatorios entre lecciones de texto, sin bloquear el flujo).
+        await generateModuleChallenges(prisma, moduleId, mod.title, isBlEN).catch((e: any) =>
+          console.warn(`[wizard-lessons-bulk] module ${moduleId} challenges skipped: ${e?.message}`)
+        );
       } catch (modErr: any) {
         console.error(`[wizard-lessons-bulk] module ${moduleId} lessons error:`, modErr);
         failed.push(moduleId);

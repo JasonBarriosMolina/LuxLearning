@@ -275,8 +275,28 @@ model Lesson {
   speechMarks    Json?
   pdfRecapUrl    String?
   module         Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  challenges     LessonChallenge[]
 
   @@unique([moduleId, order])
+}
+
+// Trello DmPpbrff (Mack, 2026-09-18): "retos de atención" — micro-interacciones
+// de gamificación embebidas en las lecciones. Máx 2-3 por módulo, distribuidas
+// aleatoriamente entre sus lecciones. Tipos: SOCRÁTICA (mito V/F) y ORÁCULO
+// (escenario + 2 opciones). No bloquean el avance — el error solo retroalimenta.
+model LessonChallenge {
+  id             String   @id @default(cuid())
+  moduleId       String
+  lessonId       String
+  paragraphIndex Int      // insert after this paragraph block (0-based)
+  type           String   // SOCRÁTICA | ORÁCULO
+  question       String
+  options        String[] @default([])
+  correctIndex   Int
+  explanation    String
+  xpReward       Int      @default(5)
+  createdAt      DateTime @default(now())
+  lesson         Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 }
 
 model Question {

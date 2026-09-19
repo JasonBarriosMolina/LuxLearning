@@ -139,6 +139,10 @@ export const api = {
       request<any>('/lessons/carousel-recap', { method: 'POST', body: JSON.stringify({ lessonId }) }),
     audio: (lessonId: string, gender?: 'male' | 'female', lang?: string) =>
       request<{ audioUrl: string }>('/lessons/audio', { method: 'POST', body: JSON.stringify({ lessonId, gender, lang }) }),
+    challenges: (lessonId: string) =>
+      request<any[]>(`/lessons/challenges?lessonId=${encodeURIComponent(lessonId)}`),
+    challengeAnswer: (body: { challengeId: string; lessonId: string; moduleId: string; isCorrect: boolean }) =>
+      request<{ xpEarned: number; totalXp: number }>('/lessons/challenge-answer', { method: 'POST', body: JSON.stringify(body) }),
   },
 
   quiz: {

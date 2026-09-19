@@ -32,6 +32,7 @@ const BASE_TABLES = {
   CLASSES: process.env.DYNAMO_TABLE_CLASSES ?? 'LuxClasses',
   ATTENDANCE: process.env.DYNAMO_TABLE_ATTENDANCE ?? 'LuxAttendance',
   STUDY_PLANS: process.env.DYNAMO_TABLE_STUDY_PLANS ?? 'LuxStudyPlans',
+  GAMIFICATION: process.env.DYNAMO_TABLE_GAMIFICATION ?? 'LuxGamification',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {
