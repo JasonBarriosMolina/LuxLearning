@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, X, Trash2, Pencil, Check, Clock, Users2, AlertTriangle, DoorOpen } from 'lucide-react';
+import { Loader2, X, Trash2, Pencil, Check, Clock, Users2, AlertTriangle, DoorOpen, CalendarDays } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { CourseCatalogRow, ClassRoomRow } from './types';
 import type { CourseOverrides } from './StepCourses';
@@ -44,6 +44,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
   const [durationOpen, setDurationOpen] = useState(false);
   const [hybridOpen, setHybridOpen] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
+  const [dayOpen, setDayOpen] = useState(false);
 
   const handleReassignTeacher = async (evaluatorId: string) => {
     const evaluator = evaluators.find((e) => e.username === evaluatorId);
@@ -151,7 +152,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
                 value={c.courseType ?? ''} disabled={tagSaving}
                 onChange={(e) => handleUpdateTag('courseType', e.target.value)}
                 title="Tipo de curso"
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium border-0 outline-none disabled:opacity-50"
+                className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium border-0 outline-none disabled:opacity-50"
               >
                 <option value="">— tipo —</option>
                 {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -160,7 +161,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
                 value={c.modality ?? ''} disabled={tagSaving}
                 onChange={(e) => handleUpdateTag('modality', e.target.value)}
                 title="Modalidad del curso"
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium border-0 outline-none disabled:opacity-50"
+                className="text-xs px-2 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium border-0 outline-none disabled:opacity-50"
               >
                 <option value="">— modalidad —</option>
                 {Object.entries(MODALITY_FULL_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -226,6 +227,17 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
               <DoorOpen className="w-3.5 h-3.5" />
             </button>
           )}
+          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-18): cursos cortos presenciales
+              pueden darse cualquier día de la semana — selector de día específico. */}
+          {c.courseType === 'CURSO_CORTO' && modality === 'PRESENCIAL' && (
+            <button
+              type="button" onClick={() => setDayOpen(!dayOpen)}
+              title={ov.preferredDay ? `Día fijo: ${['','Lun','Mar','Mié','Jue','Vie','Sáb'][ov.preferredDay]}` : 'Elegir día de la semana'}
+              className={`p-1 rounded-lg ${ov.preferredDay ? 'text-violet-600 bg-violet-50' : 'text-gray-300 hover:text-gray-600'}`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+            </button>
+          )}
           {hybridOpen && (
             <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
               <p className="text-[10px] text-gray-400 mb-1.5">Marcá quién asiste presencial (sábado) — el resto va virtual.</p>
@@ -263,6 +275,22 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.preferredName || r.name} (cap. {r.capacity})</option>)}
               </select>
               <button type="button" onClick={() => setRoomOpen(false)} className="text-xs text-cta-from hover:underline mt-1.5">Listo</button>
+            </div>
+          )}
+          {dayOpen && (
+            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-44">
+              <p className="text-[10px] text-gray-400 mb-1.5">Día en que se imparte este curso corto.</p>
+              <select
+                value={ov.preferredDay ?? ''}
+                onChange={(e) => onOverrideChange({ ...ov, preferredDay: e.target.value ? Number(e.target.value) : undefined })}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-full"
+              >
+                <option value="">— cualquier presencial —</option>
+                {[['1','Lunes'],['2','Martes'],['3','Miércoles'],['4','Jueves'],['5','Viernes'],['6','Sábado']].map(([v,l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+              <button type="button" onClick={() => setDayOpen(false)} className="text-xs text-cta-from hover:underline mt-1.5">Listo</button>
             </div>
           )}
         </div>

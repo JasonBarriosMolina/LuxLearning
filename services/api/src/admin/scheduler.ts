@@ -200,7 +200,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       presencialDays, virtualDays, institutionalOpen, institutionalClose,
     } = body as {
       academicPeriod?: string;
-      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string }>;
+      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string; preferredDay?: number }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
@@ -260,6 +260,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
             classType: presencialIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
             studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin, pinnedRoomId,
             courseType: c.courseType ?? undefined,
+            preferredDays: override.preferredDay ? [override.preferredDay] : undefined,
           });
         }
         if (virtualIds.length > 0) {
@@ -280,6 +281,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
         durationOverrideMin: override?.durationOverrideMin,
         pinnedRoomId: modality === 'PRESENCIAL' ? pinnedRoomId : undefined,
         courseType: c.courseType ?? undefined,
+        preferredDays: override?.preferredDay ? [override.preferredDay] : undefined,
       });
     }
     if (!engineCourses.length) return badRequest('Ningún curso de este período requiere clase en vivo (todos son asincrónicos)');
@@ -305,6 +307,18 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes, rooms,
       presencialDays, virtualDays, institutionalOpen, institutionalClose,
     });
+
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-18): "que se indique qué profesor
+    // es el que tiene problema y tiene que aumentar su disponibilidad."
+    const courseToEvaluator = new Map(engineCourses.map((c) => [c.courseId, c.evaluatorId]));
+    for (const p of proposals) {
+      for (const courseId of p.unscheduledCourseIds) {
+        const evaluatorId = courseToEvaluator.get(courseId);
+        const name = evaluatorId ? teacherNames[evaluatorId] : undefined;
+        if (name) p.unscheduledReasons[courseId] = `Profesor: ${name}. ${p.unscheduledReasons[courseId] ?? ''}`.trim();
+      }
+    }
+
     return ok({ proposals, courseTitles, teacherNames, studentNames, roomNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 

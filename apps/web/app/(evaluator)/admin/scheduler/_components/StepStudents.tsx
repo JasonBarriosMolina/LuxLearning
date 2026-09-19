@@ -24,6 +24,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
   const [pool, setPool] = useState<{ userId: string; name: string }[]>([]);
   const [groups, setGroups] = useState<{ id: string; name: string; memberCount: number }[]>([]);
   const [openCourseId, setOpenCourseId] = useState<string | null>(null);
+  const [expandedListId, setExpandedListId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -45,6 +46,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
   const empty = courses.filter((c) => c.studentCount === 0);
 
   const openPanel = (courseId: string) => {
+    setExpandedListId(null);
     setOpenCourseId(courseId); setSelectedGroup(''); setChecked(new Set()); setRowError(''); setSearch('');
   };
 
@@ -127,16 +129,27 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
             </div>
 
             {c.studentIds.length > 0 && (
-              <ul className="space-y-1">
-                {c.studentIds.map((sid) => (
-                  <li key={sid} className="flex items-center justify-between text-xs bg-white rounded-lg px-2 py-1">
-                    <span className="truncate">{studentNames[sid] ?? sid}</span>
-                    <button onClick={() => handleRemove(c, sid)} disabled={removingId === sid} title="Quitar del curso" className="p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 shrink-0">
-                      {removingId === sid ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedListId(expandedListId === c.id ? null : c.id)}
+                  className="text-[11px] text-gray-400 hover:text-cta-from"
+                >
+                  {expandedListId === c.id ? 'Ocultar lista ▲' : `Ver ${c.studentIds.length} estudiante${c.studentIds.length !== 1 ? 's' : ''} ▼`}
+                </button>
+                {expandedListId === c.id && (
+                  <ul className="space-y-1 mt-1">
+                    {c.studentIds.map((sid) => (
+                      <li key={sid} className="flex items-center justify-between text-xs bg-white rounded-lg px-2 py-1">
+                        <span className="truncate">{studentNames[sid] ?? sid}</span>
+                        <button onClick={() => handleRemove(c, sid)} disabled={removingId === sid} title="Quitar del curso" className="p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-50 shrink-0">
+                          {removingId === sid ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
 
             {openCourseId === c.id && (() => {

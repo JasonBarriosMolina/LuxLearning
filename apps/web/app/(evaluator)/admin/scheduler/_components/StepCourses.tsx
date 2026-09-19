@@ -18,6 +18,9 @@ export type CourseOverrides = Record<string, {
   // Override de aula solo para esta generación — si no se manda, se usa
   // Course.preferredRoomId (fijado desde el catálogo, ver CourseRow.tsx).
   roomId?: string;
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-18): cursos cortos presenciales
+  // pueden darse cualquier día de la semana, no solo sábado.
+  preferredDay?: number; // 1=Lun … 6=Sáb
 }>;
 
 interface Props {

@@ -45,6 +45,9 @@ export interface CourseInput {
   // aula pineada se asigna directo, sin pasar por assignRooms(), y bloquea
   // ese hueco para el auto-assign de los demás cursos.
   pinnedRoomId?: string;
+  // Trello *LUX SCHEDULER* (Mack, 2026-09-18): cursos cortos presenciales
+  // pueden darse cualquier día de la semana — override de días permitidos.
+  preferredDays?: number[];
 }
 
 export interface LunchBreak {
@@ -241,7 +244,7 @@ function placeCourse(
   if (used >= teacher.maxCoursesPerWeek) return null; // hard cap, no partial exceptions
 
   const duration = course.durationOverrideMin ?? durationMin[course.classType];
-  const days = course.modality === 'PRESENCIAL' ? presencialDays : virtualDays;
+  const days = course.preferredDays?.length ? course.preferredDays : (course.modality === 'PRESENCIAL' ? presencialDays : virtualDays);
 
   // Two passes: first require the soft gap, then relax it if nothing fit.
   for (const requireGap of [true, false]) {
@@ -293,7 +296,7 @@ function diagnoseFailure(
   }
 
   const duration = course.durationOverrideMin ?? durationMin[course.classType];
-  const days = course.modality === 'PRESENCIAL' ? presencialDays : virtualDays;
+  const days = course.preferredDays?.length ? course.preferredDays : (course.modality === 'PRESENCIAL' ? presencialDays : virtualDays);
   let anyWindow = false;
   let anyWindowFitsDuration = false;
   let candidatesChecked = 0;
