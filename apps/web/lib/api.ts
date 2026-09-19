@@ -294,6 +294,14 @@ export const api = {
       grade: (sessionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/classes/${sessionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
     },
+    presentation: {
+      get: (courseId: string, moduleId: string) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation`),
+      generate: (courseId: string, moduleId: string) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation/generate`, { method: 'POST' }),
+      regenerate: (courseId: string, moduleId: string, body: { slideIndex: number; feedback: string }) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
+    },
     studyPlan: {
       generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string; wizardParams?: { hoursPerDay: 1 | 2 | 3; modulePriority: 'sequential' | 'parallel'; pace: 'normal' | 'catchup' } }) =>
         request<any>(`/evaluator/students/${studentId}/study-plan`, { method: 'POST', body: JSON.stringify(body) }),

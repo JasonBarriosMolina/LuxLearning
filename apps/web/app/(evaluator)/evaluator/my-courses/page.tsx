@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap, MoreVertical, Pin, Archive, CalendarCheck2 } from 'lucide-react';
+import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap, MoreVertical, Pin, Archive, CalendarCheck2, Presentation } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 
@@ -194,6 +194,14 @@ export default function MyCoursesPage() {
                       >
                         <FolderOpen className="w-4 h-4 text-gray-400" />
                         {t.evaluator.resources}
+                      </Link>
+                      <Link
+                        href={`/evaluator/courses/${course.id}/presentation`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <Presentation className="w-4 h-4 text-gray-400" />
+                        Diapositivas IA
                       </Link>
                       <div className="border-t border-border my-1" />
                       <button
