@@ -114,7 +114,7 @@ export default function MyCoursesPage() {
                   <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-amber-800">Este curso no tiene contenido aún</p>
-                    <p className="text-xs text-amber-600">Toca aquí para crear el contenido con IA</p>
+                    <p className="text-xs text-amber-600">Toca aquí para crear el contenido con Lux Planner</p>
                   </div>
                 </Link>
               )}
