@@ -58,3 +58,6 @@ coverage/
 
 lambda-*.zip
 lambda-admin.zip
+
+# Bug hunter artifacts
+.bug-hunter/
