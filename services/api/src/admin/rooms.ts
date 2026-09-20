@@ -32,14 +32,24 @@ export async function handleRooms(ctx: AdminCtx): Promise<any | null> {
   }
 
   const buildingMatch = path.match(/^\/admin\/scheduler\/buildings\/([^/]+)$/);
-  if (buildingMatch && method === 'DELETE') {
-    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+  if (buildingMatch) {
     const id = buildingMatch[1]!;
-    // Las aulas del edificio quedan sin edificio en vez de borrarse en cascada
-    // — un aula no debería desaparecer solo porque se reorganizó un edificio.
-    await prisma.classRoom.updateMany({ where: { buildingId: id }, data: { buildingId: null } });
-    await prisma.building.delete({ where: { id } }).catch(() => null);
-    return ok({ deleted: true });
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    if (method === 'PUT') {
+      const name = (body.name as string | undefined)?.trim();
+      if (!name) return badRequest('name es requerido');
+      const building = await prisma.building.update({ where: { id }, data: { name } }).catch(() => null);
+      if (!building) return notFound('Edificio no encontrado');
+      return ok(building);
+    }
+    if (method === 'DELETE') {
+      // Las aulas del edificio quedan sin edificio en vez de borrarse en cascada
+      // — un aula no debería desaparecer solo porque se reorganizó un edificio.
+      await prisma.classRoom.updateMany({ where: { buildingId: id }, data: { buildingId: null } });
+      await prisma.building.delete({ where: { id } }).catch(() => null);
+      return ok({ deleted: true });
+    }
+    return null;
   }
 
   // ── /admin/scheduler/rooms ───────────────────────────────────────────────

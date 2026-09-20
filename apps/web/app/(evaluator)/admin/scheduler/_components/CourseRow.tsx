@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, X, Trash2, Pencil, Check, Clock, Users2, AlertTriangle, DoorOpen } from 'lucide-react';
+import { Loader2, X, Trash2, Pencil, Check, Clock, Users2, AlertTriangle, DoorOpen, CalendarDays } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { CourseCatalogRow, ClassRoomRow } from './types';
 import type { CourseOverrides } from './StepCourses';
@@ -44,6 +44,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
   const [durationOpen, setDurationOpen] = useState(false);
   const [hybridOpen, setHybridOpen] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
+  const [dayOpen, setDayOpen] = useState(false);
 
   const handleReassignTeacher = async (evaluatorId: string) => {
     const evaluator = evaluators.find((e) => e.username === evaluatorId);
@@ -78,7 +79,12 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
     setTagSaving(true);
     try {
       await api.admin.courses.update(c.id, { [field]: value || null });
-      onUpdated({ [field]: value || null } as Partial<CourseCatalogRow>);
+      const patch: Partial<CourseCatalogRow> = { [field]: value || null } as any;
+      // Keep engineModality in sync so StepCourses' isAsync filter reacts immediately.
+      if (field === 'modality') {
+        patch.engineModality = value === 'PRESENCIAL' ? 'PRESENCIAL' : value === 'ASINCRONICA' ? null : 'VIRTUAL';
+      }
+      onUpdated(patch);
     } catch (err: any) {
       onError(err?.message ?? 'No se pudo actualizar el tag.');
     } finally {
@@ -115,110 +121,118 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
   const pinnedRoom = rooms.find((r) => r.id === c.preferredRoomId);
 
   return (
-    <tr>
-      <td className="py-2 pr-3 font-medium text-charcoal">
-        {editingTitle ? (
-          <div className="flex items-center gap-1">
-            <input
-              autoFocus type="text" value={editTitleValue} onChange={(e) => setEditTitleValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(); else if (e.key === 'Escape') setEditingTitle(false); }}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-32"
-            />
-            <button onClick={handleSaveTitle} disabled={savingTitle || !editTitleValue.trim()} className="p-1 text-emerald-500 hover:text-emerald-600 disabled:opacity-50">
-              {savingTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            </button>
-            <button onClick={() => setEditingTitle(false)} className="p-1 text-gray-300 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
-          </div>
-        ) : (
-          <div>
+    <div className="border border-border rounded-xl px-4 py-3 bg-white dark:bg-card space-y-2">
+      {/* Row 1: title + tags + actions */}
+      <div className="flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          {editingTitle ? (
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus type="text" value={editTitleValue} onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTitle(); else if (e.key === 'Escape') setEditingTitle(false); }}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1 flex-1"
+              />
+              <button onClick={handleSaveTitle} disabled={savingTitle || !editTitleValue.trim()} className="p-1 text-emerald-500 hover:text-emerald-600 disabled:opacity-50">
+                {savingTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              </button>
+              <button onClick={() => setEditingTitle(false)} className="p-1 text-gray-300 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          ) : (
             <div className="flex items-center gap-1 group">
-              {c.title}
+              <span className="text-sm font-semibold text-charcoal truncate">{c.title}</span>
               <button
                 onClick={() => { setEditingTitle(true); setEditTitleValue(c.title); }}
                 title="Renombrar curso"
-                className="p-0.5 text-gray-300 hover:text-cta-from opacity-0 group-hover:opacity-100"
+                className="p-0.5 text-gray-300 hover:text-cta-from opacity-0 group-hover:opacity-100 shrink-0"
               >
                 <Pencil className="w-3 h-3" />
               </button>
             </div>
-            <div className="flex items-center gap-1 mt-0.5">
-              <select
-                value={c.courseType ?? ''} disabled={tagSaving}
-                onChange={(e) => handleUpdateTag('courseType', e.target.value)}
-                title="Tipo de curso"
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium border-0 outline-none disabled:opacity-50"
-              >
-                <option value="">— tipo —</option>
-                {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-              <select
-                value={c.modality ?? ''} disabled={tagSaving}
-                onChange={(e) => handleUpdateTag('modality', e.target.value)}
-                title="Modalidad del curso"
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium border-0 outline-none disabled:opacity-50"
-              >
-                <option value="">— modalidad —</option>
-                {Object.entries(MODALITY_FULL_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </div>
+          )}
+          {/* Tags: tipo + modalidad */}
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <select
+              value={c.courseType ?? ''} disabled={tagSaving}
+              onChange={(e) => handleUpdateTag('courseType', e.target.value)}
+              title="Tipo de curso"
+              className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium border-0 outline-none disabled:opacity-50"
+            >
+              <option value="">— tipo —</option>
+              {Object.entries(COURSE_TYPE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <select
+              value={c.modality ?? ''} disabled={tagSaving}
+              onChange={(e) => handleUpdateTag('modality', e.target.value)}
+              title="Modalidad del curso"
+              className="text-xs px-2 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium border-0 outline-none disabled:opacity-50"
+            >
+              <option value="">— modalidad —</option>
+              {Object.entries(MODALITY_FULL_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
           </div>
-        )}
-      </td>
-      <td className="py-2 pr-3">
+        </div>
+        {/* Actions */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button onClick={onRemoveFromPlan} title="Quitar de este plan" className="p-1 text-gray-300 hover:text-amber-500">
+            <X className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={handleDeleteCourse} disabled={deleting} title="Eliminar curso de Lux Learning" className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-50">
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2: profesor + estudiantes + modalidad + tipo */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Profesor */}
         <select
           value={c.evaluatorId} disabled={reassigning}
           onChange={(e) => handleReassignTeacher(e.target.value)}
-          className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 disabled:opacity-50"
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 disabled:opacity-50 max-w-[160px]"
         >
           {!evaluators.some((e) => e.username === c.evaluatorId) && (
             <option value={c.evaluatorId}>{c.teacherName}</option>
           )}
           {evaluators.map((e) => <option key={e.username} value={e.username}>{e.name}</option>)}
         </select>
-      </td>
-      <td className="py-2 pr-3 text-gray-500">
-        <span className="flex items-center gap-1">
-          {c.studentCount}
-          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "¿Tienes un curso
-              virtual que está entre semana?... sería importante si son más
-              de 20, o entre 15 y 20, poner un aviso." Solo informativo. */}
+
+        {/* Estudiantes */}
+        <span className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
+          <Users2 className="w-3.5 h-3.5" />{c.studentCount}
           {modality === 'VIRTUAL' && c.studentCount >= 15 && (
-            <span title="Curso con muchos estudiantes (15+) para modalidad virtual entre semana">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            </span>
+            <span title="15+ estudiantes en modalidad virtual"><AlertTriangle className="w-3.5 h-3.5 text-amber-500" /></span>
           )}
         </span>
-      </td>
-      <td className="py-2 pr-3">
+
+        {/* Modalidad override */}
         <div className="flex items-center gap-1 relative">
           <select value={modality} onChange={(e) => onOverrideChange({ ...ov, modality: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
-            <option value="PRESENCIAL">Presencial (sábado)</option>
-            <option value="VIRTUAL">Virtual (semana)</option>
+            <option value="PRESENCIAL">Presencial ({ov.preferredDay ? ['','lun','mar','mié','jue','vie','sáb'][ov.preferredDay] : 'sáb'})</option>
+            <option value="VIRTUAL">Virtual</option>
             <option value="HIBRIDA">Híbrido</option>
           </select>
-          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "hay cursos que pueden
-              ser híbridos... es bueno que pregunte eso en la sección de
-              cursos" — al elegir Híbrido, hay que decidir quién es presencial. */}
           {modality === 'HIBRIDA' && (
-            <button
-              type="button" onClick={() => setHybridOpen(!hybridOpen)}
+            <button type="button" onClick={() => setHybridOpen(!hybridOpen)}
               title="Elegir quién es presencial"
               className={`p-1 rounded-lg ${ov.hybridPresencialIds?.length ? 'text-amber-600 bg-amber-50' : 'text-gray-300 hover:text-gray-600'}`}
             >
               <Users2 className="w-3.5 h-3.5" />
             </button>
           )}
-          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "yo quisiera
-              que se respete que ese Ensamble Instrumental se dé siempre en
-              el aula de ensayos" — solo tiene sentido para sesiones con
-              componente presencial. */}
           {(modality === 'PRESENCIAL' || modality === 'HIBRIDA') && (
-            <button
-              type="button" onClick={() => setRoomOpen(!roomOpen)}
-              title={pinnedRoom ? `Aula fija: ${pinnedRoom.preferredName || pinnedRoom.name}` : 'Fijar un aula para este curso'}
+            <button type="button" onClick={() => setRoomOpen(!roomOpen)}
+              title={pinnedRoom ? `Aula: ${pinnedRoom.preferredName || pinnedRoom.name}` : 'Fijar aula'}
               className={`p-1 rounded-lg ${c.preferredRoomId ? 'text-amber-600 bg-amber-50' : 'text-gray-300 hover:text-gray-600'}`}
             >
               <DoorOpen className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {c.courseType === 'LIBRE' && modality === 'PRESENCIAL' && (
+            <button type="button" onClick={() => setDayOpen(!dayOpen)}
+              title={ov.preferredDay ? `Día: ${['','Lun','Mar','Mié','Jue','Vie','Sáb'][ov.preferredDay]}` : 'Elegir día'}
+              className={`p-1 rounded-lg ${ov.preferredDay ? 'text-violet-600 bg-violet-50' : 'text-gray-300 hover:text-gray-600'}`}
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
             </button>
           )}
           {hybridOpen && (
@@ -260,21 +274,33 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
               <button type="button" onClick={() => setRoomOpen(false)} className="text-xs text-cta-from hover:underline mt-1.5">Listo</button>
             </div>
           )}
+          {dayOpen && (
+            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-44">
+              <p className="text-[10px] text-gray-400 mb-1.5">Día en que se imparte este curso libre.</p>
+              <select
+                value={ov.preferredDay ?? ''}
+                onChange={(e) => onOverrideChange({ ...ov, preferredDay: e.target.value ? Number(e.target.value) : undefined })}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-full"
+              >
+                <option value="">— cualquier presencial —</option>
+                {[['1','Lunes'],['2','Martes'],['3','Miércoles'],['4','Jueves'],['5','Viernes'],['6','Sábado']].map(([v,l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+              <button type="button" onClick={() => setDayOpen(false)} className="text-xs text-cta-from hover:underline mt-1.5">Listo</button>
+            </div>
+          )}
         </div>
-      </td>
-      <td className="py-2 pr-3">
+
+        {/* Tipo de clase */}
         <div className="flex items-center gap-1 relative">
           <select value={classType} onChange={(e) => onOverrideChange({ ...ov, classType: e.target.value as any })} className="text-xs border border-gray-200 rounded-lg px-2 py-1">
             <option value="INDIVIDUAL">Individual (55 min)</option>
             <option value="GRUPAL">Grupal (1h15)</option>
           </select>
-          {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15): "puede haber una
-              excepción para un curso en especial; puede ser de 1 hora o
-              similar" — botón que se desprende del tipo de clase en vez de
-              una columna fija casi siempre vacía. */}
           <button
             type="button" onClick={() => setDurationOpen(!durationOpen)}
-            title="Excepción de duración para este curso"
+            title="Excepción de duración"
             className={`p-1 rounded-lg ${ov.durationOverrideMin ? 'text-amber-600 bg-amber-50' : 'text-gray-300 hover:text-gray-600'}`}
           >
             <Clock className="w-3.5 h-3.5" />
@@ -292,26 +318,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
             </div>
           )}
         </div>
-      </td>
-      <td className="py-2">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onRemoveFromPlan}
-            title="Quitar de este plan (no se elimina el curso de Lux Learning)"
-            className="p-1 text-gray-300 hover:text-amber-500"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={handleDeleteCourse}
-            disabled={deleting}
-            title="Eliminar curso de Lux Learning por completo"
-            className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-50"
-          >
-            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }

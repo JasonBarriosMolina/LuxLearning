@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Building2, DoorOpen } from 'lucide-react';
+import { Loader2, Plus, Trash2, Building2, DoorOpen, Pencil, Check, X as XIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import type { Building, ClassRoomRow } from './types';
@@ -18,7 +18,7 @@ const COURSE_TYPE_LABELS: Record<string, string> = {
   PROGRAMA_ESPECIAL: 'Programa Especial', CURSO_CORTO: 'Curso Corto', LIBRE: 'Curso Libre/Tutoría',
 };
 
-export function RoomsManager() {
+export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<ClassRoomRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +26,8 @@ export function RoomsManager() {
 
   const [newBuildingName, setNewBuildingName] = useState('');
   const [addingBuilding, setAddingBuilding] = useState(false);
+  const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null);
+  const [editingBuildingName, setEditingBuildingName] = useState('');
 
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [roomName, setRoomName] = useState('');
@@ -57,6 +59,18 @@ export function RoomsManager() {
       setError(err?.message ?? 'No se pudo crear el edificio.');
     } finally {
       setAddingBuilding(false);
+    }
+  };
+
+  const handleRenameBuilding = async (id: string) => {
+    const name = editingBuildingName.trim();
+    if (!name) return;
+    try {
+      await api.admin.scheduler.buildings.update(id, name);
+      setBuildings(buildings.map((b) => (b.id === id ? { ...b, name } : b)));
+      setEditingBuildingId(null);
+    } catch (err: any) {
+      setError(err?.message ?? 'No se pudo renombrar el edificio.');
     }
   };
 
@@ -121,23 +135,44 @@ export function RoomsManager() {
     </div>
   );
 
+  if (readOnly && rooms.length === 0) return (
+    <p className="text-xs text-gray-400 italic">Ningún aula registrada aún. Agregalas desde tu perfil.</p>
+  );
+
   return (
-    <div className="card space-y-4">
-      <div>
-        <h2 className="font-heading font-semibold text-charcoal flex items-center gap-1.5"><DoorOpen className="w-4 h-4" /> Aulas y edificios</h2>
-        <p className="text-xs text-gray-500">Solo aplica a cursos presenciales. Cada curso puede fijar un aula específica desde el catálogo (paso 3).</p>
-      </div>
+    <div className={readOnly ? 'space-y-3' : 'card space-y-4'}>
+      {!readOnly && (
+        <div>
+          <h2 className="font-heading font-semibold text-charcoal flex items-center gap-1.5"><DoorOpen className="w-4 h-4" /> Aulas y edificios</h2>
+          <p className="text-xs text-gray-500">Solo aplica a cursos presenciales. Cada curso puede fijar un aula específica desde el catálogo (paso 3).</p>
+        </div>
+      )}
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 
       {/* Edificios */}
-      <div className="space-y-2">
+      {!readOnly && <div className="space-y-2">
         <p className="text-xs font-semibold text-charcoal flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> Edificios</p>
         <div className="flex flex-wrap gap-1.5">
           {buildings.map((b) => (
             <span key={b.id} className="flex items-center gap-1 text-xs bg-surface border border-border rounded-full pl-2.5 pr-1 py-1">
-              {b.name}
-              <button onClick={() => handleDeleteBuilding(b.id)} className="p-0.5 text-gray-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+              {editingBuildingId === b.id ? (
+                <>
+                  <input
+                    autoFocus type="text" value={editingBuildingName} onChange={(e) => setEditingBuildingName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRenameBuilding(b.id); else if (e.key === 'Escape') setEditingBuildingId(null); }}
+                    className="text-xs border border-gray-200 rounded-md px-1.5 py-0.5 w-24"
+                  />
+                  <button onClick={() => handleRenameBuilding(b.id)} className="p-0.5 text-emerald-500 hover:text-emerald-600"><Check className="w-3 h-3" /></button>
+                  <button onClick={() => setEditingBuildingId(null)} className="p-0.5 text-gray-300 hover:text-gray-600"><XIcon className="w-3 h-3" /></button>
+                </>
+              ) : (
+                <>
+                  {b.name}
+                  <button onClick={() => { setEditingBuildingId(b.id); setEditingBuildingName(b.name); }} className="p-0.5 text-gray-300 hover:text-cta-from"><Pencil className="w-3 h-3" /></button>
+                  <button onClick={() => handleDeleteBuilding(b.id)} className="p-0.5 text-gray-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                </>
+              )}
             </span>
           ))}
           <div className="flex items-center gap-1">
@@ -151,43 +186,46 @@ export function RoomsManager() {
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* Aulas */}
+      {/* Aulas agrupadas por edificio */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-charcoal">Aulas ({rooms.length})</p>
-        {rooms.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-left text-[11px] font-semibold text-gray-500">
-                  <th className="py-1.5 pr-3">Nombre</th>
-                  <th className="py-1.5 pr-3">Edificio / piso</th>
-                  <th className="py-1.5 pr-3">Aforo</th>
-                  <th className="py-1.5 pr-3">Tipos de curso</th>
-                  <th className="py-1.5"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rooms.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-1.5 pr-3 font-medium text-charcoal">
-                      {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 text-gray-500">{buildingName(r.buildingId) ?? '—'}{r.floor != null ? ` · piso ${r.floor}` : ''}</td>
-                    <td className="py-1.5 pr-3 text-gray-500">{r.capacity}</td>
-                    <td className="py-1.5 pr-3 text-gray-500">{r.courseTypeTags.length ? r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ') : '—'}</td>
-                    <td className="py-1.5">
-                      <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {rooms.length > 0 && (() => {
+          const grouped: { building: Building | null; rooms: ClassRoomRow[] }[] = [];
+          buildings.forEach((b) => {
+            const br = rooms.filter((r) => r.buildingId === b.id);
+            if (br.length) grouped.push({ building: b, rooms: br });
+          });
+          const unassigned = rooms.filter((r) => !r.buildingId);
+          if (unassigned.length) grouped.push({ building: null, rooms: unassigned });
+          return grouped.map(({ building: b, rooms: gr }) => (
+            <div key={b?.id ?? '__none__'} className="space-y-1">
+              <p className="text-[11px] font-semibold text-gray-400 flex items-center gap-1">
+                <Building2 className="w-3 h-3" />{b?.name ?? 'Sin edificio'}
+              </p>
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-border">
+                  {gr.map((r) => (
+                    <tr key={r.id}>
+                      <td className="py-1.5 pr-3 font-medium text-charcoal">
+                        {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
+                        {r.floor != null && <span className="text-gray-400 font-normal"> · piso {r.floor}</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 text-gray-500">cap. {r.capacity}</td>
+                      <td className="py-1.5 pr-3 text-gray-500">{r.courseTypeTags.length ? r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ') : '—'}</td>
+                      {!readOnly && <td className="py-1.5">
+                        <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ));
+        })()}
 
-        {showAddRoom ? (
+        {!readOnly && showAddRoom ? (
           <div className="p-3 bg-surface rounded-xl border border-border space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <select value={roomBuildingId} onChange={(e) => setRoomBuildingId(e.target.value)} className="input-field text-xs py-1.5">
@@ -201,7 +239,7 @@ export function RoomsManager() {
               />
               <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Nombre (ej. 101)" className="input-field text-xs py-1.5" />
               <input type="number" min={1} value={roomCapacity} onChange={(e) => setRoomCapacity(e.target.value)} placeholder="Aforo" className="input-field text-xs py-1.5" />
-              <input type="text" value={roomPreferredName} onChange={(e) => setRoomPreferredName(e.target.value)} placeholder="Nombre preferencial (opcional)" className="input-field text-xs py-1.5 col-span-2" />
+              <input type="text" value={roomPreferredName} onChange={(e) => setRoomPreferredName(e.target.value)} placeholder="Descripción (ej. Sala de ensayos, opcional)" className="input-field text-xs py-1.5 col-span-2" />
             </div>
             <div>
               <p className="text-[11px] text-gray-400 mb-1">Tipos de curso que se pueden dar acá (opcional):</p>
@@ -222,11 +260,11 @@ export function RoomsManager() {
               <Button size="sm" onClick={handleAddRoom} loading={addingRoom} disabled={!roomName.trim() || !roomCapacity}>Crear aula</Button>
             </div>
           </div>
-        ) : (
+        ) : !readOnly ? (
           <Button variant="secondary" size="sm" leftIcon={<Plus className="w-3.5 h-3.5" />} onClick={() => setShowAddRoom(true)}>
             Agregar aula
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );

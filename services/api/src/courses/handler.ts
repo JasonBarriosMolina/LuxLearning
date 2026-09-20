@@ -16,6 +16,15 @@ const s3 = new S3Client({ region: 'us-east-1' });
 const SUBMISSIONS_BUCKET = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
+// lux-learning-images is a private bucket — direct s3.amazonaws.com URLs return 403.
+// Re-sign any stored direct URL to a presigned GET URL (24h TTL).
+async function signImageUrl(url: string | null | undefined): Promise<string | null | undefined> {
+  if (!url) return url;
+  const key = url.match(/^https:\/\/[^/]*lux-learning-images[^/]*\/(.+)$/)?.[1];
+  if (!key) return url;
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key }), { expiresIn: 86400 });
+}
+
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 
 // Vapi credentials loaded lazily from Secrets Manager via shared/vapi-keys.ts
@@ -150,19 +159,19 @@ export const handler = async (event: Event) => {
             );
 
             const ct = translations?.get(`course#${course.id}`);
-            return { ...course, ...(ct ?? {}), modules: enrichedModules };
+            return { ...course, ...(ct ?? {}), imageUrl: await signImageUrl(course.imageUrl), modules: enrichedModules };
           })
         );
         return ok(enriched);
       }
 
-      const translatedCourses = translations
+      const translatedCourses = await Promise.all((translations
         ? courses.map((c) => ({
             ...c,
             ...(translations!.get(`course#${c.id}`) ?? {}),
             modules: applyTranslations(c.modules, 'module', translations!),
           }))
-        : courses;
+        : courses).map(async (c) => ({ ...c, imageUrl: await signImageUrl(c.imageUrl) })));
       return ok(translatedCourses);
     }
 
@@ -286,11 +295,11 @@ export const handler = async (event: Event) => {
           questions: applyTranslations(mod.questions, 'question', translations!),
         }));
         const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
-        return ok({ ...course, ...(ct ?? {}), modules, isCourseLocked });
+        return ok({ ...course, ...(ct ?? {}), imageUrl: await signImageUrl(course.imageUrl), modules, isCourseLocked });
       }
 
       const isCourseLocked = !!(course.startDate && new Date(course.startDate) > new Date());
-      return ok({ ...course, isCourseLocked });
+      return ok({ ...course, imageUrl: await signImageUrl(course.imageUrl), isCourseLocked });
     }
 
     // GET /courses/:courseId/resources — public resources for students enrolled in this course

@@ -74,6 +74,9 @@ vi.mock('../../admin/ai-image-helpers', () => ({
   generateLessonImage:       vi.fn().mockResolvedValue('https://s3.example.com/img.jpg'),
   generateLessonInfographic: vi.fn().mockResolvedValue(null),
 }));
+vi.mock('../../admin/ai-wizard-challenges', () => ({
+  generateModuleChallenges: vi.fn().mockResolvedValue(undefined),
+}));
 // Auto-carousel phase (item 3) — stub the script draft + asset pipeline so its
 // unit tests exercise only the phase-wiring in ai-wizard-worker.ts, not the real
 // Bedrock/Polly/Stability chain (already covered by carousel.test.ts / carousel-worker.test.ts).

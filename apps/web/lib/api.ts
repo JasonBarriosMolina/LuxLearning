@@ -139,6 +139,10 @@ export const api = {
       request<any>('/lessons/carousel-recap', { method: 'POST', body: JSON.stringify({ lessonId }) }),
     audio: (lessonId: string, gender?: 'male' | 'female', lang?: string) =>
       request<{ audioUrl: string }>('/lessons/audio', { method: 'POST', body: JSON.stringify({ lessonId, gender, lang }) }),
+    challenges: (lessonId: string) =>
+      request<any[]>(`/lessons/challenges?lessonId=${encodeURIComponent(lessonId)}`),
+    challengeAnswer: (body: { challengeId: string; lessonId: string; moduleId: string; isCorrect: boolean }) =>
+      request<{ xpEarned: number; totalXp: number }>('/lessons/challenge-answer', { method: 'POST', body: JSON.stringify(body) }),
   },
 
   quiz: {
@@ -289,6 +293,14 @@ export const api = {
       list: (moduleId: string) => request<any>(`/evaluator/classes?moduleId=${moduleId}`),
       grade: (sessionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/classes/${sessionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    presentation: {
+      get: (courseId: string, moduleId: string) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation`),
+      generate: (courseId: string, moduleId: string) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation/generate`, { method: 'POST' }),
+      regenerate: (courseId: string, moduleId: string, body: { slideIndex: number; feedback: string }) =>
+        request<any>(`/evaluator/courses/${encodeURIComponent(courseId)}/modules/${encodeURIComponent(moduleId)}/presentation/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
     },
     studyPlan: {
       generate: (studentId: string, body: { weekOf?: string; items?: any[]; note?: string; wizardParams?: { hoursPerDay: 1 | 2 | 3; modulePriority: 'sequential' | 'parallel'; pace: 'normal' | 'catchup' } }) =>
@@ -639,6 +651,7 @@ export const api = {
       buildings: {
         list: () => request<any>('/admin/scheduler/buildings'),
         create: (name: string) => request<any>('/admin/scheduler/buildings', { method: 'POST', body: JSON.stringify({ name }) }),
+        update: (id: string, name: string) => request<any>(`/admin/scheduler/buildings/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ name }) }),
         delete: (id: string) => request<any>(`/admin/scheduler/buildings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
       },
       rooms: {

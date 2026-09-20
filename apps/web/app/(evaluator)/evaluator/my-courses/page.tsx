@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap, MoreVertical, Pin, Archive, CalendarCheck2 } from 'lucide-react';
+import { BookOpen, Users, ClipboardList, MessageSquare, Loader2, BookMarked, FolderOpen, Pencil, GraduationCap, MoreVertical, Pin, Archive, CalendarCheck2, Presentation, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
 
@@ -105,6 +105,20 @@ export default function MyCoursesPage() {
                 </div>
               </div>
 
+              {/* No-content CTA */}
+              {course.modules.length === 0 && (
+                <Link
+                  href={`/admin/courses/${course.id}`}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-amber-800">Este curso no tiene contenido aún</p>
+                    <p className="text-xs text-amber-600">Toca aquí para crear el contenido con Lux Planner</p>
+                  </div>
+                </Link>
+              )}
+
               {/* Stats */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-surface rounded-xl p-3 text-center">
@@ -194,6 +208,14 @@ export default function MyCoursesPage() {
                       >
                         <FolderOpen className="w-4 h-4 text-gray-400" />
                         {t.evaluator.resources}
+                      </Link>
+                      <Link
+                        href={`/evaluator/courses/${course.id}/presentation`}
+                        onClick={() => setOpenMenu(null)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-charcoal hover:bg-surface transition-colors"
+                      >
+                        <Presentation className="w-4 h-4 text-gray-400" />
+                        Lux Slides
                       </Link>
                       <div className="border-t border-border my-1" />
                       <button

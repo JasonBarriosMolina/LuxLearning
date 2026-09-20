@@ -200,7 +200,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       presencialDays, virtualDays, institutionalOpen, institutionalClose,
     } = body as {
       academicPeriod?: string;
-      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string }>;
+      courseOverrides?: Record<string, { classType?: ClassType; modality?: CourseModality | 'HIBRIDA'; durationOverrideMin?: number; hybridPresencialIds?: string[]; roomId?: string; preferredDay?: number }>;
       lunchBreak?: { startTime: string; endTime: string };
       gapMinutes?: number;
       individualMinutes?: number;
@@ -259,6 +259,8 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
             courseId: c.id, evaluatorId: c.evaluatorId, modality: 'PRESENCIAL',
             classType: presencialIds.length > 1 ? 'GRUPAL' : 'INDIVIDUAL',
             studentIds: presencialIds, durationOverrideMin: override.durationOverrideMin, pinnedRoomId,
+            courseType: c.courseType ?? undefined,
+            preferredDays: override.preferredDay ? [override.preferredDay] : undefined,
           });
         }
         if (virtualIds.length > 0) {
@@ -278,6 +280,8 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
         courseId: c.id, evaluatorId: c.evaluatorId, modality, classType, studentIds,
         durationOverrideMin: override?.durationOverrideMin,
         pinnedRoomId: modality === 'PRESENCIAL' ? pinnedRoomId : undefined,
+        courseType: c.courseType ?? undefined,
+        preferredDays: override?.preferredDay ? [override.preferredDay] : undefined,
       });
     }
     if (!engineCourses.length) return badRequest('Ningún curso de este período requiere clase en vivo (todos son asincrónicos)');
@@ -292,8 +296,8 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const studentNames: Record<string, string> = {};
     await Promise.all(studentIds.map(async (id) => { studentNames[id] = await resolveDisplayName(id); }));
 
-    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, preferredName: true, capacity: true } });
-    const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity }));
+    const roomRows = await prisma.classRoom.findMany({ select: { id: true, name: true, preferredName: true, capacity: true, courseTypeTags: true } });
+    const rooms = roomRows.map((r: any) => ({ id: r.id, capacity: r.capacity, courseTypeTags: r.courseTypeTags ?? [] }));
     // Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "si el nombre es 'Aula
     // 101', pero se le conoce internamente como 'Salón de ensayos'... que sea
     // visible para el estudiante también y para el evaluador" — el apodo manda
@@ -303,6 +307,18 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       courses: engineCourses, teachers, lunchBreak, gapMinutes, individualMinutes, groupMinutes, rooms,
       presencialDays, virtualDays, institutionalOpen, institutionalClose,
     });
+
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-18): "que se indique qué profesor
+    // es el que tiene problema y tiene que aumentar su disponibilidad."
+    const courseToEvaluator = new Map(engineCourses.map((c) => [c.courseId, c.evaluatorId]));
+    for (const p of proposals) {
+      for (const courseId of p.unscheduledCourseIds) {
+        const evaluatorId = courseToEvaluator.get(courseId);
+        const name = evaluatorId ? teacherNames[evaluatorId] : undefined;
+        if (name) p.unscheduledReasons[courseId] = `Profesor: ${name}. ${p.unscheduledReasons[courseId] ?? ''}`.trim();
+      }
+    }
+
     return ok({ proposals, courseTitles, teacherNames, studentNames, roomNames, academicPeriod, skippedAsyncCourseIds: skippedAsync });
   }
 
@@ -353,8 +369,13 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const approval = await prisma.scheduleApproval.findUnique({ where: { academicPeriod } });
     if (!approval) return notFound('Aprobá un horario para este período antes de notificar');
 
-    const { proposal, courseTitles: rawTitles } = approval.proposalJson as unknown as { proposal: ScheduleProposal; courseTitles: Record<string, string> };
+    const { proposal, courseTitles: rawTitles, studentNames: rawStudentNames, roomNames: rawRoomNames } = approval.proposalJson as unknown as {
+      proposal: ScheduleProposal; courseTitles: Record<string, string>;
+      studentNames: Record<string, string>; roomNames: Record<string, string>;
+    };
     const courseTitles = new Map(Object.entries(rawTitles ?? {}));
+    const studentNames = new Map(Object.entries(rawStudentNames ?? {}));
+    const roomNames = new Map(Object.entries(rawRoomNames ?? {}));
     const byRecipient = new Map<string, ScheduledSession[]>();
     for (const s of proposal.sessions) {
       const ids = audience === 'evaluators' ? [s.evaluatorId] : s.studentIds;
@@ -363,9 +384,38 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     await Promise.allSettled([...byRecipient.entries()].map(async ([userId, sessions]) => {
       const { email, name } = await resolveContact(userId);
       if (!email) return;
-      const scheduleRows = `<ul>${sessions.map((s) =>
-        `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'})</li>`
-      ).join('')}</ul>`;
+      let scheduleRows: string;
+      if (audience === 'evaluators') {
+        // Table layout: course+schedule+room left, students right
+        const rows = sessions.map((s) => {
+          const room = s.roomId ? roomNames.get(s.roomId) : null;
+          const studentList = s.studentIds.length
+            ? `<ul style="margin:0;padding-left:16px;">${s.studentIds.map((sid) => `<li style="font-size:13px;">${studentNames.get(sid) ?? sid}</li>`).join('')}</ul>`
+            : '<span style="font-size:12px;color:#6b7280;">Sin estudiantes asignados</span>';
+          const courseUrl = `${process.env.FRONTEND_URL ?? 'https://lux-learning-mentor.vercel.app'}/admin/courses/${s.courseId}`;
+          return `<tr style="vertical-align:top;border-bottom:1px solid #e5e7eb;">
+            <td style="padding:10px 16px 10px 0;width:55%;">
+              <strong style="font-size:14px;"><a href="${courseUrl}" style="color:#6366f1;text-decoration:none;">${courseTitles.get(s.courseId) ?? s.courseId}</a></strong><br>
+              <span style="color:#374151;font-size:13px;">${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime}</span><br>
+              <span style="color:#6b7280;font-size:12px;">${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? ` · ${room}` : ''}</span><br>
+              <a href="${courseUrl}" style="font-size:11px;color:#6366f1;">Crear/editar contenido del curso →</a>
+            </td>
+            <td style="padding:10px 0;">${studentList}</td>
+          </tr>`;
+        }).join('');
+        scheduleRows = `<table style="width:100%;border-collapse:collapse;margin-top:8px;">
+          <thead><tr style="border-bottom:2px solid #6366f1;">
+            <th style="text-align:left;padding:8px 16px 8px 0;font-size:12px;color:#6366f1;text-transform:uppercase;letter-spacing:.05em;">Curso / Horario / Aula</th>
+            <th style="text-align:left;padding:8px 0;font-size:12px;color:#6366f1;text-transform:uppercase;letter-spacing:.05em;">Estudiantes</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      } else {
+        scheduleRows = `<ul>${sessions.map((s) => {
+          const room = s.roomId ? roomNames.get(s.roomId) : null;
+          return `<li><strong>${courseTitles.get(s.courseId) ?? s.courseId}</strong> — ${DAY_LABEL[s.dayOfWeek]} ${s.startTime}–${s.endTime} (${s.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'}${room ? `, ${room}` : ''})</li>`;
+        }).join('')}</ul>`;
+      }
       await sendTemplatedEmail(email, 'SCHEDULE_PUBLISHED', { recipientName: name, academicPeriod, scheduleRows }).catch(() => {});
     }));
 

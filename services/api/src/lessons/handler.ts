@@ -13,6 +13,7 @@ import {
   startSession, updateSession, endSession, getActivity, getAllQuizAttemptsForUser,
   setInactivityReminder, getAllEnrollments, getEnrollments,
   createNotification, getPushSubscriptionsByUserId,
+  recordChallengeAnswer,
   TABLES, ddb,
 } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
@@ -500,6 +501,31 @@ Tono motivador y cercano. Máximo 350 palabras. Solo en español.`;
       });
       const completedTasks = tasks.filter((t: any) => t.status === 'COMPLETED');
       return ok({ sessions, totalHours, byDay, quizAttempts, completedTasks });
+    }
+
+    // ── GET /lessons/challenges?lessonId=xxx ─────────────────────────────────
+    // Trello DmPpbrff (Mack, 2026-09-18): fetch retos de atención para una lección.
+    if (method === 'GET' && path.includes('/challenges')) {
+      const lessonId = event.queryStringParameters?.lessonId;
+      if (!lessonId) return badRequest('lessonId requerido');
+      const prisma = await getPrismaClient();
+      const challenges = await prisma.lessonChallenge.findMany({
+        where: { lessonId },
+        select: { id: true, type: true, question: true, options: true, correctIndex: true, explanation: true, xpReward: true, paragraphIndex: true },
+      });
+      return ok(challenges);
+    }
+
+    // ── POST /lessons/challenge-answer ───────────────────────────────────────
+    // Records XP silently; returns { xpEarned, totalXp }.
+    if (method === 'POST' && path.includes('/challenge-answer')) {
+      const { challengeId, lessonId, moduleId, isCorrect } = body as { challengeId?: string; lessonId?: string; moduleId?: string; isCorrect?: boolean };
+      if (!challengeId || !lessonId || !moduleId) return badRequest('challengeId, lessonId, moduleId requeridos');
+      const prisma = await getPrismaClient();
+      const challenge = await prisma.lessonChallenge.findUnique({ where: { id: challengeId }, select: { xpReward: true } });
+      if (!challenge) return notFound('Reto no encontrado');
+      const result = await recordChallengeAnswer(userId, challengeId, lessonId, moduleId, isCorrect ?? false, challenge.xpReward);
+      return ok(result);
     }
 
     return badRequest('Unknown route');

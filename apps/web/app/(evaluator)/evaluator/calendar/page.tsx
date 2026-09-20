@@ -336,7 +336,7 @@ export default function EvaluatorCalendarPage() {
         <div className="flex items-center gap-2">
           {canTeach && (
             <Button variant="secondary" onClick={() => setMyScheduleOpen(true)} leftIcon={<CalendarClock className="w-4 h-4" />}>
-              Ver mi horario
+              {isAdmin ? 'Ver horarios de clases' : 'Ver mi horario'}
             </Button>
           )}
           <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
@@ -414,7 +414,7 @@ export default function EvaluatorCalendarPage() {
         />
       </Modal>
 
-      {canTeach && <MyScheduleModal open={myScheduleOpen} onClose={() => setMyScheduleOpen(false)} />}
+      {canTeach && <MyScheduleModal open={myScheduleOpen} onClose={() => setMyScheduleOpen(false)} isAdmin={isAdmin} />}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { createId } from '@paralleldrive/cuid2';
 const DAY_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export async function handleCalendar(ctx: EvalCtx): Promise<any | null> {
-  const { event, method, path, userId, role, prisma } = ctx;
+  const { event, method, path, userId, role, isAdminRole, prisma } = ctx;
 
   // ── GET /evaluator/calendar/events ──────────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/calendar/events') {
@@ -26,32 +26,66 @@ export async function handleCalendar(ctx: EvalCtx): Promise<any | null> {
   // del evaluador contra sus ScheduledClass ya publicadas — un bloque de
   // disponibilidad sin clase encima es justo ese "pendiente de asignar".
   if (method === 'GET' && path === '/evaluator/my-schedule') {
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-18): admin ve TODOS los horarios
+    // publicados ("ver horarios de clases"); evaluador solo los suyos.
+    const sessionFilter = isAdminRole ? {} : { evaluatorId: userId };
     const [blocks, sessions] = await Promise.all([
-      prisma.teacherAvailability.findMany({ where: { evaluatorId: userId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
-      prisma.scheduledClass.findMany({ where: { evaluatorId: userId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
+      isAdminRole ? Promise.resolve([]) : prisma.teacherAvailability.findMany({ where: { evaluatorId: userId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
+      prisma.scheduledClass.findMany({ where: sessionFilter, include: { room: { select: { id: true, name: true, preferredName: true } } }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
     ]);
     const courseTitles = new Map((await prisma.course.findMany({
       where: { id: { in: [...new Set(sessions.map((s: any) => s.courseId))] } },
       select: { id: true, title: true },
     })).map((c: any) => [c.id, c.title]));
 
-    // Un bloque de disponibilidad "cubre" una clase si coinciden día y la
-    // clase cae dentro del rango horario declarado.
     const overlaps = (block: any, s: any) => block.dayOfWeek === s.dayOfWeek && s.startTime >= block.startTime && s.endTime <= block.endTime;
 
-    const items = blocks.map((b: any) => {
-      const matches = sessions.filter((s: any) => overlaps(b, s));
-      return {
-        dayOfWeek: b.dayOfWeek, dayLabel: DAY_LABEL[b.dayOfWeek],
-        blockStart: b.startTime, blockEnd: b.endTime,
-        classes: matches.map((s: any) => ({
-          courseId: s.courseId, courseTitle: courseTitles.get(s.courseId) ?? 'Curso eliminado',
-          startTime: s.startTime, endTime: s.endTime, academicPeriod: s.academicPeriod,
-          modality: s.modality, classType: s.classType, studentCount: s.studentIds.length,
-        })),
-      };
+    const evaluatorNameMap = new Map<string, string>();
+    if (isAdminRole && sessions.length > 0) {
+      const eIds = [...new Set(sessions.map((s: any) => s.evaluatorId))];
+      const profiles = await prisma.evaluatorProfile.findMany({ where: { userId: { in: eIds } }, select: { userId: true, name: true } });
+      for (const p of profiles) evaluatorNameMap.set(p.userId, p.name);
+    }
+
+    const mapSession = (s: any) => ({
+      courseId: s.courseId, courseTitle: courseTitles.get(s.courseId) ?? 'Curso eliminado',
+      startTime: s.startTime, endTime: s.endTime, academicPeriod: s.academicPeriod,
+      modality: s.modality, classType: s.classType, studentCount: s.studentIds.length,
+      roomName: s.room ? (s.room.preferredName || s.room.name) : undefined,
+      evaluatorName: evaluatorNameMap.get(s.evaluatorId),
     });
-    return ok({ items, hasAvailability: blocks.length > 0 });
+
+    const items = blocks.map((b: any) => ({
+      dayOfWeek: b.dayOfWeek, dayLabel: DAY_LABEL[b.dayOfWeek],
+      blockStart: b.startTime, blockEnd: b.endTime,
+      classes: sessions.filter((s: any) => overlaps(b, s)).map(mapSession),
+    }));
+
+    // Trello *LUX SCHEDULER* (Mack, 2026-09-18): "parece ser que hay evaluadores
+    // a quienes no les está mostrando los sábados como horario laborable" —
+    // incluir también sesiones asignadas en días sin bloque de disponibilidad
+    // declarado (p.ej. sábado presencial que se generó igual).
+    const coveredSessionIds = new Set(items.flatMap((item) => item.classes.map((c: any) => c.courseId + '#' + c.startTime + '#' + item.dayOfWeek)));
+    const orphansByDay = new Map<number, any[]>();
+    for (const s of sessions) {
+      const key = s.courseId + '#' + s.startTime + '#' + s.dayOfWeek;
+      if (!coveredSessionIds.has(key)) {
+        const arr = orphansByDay.get(s.dayOfWeek) ?? [];
+        arr.push(s);
+        orphansByDay.set(s.dayOfWeek, arr);
+      }
+    }
+    for (const [day, orphans] of orphansByDay.entries()) {
+      const sorted = orphans.sort((a: any, b: any) => a.startTime.localeCompare(b.startTime));
+      items.push({
+        dayOfWeek: day, dayLabel: DAY_LABEL[day],
+        blockStart: sorted[0].startTime, blockEnd: sorted[sorted.length - 1].endTime,
+        classes: sorted.map(mapSession),
+      });
+    }
+    items.sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.blockStart.localeCompare(b.blockStart));
+
+    return ok({ items, hasAvailability: blocks.length > 0 || sessions.length > 0 });
   }
 
   // ── POST /evaluator/calendar/events ─────────────────────────────────────────

@@ -14,6 +14,7 @@ import { TextToSpeechButton } from '@/components/shared/TextToSpeechButton';
 import { useLanguage } from '@/lib/i18n';
 import { LuxCarrouselPlayer } from './_components/LuxCarrouselPlayer';
 import { NotesPanel } from './_components/NotesPanel';
+import { ChallengeCard } from './_components/ChallengeCard';
 import { COLORS, stripMarkup, applyHighlightsToHtml, type HighlightItem } from './lessonHighlights';
 import { pickBgmTrack } from './_components/LuxCarrouselPlayer.helpers';
 
@@ -224,6 +225,9 @@ export default function LessonPage() {
   // chatbot"), same open/close convention as Chat and Forum below.
   const [notesOpen, setNotesOpen] = useState(false);
 
+  // Challenges (gamification — retos de atención)
+  const [challenges, setChallenges] = useState<any[]>([]);
+
   // Background music for text lessons (Trello DmPpbrff, 2026-09-05 — Mack:
   // "Agreguemos la opción de escuchar la música del sistema mientras se está en las
   // lecciones de texto"). Reuses the same curated library already built for the
@@ -260,11 +264,13 @@ export default function LessonPage() {
       api.courses.get(courseId),
       api.lessons.highlights(lessonId),
       api.lessons.favorites(),
-    ]).then(([courseRes, hlRes, favRes]) => {
+      api.lessons.challenges(lessonId).catch(() => ({ data: [] })),
+    ]).then(([courseRes, hlRes, favRes, challengeRes]) => {
       setCourse((courseRes as any).data);
       setHighlights((hlRes as any).data ?? []);
       const favs: any[] = (favRes as any).data ?? [];
       setIsFavorite(favs.some((f: any) => f?.id === lessonId));
+      setChallenges((challengeRes as any).data ?? (challengeRes as any) ?? []);
       setLoading(false);
       setTranslatingLang(false);
     }).catch(() => { setLoading(false); setTranslatingLang(false); });
@@ -599,10 +605,39 @@ export default function LessonPage() {
           {lesson.content ? (
             <>
               <TextToSpeechButton text={lesson.content} audioUrl={lesson.audioUrl} lessonId={lessonId} className="pb-1" />
-              <div
-                className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
-                dangerouslySetInnerHTML={{ __html: applyHighlightsToHtml(lesson.content, highlights) }}
-              />
+              {(() => {
+                const htmlWithHL = applyHighlightsToHtml(lesson.content, highlights);
+                const challenge = challenges.find((c) => c.lessonId === lessonId);
+                if (!challenge) {
+                  return (
+                    <div
+                      className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                      dangerouslySetInnerHTML={{ __html: htmlWithHL }}
+                    />
+                  );
+                }
+                // Split HTML at paragraphIndex to insert challenge inline
+                const splitIdx = challenge.paragraphIndex ?? 2;
+                const parts = htmlWithHL.split(/(?<=<\/(?:p|h[1-6]|div|blockquote)>)/i);
+                const breakAt = Math.min(Math.max(1, splitIdx), parts.length - 1);
+                const before = parts.slice(0, breakAt).join('');
+                const after = parts.slice(breakAt).join('');
+                return (
+                  <>
+                    <div
+                      className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                      dangerouslySetInnerHTML={{ __html: before }}
+                    />
+                    <ChallengeCard challenge={{ ...challenge, lessonId, moduleId }} />
+                    {after && (
+                      <div
+                        className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                        dangerouslySetInnerHTML={{ __html: after }}
+                      />
+                    )}
+                  </>
+                );
+              })()}
             </>
           ) : (
             <p className="text-gray-400 text-sm text-center py-8">{t.lessonPage.contentUnavailable}</p>

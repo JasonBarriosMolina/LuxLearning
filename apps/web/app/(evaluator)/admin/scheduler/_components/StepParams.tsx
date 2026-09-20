@@ -1,6 +1,7 @@
 'use client';
 
 import { RoomsManager } from './RoomsManager';
+import Link from 'next/link';
 
 const DAY_OPTIONS = [
   { value: 1, label: 'Lun' }, { value: 2, label: 'Mar' }, { value: 3, label: 'Mié' },
@@ -91,20 +92,12 @@ export function StepParams({
           <p className="text-xs font-semibold text-charcoal mb-1">Cursos virtuales</p>
           <DayPicker selected={virtualDays} onToggle={(d) => toggleDay('virtualDays', virtualDays, d)} />
         </div>
-        {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 20:57): "seguimos
-            teniendo ese problema: visualmente, no es correcto... en
-            horarios de días presenciales... están cortando las horas."
-            Antes la etiqueta larga y los inputs de hora iban en la misma
-            línea (w-24, más angosto que los de almuerzo) — se cortaba el
-            texto del <input type="time"> en pantallas más chicas. Ahora la
-            etiqueta va en su propia línea, igual que "Hora de almuerzo" más
-            abajo, con el mismo ancho w-28 que ahí sí funciona. */}
         <div className="pt-1">
           <p className="text-xs font-semibold text-charcoal mb-1">Horario de días presenciales</p>
           <div className="flex items-center gap-3 flex-wrap">
-            <input type="time" value={institutionalOpen} onChange={(e) => onChange({ institutionalOpen: e.target.value })} className="input-field w-28 text-sm py-1.5" />
+            <input type="time" value={institutionalOpen} onChange={(e) => onChange({ institutionalOpen: e.target.value })} className="input-field w-36" />
             <span className="text-gray-400 text-sm">–</span>
-            <input type="time" value={institutionalClose} onChange={(e) => onChange({ institutionalClose: e.target.value })} className="input-field w-28 text-sm py-1.5" />
+            <input type="time" value={institutionalClose} onChange={(e) => onChange({ institutionalClose: e.target.value })} className="input-field w-36" />
           </div>
         </div>
       </div>
@@ -112,9 +105,9 @@ export function StepParams({
       <div className="card space-y-3">
         <h2 className="font-heading font-semibold text-charcoal">Hora de almuerzo (bloqueo obligatorio)</h2>
         <div className="flex items-center gap-3">
-          <input type="time" value={lunchStart} onChange={(e) => onChange({ lunchStart: e.target.value })} className="input-field w-28" />
+          <input type="time" value={lunchStart} onChange={(e) => onChange({ lunchStart: e.target.value })} className="input-field w-36" />
           <span className="text-gray-400">–</span>
-          <input type="time" value={lunchEnd} onChange={(e) => onChange({ lunchEnd: e.target.value })} className="input-field w-28" />
+          <input type="time" value={lunchEnd} onChange={(e) => onChange({ lunchEnd: e.target.value })} className="input-field w-36" />
         </div>
         <p className="text-xs text-gray-400">Ninguna clase de los días presenciales puede partir este bloque.</p>
       </div>
@@ -128,11 +121,20 @@ export function StepParams({
         <p className="text-xs text-gray-400">El motor lo respeta cuando puede, pero permite clases seguidas si es la única forma de ubicarlas.</p>
       </div>
 
-      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-15, 15:36): "una de las cosas
-          importantes que debe existir en parámetros, tal vez como una
-          sección intermedia entre parámetros y cursos, son las aulas
-          disponibles." */}
-      <RoomsManager />
+      {/* Trello *LUX SCHEDULER* (Mack, 2026-09-16): "la opción de edificio y
+          todo eso sería mejor que se guarde en el perfil del administrador."
+          RoomsManager sigue disponible para edición completa ahí; acá solo
+          resumen de lectura + enlace rápido. */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading font-semibold text-charcoal text-sm">Aulas y Edificios</h2>
+          <Link href="/admin/profile#aulas" className="text-xs text-cta-from hover:underline">
+            Gestionar →
+          </Link>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">El catálogo completo se administra desde tu perfil. Los cambios aplican automáticamente al generar el horario.</p>
+        <RoomsManager readOnly />
+      </div>
     </div>
   );
 }

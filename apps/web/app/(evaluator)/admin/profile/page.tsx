@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useLanguage } from '@/lib/i18n';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { BuildingsSection } from './_components/BuildingsSection';
 
 interface ProfileData {
   username: string;
@@ -428,6 +429,15 @@ export default function AdminProfilePage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── Aulas y Edificios ── */}
+      <div className="card space-y-4">
+        <div>
+          <h2 className="font-heading font-semibold text-charcoal">Aulas y Edificios</h2>
+          <p className="text-sm text-gray-500">Catálogo de espacios físicos disponibles para cursos presenciales. Disponibles en el Scheduler.</p>
+        </div>
+        <BuildingsSection />
       </div>
 
       {/* ── Toast ── */}

@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 interface ScheduleClass {
   courseId: string; courseTitle: string; startTime: string; endTime: string;
   academicPeriod: string; modality: string; classType: string; studentCount: number;
+  roomName?: string; evaluatorName?: string;
 }
 interface ScheduleItem { dayOfWeek: number; dayLabel: string; blockStart: string; blockEnd: string; classes: ScheduleClass[] }
 
@@ -15,7 +16,7 @@ interface ScheduleItem { dayOfWeek: number; dayLabel: string; blockStart: string
 // un botón de 'Ver mi horario'... deben verse incluidas las clases y cursos
 // ya asignados. Si el curso aún no se ha creado, debería verse el espacio
 // como 'bloqueado'... 'Pendiente de asignar curso a esta franja horaria'."
-export function MyScheduleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function MyScheduleModal({ open, onClose, isAdmin = false }: { open: boolean; onClose: () => void; isAdmin?: boolean }) {
   const [items, setItems] = useState<ScheduleItem[]>([]);
   const [hasAvailability, setHasAvailability] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -30,12 +31,12 @@ export function MyScheduleModal({ open, onClose }: { open: boolean; onClose: () 
   }, [open]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Mi horario semanal">
+    <Modal open={open} onClose={onClose} title={isAdmin ? 'Horarios de clases publicados' : 'Mi horario semanal'}>
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando…</div>
       ) : !hasAvailability ? (
         <p className="text-sm text-gray-400 italic py-6 text-center">
-          No has declarado disponibilidad todavía — configúrala en tu perfil para que Lux Scheduler pueda asignarte clases.
+          {isAdmin ? 'No hay horarios publicados todavía.' : 'No has declarado disponibilidad todavía — configúrala en tu perfil para que Lux Scheduler pueda asignarte clases.'}
         </p>
       ) : (
         <div className="space-y-3 max-h-[60vh] overflow-y-auto">
@@ -48,7 +49,7 @@ export function MyScheduleModal({ open, onClose }: { open: boolean; onClose: () 
                     <div key={j} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 text-sm">
                       <div>
                         <p className="font-medium text-charcoal">{c.courseTitle}</p>
-                        <p className="text-xs text-gray-400">{c.startTime}–{c.endTime} · {c.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'} · {c.studentCount} estudiante{c.studentCount !== 1 ? 's' : ''} · {c.academicPeriod}</p>
+                        <p className="text-xs text-gray-400">{c.startTime}–{c.endTime} · {c.modality === 'PRESENCIAL' ? 'Presencial' : 'Virtual'} · {c.studentCount} estudiante{c.studentCount !== 1 ? 's' : ''} · {c.academicPeriod}{c.roomName ? ` · ${c.roomName}` : ''}{c.evaluatorName ? ` · ${c.evaluatorName}` : ''}</p>
                       </div>
                     </div>
                   ))}
