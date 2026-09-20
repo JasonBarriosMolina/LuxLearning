@@ -58,3 +58,15 @@ coverage/
 
 lambda-*.zip
 lambda-admin.zip
+
+# Bug hunter artifacts
+.bug-hunter/
+
+# Devbot & tooling artifacts
+.env.devbot
+.devbot-state.json
+scripts/.devbot-runner.ps1
+scripts/setup-devbot.ps1
+LUX_CONTEXT.md
+.serena/
+services/api/.env.test

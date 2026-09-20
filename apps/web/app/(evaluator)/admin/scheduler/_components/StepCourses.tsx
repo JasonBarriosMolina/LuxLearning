@@ -126,32 +126,18 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
       {courses.length === 0 ? (
         <p className="text-sm text-gray-400 italic py-4">Ningún curso con profesor asignado en este período.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-semibold text-gray-500">
-                <th className="py-2 pr-3">Curso</th>
-                <th className="py-2 pr-3">Profesor</th>
-                <th className="py-2 pr-3">Estudiantes</th>
-                <th className="py-2 pr-3">Modalidad</th>
-                <th className="py-2 pr-3">Tipo de clase</th>
-                <th className="py-2 sticky right-0 bg-white dark:bg-card"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {live.map((c) => (
-                <CourseRow
-                  key={c.id} course={c} override={overrides[c.id]} evaluators={evaluators} studentNames={studentNames} rooms={rooms}
-                  onUpdated={(patch) => onLoaded(courses.map((x) => (x.id === c.id ? { ...x, ...patch } : x)))}
-                  onOverrideChange={(patch) => onOverrideChange(c.id, patch)}
-                  onRemoveFromPlan={() => onLoaded(courses.filter((x) => x.id !== c.id))}
-                  onError={setRowError}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-2">
+          {live.map((c) => (
+            <CourseRow
+              key={c.id} course={c} override={overrides[c.id]} evaluators={evaluators} studentNames={studentNames} rooms={rooms}
+              onUpdated={(patch) => onLoaded(courses.map((x) => (x.id === c.id ? { ...x, ...patch } : x)))}
+              onOverrideChange={(patch) => onOverrideChange(c.id, patch)}
+              onRemoveFromPlan={() => onLoaded(courses.filter((x) => x.id !== c.id))}
+              onError={setRowError}
+            />
+          ))}
           {async_.length > 0 && (
-            <p className="text-xs text-gray-400 mt-3">{async_.length} curso(s) asincrónico(s) no requieren clase en vivo, se excluyen automáticamente.</p>
+            <p className="text-xs text-gray-400 mt-2">{async_.length} curso(s) asincrónico(s) no requieren clase en vivo, se excluyen automáticamente.</p>
           )}
         </div>
       )}
