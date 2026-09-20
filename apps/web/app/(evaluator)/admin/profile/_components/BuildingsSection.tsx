@@ -19,6 +19,7 @@ interface ClassRoomRow { id: string; name: string; capacity: number; buildingId:
 interface EditRoomState {
   name: string;
   capacity: string;
+  buildingId: string;
   floor: string;
   description: string;
   tags: string[];
@@ -45,7 +46,7 @@ export function BuildingsSection() {
   const [addingRoom, setAddingRoom] = useState(false);
 
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
-  const [editRoom, setEditRoom] = useState<EditRoomState>({ name: '', capacity: '', floor: '', description: '', tags: [] });
+  const [editRoom, setEditRoom] = useState<EditRoomState>({ name: '', capacity: '', buildingId: '', floor: '', description: '', tags: [] });
   const [savingRoom, setSavingRoom] = useState(false);
 
   const load = () => {
@@ -139,6 +140,7 @@ export function BuildingsSection() {
     setEditRoom({
       name: r.name,
       capacity: String(r.capacity),
+      buildingId: r.buildingId ?? '',
       floor: r.floor != null ? String(r.floor) : '',
       description: r.preferredName ?? '',
       tags: [...r.courseTypeTags],
@@ -153,13 +155,14 @@ export function BuildingsSection() {
       await api.admin.scheduler.rooms.update(id, {
         name: editRoom.name.trim(),
         capacity,
+        buildingId: editRoom.buildingId || null,
         floor: editRoom.floor ? Number(editRoom.floor) : null,
         preferredName: editRoom.description.trim() || null,
         courseTypeTags: editRoom.tags,
       });
       setRooms(rooms.map((r) =>
         r.id === id
-          ? { ...r, name: editRoom.name.trim(), capacity, floor: editRoom.floor ? Number(editRoom.floor) : null, preferredName: editRoom.description.trim() || null, courseTypeTags: editRoom.tags }
+          ? { ...r, name: editRoom.name.trim(), capacity, buildingId: editRoom.buildingId || null, floor: editRoom.floor ? Number(editRoom.floor) : null, preferredName: editRoom.description.trim() || null, courseTypeTags: editRoom.tags }
           : r
       ));
       setEditingRoomId(null);
@@ -266,6 +269,14 @@ export function BuildingsSection() {
                               onChange={(e) => setEditRoom((p) => ({ ...p, capacity: e.target.value }))}
                               placeholder="Aforo" className="input-field text-sm"
                             />
+                            <select
+                              value={editRoom.buildingId}
+                              onChange={(e) => setEditRoom((p) => ({ ...p, buildingId: e.target.value }))}
+                              className="input-field text-sm"
+                            >
+                              <option value="">— sin edificio —</option>
+                              {buildings.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
                             <input
                               type="number" value={editRoom.floor}
                               onChange={(e) => setEditRoom((p) => ({ ...p, floor: e.target.value }))}
@@ -274,7 +285,7 @@ export function BuildingsSection() {
                             <input
                               type="text" value={editRoom.description}
                               onChange={(e) => setEditRoom((p) => ({ ...p, description: e.target.value }))}
-                              placeholder="Descripción (opcional)" className="input-field text-sm"
+                              placeholder="Descripción (opcional)" className="input-field text-sm col-span-2"
                             />
                           </div>
                           <div>
