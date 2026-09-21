@@ -101,8 +101,8 @@ export default function PresentationPage() {
     <div className="max-w-5xl mx-auto space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
-        <Link href="/evaluator/my-courses" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-charcoal">
-          <ArrowLeft className="w-4 h-4" /> Mis cursos
+        <Link href={`/evaluator/courses/${courseId}/presentation`} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-charcoal">
+          <ArrowLeft className="w-4 h-4" /> Atrás
         </Link>
         <span className="text-xs font-semibold tracking-wide text-cta-from uppercase ml-auto">Lux Slides</span>
         <button
@@ -127,7 +127,7 @@ export default function PresentationPage() {
       {generating && (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-cta-from" />
-          <p className="text-sm text-gray-500">Generando presentación con IA…</p>
+          <p className="text-sm text-gray-500">Generando la presentación con Lux Mentor…</p>
         </div>
       )}
 
