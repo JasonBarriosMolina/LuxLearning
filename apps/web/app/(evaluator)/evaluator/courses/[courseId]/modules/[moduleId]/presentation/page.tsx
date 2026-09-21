@@ -15,11 +15,11 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  MAGISTRAL: 'bg-blue-900 text-blue-200',
-  QA: 'bg-indigo-900 text-indigo-200',
-  ACTIVITY: 'bg-teal-900 text-teal-200',
-  DISCUSSION: 'bg-violet-900 text-violet-200',
-  REFLECTION: 'bg-amber-900 text-amber-200',
+  MAGISTRAL: 'bg-blue-100 text-blue-800',
+  QA: 'bg-indigo-100 text-indigo-800',
+  ACTIVITY: 'bg-teal-100 text-teal-800',
+  DISCUSSION: 'bg-violet-100 text-violet-800',
+  REFLECTION: 'bg-amber-100 text-amber-800',
 };
 
 interface Slide {
@@ -135,40 +135,42 @@ export default function PresentationPage() {
         <>
           {/* Slide viewer */}
           <div
-            className="relative rounded-2xl overflow-hidden shadow-2xl"
-            style={{ aspectRatio: '16/9', background: '#0d1b2a' }}
+            className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-100"
+            style={{ aspectRatio: '16/9', background: '#ffffff' }}
           >
-            {/* Background image */}
+            {/* Background image — subtle decorative overlay */}
             {slide.imageUrl && (
               <div
-                className="absolute inset-0 bg-cover bg-center opacity-20"
+                className="absolute inset-0 bg-cover bg-center opacity-[0.07]"
                 style={{ backgroundImage: `url(${slide.imageUrl})` }}
               />
             )}
 
-            {/* Brand watermark — bottom-right, non-intrusive */}
-            <div className="absolute bottom-4 right-5 text-white/20 text-xs font-semibold tracking-widest uppercase select-none">
-              Lux Learning
-            </div>
+            {/* Lux Learning logo watermark — bottom-right */}
+            <img
+              src="/lux-logo-fullcolor.svg"
+              alt=""
+              className="absolute bottom-4 right-5 h-5 opacity-20 select-none pointer-events-none"
+            />
 
             {/* Time badge */}
             <div className="absolute top-5 left-5">
-              <span className={`text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full ${TYPE_COLORS[slide.type] ?? 'bg-gray-800 text-gray-300'}`}>
+              <span className={`text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full ${TYPE_COLORS[slide.type] ?? 'bg-gray-100 text-gray-600'}`}>
                 {slide.timeRange} min · {TYPE_LABELS[slide.type] ?? slide.type}
               </span>
             </div>
 
             {/* Slide counter */}
-            <div className="absolute top-5 right-5 text-white/40 text-xs font-mono">
+            <div className="absolute top-5 right-5 text-gray-300 text-xs font-mono">
               {current + 1} / {slides.length}
             </div>
 
             {/* Content */}
             <div className="absolute inset-0 flex flex-col items-center justify-center px-16 text-center gap-6">
-              <h1 className="text-3xl sm:text-4xl font-bold text-white leading-tight" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.8)' }}>
+              <h1 className="text-3xl sm:text-4xl font-bold text-charcoal leading-tight">
                 {slide.title}
               </h1>
-              <p className="text-base sm:text-lg text-white/80 leading-relaxed max-w-3xl" style={{ textShadow: '0 1px 8px rgba(0,0,0,0.7)' }}>
+              <p className="text-base sm:text-lg text-gray-600 leading-relaxed max-w-3xl">
                 {slide.content}
               </p>
             </div>
@@ -177,14 +179,14 @@ export default function PresentationPage() {
             <button
               onClick={() => { setCurrent((p) => Math.max(0, p - 1)); setRegenOpen(false); }}
               disabled={current === 0}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center transition-colors disabled:opacity-20"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
               onClick={() => { setCurrent((p) => Math.min(slides.length - 1, p + 1)); setRegenOpen(false); }}
               disabled={current === slides.length - 1}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center transition-colors disabled:opacity-20"
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -204,12 +206,12 @@ export default function PresentationPage() {
               <button
                 key={i}
                 onClick={() => { setCurrent(i); setRegenOpen(false); }}
-                className={`shrink-0 w-20 h-12 rounded-lg overflow-hidden border-2 transition-all ${i === current ? 'border-cta-from scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                style={{ background: '#0d1b2a' }}
+                className={`relative shrink-0 w-20 h-12 rounded-lg overflow-hidden border-2 transition-all ${i === current ? 'border-cta-from scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                style={{ background: '#f8f9fa' }}
               >
-                {s.imageUrl && <img src={s.imageUrl} alt="" className="w-full h-full object-cover opacity-30" />}
+                {s.imageUrl && <img src={s.imageUrl} alt="" className="w-full h-full object-cover opacity-20" />}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white text-[9px] font-bold px-1 text-center leading-tight">{s.title.slice(0, 20)}</span>
+                  <span className="text-charcoal text-[9px] font-bold px-1 text-center leading-tight">{s.title.slice(0, 20)}</span>
                 </div>
               </button>
             ))}
