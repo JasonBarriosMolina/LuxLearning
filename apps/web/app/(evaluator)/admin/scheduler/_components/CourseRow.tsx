@@ -227,7 +227,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
               <DoorOpen className="w-3.5 h-3.5" />
             </button>
           )}
-          {c.courseType === 'LIBRE' && modality === 'PRESENCIAL' && (
+          {(c.courseType === 'LIBRE' || c.courseType === 'CURSO_CORTO') && modality === 'PRESENCIAL' && (
             <button type="button" onClick={() => setDayOpen(!dayOpen)}
               title={ov.preferredDay ? `Día: ${['','Lun','Mar','Mié','Jue','Vie','Sáb'][ov.preferredDay]}` : 'Elegir día'}
               className={`p-1 rounded-lg ${ov.preferredDay ? 'text-violet-600 bg-violet-50' : 'text-gray-300 hover:text-gray-600'}`}
@@ -236,7 +236,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
             </button>
           )}
           {hybridOpen && (
-            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
+            <div className="absolute z-10 bottom-full left-0 mb-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
               <p className="text-[10px] text-gray-400 mb-1.5">Marcá quién asiste presencial (sábado) — el resto va virtual.</p>
               <div className="max-h-32 overflow-y-auto space-y-0.5">
                 {c.studentIds.length === 0 && <p className="text-xs text-gray-400 italic">Sin estudiantes matriculados todavía.</p>}
@@ -261,7 +261,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
             </div>
           )}
           {roomOpen && (
-            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
+            <div className="absolute z-10 bottom-full left-0 mb-1 p-2 bg-white border border-border rounded-lg shadow-lg w-56">
               <p className="text-[10px] text-gray-400 mb-1.5">Aula fija — bloquea ese horario para los demás cursos.</p>
               <select
                 value={c.preferredRoomId ?? ''}
@@ -275,7 +275,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
             </div>
           )}
           {dayOpen && (
-            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg w-44">
+            <div className="absolute z-10 bottom-full left-0 mb-1 p-2 bg-white border border-border rounded-lg shadow-lg w-44">
               <p className="text-[10px] text-gray-400 mb-1.5">Día en que se imparte este curso libre.</p>
               <select
                 value={ov.preferredDay ?? ''}
@@ -306,7 +306,7 @@ export function CourseRow({ course: c, override, evaluators, studentNames, rooms
             <Clock className="w-3.5 h-3.5" />
           </button>
           {durationOpen && (
-            <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-border rounded-lg shadow-lg flex items-center gap-1.5 whitespace-nowrap">
+            <div className="absolute z-10 bottom-full left-0 mb-1 p-2 bg-white border border-border rounded-lg shadow-lg flex items-center gap-1.5 whitespace-nowrap">
               <input
                 autoFocus type="number" min={15} max={240} placeholder="min"
                 value={ov.durationOverrideMin ?? ''}

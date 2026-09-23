@@ -87,7 +87,7 @@ export function StepStudents({ courses, studentNames, onCourseUpdated, onStudent
       // notificar el horario.
       await Promise.all(toAdd.map((userId) => api.admin.users.addEnrollment(userId, course.id, { silent: true })));
       onCourseUpdated(course.id, { studentIds: [...course.studentIds, ...toAdd], studentCount: course.studentCount + toAdd.length });
-      setOpenCourseId(null);
+      setChecked(new Set()); setSearch(''); setSelectedGroup(''); setExpandedListId(null);
     } catch (err: any) {
       setRowError(err?.message ?? 'No se pudo matricular a los estudiantes seleccionados.');
     } finally {
