@@ -29,6 +29,12 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
   const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null);
   const [editingBuildingName, setEditingBuildingName] = useState('');
 
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [editRoomName, setEditRoomName] = useState('');
+  const [editRoomCapacity, setEditRoomCapacity] = useState('');
+  const [editRoomBuildingId, setEditRoomBuildingId] = useState('');
+  const [savingRoom, setSavingRoom] = useState(false);
+
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [roomCapacity, setRoomCapacity] = useState('');
@@ -115,6 +121,29 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
     } finally {
       setAddingRoom(false);
     }
+  };
+
+  const handleUpdateRoom = async (id: string) => {
+    const name = editRoomName.trim();
+    const capacity = Number(editRoomCapacity);
+    if (!name || !capacity || capacity < 1) return;
+    setSavingRoom(true); setError('');
+    try {
+      const res = await api.admin.scheduler.rooms.update(id, { name, capacity, buildingId: editRoomBuildingId || null });
+      setRooms(rooms.map((r) => (r.id === id ? { ...r, ...(res as any).data } : r)));
+      setEditingRoomId(null);
+    } catch (err: any) {
+      setError(err?.message ?? 'No se pudo actualizar el aula.');
+    } finally {
+      setSavingRoom(false);
+    }
+  };
+
+  const startEditRoom = (r: ClassRoomRow) => {
+    setEditingRoomId(r.id);
+    setEditRoomName(r.name);
+    setEditRoomCapacity(String(r.capacity));
+    setEditRoomBuildingId(r.buildingId ?? '');
   };
 
   const handleDeleteRoom = async (id: string) => {
@@ -208,15 +237,50 @@ export function RoomsManager({ readOnly = false }: { readOnly?: boolean }) {
                 <tbody className="divide-y divide-border">
                   {gr.map((r) => (
                     <tr key={r.id}>
-                      <td className="py-1.5 pr-3 font-medium text-charcoal">
-                        {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
-                        {r.floor != null && <span className="text-gray-400 font-normal"> · piso {r.floor}</span>}
-                      </td>
-                      <td className="py-1.5 pr-3 text-gray-500">cap. {r.capacity}</td>
-                      <td className="py-1.5 pr-3 text-gray-500">{r.courseTypeTags.length ? r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ') : '—'}</td>
-                      {!readOnly && <td className="py-1.5">
-                        <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </td>}
+                      {editingRoomId === r.id ? (
+                        <>
+                          <td className="py-1.5 pr-2" colSpan={3}>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <input
+                                autoFocus type="text" value={editRoomName} onChange={(e) => setEditRoomName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateRoom(r.id); else if (e.key === 'Escape') setEditingRoomId(null); }}
+                                className="text-xs border border-gray-200 rounded-md px-1.5 py-0.5 w-24"
+                              />
+                              <select value={editRoomBuildingId} onChange={(e) => setEditRoomBuildingId(e.target.value)} className="text-xs border border-gray-200 rounded-md px-1.5 py-0.5">
+                                <option value="">— sin edificio —</option>
+                                {buildings.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                              </select>
+                              <input
+                                type="number" min={1} value={editRoomCapacity} onChange={(e) => setEditRoomCapacity(e.target.value)}
+                                placeholder="Aforo" className="text-xs border border-gray-200 rounded-md px-1.5 py-0.5 w-16"
+                              />
+                            </div>
+                          </td>
+                          <td className="py-1.5">
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => handleUpdateRoom(r.id)} disabled={savingRoom} className="p-0.5 text-emerald-500 hover:text-emerald-600 disabled:opacity-50">
+                                {savingRoom ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                              </button>
+                              <button onClick={() => setEditingRoomId(null)} className="p-0.5 text-gray-300 hover:text-gray-600"><XIcon className="w-3 h-3" /></button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-1.5 pr-3 font-medium text-charcoal">
+                            {r.name}{r.preferredName && <span className="text-gray-400 font-normal"> — {r.preferredName}</span>}
+                            {r.floor != null && <span className="text-gray-400 font-normal"> · piso {r.floor}</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-gray-500">cap. {r.capacity}</td>
+                          <td className="py-1.5 pr-3 text-gray-500">{r.courseTypeTags.length ? r.courseTypeTags.map((t) => COURSE_TYPE_LABELS[t] ?? t).join(', ') : '—'}</td>
+                          {!readOnly && <td className="py-1.5">
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => startEditRoom(r)} className="p-1 text-gray-300 hover:text-cta-from"><Pencil className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleDeleteRoom(r.id)} className="p-1 text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </td>}
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

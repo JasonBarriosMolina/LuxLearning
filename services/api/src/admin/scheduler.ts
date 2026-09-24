@@ -6,13 +6,14 @@
 // AI wizard) — the engine is pure in-memory greedy placement with no Bedrock/
 // external calls, so it completes in milliseconds even for dozens of courses;
 // wiring up a job+poll cycle here would add failure modes for no real benefit.
-import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { AdminGetUserCommand, AdminGetUserCommandOutput } from '@aws-sdk/client-cognito-identity-provider';
+import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getAllEnrollments } from '../shared/db-dynamo';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, notFound, buildContentDisposition } from '../shared/response';
-import { AdminCtx, isAuthorized, isAdmin, cognito, USER_POOL_ID, s3Client, S3_IMAGES_BUCKET } from './ctx';
+import { AdminCtx, isAuthorized, isAdmin, cognito, USER_POOL_ID, s3Client, S3_IMAGES_BUCKET, ses, FROM_EMAIL, FRONTEND_URL } from './ctx';
 import {
   generateScheduleProposals, findConflicts,
   type CourseInput, type TeacherInput, type CourseModality, type ClassType, type ScheduleProposal, type ScheduledSession,
@@ -94,7 +95,36 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       prisma.teacherAvailability.findMany({ where: { evaluatorId }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] }),
       prisma.teacherWorkload.findUnique({ where: { evaluatorId } }),
     ]);
-    return ok({ blocks, maxCoursesPerWeek: workload?.maxCoursesPerWeek ?? 5 });
+    const updatedAt = workload?.updatedAt ?? (blocks.length ? blocks[blocks.length - 1]!.createdAt : null);
+    return ok({ blocks, maxCoursesPerWeek: workload?.maxCoursesPerWeek ?? 5, updatedAt });
+  }
+
+  // ── POST /admin/teachers/:evaluatorId/availability/reminder ─────────────────
+  const reminderMatch = path.match(/^\/admin\/teachers\/([^/]+)\/availability\/reminder$/);
+  if (reminderMatch && method === 'POST') {
+    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    const evaluatorId = decodeURIComponent(reminderMatch[1]!);
+    let userRes: AdminGetUserCommandOutput;
+    try {
+      userRes = await cognito.send(new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: evaluatorId }));
+    } catch { return notFound('Evaluador no encontrado'); }
+    const emailAttr = userRes.UserAttributes?.find((a) => a.Name === 'email')?.Value;
+    const nameAttr = userRes.UserAttributes?.find((a) => a.Name === 'name')?.Value ?? evaluatorId;
+    if (!emailAttr) return badRequest('El evaluador no tiene email registrado');
+    await ses.send(new SendEmailCommand({
+      Source: FROM_EMAIL,
+      Destination: { ToAddresses: [emailAttr] },
+      Message: {
+        Subject: { Data: 'Recordatorio: Actualiza tu disponibilidad en Lux Learning', Charset: 'UTF-8' },
+        Body: { Html: { Charset: 'UTF-8', Data: `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+<h2 style="color:#17527E;">Hola ${nameAttr},</h2>
+<p style="color:#555;line-height:1.6;">El equipo de Lux Learning te recuerda que debes actualizar tu <strong>disponibilidad de horarios</strong> en la plataforma para que el Lux Scheduler pueda asignarte los mejores horarios de clase.</p>
+<p style="color:#555;line-height:1.6;">Si no actualizas tu disponibilidad, los cursos te serán asignados según el criterio de la institución.</p>
+<a href="${FRONTEND_URL}/evaluator/profile" style="display:inline-block;background:linear-gradient(135deg,#00B4D8,#17527E);color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;margin-top:16px;">Actualizar disponibilidad</a>
+<p style="color:#9ca3af;font-size:12px;margin-top:24px;">Lux Learning Team</p></div>` } },
+      },
+    }));
+    return ok({ sent: true, to: emailAttr });
   }
 
   // ── PUT /admin/teachers/:evaluatorId/availability — full replace ────────────
@@ -103,13 +133,14 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const evaluatorId = decodeURIComponent(availMatch[1]!);
     const callerId = event.requestContext.authorizer?.lambda?.userId;
     if (!isAdmin(event) && callerId !== evaluatorId) return forbidden('Solo podés editar tu propia disponibilidad');
-    const { blocks, maxCoursesPerWeek } = body as { blocks?: { dayOfWeek: number; startTime: string; endTime: string }[]; maxCoursesPerWeek?: number };
+    const { blocks, maxCoursesPerWeek } = body as { blocks?: { dayOfWeek: number; startTime: string; endTime: string; modality?: string }[]; maxCoursesPerWeek?: number };
     if (!Array.isArray(blocks)) return badRequest('blocks es requerido (array)');
     for (const b of blocks) {
       if (typeof b.dayOfWeek !== 'number' || b.dayOfWeek < 0 || b.dayOfWeek > 6) return badRequest('dayOfWeek inválido (0-6)');
       if (!/^\d{2}:\d{2}$/.test(b.startTime) || !/^\d{2}:\d{2}$/.test(b.endTime) || b.startTime >= b.endTime) {
         return badRequest('startTime/endTime inválidos');
       }
+      if (b.modality && !['VIRTUAL', 'PRESENTIAL'].includes(b.modality)) return badRequest('modality debe ser VIRTUAL o PRESENTIAL');
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15, revertido el mismo día):
       // "creo que vamos a eliminar la regla... de que sea a partir de las 6
       // de la tarde específicamente, como una hora exacta. Vamos a hacerlo
@@ -168,7 +199,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
   // el propio Lux Scheduler es quien va a resolver ese horario.
   if (path === '/admin/scheduler/courses' && method === 'POST') {
     if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
-    const { academicPeriod, title, evaluatorId } = body as { academicPeriod?: string; title?: string; evaluatorId?: string };
+    const { academicPeriod, title, evaluatorId, numberOfLessons } = body as { academicPeriod?: string; title?: string; evaluatorId?: string; numberOfLessons?: number };
     if (!academicPeriod?.trim()) return badRequest('academicPeriod es requerido');
     if (!title?.trim()) return badRequest('title es requerido');
     if (!evaluatorId?.trim()) return badRequest('evaluatorId es requerido');
@@ -182,13 +213,15 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       data: {
         title: title.trim(), slug, description: '', evaluatorId, academicPeriod,
         isDraft: true, isActive: false,
+        ...(numberOfLessons && numberOfLessons > 0 ? { totalWeeks: numberOfLessons } : {}),
       },
-      select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true },
+      select: { id: true, title: true, evaluatorId: true, modality: true, courseType: true, totalWeeks: true },
     });
     const teacherName = await resolveDisplayName(evaluatorId);
     return ok({
       id: course.id, title: course.title, evaluatorId: course.evaluatorId, teacherName,
-      modality: course.modality, engineModality: toEngineModality(course.modality), courseType: course.courseType, studentIds: [], studentCount: 0,
+      modality: course.modality, engineModality: toEngineModality(course.modality), courseType: course.courseType,
+      totalWeeks: course.totalWeeks ?? null, studentIds: [], studentCount: 0,
     });
   }
 
@@ -228,7 +261,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       evaluatorId,
       availability: availabilityRows
         .filter((a: any) => a.evaluatorId === evaluatorId)
-        .map((a: any) => ({ dayOfWeek: a.dayOfWeek, startTime: a.startTime, endTime: a.endTime })),
+        .map((a: any) => ({ dayOfWeek: a.dayOfWeek, startTime: a.startTime, endTime: a.endTime, modality: a.modality ?? 'VIRTUAL' })),
       maxCoursesPerWeek: workloadByTeacher.get(evaluatorId) ?? 5,
     }));
 

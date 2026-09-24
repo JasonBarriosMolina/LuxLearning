@@ -43,6 +43,7 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
   const [rowError, setRowError] = useState('');
+  const [newLessons, setNewLessons] = useState<string>('');
   const [studentNames, setStudentNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -78,7 +79,8 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
     if (!newTitle.trim() || !newEvaluatorId) return;
     setAdding(true); setAddError('');
     try {
-      const res = await api.admin.scheduler.createCourse({ academicPeriod, title: newTitle.trim(), evaluatorId: newEvaluatorId });
+      const numberOfLessons = newLessons.trim() ? Number(newLessons) : undefined;
+      const res = await api.admin.scheduler.createCourse({ academicPeriod, title: newTitle.trim(), evaluatorId: newEvaluatorId, numberOfLessons });
       const created = (res as any).data;
       onLoaded([...courses, created]);
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "por defecto... que sea
@@ -86,7 +88,7 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
       // ser grupal" — un curso recién creado tiene 0 estudiantes, así que el
       // fallback por conteo (studentCount>1) lo dejaría en Individual.
       onOverrideChange(created.id, { classType: 'GRUPAL' });
-      setNewTitle(''); setNewEvaluatorId(''); setShowAdd(false);
+      setNewTitle(''); setNewEvaluatorId(''); setNewLessons(''); setShowAdd(false);
     } catch (err: any) {
       setAddError(err?.message ?? 'No se pudo crear el curso.');
     } finally {
@@ -156,6 +158,14 @@ export function StepCourses({ academicPeriod, courses, overrides, onLoaded, onOv
             <option value="">— Seleccionar profesor —</option>
             {evaluators.map((e) => <option key={e.username} value={e.username}>{e.name}</option>)}
           </select>
+          <div className="flex items-center gap-2">
+            <input
+              type="number" min={1} max={200} placeholder="Número de lecciones (opcional)"
+              value={newLessons} onChange={(e) => setNewLessons(e.target.value)}
+              className="input-field text-sm py-1.5 flex-1"
+            />
+            <span className="text-xs text-gray-400 whitespace-nowrap">para determinar duración</span>
+          </div>
           {addError && <p className="text-xs text-red-500">{addError}</p>}
           <div className="flex gap-2 justify-end">
             <button onClick={() => { setShowAdd(false); setNewTitle(''); setNewEvaluatorId(''); }} className="text-xs text-gray-400 hover:text-gray-700 px-2">Cancelar</button>

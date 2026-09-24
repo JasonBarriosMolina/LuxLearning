@@ -140,14 +140,11 @@ export default function MyCoursesPage() {
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2 border-t border-border" ref={openMenu === course.id ? menuRef : undefined}>
                 <Link
-                  href={`/evaluator/reflections?courseId=${course.id}`}
+                  href={`/admin/attendance/${course.id}`}
                   className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-cta-from text-white text-xs font-semibold hover:opacity-90 transition-opacity"
                 >
-                  <ClipboardList className="w-3.5 h-3.5" />
-                  {t.evaluator.viewReflections}
-                  {course.pendingReflections > 0 && (
-                    <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]">{course.pendingReflections}</span>
-                  )}
+                  <CalendarCheck2 className="w-3.5 h-3.5" />
+                  Asistencia
                 </Link>
 
                 {/* 3-dot menu */}

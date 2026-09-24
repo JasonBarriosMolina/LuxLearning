@@ -8,7 +8,7 @@
 
 export const adminDashboardEs = {
   adminDashboard: {
-    title: 'Panel del Administrador',
+    title: 'Dashboard del Administrador',
     evaluatorMetricsTitle: 'Evaluadores',
     colEvaluator: 'Evaluador',
     colCourses: 'Cursos',

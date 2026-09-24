@@ -613,12 +613,14 @@ export const api = {
     // Lux Scheduler (Trello *LUX SCHEDULER*, 2026-09-10)
     teachers: {
       getAvailability: (evaluatorId: string) => request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`),
-      setAvailability: (evaluatorId: string, body: { blocks: { dayOfWeek: number; startTime: string; endTime: string }[]; maxCoursesPerWeek: number }) =>
+      setAvailability: (evaluatorId: string, body: { blocks: { dayOfWeek: number; startTime: string; endTime: string; modality?: string }[]; maxCoursesPerWeek: number }) =>
         request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability`, { method: 'PUT', body: JSON.stringify(body) }),
+      sendAvailabilityReminder: (evaluatorId: string) =>
+        request<any>(`/admin/teachers/${encodeURIComponent(evaluatorId)}/availability/reminder`, { method: 'POST', body: JSON.stringify({}) }),
     },
     scheduler: {
       courses: (academicPeriod: string) => request<any>(`/admin/scheduler/courses?academicPeriod=${encodeURIComponent(academicPeriod)}`),
-      createCourse: (body: { academicPeriod: string; title: string; evaluatorId: string }) =>
+      createCourse: (body: { academicPeriod: string; title: string; evaluatorId: string; numberOfLessons?: number }) =>
         request<any>('/admin/scheduler/courses', { method: 'POST', body: JSON.stringify(body) }),
       generate: (body: {
         academicPeriod: string;

@@ -17,7 +17,7 @@ export async function handleCourses(ctx: EvalCtx): Promise<any | null> {
     const lang = ['en', 'es'].includes(rawLang) ? rawLang : 'es';
 
     const courses = await prisma.course.findMany({
-      where: { evaluatorId: userId },
+      where: isAdminRole ? {} : { evaluatorId: userId },
       include: { modules: { select: { id: true, title: true, order: true } } },
       orderBy: { createdAt: 'desc' },
     });
