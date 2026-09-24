@@ -86,6 +86,7 @@ model TeacherAvailability {
   dayOfWeek   Int      // 0=Domingo .. 6=Sábado
   startTime   String   // "08:00" (HH:mm, 24h)
   endTime     String   // "12:00"
+  modality    String   @default("VIRTUAL") // "VIRTUAL" | "PRESENTIAL"
   createdAt   DateTime @default(now())
 
   @@index([evaluatorId])

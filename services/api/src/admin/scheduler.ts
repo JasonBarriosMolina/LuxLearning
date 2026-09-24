@@ -103,13 +103,14 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const evaluatorId = decodeURIComponent(availMatch[1]!);
     const callerId = event.requestContext.authorizer?.lambda?.userId;
     if (!isAdmin(event) && callerId !== evaluatorId) return forbidden('Solo podés editar tu propia disponibilidad');
-    const { blocks, maxCoursesPerWeek } = body as { blocks?: { dayOfWeek: number; startTime: string; endTime: string }[]; maxCoursesPerWeek?: number };
+    const { blocks, maxCoursesPerWeek } = body as { blocks?: { dayOfWeek: number; startTime: string; endTime: string; modality?: string }[]; maxCoursesPerWeek?: number };
     if (!Array.isArray(blocks)) return badRequest('blocks es requerido (array)');
     for (const b of blocks) {
       if (typeof b.dayOfWeek !== 'number' || b.dayOfWeek < 0 || b.dayOfWeek > 6) return badRequest('dayOfWeek inválido (0-6)');
       if (!/^\d{2}:\d{2}$/.test(b.startTime) || !/^\d{2}:\d{2}$/.test(b.endTime) || b.startTime >= b.endTime) {
         return badRequest('startTime/endTime inválidos');
       }
+      if (b.modality && !['VIRTUAL', 'PRESENTIAL'].includes(b.modality)) return badRequest('modality debe ser VIRTUAL o PRESENTIAL');
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15, revertido el mismo día):
       // "creo que vamos a eliminar la regla... de que sea a partir de las 6
       // de la tarde específicamente, como una hora exacta. Vamos a hacerlo
@@ -228,7 +229,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       evaluatorId,
       availability: availabilityRows
         .filter((a: any) => a.evaluatorId === evaluatorId)
-        .map((a: any) => ({ dayOfWeek: a.dayOfWeek, startTime: a.startTime, endTime: a.endTime })),
+        .map((a: any) => ({ dayOfWeek: a.dayOfWeek, startTime: a.startTime, endTime: a.endTime, modality: a.modality ?? 'VIRTUAL' })),
       maxCoursesPerWeek: workloadByTeacher.get(evaluatorId) ?? 5,
     }));
 

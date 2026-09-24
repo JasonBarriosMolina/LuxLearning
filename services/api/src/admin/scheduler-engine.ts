@@ -15,6 +15,7 @@ export interface AvailabilityBlock {
   dayOfWeek: number; // 0=Sunday .. 6=Saturday
   startTime: string; // "HH:mm" 24h
   endTime: string;
+  modality?: 'VIRTUAL' | 'PRESENTIAL'; // undefined = applies to both (backward compat)
 }
 
 export interface TeacherInput {
@@ -161,8 +162,14 @@ function intersectWindows(a: Window[], b: Window[]): Window[] {
 /** Free windows for a teacher on a given day, before subtracting already-booked slots. */
 function baseWindowsForDay(
   teacher: TeacherInput, dayOfWeek: number, lunch: LunchBreak,
-  presencialDays: number[], institutionalOpen: string, institutionalClose: string
+  presencialDays: number[], institutionalOpen: string, institutionalClose: string,
+  courseModality?: CourseModality
 ): Window[] {
+  // Blocks without a modality (legacy) apply to both course types (backward compat).
+  const matchesModality = (b: AvailabilityBlock) =>
+    !b.modality || !courseModality ||
+    (courseModality === 'PRESENCIAL' ? b.modality === 'PRESENTIAL' : b.modality === 'VIRTUAL');
+
   if (presencialDays.includes(dayOfWeek)) {
     const institutional = subtractWindow(
       [{ start: toMinutes(institutionalOpen), end: toMinutes(institutionalClose) }],
@@ -175,8 +182,10 @@ function baseWindowsForDay(
     // default behavior); one who did narrows it to their own blocks
     // intersected with the institutional window minus lunch — so declaring
     // "solo 8-11" actually excludes the rest of that day.
+    // Trello DmPpbrff (Mack, 2026-09-24): split availability into VIRTUAL and PRESENTIAL
+    // categories — only PRESENTIAL blocks (or untagged legacy blocks) narrow the window here.
     const dayBlocks = teacher.availability
-      .filter((b) => b.dayOfWeek === dayOfWeek)
+      .filter((b) => b.dayOfWeek === dayOfWeek && matchesModality(b))
       .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }));
     return dayBlocks.length ? intersectWindows(institutional, dayBlocks) : institutional;
   }
@@ -185,7 +194,7 @@ function baseWindowsForDay(
   // usar el bloque declarado por el profesor tal cual, sin recortarlo. 6pm
   // sigue siendo la hora sugerida en el perfil, ya no una validación.
   return teacher.availability
-    .filter((b) => b.dayOfWeek === dayOfWeek)
+    .filter((b) => b.dayOfWeek === dayOfWeek && matchesModality(b))
     .map((b) => ({ start: toMinutes(b.startTime), end: toMinutes(b.endTime) }))
     .filter((w) => w.end > w.start);
 }
@@ -249,7 +258,7 @@ function placeCourse(
   // Two passes: first require the soft gap, then relax it if nothing fit.
   for (const requireGap of [true, false]) {
     for (const day of days) {
-      const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose);
+      const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose, course.modality);
       for (const w of free) {
         for (let start = w.start; start + duration <= w.end; start += SLOT_STEP_MIN) {
           const candidate: Window = { start, end: start + duration };
@@ -304,7 +313,7 @@ function diagnoseFailure(
   let studentBusyCount = 0;
 
   for (const day of days) {
-    const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose);
+    const free = baseWindowsForDay(teacher, day, lunch, presencialDays, institutionalOpen, institutionalClose, course.modality);
     if (free.length) anyWindow = true;
     for (const w of free) {
       if (w.end - w.start >= duration) anyWindowFitsDuration = true;
