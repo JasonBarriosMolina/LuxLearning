@@ -44,7 +44,7 @@ describe('handleScheduler — teacher availability', () => {
     const res = await handleScheduler(ctx as any);
     const body = await bodyOf(res);
     expect(res.statusCode).toBe(200);
-    expect(body.data).toEqual({ blocks: [], maxCoursesPerWeek: 5 });
+    expect(body.data).toEqual({ blocks: [], maxCoursesPerWeek: 5, updatedAt: null });
   });
 
   it('PUT replaces blocks and upserts the workload cap in a transaction', async () => {
@@ -474,7 +474,7 @@ describe('handleScheduler — GET /admin/scheduler/courses (Paso 3 preview)', ()
 
 describe('handleScheduler — POST /admin/scheduler/courses (Paso 3, curso aún no creado)', () => {
   it('creates a draft Course with just title + evaluator, no schedule fields', async () => {
-    const create = vi.fn().mockResolvedValue({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', modality: null });
+    const create = vi.fn().mockResolvedValue({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', modality: null, totalWeeks: null });
     const prisma = makePrisma({ course: { create } });
     const ctx = makeAdminCtx({
       event: makeEvent('ADMIN', 'POST', '/admin/scheduler/courses'),
@@ -487,7 +487,7 @@ describe('handleScheduler — POST /admin/scheduler/courses (Paso 3, curso aún 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ title: 'Curso Nuevo', evaluatorId: 'eval-1', academicPeriod: '2026-2', isDraft: true, isActive: false, description: '' }),
     }));
-    expect(body.data).toEqual({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: null, engineModality: 'VIRTUAL', studentIds: [], studentCount: 0 });
+    expect(body.data).toEqual({ id: 'new-course', title: 'Curso Nuevo', evaluatorId: 'eval-1', teacherName: 'Prof Test', modality: null, engineModality: 'VIRTUAL', totalWeeks: null, studentIds: [], studentCount: 0 });
   });
 
   it('returns 400 when title is missing', async () => {
