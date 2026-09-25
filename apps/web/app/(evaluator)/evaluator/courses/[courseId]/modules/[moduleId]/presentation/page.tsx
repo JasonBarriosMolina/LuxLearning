@@ -310,7 +310,7 @@ export default function PresentationPage() {
             <img
               src="/lux-logo-fullcolor.svg"
               alt=""
-              className="absolute bottom-4 right-5 h-5 opacity-20 select-none pointer-events-none z-20"
+              className="absolute bottom-4 right-5 h-10 opacity-40 select-none pointer-events-none z-20"
             />
 
             {/* Type badge */}
