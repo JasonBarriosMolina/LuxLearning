@@ -39,7 +39,8 @@ interface Slide {
 }
 
 function sanitizeContent(text: string): string {
-  return text.replace(/^(GANCHO|DESARROLLO|CIERRE|HOOK|DEVELOP|CLOSE)\s*:/gi, '').trim();
+  // Strip everything from any speaker-note marker onwards (catches leaked GANCHO/DESARROLLO/CIERRE structure)
+  return text.replace(/\b(GANCHO|DESARROLLO|CIERRE|HOOK|DEVELOP|CLOSE)\s*:[\s\S]*/gi, '').trim();
 }
 
 function parseNotes(notes: string) {
