@@ -38,6 +38,10 @@ interface Slide {
   watchPoints?: string[];
 }
 
+function sanitizeContent(text: string): string {
+  return text.replace(/^(GANCHO|DESARROLLO|CIERRE|HOOK|DEVELOP|CLOSE)\s*:/gi, '').trim();
+}
+
 function parseNotes(notes: string) {
   const sections: { label: string; text: string }[] = [];
   const patterns = [
@@ -112,12 +116,12 @@ function SlideContent({ slide }: { slide: Slide }) {
         {/* Text left */}
         <div className="flex-1 flex flex-col justify-center gap-4 px-10 py-8">
           <h2 className="text-2xl font-bold text-charcoal leading-tight">{slide.title}</h2>
-          {slide.content && <p className="text-sm text-gray-500 leading-relaxed">{slide.content}</p>}
+          {slide.content && <p className="text-sm text-gray-500 leading-relaxed">{sanitizeContent(slide.content)}</p>}
           <ul className="space-y-2">
             {slide.bullets!.map((b, i) => (
               <li key={i} className="flex gap-2.5 items-start">
                 <span className="mt-1 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-cta-from" />
-                <span className="text-sm sm:text-base text-gray-700 leading-snug">{b}</span>
+                <span className="text-sm sm:text-base text-gray-700 leading-snug">{sanitizeContent(b)}</span>
               </li>
             ))}
           </ul>
@@ -142,7 +146,7 @@ function SlideContent({ slide }: { slide: Slide }) {
           {slide.bullets!.map((b, i) => (
             <li key={i} className="flex gap-3 items-start">
               <span className="mt-1.5 flex-shrink-0 w-2 h-2 rounded-full bg-cta-from" />
-              <span className="text-base sm:text-lg text-gray-700 leading-snug">{b}</span>
+              <span className="text-base sm:text-lg text-gray-700 leading-snug">{sanitizeContent(b)}</span>
             </li>
           ))}
         </ul>
@@ -157,7 +161,7 @@ function SlideContent({ slide }: { slide: Slide }) {
       )}
       <div className="absolute inset-0 flex flex-col items-center justify-center px-16 text-center gap-6">
         <h1 className="text-3xl sm:text-4xl font-bold text-charcoal leading-tight">{slide.title}</h1>
-        <p className="text-base sm:text-lg text-gray-600 leading-relaxed max-w-3xl">{slide.content}</p>
+        <p className="text-base sm:text-lg text-gray-600 leading-relaxed max-w-3xl">{sanitizeContent(slide.content)}</p>
       </div>
     </>
   );
