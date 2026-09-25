@@ -61,7 +61,8 @@ async function fetchYouTubeVideo(keywords: string): Promise<string | null> {
   if (!YOUTUBE_KEY) return null;
   try {
     const q = encodeURIComponent(keywords);
-    const url = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&order=rating&maxResults=5&key=${YOUTUBE_KEY}`;
+    // videoDuration=medium excludes Shorts (<4 min) and very long videos (>20 min)
+    const url = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&order=relevance&maxResults=5&key=${YOUTUBE_KEY}`;
     const res = await fetch(url);
     const data = await res.json() as any;
     return data?.items?.[0]?.id?.videoId ?? null;
@@ -86,21 +87,23 @@ Estructura obligatoria:
 Reglas:
 - Tono académico-profesional, sin emojis en contenido.
 - content y bullets son texto visible en la diapositiva: NUNCA incluyas instrucciones al orador ahí (esas van solo en speakerNotes).
+- Títulos PROHIBIDOS (nunca usar en title ni content): "Bienvenida", "Bienvenidos", "Debate socrático", "Reflexión obligatoria", "Pregunta socrática". Los títulos deben ser temáticos y descriptivos del módulo.
 - Para imageKeywords: 2-3 palabras en inglés (búsqueda Pexels).
 - Para videoSearchTerms (solo tipo VIDEO): términos de búsqueda en inglés para YouTube educativo.
 - bullets: array de 3-5 puntos cortos (solo para MAGISTRAL, DISCUSSION, CONCLUSION).
-- speakerNotes: formato "GANCHO: texto. DESARROLLO: texto. CIERRE: pregunta de debate."
+- speakerNotes: SOLO para el orador, NO visible en pantalla. Formato exacto: "GANCHO: una oración. DESARROLLO: una oración. CIERRE: una pregunta." — todo en una sola cadena de texto plano, sin saltos de línea.
 - watchPoints (solo VIDEO): array de 2-3 frases "Observa cómo..." para guiar la atención.
+- CRÍTICO: el campo "content" debe ser UNA SOLA frase o párrafo corto para el público. NUNCA incluyas "GANCHO:", "DESARROLLO:", "CIERRE:" ni ninguna etiqueta de orador en content ni en bullets.
 
 Devuelve ÚNICAMENTE un JSON array, sin markdown:
 [{
   "index": 0,
   "type": "MAGISTRAL",
   "timeRange": "00-05",
-  "title": "Título",
-  "content": "Texto principal (máx 40 palabras)",
-  "bullets": ["Punto clave 1", "Punto clave 2", "Punto clave 3"],
-  "speakerNotes": "GANCHO: cómo abrir. DESARROLLO: qué enfatizar. CIERRE: pregunta.",
+  "title": "Título temático del módulo",
+  "content": "Una frase de apertura para la audiencia (máx 30 palabras).",
+  "bullets": ["Concepto clave 1", "Concepto clave 2", "Concepto clave 3"],
+  "speakerNotes": "GANCHO: cómo captar atención. DESARROLLO: qué enfatizar. CIERRE: pregunta para el grupo.",
   "imageKeywords": "corporate training"
 }]`
     : `You are an expert instructional designer for corporate training.
@@ -118,21 +121,23 @@ Required structure:
 Rules:
 - Professional academic tone, no emojis in content.
 - content and bullets are text visible on the slide: NEVER include presenter instructions there (those go only in speakerNotes).
+- FORBIDDEN titles (never use in title or content): "Welcome", "Socratic debate", "Mandatory reflection", "Socratic question". Titles must be thematic and descriptive of the module topic.
 - imageKeywords: 2-3 English words for Pexels search.
 - videoSearchTerms (VIDEO type only): English search terms for YouTube educational search.
 - bullets: array of 3-5 short points (MAGISTRAL, DISCUSSION, CONCLUSION only).
-- speakerNotes: format "HOOK: text. DEVELOP: text. CLOSE: debate question."
+- speakerNotes: ONLY for the speaker, NOT visible on screen. Exact format: "HOOK: one sentence. DEVELOP: one sentence. CLOSE: one question." — all in a single plain text string, no line breaks.
 - watchPoints (VIDEO only): array of 2-3 "Notice how..." phrases.
+- CRITICAL: the "content" field must be ONE short phrase or paragraph for the audience. NEVER include "HOOK:", "DEVELOP:", "CLOSE:" or any speaker labels in content or bullets.
 
 Return ONLY a JSON array, no markdown:
 [{
   "index": 0,
   "type": "MAGISTRAL",
   "timeRange": "00-05",
-  "title": "Slide title",
-  "content": "Main text (max 40 words)",
-  "bullets": ["Key point 1", "Key point 2", "Key point 3"],
-  "speakerNotes": "HOOK: how to open. DEVELOP: what to emphasize. CLOSE: question.",
+  "title": "Thematic slide title",
+  "content": "One opening sentence for the audience (max 30 words).",
+  "bullets": ["Key concept 1", "Key concept 2", "Key concept 3"],
+  "speakerNotes": "HOOK: how to capture attention. DEVELOP: what to emphasize. CLOSE: question for the group.",
   "imageKeywords": "corporate training"
 }]`;
 
