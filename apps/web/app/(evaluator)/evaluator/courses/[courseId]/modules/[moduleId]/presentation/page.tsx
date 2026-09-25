@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Sparkles, RefreshCw, ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, RefreshCw, ChevronLeft, ChevronRight, Loader2, Send, Maximize2, Minimize2 } from 'lucide-react';
 import { api } from '@/lib/api';
 
 const TYPE_LABELS: Record<string, string> = {
   MAGISTRAL: 'Clase magistral',
-  QA: 'Preguntas y respuestas',
+  QA: 'Preguntas de Análisis',
   ACTIVITY: 'Actividad',
-  DISCUSSION: 'Discusión',
-  REFLECTION: 'Reflexión y cierre',
+  DISCUSSION: 'Preguntas de Análisis',
+  CONCLUSION: 'Conclusión Clave',
+  VIDEO: 'Recurso audiovisual',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -19,7 +20,8 @@ const TYPE_COLORS: Record<string, string> = {
   QA: 'bg-indigo-100 text-indigo-800',
   ACTIVITY: 'bg-teal-100 text-teal-800',
   DISCUSSION: 'bg-violet-100 text-violet-800',
-  REFLECTION: 'bg-amber-100 text-amber-800',
+  CONCLUSION: 'bg-amber-100 text-amber-800',
+  VIDEO: 'bg-rose-100 text-rose-800',
 };
 
 interface Slide {
@@ -28,9 +30,137 @@ interface Slide {
   timeRange: string;
   title: string;
   content: string;
+  bullets?: string[];
   speakerNotes: string;
   imageUrl: string | null;
   imageCredit: string | null;
+  videoId?: string | null;
+  watchPoints?: string[];
+}
+
+function parseNotes(notes: string) {
+  const sections: { label: string; text: string }[] = [];
+  const patterns = [
+    { label: 'Gancho', key: /GANCHO:/i },
+    { label: 'Desarrollo', key: /DESARROLLO:/i },
+    { label: 'Cierre', key: /CIERRE:/i },
+    { label: 'Hook', key: /HOOK:/i },
+    { label: 'Develop', key: /DEVELOP:/i },
+    { label: 'Close', key: /CLOSE:/i },
+  ];
+  let remaining = notes;
+  const found = patterns.filter(p => p.key.test(remaining));
+  if (!found.length) return [{ label: '', text: notes }];
+  for (let i = 0; i < found.length; i++) {
+    const start = remaining.search(found[i].key);
+    const end = i + 1 < found.length ? remaining.search(found[i + 1].key) : remaining.length;
+    const text = remaining.slice(start).replace(found[i].key, '').slice(0, end - start).trim().replace(/\.$/, '').trim();
+    sections.push({ label: found[i].label, text });
+  }
+  return sections;
+}
+
+function SlideContent({ slide }: { slide: Slide }) {
+  const isVideo = slide.type === 'VIDEO';
+  const hasBullets = slide.bullets && slide.bullets.length > 0;
+  const hasImage = !!slide.imageUrl;
+
+  if (isVideo) {
+    return (
+      <div className="absolute inset-0 flex">
+        {/* Video left */}
+        <div className="flex-1 flex items-center justify-center p-6 border-r border-gray-100">
+          {slide.videoId ? (
+            <iframe
+              src={`https://www.youtube.com/embed/${slide.videoId}?rel=0&modestbranding=1`}
+              className="w-full rounded-xl shadow-lg"
+              style={{ aspectRatio: '16/9' }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={slide.title}
+            />
+          ) : (
+            <div className="w-full rounded-xl bg-gray-100 flex flex-col items-center justify-center gap-3" style={{ aspectRatio: '16/9' }}>
+              <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center">
+                <svg className="w-7 h-7 text-rose-500" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </div>
+              <p className="text-xs text-gray-400">Video no disponible (sin clave YouTube API)</p>
+            </div>
+          )}
+        </div>
+        {/* Watch points right */}
+        <div className="w-72 flex flex-col justify-center gap-4 px-6">
+          <h2 className="text-lg font-bold text-charcoal leading-snug">{slide.title}</h2>
+          {slide.watchPoints && slide.watchPoints.length > 0 && (
+            <ul className="space-y-2.5">
+              {slide.watchPoints.map((wp, i) => (
+                <li key={i} className="flex gap-2.5 items-start">
+                  <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                  <span className="text-sm text-gray-700 leading-snug">{wp}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (hasBullets && hasImage) {
+    return (
+      <div className="absolute inset-0 flex">
+        {/* Text left */}
+        <div className="flex-1 flex flex-col justify-center gap-4 px-10 py-8">
+          <h2 className="text-2xl font-bold text-charcoal leading-tight">{slide.title}</h2>
+          {slide.content && <p className="text-sm text-gray-500 leading-relaxed">{slide.content}</p>}
+          <ul className="space-y-2">
+            {slide.bullets!.map((b, i) => (
+              <li key={i} className="flex gap-2.5 items-start">
+                <span className="mt-1 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-cta-from" />
+                <span className="text-sm sm:text-base text-gray-700 leading-snug">{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {/* Image right */}
+        <div className="w-2/5 relative overflow-hidden">
+          <img src={slide.imageUrl!} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-l from-transparent to-white/10" />
+        </div>
+      </div>
+    );
+  }
+
+  if (hasBullets) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-12 gap-5 text-center">
+        {slide.imageUrl && (
+          <div className="absolute inset-0 bg-cover bg-center opacity-[0.06]" style={{ backgroundImage: `url(${slide.imageUrl})` }} />
+        )}
+        <h1 className="text-3xl sm:text-4xl font-bold text-charcoal leading-tight z-10">{slide.title}</h1>
+        <ul className="space-y-2 text-left z-10 max-w-2xl">
+          {slide.bullets!.map((b, i) => (
+            <li key={i} className="flex gap-3 items-start">
+              <span className="mt-1.5 flex-shrink-0 w-2 h-2 rounded-full bg-cta-from" />
+              <span className="text-base sm:text-lg text-gray-700 leading-snug">{b}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {slide.imageUrl && (
+        <div className="absolute inset-0 bg-cover bg-center opacity-[0.07]" style={{ backgroundImage: `url(${slide.imageUrl})` }} />
+      )}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-16 text-center gap-6">
+        <h1 className="text-3xl sm:text-4xl font-bold text-charcoal leading-tight">{slide.title}</h1>
+        <p className="text-base sm:text-lg text-gray-600 leading-relaxed max-w-3xl">{slide.content}</p>
+      </div>
+    </>
+  );
 }
 
 export default function PresentationPage() {
@@ -41,11 +171,12 @@ export default function PresentationPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [current, setCurrent] = useState(0);
-
-  // Per-slide regeneration state
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
   const [regenFeedback, setRegenFeedback] = useState('');
   const [regenLoading, setRegenLoading] = useState(false);
+
+  const slideContainerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +190,40 @@ export default function PresentationPage() {
   }, [courseId, moduleId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        setCurrent((p) => Math.min(slides.length - 1, p + 1));
+        setRegenOpen(false);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        setCurrent((p) => Math.max(0, p - 1));
+        setRegenOpen(false);
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      } else if (e.key === 'Escape' && isFullscreen) {
+        exitFullscreen();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [slides.length, isFullscreen]);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      slideContainerRef.current?.requestFullscreen();
+    }
+  };
+
+  const exitFullscreen = () => { if (document.fullscreenElement) document.exitFullscreen(); };
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -119,7 +284,7 @@ export default function PresentationPage() {
         <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
           <Sparkles className="w-10 h-10 text-gray-300" />
           <p className="text-gray-500 text-sm max-w-sm">
-            Genera una presentación de 55 minutos basada en el contenido de este módulo. Puedes regenerar diapositivas individuales con retroalimentación.
+            Genera una presentación de 55 minutos basada en el contenido de este módulo. Incluye imágenes, video educativo y estructura pedagógica completa.
           </p>
         </div>
       )}
@@ -135,58 +300,52 @@ export default function PresentationPage() {
         <>
           {/* Slide viewer */}
           <div
-            className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-100"
-            style={{ aspectRatio: '16/9', background: '#ffffff' }}
+            ref={slideContainerRef}
+            className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-100 bg-white"
+            style={{ aspectRatio: '16/9' }}
           >
-            {/* Background image — subtle decorative overlay */}
-            {slide.imageUrl && (
-              <div
-                className="absolute inset-0 bg-cover bg-center opacity-[0.07]"
-                style={{ backgroundImage: `url(${slide.imageUrl})` }}
-              />
-            )}
+            <SlideContent slide={slide} />
 
-            {/* Lux Learning logo watermark — bottom-right */}
+            {/* Lux Learning logo watermark */}
             <img
               src="/lux-logo-fullcolor.svg"
               alt=""
-              className="absolute bottom-4 right-5 h-5 opacity-20 select-none pointer-events-none"
+              className="absolute bottom-4 right-5 h-5 opacity-20 select-none pointer-events-none z-20"
             />
 
-            {/* Time badge */}
-            <div className="absolute top-5 left-5">
+            {/* Type badge */}
+            <div className="absolute top-5 left-5 z-20">
               <span className={`text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full ${TYPE_COLORS[slide.type] ?? 'bg-gray-100 text-gray-600'}`}>
                 {slide.timeRange} min · {TYPE_LABELS[slide.type] ?? slide.type}
               </span>
             </div>
 
             {/* Slide counter */}
-            <div className="absolute top-5 right-5 text-gray-300 text-xs font-mono">
+            <div className="absolute top-5 right-5 text-gray-300 text-xs font-mono z-20">
               {current + 1} / {slides.length}
             </div>
 
-            {/* Content */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-16 text-center gap-6">
-              <h1 className="text-3xl sm:text-4xl font-bold text-charcoal leading-tight">
-                {slide.title}
-              </h1>
-              <p className="text-base sm:text-lg text-gray-600 leading-relaxed max-w-3xl">
-                {slide.content}
-              </p>
-            </div>
+            {/* Fullscreen button */}
+            <button
+              onClick={toggleFullscreen}
+              className="absolute bottom-4 left-5 z-20 w-8 h-8 rounded-lg bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors"
+              title={isFullscreen ? 'Salir pantalla completa (Esc)' : 'Pantalla completa (F)'}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
 
             {/* Navigation arrows */}
             <button
               onClick={() => { setCurrent((p) => Math.max(0, p - 1)); setRegenOpen(false); }}
               disabled={current === 0}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
               onClick={() => { setCurrent((p) => Math.min(slides.length - 1, p + 1)); setRegenOpen(false); }}
               disabled={current === slides.length - 1}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/10 hover:bg-black/20 text-charcoal flex items-center justify-center transition-colors disabled:opacity-20"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
@@ -194,9 +353,16 @@ export default function PresentationPage() {
 
           {/* Speaker notes */}
           {slide.speakerNotes && (
-            <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-gray-600">
-              <span className="font-semibold text-charcoal text-xs uppercase tracking-wide mr-2">Notas del orador:</span>
-              {slide.speakerNotes}
+            <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm">
+              <p className="text-xs font-semibold text-charcoal uppercase tracking-wide mb-2">Notas del orador</p>
+              <div className="flex flex-wrap gap-3">
+                {parseNotes(slide.speakerNotes).map((s, i) => (
+                  <div key={i} className="flex-1 min-w-[160px]">
+                    {s.label && <span className="text-[10px] font-bold uppercase tracking-wider text-cta-from">{s.label} · </span>}
+                    <span className="text-gray-600">{s.text}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -210,6 +376,11 @@ export default function PresentationPage() {
                 style={{ background: '#f8f9fa' }}
               >
                 {s.imageUrl && <img src={s.imageUrl} alt="" className="w-full h-full object-cover opacity-20" />}
+                {s.type === 'VIDEO' && !s.imageUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-rose-50">
+                    <svg className="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                )}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span className="text-charcoal text-[9px] font-bold px-1 text-center leading-tight">{s.title.slice(0, 20)}</span>
                 </div>
