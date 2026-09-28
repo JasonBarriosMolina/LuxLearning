@@ -4,6 +4,7 @@ import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from '../shared/db-dynamo';
 import { ok, badRequest, serverError } from '../shared/response';
+import { fetchYoutubeEduVideo } from '../shared/youtube';
 import { bedrock } from './ctx';
 import type { EvalCtx } from './ctx';
 
@@ -57,31 +58,9 @@ async function fetchPexelsImage(keywords: string): Promise<{ url: string; credit
   } catch { return null; }
 }
 
-async function fetchYouTubeVideo(keywords: string): Promise<string | null> {
-  if (!YOUTUBE_KEY) return null;
-  try {
-    const q = encodeURIComponent(keywords);
-    // videoDuration=medium excludes Shorts (<4 min); relevanceLanguage=en prefers English; maxResults=10 for duration filtering
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=en&order=relevance&maxResults=10&key=${YOUTUBE_KEY}`;
-    const searchRes = await fetch(searchUrl);
-    const searchData = await searchRes.json() as any;
-    const ids: string[] = (searchData?.items ?? []).map((it: any) => it?.id?.videoId).filter(Boolean);
-    if (!ids.length) return null;
-
-    // Filter to max 10 min via contentDetails
-    const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${YOUTUBE_KEY}`;
-    const detailRes = await fetch(detailUrl);
-    const detailData = await detailRes.json() as any;
-    for (const item of (detailData?.items ?? [])) {
-      const dur = item?.contentDetails?.duration ?? '';
-      const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?/);
-      if (!m) continue;
-      if (parseInt(m[1] ?? '0') > 0) continue;
-      if (parseInt(m[2] ?? '0') > 10) continue;
-      return item.id as string;
-    }
-    return ids[0] ?? null;
-  } catch { return null; }
+// Uses shared fetchYoutubeEduVideo from ../shared/youtube — same logic, edu filters, max 10 min
+function fetchYouTubeVideo(keywords: string): Promise<string | null> {
+  return fetchYoutubeEduVideo(keywords, YOUTUBE_KEY || undefined);
 }
 
 async function generateSlides(moduleTitle: string, moduleDescription: string, lang: string): Promise<Slide[]> {

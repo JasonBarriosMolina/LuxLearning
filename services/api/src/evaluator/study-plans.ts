@@ -7,6 +7,7 @@ import {
   getStudyPlansBatch, getMonday, type StudyPlan, type DayPlan, type PlanItem,
 } from '../shared/db-study-plans';
 import { getAllEnrollments, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
+import { getLastSeenAll } from '../shared/db-progress-misc';
 import { resolveStudentContact } from './ctx';
 import { isModuleUnlocked } from '../shared/db-progress';
 import type { EvalCtx } from './ctx';
@@ -264,11 +265,16 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
     )];
     if (studentIds.length === 0) return ok({ weekOf, compliance: [] });
 
-    // Batch-get study plans for current week
-    const plans = await getStudyPlansBatch(studentIds, weekOf);
+    // Batch-get study plans for current week + lastSeen data for enriched explanation
+    const [plans, lastSeenAll] = await Promise.all([
+      getStudyPlansBatch(studentIds, weekOf),
+      getLastSeenAll().catch(() => [] as { userId: string; lastSeen: string }[]),
+    ]);
+    const lastSeenMap = new Map(lastSeenAll.map((ls: any) => [ls.userId, new Date(ls.lastSeen).getTime()]));
 
     // Calculate compliance — only flag plans with items and < 50% done
     const THRESHOLD = 0.5;
+    const now = Date.now();
     const compliance = await Promise.all(
       plans
         .map((plan) => {
@@ -282,6 +288,10 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
         .filter(({ totalItems, completionPct }) => totalItems > 0 && completionPct < THRESHOLD)
         .map(async ({ plan, totalItems, completedItems, completionPct }) => {
           const contact = await resolveStudentContact(plan.userId, {}).catch(() => ({ name: plan.userId, email: '' }));
+          const lastSeenTs = lastSeenMap.get(plan.userId);
+          const lastSeenHoursAgo = lastSeenTs ? Math.round((now - lastSeenTs) / 3600000) : null;
+          // Collect pending item titles for explanation text (max 3 shown)
+          const pendingTitles = plan.days.flatMap((d) => d.items.filter((i) => !i.completed).map((i) => i.title ?? '')).filter(Boolean).slice(0, 3);
           return {
             userId: plan.userId,
             studentName: contact.name,
@@ -291,6 +301,8 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
             completedItems,
             completionPct: Math.round(completionPct * 100),
             hasLock: !!plan.lockedBy,
+            lastSeenHoursAgo,
+            pendingTitles,
           };
         })
     );

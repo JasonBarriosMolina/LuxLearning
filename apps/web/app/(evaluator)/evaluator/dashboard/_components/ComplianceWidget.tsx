@@ -13,6 +13,8 @@ interface ComplianceEntry {
   completedItems: number;
   completionPct: number;
   hasLock: boolean;
+  lastSeenHoursAgo: number | null;
+  pendingTitles: string[];
 }
 
 interface ComplianceData {
@@ -132,9 +134,21 @@ export function ComplianceWidget() {
                     {entry.studentName || entry.userId}
                   </p>
                   <p className="text-xs text-gray-400">
-                    {entry.completedItems}/{entry.totalItems} actividades
+                    {entry.completedItems}/{entry.totalItems} actividades completadas
                     {entry.hasLock && <span className="ml-1 text-[10px] text-[#17527E] dark:text-blue-300 font-semibold">· plan bloqueado</span>}
                   </p>
+                  {entry.lastSeenHoursAgo !== null && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                      {entry.lastSeenHoursAgo < 24
+                        ? `Activo hace ${entry.lastSeenHoursAgo}h`
+                        : `Inactivo hace ${Math.floor(entry.lastSeenHoursAgo / 24)} día${Math.floor(entry.lastSeenHoursAgo / 24) !== 1 ? 's' : ''}`}
+                    </p>
+                  )}
+                  {entry.pendingTitles && entry.pendingTitles.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                      Pendiente: {entry.pendingTitles.join(' · ')}
+                    </p>
+                  )}
                 </div>
 
                 {isRegenerated ? (

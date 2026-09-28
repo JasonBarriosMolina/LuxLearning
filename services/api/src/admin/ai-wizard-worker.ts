@@ -16,7 +16,7 @@ import {
   notifyCourseGenerationDone, sanitizeLessonContent, generateAndSaveQuizQuestions,
   isPlaceholderContent, verifyAndRepairModule,
 } from './ai-wizard-repair';
-import { searchYoutubeVideo, isYoutubeVideoAvailable, escapeHtml } from '../shared/youtube';
+import { searchYoutubeVideo, isYoutubeVideoAvailable, escapeHtml, fetchYoutubeEduVideo } from '../shared/youtube';
 import { generateModuleChallenges } from './ai-wizard-challenges';
 
 export async function handleAIWizardWorker(ctx: AdminCtx): Promise<any | null> {
@@ -228,6 +228,14 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             order: i + 1,
           };
         });
+
+        // Populate youtubeId for the first video-type lesson per module (Trello Nk0XDBvJ 2026-09-25 Mack)
+        const firstVideoIdx = lessonData.findIndex((l) => l.type === 'video');
+        if (firstVideoIdx >= 0) {
+          const videoLesson = lessonData[firstVideoIdx];
+          const videoId = await fetchYoutubeEduVideo(`${mod.title} ${videoLesson.title}`).catch(() => null);
+          if (videoId) lessonData[firstVideoIdx] = { ...videoLesson, youtubeId: videoId };
+        }
 
         // Append bibliography + YouTube links to the last text lesson (Bug 1)
         if (moduleResources) {
