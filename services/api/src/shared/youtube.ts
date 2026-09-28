@@ -73,6 +73,43 @@ export async function searchYoutubeVideo(
   }
 }
 
+/** Searches YouTube for an educational English video (edu filters, max 10 min) for use in
+ *  lesson content and slide generation. Uses videoCategoryId=27 (Education), safeSearch=strict,
+ *  videoDuration=medium (4-20 min), relevanceLanguage=en, then validates duration ≤ 10 min via
+ *  contentDetails. Returns the first qualifying videoId, or the first result as fallback. */
+export async function fetchYoutubeEduVideo(
+  keywords: string,
+  apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
+): Promise<string | null> {
+  if (!apiKey || !keywords.trim()) return null;
+  try {
+    const q = encodeURIComponent(keywords.trim());
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=en&order=relevance&maxResults=10&key=${apiKey}`;
+    const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json() as any;
+    const ids: string[] = (searchData?.items ?? []).map((it: any) => it?.id?.videoId).filter(Boolean);
+    if (!ids.length) return null;
+
+    const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${apiKey}`;
+    const detailRes = await fetch(detailUrl, { signal: AbortSignal.timeout(6000) });
+    if (detailRes.ok) {
+      const detailData = await detailRes.json() as any;
+      for (const item of (detailData?.items ?? [])) {
+        const dur = item?.contentDetails?.duration ?? '';
+        const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?/);
+        if (!m) continue;
+        if (parseInt(m[1] ?? '0') > 0) continue;
+        if (parseInt(m[2] ?? '0') > 10) continue;
+        return item.id as string;
+      }
+    }
+    return ids[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Finds YouTube video links embedded as `<a href="...">label</a>` inside lesson HTML
  *  content — specifically the "🎥 Videos Sugeridos" section `ai-wizard-worker.ts` appends
  *  to a module's last text lesson (module-level video suggestions, separate from a
