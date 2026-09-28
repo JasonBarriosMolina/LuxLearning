@@ -103,7 +103,7 @@ Reglas:
 - Tono académico-profesional, sin emojis en contenido.
 - content y bullets son texto visible en la diapositiva: NUNCA incluyas instrucciones al orador ahí (esas van solo en speakerNotes).
 - Títulos PROHIBIDOS (nunca usar en title ni content): "Bienvenida", "Bienvenidos", "Debate socrático", "Reflexión obligatoria", "Pregunta socrática". Los títulos deben ser temáticos y descriptivos del módulo.
-- Para imageKeywords: 2-3 palabras en inglés (búsqueda Pexels).
+- Para imageKeywords: 2-3 palabras en inglés que describan el CONCEPTO VISUAL EXACTO del contenido de ESA diapositiva (NO el título del curso, NO términos genéricos). Ej: si la diapositiva habla de "comunicación asertiva en equipos" → "team assertive communication". Si habla de "gestión del tiempo" → "time management clock".
 - Para videoSearchTerms (solo tipo VIDEO): términos de búsqueda en inglés para YouTube educativo.
 - bullets: array de 3-5 puntos cortos (solo para MAGISTRAL, DISCUSSION, CONCLUSION).
 - speakerNotes: SOLO para el orador, NO visible en pantalla. Formato exacto: "GANCHO: una oración. DESARROLLO: una oración. CIERRE: una pregunta." — todo en una sola cadena de texto plano, sin saltos de línea.
@@ -119,7 +119,7 @@ Devuelve ÚNICAMENTE un JSON array, sin markdown:
   "content": "Una frase de apertura para la audiencia (máx 30 palabras).",
   "bullets": ["Concepto clave 1", "Concepto clave 2", "Concepto clave 3"],
   "speakerNotes": "GANCHO: cómo captar atención. DESARROLLO: qué enfatizar. CIERRE: pregunta para el grupo.",
-  "imageKeywords": "corporate training"
+  "imageKeywords": "leadership team collaboration"
 }]`
     : `You are an expert instructional designer for corporate training.
 Create exactly 11 slides for a 55-minute class on module "${moduleTitle}".
@@ -137,7 +137,7 @@ Rules:
 - Professional academic tone, no emojis in content.
 - content and bullets are text visible on the slide: NEVER include presenter instructions there (those go only in speakerNotes).
 - FORBIDDEN titles (never use in title or content): "Welcome", "Socratic debate", "Mandatory reflection", "Socratic question". Titles must be thematic and descriptive of the module topic.
-- imageKeywords: 2-3 English words for Pexels search.
+- imageKeywords: 2-3 English words describing the EXACT VISUAL CONCEPT of THAT slide's content (NOT the course title, NOT generic terms). Ex: if slide discusses "assertive communication in teams" → "team assertive communication". If it discusses "time management" → "time management clock".
 - videoSearchTerms (VIDEO type only): English search terms for YouTube educational search.
 - bullets: array of 3-5 short points (MAGISTRAL, DISCUSSION, CONCLUSION only).
 - speakerNotes: ONLY for the speaker, NOT visible on screen. Exact format: "HOOK: one sentence. DEVELOP: one sentence. CLOSE: one question." — all in a single plain text string, no line breaks.
@@ -153,7 +153,7 @@ Return ONLY a JSON array, no markdown:
   "content": "One opening sentence for the audience (max 30 words).",
   "bullets": ["Key concept 1", "Key concept 2", "Key concept 3"],
   "speakerNotes": "HOOK: how to capture attention. DEVELOP: what to emphasize. CLOSE: question for the group.",
-  "imageKeywords": "corporate training"
+  "imageKeywords": "leadership team collaboration"
 }]`;
 
   const raw = await bedrockJson(prompt, 3500);
