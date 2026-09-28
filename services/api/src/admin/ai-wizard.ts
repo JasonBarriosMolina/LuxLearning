@@ -73,8 +73,24 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
     // count > 1 — each call generates ONE session's instruction, told which step it is
     // in the arc so consecutive sessions build on each other instead of repeating.
     const isMultiSession = isProject && sessionCount > 1;
+    // Derive the role of this session in the arc (Trello DmPpbrff, 2026-09-28 — Mack: all sessions must
+    // build toward ONE unified product; investigación→avances→defensa must share the same theme/product).
+    const sessionRole = isMultiSession
+      ? (sessionIndex === 1
+          ? 'INVESTIGACIÓN Y PLANIFICACIÓN — el estudiante define QUÉ va a producir/construir, investiga referentes, establece el plan de trabajo y propone el concepto o estructura inicial del proyecto.'
+          : sessionIndex === sessionCount
+            ? 'DEFENSA Y ENTREGA FINAL — el estudiante entrega el proyecto COMPLETO, integrado con todos los avances anteriores, y lo presenta/defiende. Esta sesión es la culminación de TODO lo trabajado en sesiones previas.'
+            : `AVANCE ${sessionIndex - 1} DE ${sessionCount - 2} — el estudiante presenta progreso CONCRETO y medible hacia el mismo producto que comenzó en la sesión 1. Este avance debe ser insumo directo para la entrega final.`)
+      : '';
     const sessionHint = isMultiSession
-      ? `Este es un proyecto de ${sessionCount} sesiones/entregas secuenciales — estás generando la instrucción de la SESIÓN ${sessionIndex} de ${sessionCount}. Debe ser un paso lógico y alcanzable dentro de la progresión completa: sesión 1 suele ser propuesta/investigación inicial, las sesiones intermedias avances concretos que construyen sobre la anterior, y la última sesión (${sessionCount}) la entrega final/integradora que reúne el trabajo de las sesiones previas. NO repitas el alcance de otra sesión — cada una debe cubrir una parte distinta y progresiva del proyecto.`
+      ? `PROYECTO DE ${sessionCount} SESIONES — REGLA DE COHESIÓN NO NEGOCIABLE:
+Todas las sesiones (1 a ${sessionCount}) trabajan sobre UN SOLO proyecto/producto. NO son entregables aislados; son fases secuenciales del MISMO trabajo:
+• Sesión 1: investigación y planificación del proyecto
+• Sesiones 2 a ${sessionCount - 1}: avances progresivos del mismo proyecto
+• Sesión ${sessionCount}: defensa y entrega final del proyecto completo
+
+ESTÁS GENERANDO LA SESIÓN ${sessionIndex} de ${sessionCount}: ${sessionRole}
+La instrucción debe referirse al MISMO proyecto del curso — usa el temario para identificar el producto concreto (una producción, composición, sistema, investigación, prototipo, etc.) y mantén coherencia temática con las demás sesiones. NO repitas el alcance de otra sesión.`
       : '';
 
     const structureRules = `
