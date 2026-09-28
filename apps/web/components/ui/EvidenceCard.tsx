@@ -102,7 +102,7 @@ export function EvidenceCard({ courseId, moduleId, evalName, instructions }: Evi
       </div>
 
       {instructions && !latestSub && (
-        <p className="mt-3 text-xs text-gray-500 bg-surface rounded-lg p-3 leading-relaxed">
+        <p className="mt-3 text-xs text-gray-500 bg-surface rounded-lg p-3 leading-relaxed whitespace-pre-wrap">
           {instructions}
         </p>
       )}

@@ -20,7 +20,7 @@ const COURSE_TYPE_VALUES = ['TEORICO', 'TEORICO_PRACTICO', 'PROYECTOS', 'PROGRAM
 const COURSE_MODALITY_VALUES = ['PRESENCIAL', 'SINCRONICA', 'ASINCRONICA', 'HIBRIDA'];
 
 export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
-  const { event, method, path, prisma, body, action } = ctx;
+  const { event, method, path, prisma, body, action, userId } = ctx;
 
   // ── Async audio generation workers (self-invoked via Lambda Event) ──────────
   if (action === 'bulk-audio') {
@@ -278,7 +278,13 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
     }
 
     if (method === 'PUT') {
-      if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+      if (!isAdmin(event)) {
+        // Evaluators can edit courses assigned to them (Trello DmPpbrff, 2026-09-28)
+        const courseCheck = await prisma.course.findUnique({ where: { id: courseId }, select: { evaluatorId: true } });
+        if (!courseCheck || courseCheck.evaluatorId !== userId) {
+          return forbidden('Se requiere rol de administrador o ser el evaluador asignado del curso');
+        }
+      }
       // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "recuerda tener un botón de
       // editar para que... se pueda modificar el nombre del curso... así no hay
       // que eliminarlo y volver a crearlo" — un rename suelto desde el catálogo

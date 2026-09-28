@@ -77,30 +77,38 @@ export async function handleAIWizard(ctx: AdminCtx): Promise<any | null> {
       ? `Este es un proyecto de ${sessionCount} sesiones/entregas secuenciales — estás generando la instrucción de la SESIÓN ${sessionIndex} de ${sessionCount}. Debe ser un paso lógico y alcanzable dentro de la progresión completa: sesión 1 suele ser propuesta/investigación inicial, las sesiones intermedias avances concretos que construyen sobre la anterior, y la última sesión (${sessionCount}) la entrega final/integradora que reúne el trabajo de las sesiones previas. NO repitas el alcance de otra sesión — cada una debe cubrir una parte distinta y progresiva del proyecto.`
       : '';
 
+    const structureRules = `
+REGLAS DE FORMATO OBLIGATORIAS:
+1. Usa SIEMPRE verbos en infinitivo (Desarrollar, Elaborar, Presentar, Crear — NO: "Desarrolla", "Elabora").
+2. Estructura la instrucción con secciones y bullet points (usa el carácter •), NO prosa corrida.
+3. Sé específico y técnico: indica formato, extensión, número de elementos, criterios de calidad — no dejes nada a la imaginación del estudiante.
+4. El texto debe ser fácil de leer pero suficientemente profesional y pedagógico.
+5. Usa saltos de línea reales (\\n) entre secciones para separación visual.`;
+
     const prompt = isProject
-      ? `Eres un diseñador instruccional experto. Genera una instrucción clara para el PROYECTO FINAL (capstone) de un curso universitario — debe integrar y evaluar todo lo visto durante el curso completo, no solo una parte.
+      ? `Eres un diseñador instruccional experto. Genera instrucciones claras y estructuradas para el PROYECTO${isMultiSession ? ` — SESIÓN ${sessionIndex} DE ${sessionCount}` : ' FINAL (capstone)'} de un curso universitario.
 
 Curso: ${courseTitle}
 Nombre de la evaluación: ${evalName}
 ${natureHint}
 ${sessionHint}
 ${syllabusSnippet ? `Extracto del temario completo del curso:\n${syllabusSnippet}` : ''}
+${structureRules}
 
-Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
-{"instruction":"<2-4 oraciones de instrucción para el estudiante, específica, accionable${isMultiSession ? ', enfocada SOLO en el alcance de esta sesión específica' : ', y que abarque el curso completo'}>"}`
-      : `Eres un diseñador instruccional experto. Genera una instrucción clara y concisa para una evaluación de tipo Entrega de Evidencia en un curso universitario.
+Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra, usa \\n para saltos de línea dentro del string${isMultiSession ? ', enfocada SOLO en el alcance de esta sesión específica' : ', que abarque el curso completo'}):
+{"instruction":"[NOMBRE DEL PROYECTO]\\n\\nObjetivo:\\nDesarrollar/Elaborar/Crear...\\n\\nRequisitos:\\n• [Requisito 1 específico con verbo en infinitivo]\\n• [Requisito 2]\\n• [Requisito 3]\\n\\nEspecificaciones técnicas:\\n• [Formato, extensión, número de componentes requeridos]\\n• [Criterios de calidad medibles]\\n\\nCriterios de evaluación:\\n• [Criterio 1]\\n• [Criterio 2]"}`
+      : `Eres un diseñador instruccional experto. Genera instrucciones claras y estructuradas para una Entrega de Evidencia en un curso universitario.
 
 Curso: ${courseTitle}
 Nombre de la evaluación: ${evalName}
-${weekSnippet ? `Temas específicos de la semana en que se entrega esta evaluación (la instrucción DEBE enfocarse en estos temas, no en el curso completo):\n${weekSnippet}` : ''}
-${syllabusSnippet ? `Extracto del temario general del curso (referencia):\n${syllabusSnippet}` : ''}
+${weekSnippet ? `Temas específicos de la semana (la instrucción DEBE enfocarse en estos temas):\n${weekSnippet}` : ''}
+${syllabusSnippet ? `Extracto del temario general (referencia):\n${syllabusSnippet}` : ''}
+${structureRules}
 
-Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra):
-{"instruction":"<1-3 oraciones de instrucción para el estudiante, específica y accionable>"}
-
-Ejemplo: {"instruction":"Entrega un ensayo argumentativo de 2 páginas sobre el impacto de las estructuras de control en algoritmos eficientes, con al menos 2 referencias bibliográficas en formato APA."}`;
+Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra, usa \\n para saltos de línea dentro del string):
+{"instruction":"[NOMBRE DE LA TAREA]\\n\\nObjetivo:\\nDesarrollar/Elaborar/Analizar...\\n\\nInstrucciones:\\n• [Instrucción 1 con verbo en infinitivo y criterio específico]\\n• [Instrucción 2]\\n• [Instrucción 3]\\n\\nRequisitos de entrega:\\n• [Formato, extensión, herramienta a usar]\\n• [Criterio de calidad medible]"}`;
     try {
-      const raw = await invokeBedrockForJson(prompt, 300);
+      const raw = await invokeBedrockForJson(prompt, 500);
       const instruction = (raw?.instruction ?? '').toString().trim();
       if (!instruction) return badRequest('No se pudo generar la instrucción. Intenta de nuevo.');
       return ok({ instruction });
