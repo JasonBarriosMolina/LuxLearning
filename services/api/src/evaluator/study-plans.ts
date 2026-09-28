@@ -8,7 +8,8 @@ import {
 } from '../shared/db-study-plans';
 import { getAllEnrollments, getEnrollments, getLessonProgress, getAllQuizAttemptsForUser, createNotification } from '../shared/db-dynamo';
 import { getLastSeenAll } from '../shared/db-progress-misc';
-import { resolveStudentContact } from './ctx';
+import { getPushSubscriptionsByUserId } from '../shared/db-notifications';
+import { resolveStudentContact, webpush } from './ctx';
 import { isModuleUnlocked } from '../shared/db-progress';
 import type { EvalCtx } from './ctx';
 
@@ -32,6 +33,80 @@ interface WizardParams {
   pace: 'normal' | 'catchup';                   // catchup = include more, fill weekends
 }
 
+// Auto-generate study plan days for a student using default wizard params.
+async function buildStudyPlanForStudent(
+  studentId: string,
+  prisma: any,
+  wp: WizardParams = { hoursPerDay: 2, modulePriority: 'sequential', pace: 'normal' },
+): Promise<DayPlan[]> {
+  const weekOf = getMonday();
+  const [courseIds, quizAttempts] = await Promise.all([
+    getEnrollments(studentId),
+    getAllQuizAttemptsForUser(studentId),
+  ]);
+  const courses = courseIds.length > 0
+    ? await prisma.course.findMany({
+        where: { id: { in: courseIds } },
+        include: {
+          modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } },
+          evaluationEvents: { select: { type: true, moduleId: true } },
+        },
+      })
+    : [];
+  const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(studentId, cid)));
+  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
+  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
+  const days = buildEmptyDays(weekOf);
+  const maxMinutesPerDay = wp.hoursPerDay * 60;
+  const maxDayIdx = wp.pace === 'catchup' ? 6 : 4;
+  type PendingWork = { type: 'lesson' | 'quiz'; title: string; courseId: string; courseTitle: string; moduleId: string; lessonId?: string; estimatedMinutes: number; description: string };
+  const pendingWork: PendingWork[] = [];
+  for (const course of courses) {
+    const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
+    const reflectionPlannedModuleIds = new Set(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'REFLECTION' && e.moduleId).map((e: any) => e.moduleId as string));
+    const quizPlannedModuleIds = new Set(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'QUIZ' && e.moduleId).map((e: any) => e.moduleId as string));
+    for (const mod of (course as any).modules) {
+      const unlocked = await isModuleUnlocked(studentId, mod.order, moduleRefs, {
+        weeklyPacingEnabled: (course as any).weeklyPacingEnabled, courseStartDate: (course as any).startDate,
+        reflectionPlannedModuleIds, completedLessonIds, quizPlannedModuleIds, quizPassedModuleIds: passedModuleIds,
+      });
+      if (!unlocked) break;
+      if (passedModuleIds.has(mod.id)) continue;
+      const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
+      const needsQuiz = pendingLessons.length === 0 && !passedModuleIds.has(mod.id);
+      for (const lesson of pendingLessons) {
+        pendingWork.push({ type: 'lesson', title: lesson.title, courseId: course.id, courseTitle: course.title, moduleId: mod.id, lessonId: lesson.id, estimatedMinutes: parseDurationMin((lesson as any).duration), description: `Módulo: ${mod.title} — ${course.title}` });
+      }
+      if (needsQuiz) {
+        pendingWork.push({ type: 'quiz', title: `Quiz — ${mod.title}`, courseId: course.id, courseTitle: course.title, moduleId: mod.id, estimatedMinutes: 20, description: `Quiz pendiente en ${course.title}` });
+      }
+    }
+  }
+  const minutesUsed: Record<number, number> = {};
+  let dayIdx = 0;
+  for (const work of pendingWork) {
+    while (dayIdx <= maxDayIdx) {
+      if ((minutesUsed[dayIdx] ?? 0) + work.estimatedMinutes <= maxMinutesPerDay) break;
+      dayIdx++;
+    }
+    if (dayIdx > maxDayIdx) break;
+    minutesUsed[dayIdx] = (minutesUsed[dayIdx] ?? 0) + work.estimatedMinutes;
+    days[dayIdx].items.push({ id: createId(), type: work.type, title: work.title, description: work.description, courseId: work.courseId, courseTitle: work.courseTitle, moduleId: work.moduleId, ...(work.lessonId ? { lessonId: work.lessonId } : {}), pinned: true, completed: false, estimatedMinutes: work.estimatedMinutes, source: 'evaluator' });
+  }
+  return days;
+}
+
+// Fire-and-forget push notification to a student when their study plan is updated.
+async function sendStudyPlanPush(studentId: string, pendingCount: number): Promise<void> {
+  const subs = await getPushSubscriptionsByUserId(studentId);
+  if (!subs.length) return;
+  const body = pendingCount > 0
+    ? `Tienes ${pendingCount} actividad${pendingCount !== 1 ? 'es' : ''} pendiente${pendingCount !== 1 ? 's' : ''} esta semana`
+    : 'Revisa tu nuevo plan para esta semana';
+  const payload = JSON.stringify({ title: 'Tu plan de aprendizaje fue actualizado', body, url: '/plan' });
+  await Promise.all(subs.map((sub) => webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload).catch(() => {})));
+}
+
 export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
   const { method, path, body, userId, prisma, isAdminRole } = ctx;
 
@@ -53,30 +128,15 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
 
     const weekOf = weekParam ?? getMonday();
 
-    // Build course data for the student
-    const [courseIds, quizAttempts] = await Promise.all([
-      getEnrollments(studentId!),
-      getAllQuizAttemptsForUser(studentId!),
-    ]);
-
-    const courses = courseIds.length > 0
-      ? await prisma.course.findMany({
-          where: { id: { in: courseIds } },
-          include: {
-            modules: { orderBy: { order: 'asc' }, include: { lessons: { select: { id: true, title: true, duration: true }, orderBy: { order: 'asc' } } } },
-            evaluationEvents: { select: { type: true, moduleId: true } },
-          },
-        })
-      : [];
-
-    const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(studentId!, cid)));
-    const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
-    const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
-
     const days = buildEmptyDays(weekOf);
 
     // If evaluator provided custom items use those, otherwise auto-generate
     if (items && items.length > 0) {
+      // Light fetch: only need course titles for the manual items path
+      const courseIds = await getEnrollments(studentId!);
+      const courses = courseIds.length > 0
+        ? await prisma.course.findMany({ where: { id: { in: courseIds } }, select: { id: true, title: true } })
+        : [];
       for (const item of items) {
         const dayIdx = Math.max(0, Math.min(6, item.dayIndex));
         const itemCourse = item.courseId ? courses.find((c: any) => c.id === item.courseId) : undefined;
@@ -96,92 +156,8 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       }
     } else {
       // Auto-generate from student progress with wizard params
-      const maxMinutesPerDay = wp.hoursPerDay * 60;
-      // catchup: include weekends (days 0-6); normal: Mon-Fri only (days 0-4)
-      const maxDayIdx = wp.pace === 'catchup' ? 6 : 4;
-
-      // Collect pending work per module (sequential guarantees one module fully scheduled before the next)
-      type PendingWork = { type: 'lesson' | 'quiz'; title: string; courseId: string; courseTitle: string; moduleId: string; lessonId?: string; estimatedMinutes: number; description: string };
-      const pendingWork: PendingWork[] = [];
-
-      for (const course of courses) {
-        const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
-        const reflectionPlannedModuleIds = new Set(
-          ((course as any).evaluationEvents ?? [])
-            .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
-            .map((e: any) => e.moduleId as string),
-        );
-        const quizPlannedModuleIds = new Set(
-          ((course as any).evaluationEvents ?? [])
-            .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
-            .map((e: any) => e.moduleId as string),
-        );
-        for (const mod of (course as any).modules) {
-          const unlocked = await isModuleUnlocked(studentId!, mod.order, moduleRefs, {
-            weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
-            courseStartDate: (course as any).startDate,
-            reflectionPlannedModuleIds,
-            completedLessonIds,
-            quizPlannedModuleIds,
-            quizPassedModuleIds: passedModuleIds, // already computed above — avoids a duplicate hasPassedQuiz DB call
-          });
-          if (!unlocked) break;
-          if (passedModuleIds.has(mod.id)) continue;
-
-          const pendingLessons = mod.lessons.filter((l: any) => !completedLessonIds.has(l.id));
-          const needsQuiz = pendingLessons.length === 0 && !passedModuleIds.has(mod.id);
-
-          for (const lesson of pendingLessons) {
-            pendingWork.push({
-              type: 'lesson', title: lesson.title,
-              courseId: course.id, courseTitle: course.title, moduleId: mod.id, lessonId: lesson.id,
-              estimatedMinutes: parseDurationMin((lesson as any).duration),
-              description: `Módulo: ${mod.title} — ${course.title}`,
-            });
-          }
-          if (needsQuiz) {
-            pendingWork.push({
-              type: 'quiz', title: `Quiz — ${mod.title}`,
-              courseId: course.id, courseTitle: course.title, moduleId: mod.id,
-              estimatedMinutes: 20,
-              description: `Quiz pendiente en ${course.title}`,
-            });
-          }
-          // Sequential: if modulePriority === 'sequential', add a sentinel break (noop here — work is already ordered by module)
-        }
-      }
-
-      // Distribute pending work across days respecting hoursPerDay cap
-      const minutesUsed: Record<number, number> = {};
-      let dayIdx = 0;
-      for (const work of pendingWork) {
-        // Find next day with capacity
-        while (dayIdx <= maxDayIdx) {
-          const used = minutesUsed[dayIdx] ?? 0;
-          if (used + work.estimatedMinutes <= maxMinutesPerDay) break;
-          dayIdx++;
-        }
-        if (dayIdx > maxDayIdx) break; // No more room this week
-
-        // For parallel mode: on each new module, don't advance the day (let modules share days)
-        // For sequential mode: work is already grouped per module — just fill sequentially
-
-        minutesUsed[dayIdx] = (minutesUsed[dayIdx] ?? 0) + work.estimatedMinutes;
-        days[dayIdx].items.push({
-          id: createId(),
-          type: work.type,
-          title: work.title,
-          description: work.description,
-          courseId: work.courseId,
-          courseTitle: work.courseTitle,
-          moduleId: work.moduleId,
-          ...(work.lessonId ? { lessonId: work.lessonId } : {}),
-          pinned: true,
-          completed: false,
-          estimatedMinutes: work.estimatedMinutes,
-          source: 'evaluator',
-        });
-      }
+      const generatedDays = await buildStudyPlanForStudent(studentId!, prisma, wp);
+      for (let i = 0; i < generatedDays.length; i++) days[i] = generatedDays[i];
     }
 
     const existing = await getStudyPlan(studentId!, weekOf);
@@ -200,7 +176,7 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
     };
     await saveStudyPlan(plan);
 
-    // Notify student
+    // Notify student (in-app + push)
     const noteMsg = note ? ` Nota del mentor: "${String(note).slice(0, 100)}"` : '';
     await createNotification({
       userId: studentId!,
@@ -211,6 +187,8 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       read: false,
       createdAt: new Date().toISOString(),
     }).catch(() => {});
+    const pendingCount = days.reduce((s, d) => s + d.items.length, 0);
+    sendStudyPlanPush(studentId!, pendingCount).catch(() => {});
 
     return ok({ plan });
   }
@@ -306,6 +284,37 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
           };
         })
     );
+
+    // Proactive auto-regen: for students inactive 7+ days with a stale plan, regenerate silently.
+    // Guard: only regen if plan was last updated > 24h ago (prevents repeated triggers on rapid reloads).
+    const INACTIVE_THRESHOLD_H = 168; // 7 days
+    const REGEN_COOLDOWN_MS = 86400000; // 24h
+    const autoRegenCandidates = plans.filter((plan) => {
+      const ts = lastSeenMap.get(plan.userId);
+      if (!ts) return false;
+      if ((now - ts) / 3600000 < INACTIVE_THRESHOLD_H) return false;
+      const lastUpdate = plan.updatedAt ? new Date(plan.updatedAt).getTime() : 0;
+      return (now - lastUpdate) > REGEN_COOLDOWN_MS;
+    });
+    for (const plan of autoRegenCandidates) {
+      (async () => {
+        try {
+          const newDays = await buildStudyPlanForStudent(plan.userId, prisma);
+          await saveStudyPlan({
+            userId: plan.userId, weekOf, planId: plan.planId ?? createId(), days: newDays,
+            lockedBy: plan.lockedBy, changeRequested: false, generatedBy: 'auto',
+            createdAt: plan.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
+          });
+          await createNotification({
+            userId: plan.userId, notifId: `splan-auto-${createId()}`, type: 'STUDY_PLAN_LOCKED',
+            message: 'Tu plan de aprendizaje fue actualizado. Revisa tus actividades pendientes para esta semana.',
+            actionUrl: '/plan', read: false, createdAt: new Date().toISOString(),
+          }).catch(() => {});
+          const pc = newDays.reduce((s, d) => s + d.items.length, 0);
+          sendStudyPlanPush(plan.userId, pc).catch(() => {});
+        } catch { /* non-fatal, background task */ }
+      })();
+    }
 
     return ok({ weekOf, compliance });
   }
