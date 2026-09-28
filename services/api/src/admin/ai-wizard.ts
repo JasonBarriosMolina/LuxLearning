@@ -170,8 +170,9 @@ Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra, usa \\n para sal
 
   // ── POST /admin/courses/wizard/save ─────────────────────────────────────────
   if (path === '/admin/courses/wizard/save' && method === 'POST') {
-    if (!isAdmin(event)) return forbidden('Se requiere rol de administrador');
+    if (!isAuthorized(event)) return forbidden('Se requiere rol de evaluador o administrador');
     const callerRole = event.requestContext.authorizer?.lambda?.role ?? 'ADMIN';
+    const isCallerAdmin = isAdmin(event);
     const {
       title, description = '', imageUrl: rawImageUrl, courseType, academicPeriod, classDays = [],
       classSchedule, modality, startDate, totalWeeks, planLanguage = 'ES',
@@ -235,6 +236,10 @@ Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra, usa \\n para sal
     let course: { id: string; slug: string; planDocumentS3Key?: string | null };
 
     if (editingCourseId) {
+      if (!isCallerAdmin) {
+        const ownerCheck = await prisma.course.findUnique({ where: { id: editingCourseId }, select: { evaluatorId: true } });
+        if (!ownerCheck || ownerCheck.evaluatorId !== creatorUserId) return forbidden('Solo puedes editar los cursos que te son asignados');
+      }
       course = await prisma.course.update({
         where: { id: editingCourseId },
         data: wizardCourseData,
@@ -247,7 +252,7 @@ Devuelve ÚNICAMENTE un JSON con este formato (sin texto extra, usa \\n para sal
       const slugRand = Math.random().toString(36).slice(2, 6);
       const slug = `${slugBase}-${slugRand}`;
       course = await prisma.course.create({
-        data: { ...wizardCourseData, slug, isDraft: true, tags: [], createdByName: callerName },
+        data: { ...wizardCourseData, slug, isDraft: true, tags: [], createdByName: callerName, evaluatorId: isCallerAdmin ? null : (creatorUserId ?? null) },
         select: { id: true, slug: true, planDocumentS3Key: true },
       });
     }

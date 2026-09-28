@@ -141,14 +141,14 @@ describe('POST /admin/courses/wizard/copilot — dispatch async job', () => {
 });
 
 describe('POST /admin/courses/wizard/save', () => {
-  it('returns 403 for EVALUATOR (admin only)', async () => {
+  it('allows EVALUATOR (can create their own courses)', async () => {
     const ctx = makeAdminCtx({
       event: makeEvent('EVALUATOR'),
       method: 'POST', path: '/admin/courses/wizard/save',
       body: { title: 'Nuevo curso' },
     });
     const res = await handleAI(ctx);
-    expect(res?.statusCode).toBe(403);
+    expect(res?.statusCode).not.toBe(403);
   });
 
   it('returns 403 for STUDENT', async () => {
