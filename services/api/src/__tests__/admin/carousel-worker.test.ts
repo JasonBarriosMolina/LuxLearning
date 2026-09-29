@@ -1,5 +1,5 @@
-/**
- * Tests for admin/carousel-worker.ts — Trello N1bbWdz0 (2026-08-30).
+﻿/**
+ * Tests for admin/carousel-worker.ts â€” Trello N1bbWdz0 (2026-08-30).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeAdminCtx, makePrisma } from '../helpers/ctx';
@@ -30,15 +30,16 @@ vi.mock('../../admin/ctx', async (importOriginal) => {
     defaultVoiceForLanguage: (lang: string) => (lang === 'EN' ? 'Danielle' : 'Mia'),
   };
 });
-const generateLessonImageMock = vi.fn();
-vi.mock('../../admin/ai-image-helpers', () => ({
-  generateLessonImage: (...args: any[]) => generateLessonImageMock(...args),
-}));
 vi.mock('../../shared/db-dynamo', () => ({
   saveAiJob: vi.fn().mockResolvedValue(undefined),
   createNotification: vi.fn().mockResolvedValue(undefined),
 }));
-global.fetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) }) as any;
+// Pexels image fetch â€” returns a valid photo object so imageUrl is populated
+global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
+  arrayBuffer: async () => new ArrayBuffer(4),
+  json: async () => ({ photos: [{ photographer: 'Test Author', src: { large2x: 'https://pexels.com/test.jpg' } }] }),
+}) as any;
 
 import { handleCarouselWorker, computeSlideTiming, fitSlidesToNarrationBudget } from '../../admin/carousel-worker';
 import { saveAiJob } from '../../shared/db-dynamo';
@@ -46,7 +47,7 @@ import { saveAiJob } from '../../shared/db-dynamo';
 function makeSlides(n = 3) {
   return Array.from({ length: n }, (_, i) => ({
     order: i + 1,
-    onScreenText: { title: `Título ${i + 1}`, bullets: [] },
+    onScreenText: { title: `TÃ­tulo ${i + 1}`, bullets: [] },
     narrationSegment: `Frase ${i + 1}.`,
     imagePrompt: `Escena ${i + 1}`,
   }));
@@ -64,16 +65,16 @@ describe('computeSlideTiming', () => {
 
   it('falls back to proportional char-count timing when marks do not line up with slides', () => {
     const slides = makeSlides(2);
-    const timed = computeSlideTiming(slides as any, []); // 0 marks — mismatch
+    const timed = computeSlideTiming(slides as any, []); // 0 marks â€” mismatch
     expect(timed[0].startMs).toBe(0);
     expect(timed[1].startMs).toBeGreaterThan(0);
     expect(timed[1].endMs).toBeGreaterThan(timed[1].startMs);
   });
 });
 
-describe('fitSlidesToNarrationBudget — review fix (2026-08-30): audio/slide desync', () => {
+describe('fitSlidesToNarrationBudget â€” review fix (2026-08-30): audio/slide desync', () => {
   // Bug found in review: ctx.ts's generateCarouselNarration silently .slice(0,2900)s the
-  // narration TEXT before synthesis — if applied after building the full text, the last
+  // narration TEXT before synthesis â€” if applied after building the full text, the last
   // slides would show images with no matching narration audio at all (a real desync, not
   // just a timing approximation). Fitting the SLIDE LIST first keeps every kept slide
   // backed by real audio.
@@ -101,7 +102,7 @@ describe('fitSlidesToNarrationBudget — review fix (2026-08-30): audio/slide de
 
   it('never returns a slide list whose narration exceeds the given budget', () => {
     const slides = Array.from({ length: 20 }, (_, i) => ({
-      order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: 'Una oración de tamaño moderado para esta prueba.', imagePrompt: 'x',
+      order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: 'Una oraciÃ³n de tamaÃ±o moderado para esta prueba.', imagePrompt: 'x',
     }));
     const { slides: fitted } = fitSlidesToNarrationBudget(slides, 300);
     const totalLen = fitted.map((s) => s.narrationSegment.trim()).join(' ').length;
@@ -123,7 +124,6 @@ describe('handleCarouselWorker', () => {
       audioUrl: 'https://s3.example.com/carousel.mp3',
       marks: [{ time: 0, value: 'Frase 1.' }, { time: 1200, value: 'Frase 2.' }, { time: 2400, value: 'Frase 3.' }],
     });
-    generateLessonImageMock.mockResolvedValue('https://s3.example.com/slide.jpg');
     const prisma = makePrisma();
     prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Redes Neuronales' });
     // 0 for the idempotency guard's existing-carousel check, 4 for the plain
@@ -141,11 +141,11 @@ describe('handleCarouselWorker', () => {
     expect(prisma.lesson.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         moduleId: 'm1', type: 'carousel', order: 5, audioUrl: 'https://s3.example.com/carousel.mp3',
-        // The recap PDF is no longer built eagerly (Trello N1bbWdz0, 2026-08-31 15:21) —
+        // The recap PDF is no longer built eagerly (Trello N1bbWdz0, 2026-08-31 15:21) â€”
         // it's built on demand by /lessons/carousel-recap the first time anyone asks.
         pdfRecapUrl: null,
         // Honest duration derived from the last slide's endMs (Trello DmPpbrff,
-        // 2026-09-01 03:03) — not the old flat "6 min" regardless of real length.
+        // 2026-09-01 03:03) â€” not the old flat "6 min" regardless of real length.
         duration: '1 min',
       }),
     }));
@@ -158,7 +158,6 @@ describe('handleCarouselWorker', () => {
       audioUrl: 'https://s3.example.com/carousel.mp3',
       marks: [{ time: 0, value: 'Frase 1.' }, { time: 90000, value: 'Frase 2.' }, { time: 180000, value: 'Frase 3.' }],
     });
-    generateLessonImageMock.mockResolvedValue(null);
     const prisma = makePrisma();
     prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod' });
     prisma.lesson.count = vi.fn().mockResolvedValue(0);
@@ -170,7 +169,7 @@ describe('handleCarouselWorker', () => {
     });
     await handleCarouselWorker(ctx as any);
 
-    // Last slide: startMs=180000, endMs=180000+4000=184000ms ≈ 3.07 min → rounds to 3.
+    // Last slide: startMs=180000, endMs=180000+4000=184000ms â‰ˆ 3.07 min â†’ rounds to 3.
     expect(prisma.lesson.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ duration: '3 min' }),
     }));
@@ -195,13 +194,12 @@ describe('handleCarouselWorker', () => {
 
   it('drops trailing slides (and never generates images for them) when narration would overflow Polly\'s limit', async () => {
     generateCarouselNarrationMock.mockResolvedValue({ audioUrl: 'https://s3.example.com/carousel.mp3', marks: [] });
-    generateLessonImageMock.mockResolvedValue('https://s3.example.com/slide.jpg');
     const prisma = makePrisma();
     prisma.module.findUnique = vi.fn().mockResolvedValue({ title: 'Mod' });
     prisma.lesson.count = vi.fn().mockResolvedValue(0);
     prisma.lesson.create = vi.fn().mockResolvedValue({ id: 'lesson-1' });
 
-    // 3 slides with 1000-char narration each — well past a small 500-char test budget
+    // 3 slides with 1000-char narration each â€” well past a small 500-char test budget
     const bigSlides = Array.from({ length: 3 }, (_, i) => ({
       order: i + 1, onScreenText: { title: `T${i}`, bullets: [] }, narrationSegment: 'x'.repeat(1000), imagePrompt: 'x',
     }));
@@ -211,9 +209,8 @@ describe('handleCarouselWorker', () => {
     });
     await handleCarouselWorker(ctx as any);
 
-    // Only the slides that fit within Polly's real 2900-char budget got an image call —
-    // 2 slides of 1000 chars fit (≈2001 with the joining space), the 3rd does not (≈3002).
-    expect(generateLessonImageMock).toHaveBeenCalledTimes(2);
+    // Only the slides that fit within Polly's real 2900-char budget should be in the lesson â€”
+    // 2 slides of 1000 chars fit (â‰ˆ2001 with the joining space), the 3rd does not (â‰ˆ3002).
     const created = prisma.lesson.create.mock.calls[0]![0].data;
     expect(created.carouselSlides).toHaveLength(2);
   });

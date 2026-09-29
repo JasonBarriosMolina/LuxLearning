@@ -1,6 +1,17 @@
 // Trello DmPpbrff (Mack, 2026-09-18): retos de atención — Fase 1 (SOCRÁTICA + ORÁCULO).
-// Genera 1-2 retos por módulo, aleatorios entre las lecciones de texto.
+// Fase 2 (2026-09-28): added BIFURCACIÓN and ESLABÓN types.
+// Genera 1-3 retos por módulo, aleatorios entre las lecciones de texto.
 import { invokeBedrockForJson } from './ctx';
+
+// All 4 challenge types — 2 per lesson call, picked randomly from this pool.
+const CHALLENGE_TYPES_ES = ['SOCRÁTICA', 'ORÁCULO', 'BIFURCACIÓN', 'ESLABÓN'] as const;
+const CHALLENGE_TYPES_EN = ['SOCRÁTICA', 'ORÁCULO', 'BIFURCACIÓN', 'ESLABÓN'] as const;
+
+function pickTwoTypes(isBlEN: boolean): [string, string] {
+  const pool = [...(isBlEN ? CHALLENGE_TYPES_EN : CHALLENGE_TYPES_ES)];
+  pool.sort(() => Math.random() - 0.5);
+  return [pool[0]!, pool[1]!];
+}
 
 export async function generateModuleChallenges(prisma: any, moduleId: string, moduleTitle: string, isBlEN: boolean): Promise<void> {
   const textLessons = await prisma.lesson.findMany({
@@ -26,31 +37,46 @@ export async function generateModuleChallenges(prisma: any, moduleId: string, mo
 
     if (rawText.length < 100) continue;
 
+    const [type1, type2] = pickTwoTypes(isBlEN);
+
+    const typeDescEN: Record<string, string> = {
+      'SOCRÁTICA': 'Write a believable but FALSE myth about the main concept. Student decides: true or false?\nFormat: {"type":"SOCRÁTICA","question":"[the myth]","options":["True","False"],"correctIndex":1,"explanation":"[why it\'s false]"}',
+      'ORÁCULO': 'Write a 1-line scenario where something goes wrong. Give 2 decision options, one correct per the lesson.\nFormat: {"type":"ORÁCULO","question":"[scenario]","options":["[A]","[B]"],"correctIndex":0,"explanation":"[why A is correct]"}',
+      'BIFURCACIÓN': 'Present a professional dilemma with 2 strategic options (e.g., "Speed vs. Precision"). Only one aligns with best practices from the lesson.\nFormat: {"type":"BIFURCACIÓN","question":"[the dilemma]","options":["[option A]","[option B]"],"correctIndex":0,"explanation":"[why A is the right approach]"}',
+      'ESLABÓN': 'Write 1 sentence naming a concept just covered, then ask which of 3 options is the logical bridge to the NEXT logical concept in the domain. One option is correct.\nFormat: {"type":"ESLABÓN","question":"[linking question]","options":["[A]","[B]","[C]"],"correctIndex":0,"explanation":"[why A is the bridge]"}',
+    };
+    const typeDescES: Record<string, string> = {
+      'SOCRÁTICA': 'Redacta un mito creíble pero FALSO. El estudiante decide: ¿verdadero o falso?\nFormato: {"type":"SOCRÁTICA","question":"[el mito]","options":["Verdadero","Falso"],"correctIndex":1,"explanation":"[por qué es falso]"}',
+      'ORÁCULO': 'Redacta un escenario de 1 línea donde algo sale mal. Ofrece 2 opciones de decisión, solo una correcta.\nFormato: {"type":"ORÁCULO","question":"[escenario]","options":["[A]","[B]"],"correctIndex":0,"explanation":"[por qué A es correcto]"}',
+      'BIFURCACIÓN': 'Presenta un dilema profesional con 2 opciones estratégicas (ej. "¿Velocidad o Precisión?"). Solo una alinea con las mejores prácticas de la lección.\nFormato: {"type":"BIFURCACIÓN","question":"[el dilema]","options":["[opción A]","[opción B]"],"correctIndex":0,"explanation":"[por qué A es el enfoque correcto]"}',
+      'ESLABÓN': 'Nombra un concepto recién cubierto y pregunta cuál de 3 opciones es el puente lógico al siguiente concepto del dominio. Una es correcta.\nFormato: {"type":"ESLABÓN","question":"[pregunta de conexión]","options":["[A]","[B]","[C]"],"correctIndex":0,"explanation":"[por qué A es el eslabón]"}',
+    };
+
+    const typeDescs = isBlEN ? typeDescEN : typeDescES;
+
     const prompt = isBlEN
-      ? `You are an expert in corporate learning design. Read this lesson excerpt and create exactly 2 attention challenges:
+      ? `You are an expert in corporate learning design. Read this lesson excerpt and create exactly 2 attention challenges.
 
 LESSON: ${rawText}
 
-Challenge 1 (type SOCRÁTICA): Write a believable but FALSE myth about the main concept. Then write a 1-2 sentence explanation of why it's false. The student must decide: true or false?
-Challenge 2 (type ORÁCULO): Write a 1-line practical scenario where something goes wrong related to the topic. Provide exactly 2 decision options — only one is correct per the lesson content.
+Challenge 1 (type ${type1}):
+${typeDescs[type1]}
 
-Rules: professional tone, no childish language, no "Congratulations!" framing. Return ONLY JSON, no markdown:
-[
-  {"type":"SOCRÁTICA","question":"[the myth statement]","options":["Verdadero","Falso"],"correctIndex":1,"explanation":"[why it's false]"},
-  {"type":"ORÁCULO","question":"[the scenario]","options":["[option A]","[option B]"],"correctIndex":0,"explanation":"[why option A is correct]"}
-]`
-      : `Eres un experto en diseño de experiencias de aprendizaje corporativo. Lee este fragmento de lección y crea exactamente 2 retos de atención:
+Challenge 2 (type ${type2}):
+${typeDescs[type2]}
+
+Rules: professional tone, no childish language, no "Congratulations!" framing, no game language. Return ONLY a JSON array with exactly 2 objects, no markdown.`
+      : `Eres un experto en diseño de experiencias de aprendizaje corporativo. Lee este fragmento y crea exactamente 2 retos de atención.
 
 LECCIÓN: ${rawText}
 
-Reto 1 (tipo SOCRÁTICA): Redacta un mito creíble pero FALSO sobre el concepto principal. Luego escribe una explicación de 1-2 oraciones de por qué es falso. El estudiante debe decidir: ¿verdadero o falso?
-Reto 2 (tipo ORÁCULO): Redacta un escenario práctico de 1 línea donde algo sale mal relacionado al tema. Ofrece exactamente 2 opciones de decisión — solo una es correcta según la lección.
+Reto 1 (tipo ${type1}):
+${typeDescs[type1]}
 
-Reglas: tono profesional, directo, elegante. Sin lenguaje infantil. Sin frases de videojuego. Devuelve ÚNICAMENTE JSON sin markdown:
-[
-  {"type":"SOCRÁTICA","question":"[la afirmación mito]","options":["Verdadero","Falso"],"correctIndex":1,"explanation":"[por qué es falso]"},
-  {"type":"ORÁCULO","question":"[el escenario]","options":["[opción A]","[opción B]"],"correctIndex":0,"explanation":"[por qué la opción A es correcta]"}
-]`;
+Reto 2 (tipo ${type2}):
+${typeDescs[type2]}
+
+Reglas: tono profesional, directo, elegante. Sin lenguaje infantil. Sin frases de videojuego. Devuelve ÚNICAMENTE un array JSON con exactamente 2 objetos, sin markdown.`;
 
     const raw = await invokeBedrockForJson(prompt, 800).catch(() => null);
     if (!Array.isArray(raw) || raw.length === 0) continue;

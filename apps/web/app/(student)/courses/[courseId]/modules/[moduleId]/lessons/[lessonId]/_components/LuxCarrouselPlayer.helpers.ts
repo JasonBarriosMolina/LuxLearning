@@ -5,6 +5,7 @@ export interface CarouselSlide {
   order: number;
   onScreenText: { title: string; bullets: string[] };
   imageUrl: string | null;
+  imageCredit?: string | null;
   startMs: number;
   endMs: number;
 }

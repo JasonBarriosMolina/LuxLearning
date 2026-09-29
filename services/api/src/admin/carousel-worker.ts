@@ -8,11 +8,32 @@
 // anyone ever downloads it, was adding real time to every generation).
 import { createId } from '@paralleldrive/cuid2';
 import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage } from './ctx';
-import { generateLessonImage } from './ai-image-helpers';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 
 const IMAGE_CONCURRENCY = 3;
+
+async function fetchPexelsImageForCarousel(keywords: string): Promise<{ url: string; credit: string } | null> {
+  const key = process.env.PEXELS_API_KEY ?? '';
+  if (!key) return null;
+  try {
+    const q = encodeURIComponent(keywords.replace(/<[^>]+>/g, ' ').trim().slice(0, 120));
+    const res = await fetch(`https://api.pexels.com/v1/search?query=${q}&per_page=5&orientation=landscape`, {
+      headers: { Authorization: key },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    const photo = data?.photos?.[0];
+    if (!photo) return null;
+    return {
+      url: photo.src?.large2x ?? photo.src?.large ?? photo.src?.original,
+      credit: `Foto de ${photo.photographer} en Pexels`,
+    };
+  } catch {
+    return null;
+  }
+}
 // ~750 chars/min is a rough Polly neural speaking-rate estimate — only used as a fallback
 // when the number of sentence speech marks doesn't line up 1:1 with the slide count (the
 // model didn't phrase each slide as exactly one Polly-recognized sentence).
@@ -113,18 +134,22 @@ export async function generateCarouselAssets(
 
   const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
 
-  const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
+  // Fetch Pexels images per slide (DmPpbrff 2026-09-28 — Mack: replace AI images with Pexels)
+  const slideImages: ({ url: string; credit: string } | null)[] = new Array(fittedSlides.length).fill(null);
   for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
     const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
     await Promise.all(batch.map(async (s, bi) => {
       const idx = i + bi;
-      const url = await generateLessonImage(mod.title, mod.title, idx, { promptText: s.imagePrompt, style: 'diagram' }).catch(() => null);
-      slideImages[idx] = url;
+      const result = await fetchPexelsImageForCarousel(`${s.imagePrompt} ${mod.title}`).catch(() => null);
+      slideImages[idx] = result;
     }));
   }
 
   const finalSlides = timedSlides.map((s, i) => ({
-    order: s.order, onScreenText: s.onScreenText, imageUrl: slideImages[i], startMs: s.startMs, endMs: s.endMs,
+    order: s.order, onScreenText: s.onScreenText,
+    imageUrl: slideImages[i]?.url ?? null,
+    imageCredit: slideImages[i]?.credit ?? null,
+    startMs: s.startMs, endMs: s.endMs,
   }));
 
   // Honest duration — derived from the actual narration length (last slide's endMs),
@@ -144,7 +169,7 @@ export async function generateCarouselAssets(
   const lessonData = {
     moduleId, title, duration: `${durationMin} min`,
     type: 'carousel', content: null, points: [], tip: '', youtubeId: '',
-    audioUrl: narration.audioUrl, carouselSlides: finalSlides, speechMarks: narration.marks as any, pdfRecapUrl: null,
+    audioUrl: narration.audioUrl, carouselSlides: finalSlides as any, speechMarks: narration.marks as any, pdfRecapUrl: null,
   };
 
   let lesson: { id: string };

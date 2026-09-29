@@ -57,11 +57,14 @@ export function escapeHtml(text: string): string {
 export async function searchYoutubeVideo(
   query: string,
   apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
+  lang = 'es',
 ): Promise<{ videoId: string; title: string; channelTitle: string } | null> {
   if (!apiKey || !query.trim()) return null;
+  // publishedAfter = 5 years ago; HD + rating order + education category + medium duration
+  const cutoff = new Date(Date.now() - 5 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&safeSearch=strict&relevanceLanguage=es&q=${encodeURIComponent(query)}&key=${apiKey}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=5&safeSearch=strict&relevanceLanguage=${lang}&videoDefinition=high&videoDuration=medium&videoCategoryId=27&order=rating&publishedAfter=${encodeURIComponent(cutoff)}&q=${encodeURIComponent(query)}&key=${apiKey}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
     const data = await res.json() as any;
     const item = data?.items?.[0];
@@ -80,11 +83,14 @@ export async function searchYoutubeVideo(
 export async function fetchYoutubeEduVideo(
   keywords: string,
   apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
+  lang = 'en',
 ): Promise<string | null> {
   if (!apiKey || !keywords.trim()) return null;
+  // publishedAfter = 5 years ago; HD + rating order required by Mack (DmPpbrff 2026-09-28)
+  const cutoff = new Date(Date.now() - 5 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
   try {
     const q = encodeURIComponent(keywords.trim());
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=en&order=relevance&maxResults=10&key=${apiKey}`;
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&videoDefinition=high&relevanceLanguage=${lang}&order=rating&publishedAfter=${encodeURIComponent(cutoff)}&maxResults=10&key=${apiKey}`;
     const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
     if (!searchRes.ok) return null;
     const searchData = await searchRes.json() as any;

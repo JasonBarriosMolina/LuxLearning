@@ -212,7 +212,7 @@ export default function LessonPage() {
 
   // YouTube error detection
   const [videoError, setVideoError] = useState(false);
-  const [activeTab, setActiveTab] = useState<'video' | 'text'>('video');
+  const [activeTab, setActiveTab] = useState<'video' | 'text'>('text');
 
   // Progress gate — student must visit all available content tabs before marking complete
   const [videoVisited, setVideoVisited] = useState(false);
@@ -302,7 +302,7 @@ export default function LessonPage() {
   }, [lesson]);
 
   // Reset video error state and visited flags when lesson changes
-  useEffect(() => { setVideoError(false); setActiveTab('video'); setVideoVisited(false); setTextVisited(false); }, [lessonId]);
+  useEffect(() => { setVideoError(false); setActiveTab('text'); setVideoVisited(false); setTextVisited(false); }, [lessonId]);
 
   // Track which tabs have been visited (gate: student must see all available content)
   useEffect(() => {

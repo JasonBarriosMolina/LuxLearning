@@ -46,7 +46,11 @@ export function ChallengeCard({ challenge, onAnswered }: Props) {
     }
   };
 
-  const typeLabel = challenge.type === 'SOCRÁTICA' ? 'Mito o realidad' : 'Toma de decisión';
+  const typeLabel =
+    challenge.type === 'SOCRÁTICA' ? 'Mito o realidad' :
+    challenge.type === 'BIFURCACIÓN' ? 'Dilema profesional' :
+    challenge.type === 'ESLABÓN' ? 'Conexión de conceptos' :
+    'Toma de decisión';
 
   return (
     <div className="my-6 rounded-2xl border border-border bg-surface/60 overflow-hidden">

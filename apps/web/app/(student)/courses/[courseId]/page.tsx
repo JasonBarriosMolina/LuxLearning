@@ -193,7 +193,7 @@ export default function CoursePage() {
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3">
         {/* Continue where left off */}
-        {continueUrl && !isCourseComplete && (
+        {continueUrl && !isCourseComplete && completedLessons > 0 && (
           <Link
             href={continueUrl}
             className="flex-1 min-w-[180px] flex items-center justify-center gap-2 bg-cta-gradient text-white font-semibold text-sm px-5 py-3 rounded-xl hover:opacity-90 transition-opacity shadow-sm"

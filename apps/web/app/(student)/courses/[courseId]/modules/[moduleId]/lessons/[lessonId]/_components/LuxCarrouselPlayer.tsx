@@ -186,12 +186,21 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
       {/* Slide stage */}
       <div ref={stageRef} className="relative aspect-video bg-charcoal overflow-hidden">
         {activeSlide?.imageUrl && (
-          <img
-            src={activeSlide.imageUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-linear"
-            style={{ transform: `scale(${kenBurnsScale}) translateX(${kenBurnsTranslate}%)` }}
-          />
+          <>
+            <img
+              src={activeSlide.imageUrl}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-linear"
+              style={{ transform: `scale(${kenBurnsScale}) translateX(${kenBurnsTranslate}%)` }}
+            />
+            {/* Lux logo watermark — bottom-right, 40% opacity (DmPpbrff 2026-09-28) */}
+            <img
+              src="/lux-icon-fullcolor.svg"
+              alt=""
+              aria-hidden="true"
+              className="absolute bottom-2 right-2 w-10 h-10 opacity-40 pointer-events-none"
+            />
+          </>
         )}
         {/* Close captions (Trello DmPpbrff, 2026-09-04/05 — Mack, 09-05 follow-up:
             "deberían estar a una altura diferente para que no interrumpan con lo que ya
@@ -261,6 +270,13 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
           </button>
         </div>
       </div>
+
+      {/* Pexels image credit — "Nuestra referencia" (DmPpbrff 2026-09-28) */}
+      {activeSlide?.imageCredit && (
+        <div className="bg-surface/80 px-4 py-1.5 text-[10px] text-gray-400">
+          <span className="font-medium text-gray-500">Nuestra referencia:</span> {activeSlide.imageCredit}
+        </div>
+      )}
 
       {/* Controls */}
       <div className="bg-surface px-4 py-3 flex items-center gap-3">

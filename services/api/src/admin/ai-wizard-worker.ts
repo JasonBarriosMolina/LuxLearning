@@ -229,11 +229,12 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
           };
         });
 
-        // Populate youtubeId for the first video-type lesson per module (Trello Nk0XDBvJ 2026-09-25 Mack)
-        const firstVideoIdx = lessonData.findIndex((l) => l.type === 'video');
+        // Populate youtubeId for the first video-type lesson per module that is NOT lesson 1
+        // (Trello DmPpbrff, 2026-09-28 — Mack: video should be in concept-explanation lessons, not the intro)
+        const firstVideoIdx = lessonData.findIndex((l, idx) => l.type === 'video' && idx > 0);
         if (firstVideoIdx >= 0) {
           const videoLesson = lessonData[firstVideoIdx];
-          const videoId = await fetchYoutubeEduVideo(`${mod.title} ${videoLesson.title}`).catch(() => null);
+          const videoId = await fetchYoutubeEduVideo(`${mod.title} ${videoLesson.title}`, undefined, isBlEN ? 'en' : 'es').catch(() => null);
           if (videoId) lessonData[firstVideoIdx] = { ...videoLesson, youtubeId: videoId };
         }
 
