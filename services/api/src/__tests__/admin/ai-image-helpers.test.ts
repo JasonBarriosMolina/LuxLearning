@@ -105,37 +105,37 @@ describe('sanitizeUserPromptForImage', () => {
 
 // ── generateLessonInfographic ─────────────────────────────────────────────────
 
-// generateLessonInfographic now uses Stability AI (Trello DmPpbrff comment 6abc14e0,
-// 2026-09-29 — Mack: switched from Haiku SVG to Floating 3D Neumorphic via Stability).
+// generateLessonInfographic now uses Nova Canvas (Trello DmPpbrff comment 6abc2465,
+// 2026-09-29 — Mack: 3D neumorphic floating medallion style via Nova Canvas us-east-1).
 describe('generateLessonInfographic', () => {
-  let bedrockImageClient: any;
+  let bedrockNovaClient: any;
   let s3Client: any;
   let generateLessonInfographic: (title: string, module: string, content: string) => Promise<string | null>;
 
   beforeEach(async () => {
     const ctx = await import('../../admin/ctx');
     const helpers = await import('../../admin/ai-image-helpers');
-    bedrockImageClient = ctx.bedrockImageClient;
+    bedrockNovaClient = ctx.bedrockNovaClient;
     s3Client = ctx.s3Client;
     generateLessonInfographic = helpers.generateLessonInfographic;
-    vi.spyOn(bedrockImageClient, 'send');
+    vi.spyOn(bedrockNovaClient, 'send');
     vi.spyOn(s3Client, 'send').mockResolvedValue({});
     applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
   });
 
-  function makeStabilityBody(base64 = 'aW1hZ2VkYXRh') {
+  function makeNovaBody(base64 = 'aW1hZ2VkYXRh') {
     return Buffer.from(JSON.stringify({ images: [base64] }));
   }
 
-  it('returns S3 JPEG URL when Stability returns image', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
+  it('returns S3 JPEG URL when Nova Canvas returns image', async () => {
+    vi.mocked(bedrockNovaClient.send).mockResolvedValueOnce({ body: makeNovaBody() });
     const result = await generateLessonInfographic('Formatos de Audio', 'Módulo 1', '<p>WAV, MP3, AAC</p>');
     expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
     expect(s3Client.send).toHaveBeenCalled();
   });
 
   it('applies watermark before upload', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
+    vi.mocked(bedrockNovaClient.send).mockResolvedValueOnce({ body: makeNovaBody() });
     let uploadedBody: Buffer | undefined;
     vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
       uploadedBody = cmd.Body;
@@ -146,14 +146,14 @@ describe('generateLessonInfographic', () => {
     expect(uploadedBody?.toString()).toBe('watermarked');
   });
 
-  it('returns null when Stability returns no image', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: Buffer.from(JSON.stringify({ images: [] })) });
+  it('returns null when Nova Canvas returns no image', async () => {
+    vi.mocked(bedrockNovaClient.send).mockResolvedValueOnce({ body: Buffer.from(JSON.stringify({ images: [] })) });
     const result = await generateLessonInfographic('Lección', 'Módulo', '');
     expect(result).toBeNull();
   });
 
   it('returns null when Bedrock throws', async () => {
-    vi.mocked(bedrockImageClient.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
+    vi.mocked(bedrockNovaClient.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
     const result = await generateLessonInfographic('Lección', 'Módulo', 'Contenido');
     expect(result).toBeNull();
   });

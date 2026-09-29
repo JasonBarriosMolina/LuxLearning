@@ -5,7 +5,7 @@
 // pushed ctx.ts over 400 lines).
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { bedrock, bedrockImageClient, s3Client, S3_IMAGES_BUCKET } from './ctx';
+import { bedrock, bedrockImageClient, bedrockNovaClient, s3Client, S3_IMAGES_BUCKET } from './ctx';
 import { applyLuxWatermark } from '../shared/lux-watermark';
 import { generateImageWithGemini, isGeminiImageConfigured } from './ai-image-gemini';
 
@@ -77,41 +77,39 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Stability AI → Floating 3D Neumorphic infographic for module-start lesson images.
-// Spec: Trello DmPpbrff comment 6abc14e0 (2026-09-29 Mack). Switched from Haiku SVG
-// to Stability so the neumorphic soft-shadow / 3D-floating aesthetic is achievable.
-// Returns a JPEG URL (same as other Stability helpers).
+// Nova Canvas → Floating 3D Neumorphic infographic for module-start lesson images.
+// Spec: Trello DmPpbrff comment 6abc2465 (2026-09-29 Mack). Nova Canvas uses a
+// different request format than Stability and runs in us-east-1 (bedrockNovaClient).
+// NOTE: model access for amazon.nova-canvas-v1:0 must be enabled in AWS Bedrock console.
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const safeModule = moduleTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
   const safeLesson = lessonTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
-  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
   const prompt =
-    `Professional Floating 3D Neumorphic Infographic for the Lux Learning e-learning platform. ` +
-    `Topic: "${safeModule}" — "${safeLesson}". ` +
-    `Visual style: Modern Soft Neumorphism with floating circular nodes, each with soft drop shadows and clean ambient lighting creating a 3D floating effect above the background. ` +
-    `Soft gradient fills on node borders: deep navy blue (#0B3A6F) to royal blue, warm golden yellow (#FFC107) accents on edges and curved bevels. ` +
-    `Background: light off-white / soft light gray, clean and minimal. ` +
-    `Layout: well-spaced oval or circular nodes arranged around a central concept in balanced organic flow, connected by elegant thin dotted lines with elegant dot markers. ` +
-    `Each node has a fine-line vector icon at its top center, generous negative space — NO overlapping borders, NO touching cards. ` +
-    `Branding: Lux Learning identity colors throughout. ` +
-    `Quality: 8k resolution, ultra-clean vector render, professional e-learning UX design aesthetic. ` +
-    `NO readable text, NO words, NO letters, NO typography — purely visual and symbolic. NO human faces.`;
+    `Floating 3D neumorphic infographic diagram, modern SaaS UX design, for "${safeModule}" — "${safeLesson}" on Lux Learning e-learning platform. ` +
+    `One central circular medallion node connected to five surrounding floating circular disc nodes by thin elegant dotted lines with round markers. ` +
+    `Each disc: white with soft 3D drop shadow and ambient studio lighting, subtle bevel with deep navy blue (#0B3A6F) and warm golden yellow (#FFC107) gradient edge. ` +
+    `Inside each disc: a single thin fine-line stylized vector icon representing the module concept (sound waves, piano keys, mixing console, notes, audio waveform). ` +
+    `Background: ultra-light warm off-white / soft light gray, clean, minimal texture. ` +
+    `Hyper-clean illustration, professional e-learning aesthetic, ample breathing space between elements, perfect visual alignment. ` +
+    `NO text, NO words, NO letters, NO typography, NO labels of any kind. NO square cards, NO overlapping borders, NO flat 2D design, NO dark backgrounds, NO human faces.`;
+  const negativePrompt =
+    `text, words, letters, typography, labels, captions, handwriting, numbers, ` +
+    `square cards, rectangular boxes, flat 2D, dark background, overlapping elements, ` +
+    `crowded layout, human faces, human bodies, photography, photorealistic`;
   try {
-    const resp = await bedrockImageClient.send(new InvokeModelCommand({
-      modelId: 'stability.stable-image-core-v1:1',
+    const resp = await bedrockNovaClient.send(new InvokeModelCommand({
+      modelId: 'amazon.nova-canvas-v1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
-        prompt,
-        negative_prompt: NEGATIVE_PROMPT_BASE + ', text, words, letters, typography, overlapping elements, touching cards, crowded layout, flat 2D, no shadows, dark background, faces, human figures',
-        mode: 'text-to-image',
-        aspect_ratio: '1:1',
-        output_format: 'jpeg',
+        taskType: 'TEXT_IMAGE',
+        textToImageParams: { text: prompt, negativeText: negativePrompt },
+        imageGenerationConfig: { numberOfImages: 1, height: 1024, width: 1024, cfgScale: 8.0 },
       }),
     }));
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
-    if (!base64) { console.error('[InfographicGen] Stability returned no image'); return null; }
+    if (!base64) { console.error('[InfographicGen] Nova Canvas returned no image'); return null; }
     let imgBuffer = Buffer.from(base64, 'base64');
     imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
       console.error('[InfographicGen] Watermark failed, using unwatermarked:', err);

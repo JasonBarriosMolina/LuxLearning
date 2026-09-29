@@ -15,6 +15,8 @@ export const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1'
 export const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
 // Stability Image Core is only available in us-west-2
 export const bedrockImageClient = new BedrockRuntimeClient({ region: 'us-west-2' });
+// Nova Canvas is only available in us-east-1
+export const bedrockNovaClient = new BedrockRuntimeClient({ region: 'us-east-1' });
 export const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
