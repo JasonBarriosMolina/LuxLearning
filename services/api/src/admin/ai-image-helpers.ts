@@ -78,23 +78,29 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
 }
 
 // Haiku → SVG infographic with real readable text (for regenType 'infographic')
+// Prompt updated per Mack's spec (Trello DmPpbrff, 2026-09-29 comment 6abbed5d):
+// card-grid layout, icons strictly in their own reserved space (NEVER overlapping text),
+// linear minimal vector icons only, Lux brand colors (institutional blue + golden yellow + white).
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Create a clean educational SVG infographic (1200x1200px) for this lesson.
+  const prompt = `Create a clean, professional, modern educational SVG infographic (1200x900px) for this lesson following the Lux Learning visual system.
 
 Lesson: "${lessonTitle}"
 Module: "${moduleTitle}"
 Content: ${snippet}
 
-Generate a complete, valid SVG with:
-- White background (#FFFFFF)
-- Title at top in dark color, large font (32-40px), in Spanish, wrapped with tspan if needed
-- 3-4 content sections, each with: a colored rounded rectangle header, a simple SVG icon built from basic shapes (circle/rect/path — no external images or base64), 2-3 lines of explanatory text in Spanish
-- Color palette: complementary colors (blues #3B82F6, greens #10B981, oranges #F59E0B, purples #8B5CF6)
-- font-family="Arial, Helvetica, sans-serif" on all text elements
-- All text content in Spanish, directly related to the lesson
-- NO external images, NO base64, NO JavaScript, NO CSS classes — pure SVG attributes only
-- viewBox="0 0 1200 1200" width="1200" height="1200"
+STRICT LAYOUT RULES — follow exactly:
+1. viewBox="0 0 1200 900" width="1200" height="900", white background (#FFFFFF)
+2. TOP HEADER BAR: full-width rect height="70" fill="#1E3A5F" (institutional blue). Inside: text y="45" fill="#FFFFFF" font-size="26" font-weight="bold" font-family="Arial, Helvetica, sans-serif" — show the module title, centered (x="600" text-anchor="middle").
+3. SUBTITLE BAR: rect y="70" height="36" fill="#F5C518" (institutional gold). Inside: text y="94" fill="#1E3A5F" font-size="16" font-family="Arial, Helvetica, sans-serif" — show lesson title, centered.
+4. CARD GRID: 3 or 4 rectangular cards in a 2-column grid, starting at y="130". Each card:
+   a. Card background: <rect> with fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.5" rx="8" — fixed size 540x160 each, arranged in a 2×2 grid with 30px gaps, starting x=30 and x=600.
+   b. ICON ZONE (left side): a 60x60 reserved area inside the card (x+12, y+50). Draw a simple linear icon using only <circle>, <rect>, <line>, <polyline>, <path> strokes — stroke="#1E3A5F" fill="none" stroke-width="2". The icon MUST be entirely inside this 60×60 box. NEVER let any icon path extend into the text zone.
+   c. SECTION TITLE BAR: a colored <rect> strip at the top of the card (full card width, height=28, fill="#1E3A5F" rx="8" — only top corners). Inside: <text> fill="#F5C518" font-size="13" font-weight="bold" font-family="Arial" — section name, clipped to card width.
+   d. TEXT ZONE (right of icon): text starts at x = card_x + 85, y = card_y + 65. Use 2 <text> lines, font-size="13" fill="#1E3A5F" font-family="Arial, Helvetica, sans-serif". Each line max 55 chars. NEVER place text at x < card_x + 80.
+5. FOOTER: rect at bottom, fill="#1E3A5F" height="36". Text: "Lux Learning" in white, centered.
+6. NO external images, NO base64, NO JavaScript, NO CSS classes, NO <style> blocks — pure SVG presentation attributes only.
+7. CRITICAL: Every icon <path>/<line>/<circle> must have an explicit clip-path or must be geometrically contained within the icon zone. If in doubt, use a <clipPath> to constrain the icon to its 60×60 box.
 
 Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No markdown, no explanation.`;
 
