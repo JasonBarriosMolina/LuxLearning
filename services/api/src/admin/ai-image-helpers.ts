@@ -88,24 +88,13 @@ export async function generateLessonInfographic(lessonTitle: string, moduleTitle
   const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
 
   const systemPrompt =
-    `Eres un diseñador UI/UX experto en educación digital y desarrollo SVG vectorial para la plataforma "Lux Learning". ` +
-    `Genera un código SVG completo, limpio y responsivo (viewBox "0 0 1200 800") que represente un mapa conceptual / infografía 3D flotante para el módulo especificado.\n\n` +
-    `ESTILO VISUAL Y PROFUNDIDAD (3D NEUMORFISMO):\n` +
-    `Incluye filtros de sombra paralela sutiles (<feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0B3A6F" flood-opacity="0.12"/>) aplicados a los contenedores para dar la sensación de que flotan sobre el fondo.\n` +
-    `Utiliza degradados suaves (<linearGradient>) en los bordes y biseles de los círculos o tarjetas.\n` +
-    `Fondo del canvas: Gris ultra claro limpio (#F8FAFC).\n\n` +
-    `PALETA DE COLORES INSTITUCIONAL (LUX LEARNING):\n` +
-    `Color Primario: Azul marino profundo (#0B3A6F) para el nodo central, conectores y títulos.\n` +
-    `Color de Acento: Amarillo/Dorado cálido (#FFC107) para nodos destacados y resaltados.\n` +
-    `Nodos Flotantes: Blanco puro (#FFFFFF) con bordes en degradado azul y dorado.\n\n` +
-    `COMPOSICIÓN Y TIPOGRAFÍA:\n` +
-    `Estructura: Un nodo central flotante redondeado con el título del módulo, conectado con líneas punteadas elegantes y marcadores de punto a 5 o 6 nodos circulares periféricos.\n` +
-    `Tipografía: Usa fuentes sans-serif nítidas (font-family="system-ui, -apple-system, sans-serif"). Títulos en bold legibles de gran tamaño (mínimo 16px para subtítulos, 20px+ para títulos), con suficiente espacio de respiración.\n` +
-    `Iconografía: Dentro de cada nodo periférico, dibuja un icono lineal fino en código SVG (<path>) alusivo al concepto de esa lección.\n\n` +
-    `LOGOTIPO E IDENTIDAD:\n` +
-    `En la esquina inferior derecha o pie de página central, incluye el isotipo/logo horizontal de Lux Learning utilizando el triángulo azul (#0B3A6F) atravesado por la estrella fugaz dorada (#FFC107) y el texto "Lux Learning".\n\n` +
-    `FORMATO DE SALIDA:\n` +
-    `Devuelve ÚNICAMENTE el bloque <svg>...</svg> válido y auto-contenido, sin texto explicativo alrededor, sin Markdown adicional, directo para ser renderizado en la aplicación.`;
+    `Eres diseñador SVG para la plataforma "Lux Learning". Genera un SVG COMPACTO (viewBox="0 0 1200 800") de mapa conceptual 3D flotante. ` +
+    `REGLAS ESTRICTAS: sin comentarios XML, sin espacios innecesarios, máximo 100 líneas totales.\n` +
+    `ESTRUCTURA: 1 nodo central (#0B3A6F, radio 90) + 5 nodos periféricos (blanco, radio 70) conectados por líneas punteadas. Fondo #F8FAFC.\n` +
+    `ESTILO: filter feDropShadow en cada nodo (dy="6" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"). Bordes con stroke="#0B3A6F". Un acento dorado (#FFC107) en nodo central.\n` +
+    `TEXTO: font-family="system-ui,sans-serif". Nodo central: título módulo bold 18px blanco. Nodos periféricos: etiqueta 13px #0B3A6F. Todo texto legible, no recortado.\n` +
+    `LOGO: esquina inferior derecha — triángulo relleno #0B3A6F + línea diagonal #FFC107 + texto "Lux Learning" 14px #0B3A6F.\n` +
+    `SALIDA: devuelve ÚNICAMENTE <svg>...</svg>, sin markdown, sin explicación.`;
 
   const userMessage =
     `Módulo: "${safeModule}"\nLección: "${safeLesson}"\n` +
