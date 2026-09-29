@@ -77,44 +77,62 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Stability AI → Floating 3D Neumorphic infographic for module-start lesson images.
-// Spec: Trello DmPpbrff comment 6abc2465 (2026-09-29 Mack). Nova Canvas v1 was
-// attempted but is marked LEGACY in Bedrock with no v2 available — switched back to
-// Stability Image Core which is the active model. Same 3D neumorphic prompt, 1:1 aspect.
+// Claude Haiku → SVG 3D Neumorphic infographic for lesson cards.
+// Spec: Trello DmPpbrff comment 6abc28f1 (2026-09-29 Mack). Haiku generates a full
+// self-contained SVG (viewBox 0 0 1200 800): central node + 5-6 peripheral nodes,
+// drop-shadow filters, navy/gold palette, inline SVG path icons, Lux logo bottom-right.
+// SVG uploaded to S3 as image/svg+xml so existing <img> tags render it natively.
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const safeModule = moduleTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
   const safeLesson = lessonTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
-  const prompt =
-    `Floating 3D neumorphic infographic diagram, modern SaaS UX design, for the topic "${safeModule} — ${safeLesson}". ` +
-    `One central circular medallion node connected to five surrounding floating circular disc nodes by thin elegant dotted lines with round markers. ` +
-    `Each disc: white with soft 3D drop shadow and ambient studio lighting, subtle bevel with deep navy blue (#0B3A6F) and warm golden yellow (#FFC107) gradient edge. ` +
-    `Inside each disc: a single thin fine-line stylized vector icon representing a concept related to the module topic. ` +
-    `Background: ultra-light warm off-white / soft light gray, clean, minimal texture. ` +
-    `Hyper-clean illustration, professional e-learning aesthetic, ample breathing space between elements, perfect visual alignment. ` +
-    `NO text, NO words, NO letters, NO typography, NO labels of any kind. NO square cards, NO overlapping borders, NO flat 2D design, NO dark backgrounds, NO human faces.`;
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+
+  const systemPrompt =
+    `Eres un diseñador UI/UX experto en educación digital y desarrollo SVG vectorial para la plataforma "Lux Learning". ` +
+    `Genera un código SVG completo, limpio y responsivo (viewBox "0 0 1200 800") que represente un mapa conceptual / infografía 3D flotante para el módulo especificado.\n\n` +
+    `ESTILO VISUAL Y PROFUNDIDAD (3D NEUMORFISMO):\n` +
+    `Incluye filtros de sombra paralela sutiles (<feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0B3A6F" flood-opacity="0.12"/>) aplicados a los contenedores para dar la sensación de que flotan sobre el fondo.\n` +
+    `Utiliza degradados suaves (<linearGradient>) en los bordes y biseles de los círculos o tarjetas.\n` +
+    `Fondo del canvas: Gris ultra claro limpio (#F8FAFC).\n\n` +
+    `PALETA DE COLORES INSTITUCIONAL (LUX LEARNING):\n` +
+    `Color Primario: Azul marino profundo (#0B3A6F) para el nodo central, conectores y títulos.\n` +
+    `Color de Acento: Amarillo/Dorado cálido (#FFC107) para nodos destacados y resaltados.\n` +
+    `Nodos Flotantes: Blanco puro (#FFFFFF) con bordes en degradado azul y dorado.\n\n` +
+    `COMPOSICIÓN Y TIPOGRAFÍA:\n` +
+    `Estructura: Un nodo central flotante redondeado con el título del módulo, conectado con líneas punteadas elegantes y marcadores de punto a 5 o 6 nodos circulares periféricos.\n` +
+    `Tipografía: Usa fuentes sans-serif nítidas (font-family="system-ui, -apple-system, sans-serif"). Títulos en bold legibles de gran tamaño (mínimo 16px para subtítulos, 20px+ para títulos), con suficiente espacio de respiración.\n` +
+    `Iconografía: Dentro de cada nodo periférico, dibuja un icono lineal fino en código SVG (<path>) alusivo al concepto de esa lección.\n\n` +
+    `LOGOTIPO E IDENTIDAD:\n` +
+    `En la esquina inferior derecha o pie de página central, incluye el isotipo/logo horizontal de Lux Learning utilizando el triángulo azul (#0B3A6F) atravesado por la estrella fugaz dorada (#FFC107) y el texto "Lux Learning".\n\n` +
+    `FORMATO DE SALIDA:\n` +
+    `Devuelve ÚNICAMENTE el bloque <svg>...</svg> válido y auto-contenido, sin texto explicativo alrededor, sin Markdown adicional, directo para ser renderizado en la aplicación.`;
+
+  const userMessage =
+    `Módulo: "${safeModule}"\nLección: "${safeLesson}"\n` +
+    (snippet ? `Contenido clave: ${snippet}\n` : '') +
+    `Genera la infografía SVG completa ahora.`;
+
   try {
-    const resp = await bedrockImageClient.send(new InvokeModelCommand({
-      modelId: 'stability.stable-image-core-v1:1',
+    const resp = await bedrock.send(new InvokeModelCommand({
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
-        prompt,
-        negative_prompt: NEGATIVE_PROMPT_BASE + ', flat 2D, dark background, human faces, human bodies, photography, photorealistic, square cards, rectangular boxes',
-        mode: 'text-to-image',
-        aspect_ratio: '1:1',
-        output_format: 'jpeg',
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
       }),
     }));
-    const result = JSON.parse(new TextDecoder().decode(resp.body));
-    const base64 = result.images?.[0];
-    if (!base64) { console.error('[InfographicGen] Stability returned no image'); return null; }
-    let imgBuffer = Buffer.from(base64, 'base64');
-    imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
-      console.error('[InfographicGen] Watermark failed, using unwatermarked:', err);
-      return imgBuffer;
-    });
-    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key, Body: imgBuffer, ContentType: 'image/jpeg' }));
+    const text: string = JSON.parse(new TextDecoder().decode(resp.body)).content?.[0]?.text ?? '';
+    const svgMatch = text.match(/<svg[\s\S]*?<\/svg>/i);
+    if (!svgMatch) { console.error('[InfographicGen] Haiku returned no SVG block'); return null; }
+    const svgBuffer = Buffer.from(svgMatch[0], 'utf-8');
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_IMAGES_BUCKET, Key: key, Body: svgBuffer,
+      ContentType: 'image/svg+xml',
+    }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
   } catch (err) {
     console.error('[InfographicGen] Error:', err);

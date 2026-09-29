@@ -105,55 +105,56 @@ describe('sanitizeUserPromptForImage', () => {
 
 // ── generateLessonInfographic ─────────────────────────────────────────────────
 
-// generateLessonInfographic uses Stability AI (3D neumorphic style). Nova Canvas v1 was
-// attempted but is marked LEGACY in Bedrock with no active v2 available (2026-09-29).
+// generateLessonInfographic uses Claude Haiku to generate an SVG infographic.
+// Spec: Trello DmPpbrff comment 6abc28f1 (2026-09-29 Mack).
 describe('generateLessonInfographic', () => {
-  let bedrockImageClient: any;
+  let bedrock: any;
   let s3Client: any;
   let generateLessonInfographic: (title: string, module: string, content: string) => Promise<string | null>;
 
   beforeEach(async () => {
     const ctx = await import('../../admin/ctx');
     const helpers = await import('../../admin/ai-image-helpers');
-    bedrockImageClient = ctx.bedrockImageClient;
+    bedrock = ctx.bedrock;
     s3Client = ctx.s3Client;
     generateLessonInfographic = helpers.generateLessonInfographic;
-    vi.spyOn(bedrockImageClient, 'send');
+    vi.spyOn(bedrock, 'send');
     vi.spyOn(s3Client, 'send').mockResolvedValue({});
-    applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
   });
 
-  function makeStabilityBody(base64 = 'aW1hZ2VkYXRh') {
-    return Buffer.from(JSON.stringify({ images: [base64] }));
+  const fakeSvg = '<svg viewBox="0 0 1200 800"><rect width="100%" height="100%" fill="#F8FAFC"/><text>Test</text></svg>';
+
+  function makeHaikuBody(svgContent = fakeSvg) {
+    return Buffer.from(JSON.stringify({ content: [{ text: svgContent }] }));
   }
 
-  it('returns S3 JPEG URL when Stability returns image', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
+  it('returns S3 SVG URL when Haiku returns valid SVG', async () => {
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody() });
     const result = await generateLessonInfographic('Formatos de Audio', 'Módulo 1', '<p>WAV, MP3, AAC</p>');
-    expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
+    expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.svg$/);
     expect(s3Client.send).toHaveBeenCalled();
   });
 
-  it('applies watermark before upload', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
-    let uploadedBody: Buffer | undefined;
+  it('uploads SVG with correct content type', async () => {
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody() });
+    let uploadCmd: any;
     vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
-      uploadedBody = cmd.Body;
+      uploadCmd = cmd;
       return Promise.resolve({});
     });
     await generateLessonInfographic('Test', 'Módulo', '');
-    expect(applyLuxWatermarkMock).toHaveBeenCalled();
-    expect(uploadedBody?.toString()).toBe('watermarked');
+    expect(uploadCmd?.ContentType).toBe('image/svg+xml');
+    expect(uploadCmd?.Body?.toString()).toContain('<svg');
   });
 
-  it('returns null when Stability returns no image', async () => {
-    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: Buffer.from(JSON.stringify({ images: [] })) });
+  it('returns null when Haiku returns no SVG block', async () => {
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody('No SVG here, just text.') });
     const result = await generateLessonInfographic('Lección', 'Módulo', '');
     expect(result).toBeNull();
   });
 
   it('returns null when Bedrock throws', async () => {
-    vi.mocked(bedrockImageClient.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
+    vi.mocked(bedrock.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
     const result = await generateLessonInfographic('Lección', 'Módulo', 'Contenido');
     expect(result).toBeNull();
   });
