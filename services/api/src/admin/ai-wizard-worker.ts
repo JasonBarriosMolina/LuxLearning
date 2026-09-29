@@ -242,7 +242,12 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         }
         if (videoTargetIdx >= 0) {
           const videoLesson = lessonData[videoTargetIdx];
-          const videoId = await fetchYoutubeEduVideo(`${mod.title} ${videoLesson.title}`, undefined, isBlEN ? 'en' : 'es').catch(() => null);
+          const query = `${mod.title} ${videoLesson.title}`;
+          // ES courses: search in Spanish first, then English fallback (Trello DmPpbrff
+          // comment 6abc1470 — Mack: also show English results when no Spanish video found).
+          // EN courses: English only.
+          let videoId = await fetchYoutubeEduVideo(query, undefined, isBlEN ? 'en' : 'es').catch(() => null);
+          if (!videoId && !isBlEN) videoId = await fetchYoutubeEduVideo(query, undefined, 'en').catch(() => null);
           if (videoId) lessonData[videoTargetIdx] = { ...videoLesson, youtubeId: videoId };
         }
 
