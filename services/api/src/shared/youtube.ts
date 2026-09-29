@@ -80,37 +80,51 @@ export async function searchYoutubeVideo(
  *  lesson content and slide generation. Uses videoCategoryId=27 (Education), safeSearch=strict,
  *  videoDuration=medium (4-20 min), relevanceLanguage=en, then validates duration ≤ 10 min via
  *  contentDetails. Returns the first qualifying videoId, or the first result as fallback. */
+async function fetchYoutubeEduVideoOnce(
+  keywords: string, apiKey: string, lang: string, strict: boolean,
+): Promise<string | null> {
+  const cutoff = new Date(Date.now() - 5 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
+  const q = encodeURIComponent(keywords.trim());
+  // Strict pass: Education category + HD + rating order (matches Mack's Sep-28 spec).
+  // Broad pass: drop category+HD filters — many quality educational videos on YouTube
+  // are NOT in category 27 (Education) or HD; strict pass returns 0 for most ES queries.
+  const categoryFilter = strict ? '&videoCategoryId=27&videoDefinition=high&order=rating' : '&order=relevance';
+  const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video${categoryFilter}&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=${lang}&publishedAfter=${encodeURIComponent(cutoff)}&maxResults=10&key=${apiKey}`;
+  const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
+  if (!searchRes.ok) return null;
+  const searchData = await searchRes.json() as any;
+  const ids: string[] = (searchData?.items ?? []).map((it: any) => it?.id?.videoId).filter(Boolean);
+  if (!ids.length) return null;
+
+  const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${apiKey}`;
+  const detailRes = await fetch(detailUrl, { signal: AbortSignal.timeout(6000) });
+  if (detailRes.ok) {
+    const detailData = await detailRes.json() as any;
+    for (const item of (detailData?.items ?? [])) {
+      const dur = item?.contentDetails?.duration ?? '';
+      const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?/);
+      if (!m) continue;
+      if (parseInt(m[1] ?? '0') > 0) continue;
+      if (parseInt(m[2] ?? '0') > 10) continue;
+      return item.id as string;
+    }
+  }
+  return ids[0] ?? null;
+}
+
 export async function fetchYoutubeEduVideo(
   keywords: string,
   apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
   lang = 'en',
 ): Promise<string | null> {
   if (!apiKey || !keywords.trim()) return null;
-  // publishedAfter = 5 years ago; HD + rating order required by Mack (DmPpbrff 2026-09-28)
-  const cutoff = new Date(Date.now() - 5 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const q = encodeURIComponent(keywords.trim());
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video&videoCategoryId=27&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&videoDefinition=high&relevanceLanguage=${lang}&order=rating&publishedAfter=${encodeURIComponent(cutoff)}&maxResults=10&key=${apiKey}`;
-    const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
-    if (!searchRes.ok) return null;
-    const searchData = await searchRes.json() as any;
-    const ids: string[] = (searchData?.items ?? []).map((it: any) => it?.id?.videoId).filter(Boolean);
-    if (!ids.length) return null;
-
-    const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${apiKey}`;
-    const detailRes = await fetch(detailUrl, { signal: AbortSignal.timeout(6000) });
-    if (detailRes.ok) {
-      const detailData = await detailRes.json() as any;
-      for (const item of (detailData?.items ?? [])) {
-        const dur = item?.contentDetails?.duration ?? '';
-        const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?/);
-        if (!m) continue;
-        if (parseInt(m[1] ?? '0') > 0) continue;
-        if (parseInt(m[2] ?? '0') > 10) continue;
-        return item.id as string;
-      }
-    }
-    return ids[0] ?? null;
+    // Try strict first (HD + Education category + rating). If no results, retry
+    // without those filters — common for non-English content (Trello DmPpbrff
+    // comment 6abc1587: videos missing after regen because strict filters return 0).
+    const strict = await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, true);
+    if (strict) return strict;
+    return await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, false);
   } catch {
     return null;
   }
