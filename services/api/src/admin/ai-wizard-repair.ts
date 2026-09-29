@@ -7,7 +7,8 @@ import webpush from 'web-push';
 import { createId } from '@paralleldrive/cuid2';
 import { AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { SendEmailCommand } from '@aws-sdk/client-ses';
-import { createNotification, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { createNotification, getPushSubscriptionsByUserId, ddb, TABLES } from '../shared/db-dynamo';
 import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson,
   ses, cognito, FROM_EMAIL, FRONTEND_URL, USER_POOL_ID, DISTRACTOR_QUALITY_RULES,
@@ -45,7 +46,24 @@ async function sendPushAndInApp(userId: string, type: 'GENERAL' | 'COURSE_READY_
 export async function notifyCourseGenerationDone(
   creatorUserId: string | undefined, courseId: string, courseTitle: string, isEN: boolean, incomplete: boolean,
   evaluatorId?: string | null,
+  jobId?: string,
 ): Promise<void> {
+  // Idempotency guard: Lambda Event retries can re-invoke this. Atomically set
+  // notified=true on the DDB job record; if already set, bail out immediately.
+  if (jobId) {
+    try {
+      await ddb.send(new UpdateCommand({
+        TableName: TABLES.PROGRESS,
+        Key: { userId: '_AIJOB', sk: jobId },
+        UpdateExpression: 'SET notified = :t',
+        ConditionExpression: 'attribute_not_exists(notified)',
+        ExpressionAttributeValues: { ':t': true },
+      }));
+    } catch (e: any) {
+      if (e?.name === 'ConditionalCheckFailedException') return; // already notified
+      console.error('[notifyCourseGenerationDone] idempotency check failed (non-fatal):', e);
+    }
+  }
   const message = incomplete
     ? (isEN
       ? `⚠️ "${courseTitle}" is ready, but some modules need manual review (generation attempts exhausted).`

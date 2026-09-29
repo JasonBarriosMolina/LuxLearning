@@ -10,30 +10,9 @@ import { createId } from '@paralleldrive/cuid2';
 import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage } from './ctx';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
+import { generateCarouselInfographic } from './ai-image-helpers';
 
 const IMAGE_CONCURRENCY = 3;
-
-async function fetchPexelsImageForCarousel(keywords: string): Promise<{ url: string; credit: string } | null> {
-  const key = process.env.PEXELS_API_KEY ?? '';
-  if (!key) return null;
-  try {
-    const q = encodeURIComponent(keywords.replace(/<[^>]+>/g, ' ').trim().slice(0, 120));
-    const res = await fetch(`https://api.pexels.com/v1/search?query=${q}&per_page=5&orientation=landscape`, {
-      headers: { Authorization: key },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as any;
-    const photo = data?.photos?.[0];
-    if (!photo) return null;
-    return {
-      url: photo.src?.large2x ?? photo.src?.large ?? photo.src?.original,
-      credit: `Foto de ${photo.photographer} en Pexels`,
-    };
-  } catch {
-    return null;
-  }
-}
 // ~750 chars/min is a rough Polly neural speaking-rate estimate — only used as a fallback
 // when the number of sentence speech marks doesn't line up 1:1 with the slide count (the
 // model didn't phrase each slide as exactly one Polly-recognized sentence).
@@ -134,21 +113,19 @@ export async function generateCarouselAssets(
 
   const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
 
-  // Fetch Pexels images per slide (DmPpbrff 2026-09-28 — Mack: replace AI images with Pexels)
-  const slideImages: ({ url: string; credit: string } | null)[] = new Array(fittedSlides.length).fill(null);
+  // Generate AI infographic per slide (DmPpbrff 2026-09-29 — Mack: Stability AI infographic/diagram style)
+  const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
   for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
     const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
     await Promise.all(batch.map(async (s, bi) => {
       const idx = i + bi;
-      const result = await fetchPexelsImageForCarousel(`${s.imagePrompt} ${mod.title}`).catch(() => null);
-      slideImages[idx] = result;
+      slideImages[idx] = await generateCarouselInfographic(`${s.imagePrompt} ${mod.title}`).catch(() => null);
     }));
   }
 
   const finalSlides = timedSlides.map((s, i) => ({
     order: s.order, onScreenText: s.onScreenText,
-    imageUrl: slideImages[i]?.url ?? null,
-    imageCredit: slideImages[i]?.credit ?? null,
+    imageUrl: slideImages[i] ?? null,
     startMs: s.startMs, endMs: s.endMs,
   }));
 

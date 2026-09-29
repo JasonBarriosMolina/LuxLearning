@@ -214,9 +214,11 @@ export default function LessonPage() {
   const [videoError, setVideoError] = useState(false);
   const [activeTab, setActiveTab] = useState<'video' | 'text'>('text');
 
-  // Progress gate — student must visit all available content tabs before marking complete
-  const [videoVisited, setVideoVisited] = useState(false);
+  // Progress gate — student must watch ≥80% of video before marking complete
+  const [videoProgress, setVideoProgress] = useState(0); // 0-100
   const [textVisited, setTextVisited] = useState(false);
+  const ytPlayerRef = useRef<any>(null);
+  const ytIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Transcript
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -302,13 +304,65 @@ export default function LessonPage() {
   }, [lesson]);
 
   // Reset video error state and visited flags when lesson changes
-  useEffect(() => { setVideoError(false); setActiveTab('text'); setVideoVisited(false); setTextVisited(false); }, [lessonId]);
-
-  // Track which tabs have been visited (gate: student must see all available content)
   useEffect(() => {
-    if (activeTab === 'video') setVideoVisited(true);
+    setVideoError(false); setActiveTab('text'); setVideoProgress(0); setTextVisited(false);
+    if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
+    if (ytPlayerRef.current?.destroy) { try { ytPlayerRef.current.destroy(); } catch { /* ignore */ } ytPlayerRef.current = null; }
+  }, [lessonId]);
+
+  // Track text tab visits
+  useEffect(() => {
     if (activeTab === 'text') setTextVisited(true);
   }, [activeTab]);
+
+  // YouTube IFrame Player API — load script once, then create player per lesson
+  useEffect(() => {
+    if (!lesson?.youtubeId || videoError) return;
+    const divId = `yt-player-${lessonId}`;
+
+    function startPlayer() {
+      if (ytPlayerRef.current?.destroy) { try { ytPlayerRef.current.destroy(); } catch { /* ignore */ } }
+      ytPlayerRef.current = new (window as any).YT.Player(divId, {
+        videoId: lesson!.youtubeId,
+        playerVars: { rel: 0, modestbranding: 1 },
+        events: {
+          onError: () => { setVideoError(true); if (lesson?.content) setActiveTab('text'); },
+          onStateChange: (e: any) => {
+            if (e.data === 1) { // playing
+              if (ytIntervalRef.current) clearInterval(ytIntervalRef.current);
+              ytIntervalRef.current = setInterval(() => {
+                try {
+                  const p = ytPlayerRef.current;
+                  const dur = p?.getDuration?.() ?? 0;
+                  const cur = p?.getCurrentTime?.() ?? 0;
+                  if (dur > 0) setVideoProgress(Math.min(100, Math.round((cur / dur) * 100)));
+                } catch { /* ignore */ }
+              }, 1000);
+            } else {
+              if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
+            }
+          },
+        },
+      });
+    }
+
+    if ((window as any).YT?.Player) {
+      startPlayer();
+    } else {
+      const existing = document.getElementById('yt-iframe-api');
+      if (!existing) {
+        const s = document.createElement('script');
+        s.id = 'yt-iframe-api';
+        s.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(s);
+      }
+      (window as any).onYouTubeIframeAPIReady = startPlayer;
+    }
+    return () => {
+      if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson?.youtubeId, videoError, lessonId]);
 
   // ── Highlight logic ──────────────────────────────────────────────────────────
 
@@ -459,8 +513,9 @@ export default function LessonPage() {
     finally { setMarkingDone(false); }
   };
 
-  // Progress gate — disable "mark complete" until all content tabs have been visited
-  const gatePassed = computeGate(lesson, videoVisited, textVisited, videoError);
+  // Progress gate — video requires ≥80% watched; text requires visiting the tab
+  const videoWatchedEnough = !videoError && !!lesson?.youtubeId && videoProgress >= 80;
+  const gatePassed = computeGate(lesson, videoWatchedEnough, textVisited, videoError);
 
   if (loading || !lesson) {
     return (
@@ -585,14 +640,14 @@ export default function LessonPage() {
       )}
 
       {lesson.youtubeId && !videoError && activeTab === 'video' ? (
-        <div className="lesson-active-card aspect-video bg-black">
-          <iframe
-            className="w-full h-full"
-            src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1&enablejsapi=1`}
-            title={lesson.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+        <div className="lesson-active-card bg-black space-y-0">
+          <div id={`yt-player-${lessonId}`} className="w-full aspect-video" />
+          {!videoWatchedEnough && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/20 border-t border-amber-200 px-4 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{t.lessonPage.videoGateHint} ({videoProgress}%)</span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="lesson-active-card p-6 space-y-3 bg-white dark:bg-[#1A1A2E]" ref={bodyRef}>

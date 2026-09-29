@@ -562,7 +562,7 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
       // Also notifies the course's evaluator (email + push + in-app) that it's ready to
       // review and activate, when different from whoever ran the wizard (item 8).
       const courseForNotify = await prisma.course.findUnique({ where: { id: blCourseId }, select: { evaluatorId: true } }).catch(() => null);
-      await notifyCourseGenerationDone(blCreatorUserId, blCourseId, blTitle, isBlEN, incompleteModuleIds.length > 0, courseForNotify?.evaluatorId);
+      await notifyCourseGenerationDone(blCreatorUserId, blCourseId, blTitle, isBlEN, incompleteModuleIds.length > 0, courseForNotify?.evaluatorId, _jobId);
       // Fire-and-forget: Polly neural audio for every lesson, as its own background phase
       // (item 4) — never blocks or risks the completeness status set just above.
       await dispatchLessonAudioGeneration(blCourseId);

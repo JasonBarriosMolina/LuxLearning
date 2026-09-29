@@ -8,12 +8,12 @@
  */
 export function computeGate(
   lesson: { youtubeId?: string | null; content?: string | null } | null | undefined,
-  videoVisited: boolean,
+  videoWatchedEnough: boolean,
   textVisited: boolean,
   videoError: boolean,
 ): boolean {
   if (!lesson) return true;
   const videoRequired = !!lesson.youtubeId && !videoError;
   const textRequired = videoRequired && !!lesson.content;
-  return (!videoRequired || videoVisited) && (!textRequired || textVisited);
+  return (!videoRequired || videoWatchedEnough) && (!textRequired || textVisited);
 }

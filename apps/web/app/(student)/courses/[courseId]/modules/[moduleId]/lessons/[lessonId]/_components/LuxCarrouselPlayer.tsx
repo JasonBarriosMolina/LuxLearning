@@ -271,13 +271,6 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
         </div>
       </div>
 
-      {/* Pexels image credit — "Nuestra referencia" (DmPpbrff 2026-09-28) */}
-      {activeSlide?.imageCredit && (
-        <div className="bg-surface/80 px-4 py-1.5 text-[10px] text-gray-400">
-          <span className="font-medium text-gray-500">Nuestra referencia:</span> {activeSlide.imageCredit}
-        </div>
-      )}
-
       {/* Controls */}
       <div className="bg-surface px-4 py-3 flex items-center gap-3">
         <button onClick={togglePlay} className="w-9 h-9 rounded-full bg-cta-gradient flex items-center justify-center text-white shrink-0">

@@ -34,12 +34,9 @@ vi.mock('../../shared/db-dynamo', () => ({
   saveAiJob: vi.fn().mockResolvedValue(undefined),
   createNotification: vi.fn().mockResolvedValue(undefined),
 }));
-// Pexels image fetch â€” returns a valid photo object so imageUrl is populated
-global.fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  arrayBuffer: async () => new ArrayBuffer(4),
-  json: async () => ({ photos: [{ photographer: 'Test Author', src: { large2x: 'https://pexels.com/test.jpg' } }] }),
-}) as any;
+vi.mock('../../admin/ai-image-helpers', () => ({
+  generateCarouselInfographic: vi.fn().mockResolvedValue('https://s3.example.com/infographic.jpg'),
+}));
 
 import { handleCarouselWorker, computeSlideTiming, fitSlidesToNarrationBudget } from '../../admin/carousel-worker';
 import { saveAiJob } from '../../shared/db-dynamo';

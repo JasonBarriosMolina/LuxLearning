@@ -203,3 +203,47 @@ export async function generateLessonImage(
     return null;
   }
 }
+
+// Generates a flat-design educational infographic slide for the Lux Carrousel using
+// Mack's visual spec (Trello DmPpbrff, 2026-09-29): solid white background, dark-blue
+// + gold accent lines, conceptual diagram/flowchart, LUX LEARNING brand colors —
+// NO photos, NO faces, NO text rendered in the image.
+export async function generateCarouselInfographic(concept: string): Promise<string | null> {
+  const safeConcept = concept.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 120);
+  const prompt =
+    `A clean, flat 2D vector educational presentation slide, 16:9 aspect ratio. ` +
+    `Solid bright white background with subtle golden-yellow and dark-blue geometric accent lines ("Luz de Lux" aesthetic). ` +
+    `Visual focus: A clean central conceptual diagram or flowchart illustrating "${safeConcept}". ` +
+    `Uses simple line icons, directional arrows, rounded rectangular cards, and visual connectors. ` +
+    `Clean, modern, high-contrast, minimalist e-learning infographic style. ` +
+    `LUX LEARNING brand colors (slate blue, golden yellow, white). ` +
+    `NO photorealistic elements, NO human faces, NO human bodies, NO written text, NO dark background, NO complex 3D renders.`;
+  try {
+    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+      modelId: 'stability.stable-image-core-v1:1',
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: NEGATIVE_PROMPT_BASE + ', faces, human figures, bodies, photography, photorealistic, realistic photo',
+        mode: 'text-to-image',
+        aspect_ratio: '16:9',
+        output_format: 'jpeg',
+      }),
+    }));
+    const result = JSON.parse(new TextDecoder().decode(resp.body));
+    const base64 = result.images?.[0];
+    if (!base64) { console.error('[CarouselInfographic] Stability returned no image'); return null; }
+    let imgBuffer = Buffer.from(base64, 'base64');
+    imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
+      console.error('[CarouselInfographic] Watermark failed, using unwatermarked:', err);
+      return imgBuffer;
+    });
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key, Body: imgBuffer, ContentType: 'image/jpeg' }));
+    return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+  } catch (err) {
+    console.error('[CarouselInfographic] failed:', err);
+    return null;
+  }
+}
