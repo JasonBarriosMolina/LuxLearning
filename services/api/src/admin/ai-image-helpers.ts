@@ -124,11 +124,13 @@ export async function generateLessonInfographic(lessonTitle: string, moduleTitle
         messages: [{ role: 'user', content: userMessage }],
       }),
     }));
-    const raw: string = JSON.parse(new TextDecoder().decode(resp.body)).content?.[0]?.text ?? '';
+    const parsed = JSON.parse(new TextDecoder().decode(resp.body));
+    const raw: string = parsed.content?.[0]?.text ?? '';
+    console.log('[InfographicGen] raw snippet:', raw.slice(0, 300));
     // Haiku often wraps output in ```svg or ```xml fences — strip them before extracting
     const text = raw.replace(/```(?:svg|xml|html)?\s*/gi, '').replace(/```\s*/g, '');
     const svgMatch = text.match(/<svg[\s\S]*<\/svg>/i);
-    if (!svgMatch) { console.error('[InfographicGen] Haiku returned no SVG block'); return null; }
+    if (!svgMatch) { console.error('[InfographicGen] Haiku returned no SVG block; stop_reason:', parsed.stop_reason); return null; }
     const svgBuffer = Buffer.from(svgMatch[0], 'utf-8');
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
