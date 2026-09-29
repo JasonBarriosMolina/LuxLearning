@@ -77,77 +77,48 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Haiku → SVG infographic with readable text — module-start conceptual map style.
-// Spec updated (Trello DmPpbrff, 2026-09-29 comment 6abc0cf5): organic flow layout,
-// connectors between concept nodes, illustration zone per concept (geometric icon),
-// Lux brand colors (navy #1E3A5F, gold #F5C518, cream-white bg), discrete logo footer.
+// Stability AI → Floating 3D Neumorphic infographic for module-start lesson images.
+// Spec: Trello DmPpbrff comment 6abc14e0 (2026-09-29 Mack). Switched from Haiku SVG
+// to Stability so the neumorphic soft-shadow / 3D-floating aesthetic is achievable.
+// Returns a JPEG URL (same as other Stability helpers).
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
-  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Generate a complete valid SVG (viewBox="0 0 1200 1000" width="1200" height="1000") — a professional educational conceptual-map infographic for "Lux Learning".
-
-Module: "${moduleTitle}"
-Lesson: "${lessonTitle}"
-Content summary: ${snippet}
-
-EXACT STRUCTURE (follow coordinates literally):
-
-1. BACKGROUND: <rect width="1200" height="1000" fill="#FAFAF8"/> (warm cream-white)
-
-2. HEADER BAR: <rect y="0" width="1200" height="72" fill="#1E3A5F"/>
-   Inside: <text x="600" y="48" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="bold" font-family="Arial, Helvetica, sans-serif">${moduleTitle.slice(0, 55)}</text>
-   Below header: <text x="600" y="98" text-anchor="middle" fill="#1E3A5F" font-size="16" font-family="Arial, Helvetica, sans-serif">${lessonTitle.slice(0, 70)}</text>
-
-3. CENTRAL HUB NODE (y=200, centered):
-   <ellipse cx="600" cy="240" rx="130" ry="50" fill="#1E3A5F"/>
-   <text x="600" y="245" text-anchor="middle" fill="#F5C518" font-size="15" font-weight="bold" font-family="Arial">CORE CONCEPT (2-3 words from content)</text>
-
-4. CONNECTOR LINES from hub to 4 concept nodes — use <line stroke="#1E3A5F" stroke-width="2"/> from (600,280) to each node center:
-   Node A center: (200, 460)   Node B center: (500, 460)   Node C center: (700, 460)   Node D center: (1000, 460)
-
-5. FOUR CONCEPT NODES — each is:
-   a. <rect rx="10" fill="#FFFFFF" stroke="#1E3A5F" stroke-width="2"/> — size 220x200, positioned at: A(90,360) B(390,360) C(590,360) D(890,360)
-   b. ICON ZONE (top of card, strictly contained in a 60x60 box at card_x+80, card_y+10):
-      Draw ONE simple linear icon with stroke="#F5C518" fill="none" stroke-width="2.5" using only <circle>/<line>/<path>/<polyline>.
-      The icon path coordinates MUST stay within [card_x+80, card_y+10] to [card_x+140, card_y+70]. Use a <clipPath> to enforce this.
-   c. TITLE: <text x="card_x+110" y="card_y+90" text-anchor="middle" fill="#1E3A5F" font-size="13" font-weight="bold" font-family="Arial"> — concept name, max 22 chars
-   d. TEXT: 2 <text> lines at x=card_x+110, y=card_y+115 and card_y+132, text-anchor="middle", fill="#374151", font-size="11", font-family="Arial" — short description, max 24 chars per line
-
-6. CONNECTING ARROWS between related nodes (draw 1-2 <line marker-end> or simple arrow lines connecting concepts that relate, stroke="#F5C518" stroke-width="1.5" stroke-dasharray="6,3")
-
-7. FOOTER BAR: <rect y="960" width="1200" height="40" fill="#1E3A5F"/>
-   <text x="1150" y="984" text-anchor="end" fill="#F5C518" font-size="13" font-family="Arial">Lux Learning</text>
-
-CRITICAL RULES:
-- NO external images, NO base64, NO JavaScript, NO <style> blocks, NO CSS classes — pure SVG presentation attributes only
-- Every icon path MUST be geometrically contained within its 60×60 icon zone (use <clipPath id="iconN"><rect .../></clipPath> and clip-path="url(#iconN)" on the icon group)
-- Text elements must NEVER overlap icon zones or other text elements
-- All text must be legible, well-spaced, not truncated
-- Fill each concept node with content derived from the lesson content above
-
-Return ONLY raw SVG starting with <svg and ending with </svg>. No markdown, no explanation.`;
-
+  const safeModule = moduleTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
+  const safeLesson = lessonTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const prompt =
+    `Professional Floating 3D Neumorphic Infographic for the Lux Learning e-learning platform. ` +
+    `Topic: "${safeModule}" — "${safeLesson}". ` +
+    `Visual style: Modern Soft Neumorphism with floating circular nodes, each with soft drop shadows and clean ambient lighting creating a 3D floating effect above the background. ` +
+    `Soft gradient fills on node borders: deep navy blue (#0B3A6F) to royal blue, warm golden yellow (#FFC107) accents on edges and curved bevels. ` +
+    `Background: light off-white / soft light gray, clean and minimal. ` +
+    `Layout: well-spaced oval or circular nodes arranged around a central concept in balanced organic flow, connected by elegant thin dotted lines with elegant dot markers. ` +
+    `Each node has a fine-line vector icon at its top center, generous negative space — NO overlapping borders, NO touching cards. ` +
+    `Branding: Lux Learning identity colors throughout. ` +
+    `Quality: 8k resolution, ultra-clean vector render, professional e-learning UX design aesthetic. ` +
+    `NO readable text, NO words, NO letters, NO typography — purely visual and symbolic. NO human faces.`;
   try {
-    const res = await bedrock.send(new InvokeModelCommand({
-      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-      contentType: 'application/json', accept: 'application/json',
-      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 8192,
-        messages: [{ role: 'user', content: prompt }] }),
+    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+      modelId: 'stability.stable-image-core-v1:1',
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: NEGATIVE_PROMPT_BASE + ', text, words, letters, typography, overlapping elements, touching cards, crowded layout, flat 2D, no shadows, dark background, faces, human figures',
+        mode: 'text-to-image',
+        aspect_ratio: '1:1',
+        output_format: 'jpeg',
+      }),
     }));
-    let svgRaw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
-    const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
-    if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
-    const svg = match[0]
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/javascript\s*:/gi, 'nojavascript:')
-      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
-    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
-    await s3Client.send(new PutObjectCommand({
-      Bucket: S3_IMAGES_BUCKET, Key: key,
-      Body: Buffer.from(svg, 'utf-8'),
-      ContentType: 'image/svg+xml',
-      ContentDisposition: 'attachment',
-      CacheControl: 'public, max-age=31536000',
-    }));
+    const result = JSON.parse(new TextDecoder().decode(resp.body));
+    const base64 = result.images?.[0];
+    if (!base64) { console.error('[InfographicGen] Stability returned no image'); return null; }
+    let imgBuffer = Buffer.from(base64, 'base64');
+    imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
+      console.error('[InfographicGen] Watermark failed, using unwatermarked:', err);
+      return imgBuffer;
+    });
+    const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    await s3Client.send(new PutObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key, Body: imgBuffer, ContentType: 'image/jpeg' }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
   } catch (err) {
     console.error('[InfographicGen] Error:', err);

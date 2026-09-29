@@ -105,82 +105,57 @@ describe('sanitizeUserPromptForImage', () => {
 
 // ── generateLessonInfographic ─────────────────────────────────────────────────
 
+// generateLessonInfographic now uses Stability AI (Trello DmPpbrff comment 6abc14e0,
+// 2026-09-29 — Mack: switched from Haiku SVG to Floating 3D Neumorphic via Stability).
 describe('generateLessonInfographic', () => {
-  let bedrock: any;
+  let bedrockImageClient: any;
   let s3Client: any;
   let generateLessonInfographic: (title: string, module: string, content: string) => Promise<string | null>;
 
   beforeEach(async () => {
     const ctx = await import('../../admin/ctx');
     const helpers = await import('../../admin/ai-image-helpers');
-    bedrock = ctx.bedrock;
+    bedrockImageClient = ctx.bedrockImageClient;
     s3Client = ctx.s3Client;
     generateLessonInfographic = helpers.generateLessonInfographic;
-    vi.spyOn(bedrock,   'send');
-    vi.spyOn(s3Client,  'send').mockResolvedValue({});
+    vi.spyOn(bedrockImageClient, 'send');
+    vi.spyOn(s3Client, 'send').mockResolvedValue({});
+    applyLuxWatermarkMock.mockResolvedValue(Buffer.from('watermarked'));
   });
 
-  function makeSvgBody(svgContent: string) {
-    return Buffer.from(JSON.stringify({ content: [{ text: svgContent }] }));
+  function makeStabilityBody(base64 = 'aW1hZ2VkYXRh') {
+    return Buffer.from(JSON.stringify({ images: [base64] }));
   }
 
-  it('returns S3 URL when Haiku returns valid SVG', async () => {
-    const svg = '<svg viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg"><rect width="1200" height="1200" fill="white"/><text x="600" y="100">Formatos de Audio</text></svg>';
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeSvgBody(svg) });
+  it('returns S3 JPEG URL when Stability returns image', async () => {
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
     const result = await generateLessonInfographic('Formatos de Audio', 'Módulo 1', '<p>WAV, MP3, AAC</p>');
-    expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.svg$/);
+    expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.jpg$/);
     expect(s3Client.send).toHaveBeenCalled();
   });
 
-  it('returns null when Haiku response contains no SVG', async () => {
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeSvgBody('No SVG here, just text.') });
+  it('applies watermark before upload', async () => {
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: makeStabilityBody() });
+    let uploadedBody: Buffer | undefined;
+    vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
+      uploadedBody = cmd.Body;
+      return Promise.resolve({});
+    });
+    await generateLessonInfographic('Test', 'Módulo', '');
+    expect(applyLuxWatermarkMock).toHaveBeenCalled();
+    expect(uploadedBody?.toString()).toBe('watermarked');
+  });
+
+  it('returns null when Stability returns no image', async () => {
+    vi.mocked(bedrockImageClient.send).mockResolvedValueOnce({ body: Buffer.from(JSON.stringify({ images: [] })) });
     const result = await generateLessonInfographic('Lección', 'Módulo', '');
     expect(result).toBeNull();
   });
 
-  it('strips <script> tags from SVG before upload', async () => {
-    const maliciousSvg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="100" height="100"/></svg>';
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeSvgBody(maliciousSvg) });
-    let uploadedBody = '';
-    vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
-      uploadedBody = cmd.Body?.toString?.() ?? '';
-      return Promise.resolve({});
-    });
-    const result = await generateLessonInfographic('Test', 'Módulo', '');
-    expect(result).not.toBeNull();
-    expect(uploadedBody).not.toMatch(/<script/i);
-    expect(uploadedBody).not.toContain('alert(1)');
-  });
-
-  it('strips javascript: URIs from SVG (replaces with nojavascript:)', async () => {
-    const xssSvg = '<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><rect width="100" height="100"/></a></svg>';
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeSvgBody(xssSvg) });
-    let uploadedBody = '';
-    vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
-      uploadedBody = cmd.Body?.toString?.() ?? '';
-      return Promise.resolve({});
-    });
-    await generateLessonInfographic('Test', 'Módulo', '');
-    // ctx.ts replaces "javascript:" with "nojavascript:" — the bare scheme must not appear as a URI
-    expect(uploadedBody).not.toMatch(/"javascript\s*:/i);
-    expect(uploadedBody).toContain('nojavascript:');
-  });
-
   it('returns null when Bedrock throws', async () => {
-    vi.mocked(bedrock.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
+    vi.mocked(bedrockImageClient.send).mockRejectedValueOnce(new Error('Bedrock timeout'));
     const result = await generateLessonInfographic('Lección', 'Módulo', 'Contenido');
     expect(result).toBeNull();
-  });
-
-  it('uses max_tokens 8192 in Bedrock call', async () => {
-    const svg = '<svg viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
-    let capturedBody: any = null;
-    vi.mocked(bedrock.send).mockImplementationOnce((cmd: any) => {
-      capturedBody = JSON.parse(cmd?.body ?? '{}');
-      return Promise.resolve({ body: makeSvgBody(svg) });
-    });
-    await generateLessonInfographic('Test', 'Módulo', '');
-    expect(capturedBody?.max_tokens).toBe(8192);
   });
 });
 
