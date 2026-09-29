@@ -77,39 +77,37 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Nova Canvas → Floating 3D Neumorphic infographic for module-start lesson images.
-// Spec: Trello DmPpbrff comment 6abc2465 (2026-09-29 Mack). Nova Canvas uses a
-// different request format than Stability and runs in us-east-1 (bedrockNovaClient).
-// NOTE: model access for amazon.nova-canvas-v1:0 must be enabled in AWS Bedrock console.
+// Stability AI → Floating 3D Neumorphic infographic for module-start lesson images.
+// Spec: Trello DmPpbrff comment 6abc2465 (2026-09-29 Mack). Nova Canvas v1 was
+// attempted but is marked LEGACY in Bedrock with no v2 available — switched back to
+// Stability Image Core which is the active model. Same 3D neumorphic prompt, 1:1 aspect.
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const safeModule = moduleTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
   const safeLesson = lessonTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
   const prompt =
-    `Floating 3D neumorphic infographic diagram, modern SaaS UX design, for "${safeModule}" — "${safeLesson}" on Lux Learning e-learning platform. ` +
+    `Floating 3D neumorphic infographic diagram, modern SaaS UX design, for the topic "${safeModule} — ${safeLesson}". ` +
     `One central circular medallion node connected to five surrounding floating circular disc nodes by thin elegant dotted lines with round markers. ` +
     `Each disc: white with soft 3D drop shadow and ambient studio lighting, subtle bevel with deep navy blue (#0B3A6F) and warm golden yellow (#FFC107) gradient edge. ` +
-    `Inside each disc: a single thin fine-line stylized vector icon representing the module concept (sound waves, piano keys, mixing console, notes, audio waveform). ` +
+    `Inside each disc: a single thin fine-line stylized vector icon representing a concept related to the module topic. ` +
     `Background: ultra-light warm off-white / soft light gray, clean, minimal texture. ` +
     `Hyper-clean illustration, professional e-learning aesthetic, ample breathing space between elements, perfect visual alignment. ` +
     `NO text, NO words, NO letters, NO typography, NO labels of any kind. NO square cards, NO overlapping borders, NO flat 2D design, NO dark backgrounds, NO human faces.`;
-  const negativePrompt =
-    `text, words, letters, typography, labels, captions, handwriting, numbers, ` +
-    `square cards, rectangular boxes, flat 2D, dark background, overlapping elements, ` +
-    `crowded layout, human faces, human bodies, photography, photorealistic`;
   try {
-    const resp = await bedrockNovaClient.send(new InvokeModelCommand({
-      modelId: 'amazon.nova-canvas-v1:0',
+    const resp = await bedrockImageClient.send(new InvokeModelCommand({
+      modelId: 'stability.stable-image-core-v1:1',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
-        taskType: 'TEXT_IMAGE',
-        textToImageParams: { text: prompt, negativeText: negativePrompt },
-        imageGenerationConfig: { numberOfImages: 1, height: 1024, width: 1024, cfgScale: 8.0 },
+        prompt,
+        negative_prompt: NEGATIVE_PROMPT_BASE + ', flat 2D, dark background, human faces, human bodies, photography, photorealistic, square cards, rectangular boxes',
+        mode: 'text-to-image',
+        aspect_ratio: '1:1',
+        output_format: 'jpeg',
       }),
     }));
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
-    if (!base64) { console.error('[InfographicGen] Nova Canvas returned no image'); return null; }
+    if (!base64) { console.error('[InfographicGen] Stability returned no image'); return null; }
     let imgBuffer = Buffer.from(base64, 'base64');
     imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
       console.error('[InfographicGen] Watermark failed, using unwatermarked:', err);
