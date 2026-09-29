@@ -147,6 +147,13 @@ describe('generateLessonInfographic', () => {
     expect(uploadCmd?.Body?.toString()).toContain('<svg');
   });
 
+  it('handles SVG wrapped in markdown code fences', async () => {
+    const fenced = '```svg\n' + fakeSvg + '\n```';
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody(fenced) });
+    const result = await generateLessonInfographic('Lección', 'Módulo', '');
+    expect(result).toMatch(/\.svg$/);
+  });
+
   it('returns null when Haiku returns no SVG block', async () => {
     vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody('No SVG here, just text.') });
     const result = await generateLessonInfographic('Lección', 'Módulo', '');
