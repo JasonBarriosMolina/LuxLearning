@@ -229,13 +229,21 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
           };
         });
 
-        // Populate youtubeId for the first video-type lesson per module that is NOT lesson 1
-        // (Trello DmPpbrff, 2026-09-28 — Mack: video should be in concept-explanation lessons, not the intro)
-        const firstVideoIdx = lessonData.findIndex((l, idx) => l.type === 'video' && idx > 0);
-        if (firstVideoIdx >= 0) {
-          const videoLesson = lessonData[firstVideoIdx];
+        // Populate youtubeId: prefer first non-intro video-type lesson; if none, fall back
+        // to the most central text lesson (Trello DmPpbrff 2026-09-29 — Mack: every module
+        // must have at least one YouTube video, preferably on the hardest concept).
+        let videoTargetIdx = lessonData.findIndex((l, idx) => l.type === 'video' && idx > 0);
+        if (videoTargetIdx < 0 && lessonData.length > 1) {
+          // No video-type lesson — pick the middle text lesson (50-60% through, skipping first)
+          const textIndices = lessonData.map((l, i) => i).filter((i) => i > 0 && lessonData[i]?.type === 'text');
+          if (textIndices.length > 0) {
+            videoTargetIdx = textIndices[Math.floor(textIndices.length * 0.5)] ?? textIndices[0]!;
+          }
+        }
+        if (videoTargetIdx >= 0) {
+          const videoLesson = lessonData[videoTargetIdx];
           const videoId = await fetchYoutubeEduVideo(`${mod.title} ${videoLesson.title}`, undefined, isBlEN ? 'en' : 'es').catch(() => null);
-          if (videoId) lessonData[firstVideoIdx] = { ...videoLesson, youtubeId: videoId };
+          if (videoId) lessonData[videoTargetIdx] = { ...videoLesson, youtubeId: videoId };
         }
 
         // Append bibliography + YouTube links to the last text lesson (Bug 1)
