@@ -106,7 +106,7 @@ LAYOUT (exact coordinates):
    e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2", in 52×52 box at (card_x+14, card_y+46). Use clipPath to contain it.
    f. TEXT (right of icon): 2 lines font-size="13" fill="#475569" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" at x=card_x+80, y=card_y+62 and y=card_y+82. Max 52 chars per line. Paired with clipPath of width=460 from x=card_x+76.
 5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="4".
-6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Text "Lux Learning" fill="#FFC107" font-size="16" font-weight="bold" centered x="600" y="885". Small triangle logo left of text.
+6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Logo mark at x=480 y=865: (a) navy triangle <polygon points="480,895 498,865 516,895" fill="#FFFFFF" opacity="0.9"/>; (b) gold swoosh arc <path d="M482,892 Q499,870 514,868" stroke="#FFC107" stroke-width="2.5" fill="none" stroke-linecap="round"/>; (c) gold star dot <circle cx="514" cy="866" r="2.5" fill="#FFC107"/>. Wordmark right of mark: text x="522" y="885" font-size="15" font-weight="700" font-family="system-ui, Arial, sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
 
 TYPOGRAPHY (Lux Learning platform standard):
 - Font family: font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" on ALL text elements.
