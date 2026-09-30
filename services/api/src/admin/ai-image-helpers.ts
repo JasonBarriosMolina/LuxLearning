@@ -77,54 +77,53 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Claude Haiku → SVG 3D Neumorphic infographic for lesson cards.
-// Spec: Trello DmPpbrff comment 6abc28f1 (2026-09-29 Mack). Haiku generates a full
-// self-contained SVG (viewBox 0 0 1200 800): central node + 5-6 peripheral nodes,
-// drop-shadow filters, navy/gold palette, inline SVG path icons, Lux logo bottom-right.
-// SVG uploaded to S3 as image/svg+xml so existing <img> tags render it natively.
+// Claude Haiku → SVG infographic (card-grid, multi-color) for lesson cards.
+// Original design (Trello DmPpbrff, pre-Sep-29): 2×2 card grid, institutional blue
+// (#1E3A5F) + gold (#F5C518), 8192 max_tokens so SVG fits without truncation.
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
-  const safeModule = moduleTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
-  const safeLesson = lessonTitle.replace(/"/g, "'").replace(/<[^>]+>/g, ' ').trim().slice(0, 80);
-  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const prompt = `Create a clean, professional, modern educational SVG infographic (1200x900px) for this lesson following the Lux Learning visual system.
 
-  const systemPrompt =
-    `Eres diseñador SVG para la plataforma "Lux Learning". Genera un SVG COMPACTO (viewBox="0 0 1200 800") de mapa conceptual 3D flotante. ` +
-    `REGLAS ESTRICTAS: sin comentarios XML, sin espacios innecesarios, máximo 100 líneas totales.\n` +
-    `ESTRUCTURA: 1 nodo central (#0B3A6F, radio 90) + 5 nodos periféricos (blanco, radio 70) conectados por líneas punteadas. Fondo #F8FAFC.\n` +
-    `ESTILO: filter feDropShadow en cada nodo (dy="6" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"). Bordes con stroke="#0B3A6F". Un acento dorado (#FFC107) en nodo central.\n` +
-    `TEXTO: font-family="system-ui,sans-serif". Nodo central: título módulo bold 18px blanco. Nodos periféricos: etiqueta 13px #0B3A6F. Todo texto legible, no recortado.\n` +
-    `LOGO: esquina inferior derecha — triángulo relleno #0B3A6F + línea diagonal #FFC107 + texto "Lux Learning" 14px #0B3A6F.\n` +
-    `SALIDA: devuelve ÚNICAMENTE <svg>...</svg>, sin markdown, sin explicación.`;
+Lesson: "${lessonTitle}"
+Module: "${moduleTitle}"
+Content: ${snippet}
 
-  const userMessage =
-    `Módulo: "${safeModule}"\nLección: "${safeLesson}"\n` +
-    (snippet ? `Contenido clave: ${snippet}\n` : '') +
-    `Genera la infografía SVG completa ahora.`;
+STRICT LAYOUT RULES — follow exactly:
+1. viewBox="0 0 1200 900" width="1200" height="900", white background (#FFFFFF)
+2. TOP HEADER BAR: full-width rect height="70" fill="#1E3A5F" (institutional blue). Inside: text y="45" fill="#FFFFFF" font-size="26" font-weight="bold" font-family="Arial, Helvetica, sans-serif" — show the module title, centered (x="600" text-anchor="middle").
+3. SUBTITLE BAR: rect y="70" height="36" fill="#F5C518" (institutional gold). Inside: text y="94" fill="#1E3A5F" font-size="16" font-family="Arial, Helvetica, sans-serif" — show lesson title, centered.
+4. CARD GRID: 3 or 4 rectangular cards in a 2-column grid, starting at y="130". Each card:
+   a. Card background: <rect> with fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.5" rx="8" — fixed size 540x160 each, arranged in a 2×2 grid with 30px gaps, starting x=30 and x=600.
+   b. ICON ZONE (left side): a 60x60 reserved area inside the card (x+12, y+50). Draw a simple linear icon using only <circle>, <rect>, <line>, <polyline>, <path> strokes — stroke="#1E3A5F" fill="none" stroke-width="2". The icon MUST be entirely inside this 60×60 box. NEVER let any icon path extend into the text zone.
+   c. SECTION TITLE BAR: a colored <rect> strip at the top of the card (full card width, height=28, fill="#1E3A5F" rx="8" — only top corners). Inside: <text> fill="#F5C518" font-size="13" font-weight="bold" font-family="Arial" — section name, clipped to card width.
+   d. TEXT ZONE (right of icon): text starts at x = card_x + 85, y = card_y + 65. Use 2 <text> lines, font-size="13" fill="#1E3A5F" font-family="Arial, Helvetica, sans-serif". Each line max 55 chars. NEVER place text at x < card_x + 80.
+5. FOOTER: rect at bottom, fill="#1E3A5F" height="36". Text: "Lux Learning" in white, centered.
+6. NO external images, NO base64, NO JavaScript, NO CSS classes, NO <style> blocks — pure SVG presentation attributes only.
+7. CRITICAL: Every icon <path>/<line>/<circle> must have an explicit clip-path or must be geometrically contained within the icon zone. If in doubt, use a <clipPath> to constrain the icon to its 60×60 box.
+
+Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No markdown, no explanation.`;
 
   try {
-    const resp = await bedrock.send(new InvokeModelCommand({
+    const res = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify({
-        anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
+      contentType: 'application/json', accept: 'application/json',
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 8192,
+        messages: [{ role: 'user', content: prompt }] }),
     }));
-    const parsed = JSON.parse(new TextDecoder().decode(resp.body));
-    const raw: string = parsed.content?.[0]?.text ?? '';
-    console.log('[InfographicGen] raw snippet:', raw.slice(0, 300));
-    // Haiku often wraps output in ```svg or ```xml fences — strip them before extracting
-    const text = raw.replace(/```(?:svg|xml|html)?\s*/gi, '').replace(/```\s*/g, '');
-    const svgMatch = text.match(/<svg[\s\S]*<\/svg>/i);
-    if (!svgMatch) { console.error('[InfographicGen] Haiku returned no SVG block; stop_reason:', parsed.stop_reason); return null; }
-    const svgBuffer = Buffer.from(svgMatch[0], 'utf-8');
+    const svgRaw: string = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
+    if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
+    const svg = match[0]
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/javascript\s*:/gi, 'nojavascript:')
+      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
-      Bucket: S3_IMAGES_BUCKET, Key: key, Body: svgBuffer,
+      Bucket: S3_IMAGES_BUCKET, Key: key,
+      Body: Buffer.from(svg, 'utf-8'),
       ContentType: 'image/svg+xml',
+      ContentDisposition: 'attachment',
+      CacheControl: 'public, max-age=31536000',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
   } catch (err) {

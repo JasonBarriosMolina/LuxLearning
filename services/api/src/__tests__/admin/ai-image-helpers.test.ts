@@ -105,8 +105,8 @@ describe('sanitizeUserPromptForImage', () => {
 
 // ── generateLessonInfographic ─────────────────────────────────────────────────
 
-// generateLessonInfographic uses Claude Haiku to generate an SVG infographic.
-// Spec: Trello DmPpbrff comment 6abc28f1 (2026-09-29 Mack).
+// generateLessonInfographic uses Claude Haiku (8192 tokens) to generate a multi-color
+// SVG infographic: 2×2 card grid, institutional blue (#1E3A5F) + gold (#F5C518).
 describe('generateLessonInfographic', () => {
   let bedrock: any;
   let s3Client: any;
@@ -122,10 +122,10 @@ describe('generateLessonInfographic', () => {
     vi.spyOn(s3Client, 'send').mockResolvedValue({});
   });
 
-  const fakeSvg = '<svg viewBox="0 0 1200 800"><rect width="100%" height="100%" fill="#F8FAFC"/><text>Test</text></svg>';
+  const fakeSvg = '<svg viewBox="0 0 1200 900" width="1200" height="900"><rect width="100%" height="100%" fill="#FFFFFF"/><rect height="70" width="1200" fill="#1E3A5F"/><text x="600" y="45" fill="#FFFFFF">Module</text></svg>';
 
-  function makeHaikuBody(svgContent = fakeSvg) {
-    return Buffer.from(JSON.stringify({ content: [{ text: svgContent }] }));
+  function makeHaikuBody(text = fakeSvg) {
+    return Buffer.from(JSON.stringify({ content: [{ text }] }));
   }
 
   it('returns S3 SVG URL when Haiku returns valid SVG', async () => {
@@ -147,11 +147,13 @@ describe('generateLessonInfographic', () => {
     expect(uploadCmd?.Body?.toString()).toContain('<svg');
   });
 
-  it('handles SVG wrapped in markdown code fences', async () => {
-    const fenced = '```svg\n' + fakeSvg + '\n```';
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody(fenced) });
-    const result = await generateLessonInfographic('Lección', 'Módulo', '');
-    expect(result).toMatch(/\.svg$/);
+  it('sanitizes script tags from SVG', async () => {
+    const malicious = fakeSvg.replace('</svg>', '<script>alert(1)</script></svg>');
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody(malicious) });
+    let uploadCmd: any;
+    vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => { uploadCmd = cmd; return Promise.resolve({}); });
+    await generateLessonInfographic('Test', 'Módulo', '');
+    expect(uploadCmd?.Body?.toString()).not.toContain('<script');
   });
 
   it('returns null when Haiku returns no SVG block', async () => {
