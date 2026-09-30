@@ -95,17 +95,17 @@ VISUAL STYLE — Flat UI with depth (soft drop shadows):
 
 LAYOUT (exact coordinates):
 1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
-2. HEADER BAR: rect y="0" height="75" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="48" x="600" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
-3. SUBTITLE: rect y="75" height="38" fill="#FFC107". Lesson title: text y="101" x="600" text-anchor="middle" fill="#0F172A" font-size="16" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
-4. CARD GRID (4 cards, 2×2): Each card 540×175, with 30px gaps. Positions: card1(x=30,y=130), card2(x=600,y=130), card3(x=30,y=335), card4(x=600,y=335).
+2. HEADER BAR: rect y="0" height="80" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="52" x="600" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
+3. SUBTITLE: rect y="80" height="44" fill="#FFC107". Lesson title: text y="108" x="600" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
+4. CARD GRID (4 cards, 2×2): Each card 540×210, with 30px gaps. Positions: card1(x=30,y=140), card2(x=600,y=140), card3(x=30,y=380), card4(x=600,y=380).
    Per card:
    a. Drop shadow filter applied to card group.
-   b. Background: rect fill="#FFFFFF" rx="10" stroke="none".
-   c. Top accent strip height=32 with gradient fill (alternate colors: #0B3A6F, #00BCD4, #7C4DFF, #FFC107) rx="10" (top corners only via separate rect).
-   d. Section title in strip: text fill="#FFFFFF" (or fill="#0F172A" if yellow strip) font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" x=card_x+16 y=card_y+22. Clip to strip rect width.
-   e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2", in 52×52 box at (card_x+14, card_y+46). Use clipPath to contain it.
-   f. TEXT (right of icon): 2 lines font-size="13" fill="#475569" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" at x=card_x+80, y=card_y+62 and y=card_y+82. Max 52 chars per line. Paired with clipPath of width=460 from x=card_x+76.
-5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="4".
+   b. Background: rect fill="#FFFFFF" rx="12" stroke="none".
+   c. Top accent strip height=38 with gradient fill (alternate colors: #0B3A6F, #00BCD4, #7C4DFF, #FFC107) rx="12" (top corners only via separate rect).
+   d. Section title in strip: text fill="#FFFFFF" (or fill="#0F172A" if yellow strip) font-size="17" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" x=card_x+16 y=card_y+26. Clip to strip rect width.
+   e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2.5", in 56×56 box at (card_x+14, card_y+52). Use clipPath to contain it.
+   f. TEXT (right of icon): 3 lines font-size="16" fill="#475569" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" at x=card_x+84, y=card_y+72, y=card_y+94, y=card_y+116. Max 44 chars per line. Paired with clipPath of width=450 from x=card_x+80.
+5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="5".
 6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Logo mark at x=480 y=865: (a) navy triangle <polygon points="480,895 498,865 516,895" fill="#FFFFFF" opacity="0.9"/>; (b) gold swoosh arc <path d="M482,892 Q499,870 514,868" stroke="#FFC107" stroke-width="2.5" fill="none" stroke-linecap="round"/>; (c) gold star dot <circle cx="514" cy="866" r="2.5" fill="#FFC107"/>. Wordmark right of mark: text x="522" y="885" font-size="15" font-weight="700" font-family="system-ui, Arial, sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
 
 TYPOGRAPHY (Lux Learning platform standard):
