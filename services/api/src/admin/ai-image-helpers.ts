@@ -95,24 +95,45 @@ VISUAL STYLE — Flat UI with depth (soft drop shadows):
 
 LAYOUT (exact coordinates):
 1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
-2. HEADER BAR: rect y="0" height="75" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="48" x="600" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="bold" font-family="Arial, Helvetica, sans-serif".
-3. SUBTITLE: rect y="75" height="38" fill="#FFC107". Lesson title: text y="101" x="600" text-anchor="middle" fill="#0B3A6F" font-size="16" font-family="Arial, Helvetica, sans-serif".
+2. HEADER BAR: rect y="0" height="75" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="48" x="600" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
+3. SUBTITLE: rect y="75" height="38" fill="#FFC107". Lesson title: text y="101" x="600" text-anchor="middle" fill="#0F172A" font-size="16" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
 4. CARD GRID (4 cards, 2×2): Each card 540×175, with 30px gaps. Positions: card1(x=30,y=130), card2(x=600,y=130), card3(x=30,y=335), card4(x=600,y=335).
    Per card:
    a. Drop shadow filter applied to card group.
    b. Background: rect fill="#FFFFFF" rx="10" stroke="none".
    c. Top accent strip height=32 with gradient fill (alternate colors: #0B3A6F, #00BCD4, #7C4DFF, #FFC107) rx="10" (top corners only via separate rect).
-   d. Section title in strip: text fill="#FFFFFF" (or fill="#0B3A6F" if yellow strip) font-size="14" font-weight="bold" x=card_x+16 y=card_y+22.
+   d. Section title in strip: text fill="#FFFFFF" (or fill="#0F172A" if yellow strip) font-size="14" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" x=card_x+16 y=card_y+22. Clip to strip rect width.
    e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2", in 52×52 box at (card_x+14, card_y+46). Use clipPath to contain it.
-   f. TEXT (right of icon): 2 lines font-size="13" fill="#1A1A2E" font-family="Arial" at x=card_x+80, y=card_y+62 and y=card_y+82. Max 52 chars per line.
+   f. TEXT (right of icon): 2 lines font-size="13" fill="#475569" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" at x=card_x+80, y=card_y+62 and y=card_y+82. Max 52 chars per line. Paired with clipPath of width=460 from x=card_x+76.
 5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="4".
 6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Text "Lux Learning" fill="#FFC107" font-size="16" font-weight="bold" centered x="600" y="885". Small triangle logo left of text.
 
+TYPOGRAPHY (Lux Learning platform standard):
+- Font family: font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" on ALL text elements.
+- Weights: titles bold (font-weight="700"), section labels semibold (font-weight="600"), body regular (font-weight="400").
+- Color palette (NO pure black #000000):
+  • Primary titles / active labels: #1E293B (dark navy-black, soft).
+  • Section headers on white background: #0F172A.
+  • Secondary / body text: #475569 (neutral gray).
+  • Captions / metadata: #64748B.
+  • White-on-dark text (strip headers): #FFFFFF.
+
+TEXT CONTAINMENT (critical — no floating or overflowing text):
+- Every text element must be paired with a <clipPath> that matches its parent container bounds minus 12px padding on all sides.
+- Card text area (right of icon): max width = 460px. Use two lines max, each max 52 chars, clipped by clipPath.
+- Section title in accent strip: max width = card_width - 32px, clipped to strip bounds.
+- NEVER place text outside its enclosing rect. NEVER position text that would render outside the viewBox.
+
+ICON DISCIPLINE:
+- Icons ONLY inside designated icon boxes (the 52×52 area per card). NEVER free-floating elsewhere.
+- Use only simple geometric SVG shapes (lines, circles, rects, simple paths) — no ornamental or random icon placement.
+- Each icon group wrapped in <g clip-path="url(#icon-clip-N)"> with matching clipPath rect.
+
 REQUIREMENTS:
 - NO external images, NO base64, NO JavaScript, NO <style> blocks — pure SVG attributes only.
-- Use <defs> for filters, gradients, clipPaths.
-- Every icon strictly inside its clipPath box.
-- Text must be fully legible: minimum 13px, adequate spacing, no overlap.
+- Use <defs> for all filters, gradients, clipPaths (one per icon + one per text area).
+- Text must be fully legible: minimum 13px, line-height via y offsets of 20px.
+- Validate mentally: every text x/y coordinate must fall inside its container rect.
 
 Return ONLY <svg>...</svg>. No markdown, no explanation.`;
 
