@@ -305,19 +305,26 @@ export default function LessonPage() {
 
   // Reset video error state and visited flags when lesson changes
   useEffect(() => {
-    setVideoError(false); setActiveTab('text'); setVideoProgress(0); setTextVisited(false);
+    setVideoError(false); setVideoProgress(0); setTextVisited(false);
     if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
     if (ytPlayerRef.current?.destroy) { try { ytPlayerRef.current.destroy(); } catch { /* ignore */ } ytPlayerRef.current = null; }
   }, [lessonId]);
+
+  // Default to video tab when lesson has a YouTube video (div must exist before player init)
+  useEffect(() => {
+    if (lesson?.youtubeId) setActiveTab('video');
+    else setActiveTab('text');
+  }, [lesson?.youtubeId]);
 
   // Track text tab visits
   useEffect(() => {
     if (activeTab === 'text') setTextVisited(true);
   }, [activeTab]);
 
-  // YouTube IFrame Player API — load script once, then create player per lesson
+  // YouTube IFrame Player API — load script once, then create player per lesson.
+  // Guard on activeTab === 'video': the player div only exists in the DOM when on the video tab.
   useEffect(() => {
-    if (!lesson?.youtubeId || videoError) return;
+    if (!lesson?.youtubeId || videoError || activeTab !== 'video') return;
     const divId = `yt-player-${lessonId}`;
 
     function startPlayer() {
@@ -362,7 +369,7 @@ export default function LessonPage() {
       if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson?.youtubeId, videoError, lessonId]);
+  }, [lesson?.youtubeId, videoError, lessonId, activeTab]);
 
   // ── Highlight logic ──────────────────────────────────────────────────────────
 

@@ -33,9 +33,9 @@ export function formatCourseDuration(value: string | number | undefined | null):
   if (value == null) return '';
   const str = String(value).trim();
   if (!str) return '';
-  // If it's a plain integer, apply unit logic
-  if (/^\d+$/.test(str)) {
-    const n = parseInt(str, 10);
+  // Plain integer OR float stored from AI wizard (e.g. "33.333333") — round and apply unit logic
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const n = Math.round(parseFloat(str));
     if (n < 60) return `${n} min`;
     const h = Math.floor(n / 60);
     const m = n % 60;

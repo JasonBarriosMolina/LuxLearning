@@ -82,26 +82,39 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
 // (#1E3A5F) + gold (#F5C518), 8192 max_tokens so SVG fits without truncation.
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Create a clean, professional, modern educational SVG infographic (1200x900px) for this lesson following the Lux Learning visual system.
+  const prompt = `Create a complete, modern, colorful educational SVG infographic for Lux Learning (viewBox="0 0 1200 900").
 
 Lesson: "${lessonTitle}"
 Module: "${moduleTitle}"
 Content: ${snippet}
 
-STRICT LAYOUT RULES — follow exactly:
-1. viewBox="0 0 1200 900" width="1200" height="900", white background (#FFFFFF)
-2. TOP HEADER BAR: full-width rect height="70" fill="#1E3A5F" (institutional blue). Inside: text y="45" fill="#FFFFFF" font-size="26" font-weight="bold" font-family="Arial, Helvetica, sans-serif" — show the module title, centered (x="600" text-anchor="middle").
-3. SUBTITLE BAR: rect y="70" height="36" fill="#F5C518" (institutional gold). Inside: text y="94" fill="#1E3A5F" font-size="16" font-family="Arial, Helvetica, sans-serif" — show lesson title, centered.
-4. CARD GRID: 3 or 4 rectangular cards in a 2-column grid, starting at y="130". Each card:
-   a. Card background: <rect> with fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.5" rx="8" — fixed size 540x160 each, arranged in a 2×2 grid with 30px gaps, starting x=30 and x=600.
-   b. ICON ZONE (left side): a 60x60 reserved area inside the card (x+12, y+50). Draw a simple linear icon using only <circle>, <rect>, <line>, <polyline>, <path> strokes — stroke="#1E3A5F" fill="none" stroke-width="2". The icon MUST be entirely inside this 60×60 box. NEVER let any icon path extend into the text zone.
-   c. SECTION TITLE BAR: a colored <rect> strip at the top of the card (full card width, height=28, fill="#1E3A5F" rx="8" — only top corners). Inside: <text> fill="#F5C518" font-size="13" font-weight="bold" font-family="Arial" — section name, clipped to card width.
-   d. TEXT ZONE (right of icon): text starts at x = card_x + 85, y = card_y + 65. Use 2 <text> lines, font-size="13" fill="#1E3A5F" font-family="Arial, Helvetica, sans-serif". Each line max 55 chars. NEVER place text at x < card_x + 80.
-5. FOOTER: rect at bottom, fill="#1E3A5F" height="36". Text: "Lux Learning" in white, centered.
-6. NO external images, NO base64, NO JavaScript, NO CSS classes, NO <style> blocks — pure SVG presentation attributes only.
-7. CRITICAL: Every icon <path>/<line>/<circle> must have an explicit clip-path or must be geometrically contained within the icon zone. If in doubt, use a <clipPath> to constrain the icon to its 60×60 box.
+VISUAL STYLE — Flat UI with depth (soft drop shadows):
+- Each card/container: <filter> with <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/> for floating effect.
+- Colors VIVID and INSTITUTIONAL: primary #0B3A6F (navy), accent #FFC107 (gold), complementary accents (turquoise #00BCD4 or soft purple #7C4DFF) for variety. White or ultra-light gray (#F8FAFC) background.
+- Use subtle linear gradients on card headers: from #0B3A6F to #1565C0 or similar.
 
-Return ONLY the raw SVG markup starting with <svg and ending with </svg>. No markdown, no explanation.`;
+LAYOUT (exact coordinates):
+1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
+2. HEADER BAR: rect y="0" height="75" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="48" x="600" text-anchor="middle" fill="#FFFFFF" font-size="28" font-weight="bold" font-family="Arial, Helvetica, sans-serif".
+3. SUBTITLE: rect y="75" height="38" fill="#FFC107". Lesson title: text y="101" x="600" text-anchor="middle" fill="#0B3A6F" font-size="16" font-family="Arial, Helvetica, sans-serif".
+4. CARD GRID (4 cards, 2×2): Each card 540×175, with 30px gaps. Positions: card1(x=30,y=130), card2(x=600,y=130), card3(x=30,y=335), card4(x=600,y=335).
+   Per card:
+   a. Drop shadow filter applied to card group.
+   b. Background: rect fill="#FFFFFF" rx="10" stroke="none".
+   c. Top accent strip height=32 with gradient fill (alternate colors: #0B3A6F, #00BCD4, #7C4DFF, #FFC107) rx="10" (top corners only via separate rect).
+   d. Section title in strip: text fill="#FFFFFF" (or fill="#0B3A6F" if yellow strip) font-size="14" font-weight="bold" x=card_x+16 y=card_y+22.
+   e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2", in 52×52 box at (card_x+14, card_y+46). Use clipPath to contain it.
+   f. TEXT (right of icon): 2 lines font-size="13" fill="#1A1A2E" font-family="Arial" at x=card_x+80, y=card_y+62 and y=card_y+82. Max 52 chars per line.
+5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="4".
+6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Text "Lux Learning" fill="#FFC107" font-size="16" font-weight="bold" centered x="600" y="885". Small triangle logo left of text.
+
+REQUIREMENTS:
+- NO external images, NO base64, NO JavaScript, NO <style> blocks — pure SVG attributes only.
+- Use <defs> for filters, gradients, clipPaths.
+- Every icon strictly inside its clipPath box.
+- Text must be fully legible: minimum 13px, adequate spacing, no overlap.
+
+Return ONLY <svg>...</svg>. No markdown, no explanation.`;
 
   try {
     const res = await bedrock.send(new InvokeModelCommand({
