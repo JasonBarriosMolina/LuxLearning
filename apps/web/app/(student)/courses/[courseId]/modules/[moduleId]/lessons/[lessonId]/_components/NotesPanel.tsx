@@ -90,11 +90,12 @@ export function NotesPanel({ contextType, contextId, lessonTitle, highlightsForS
   };
 
   const summarizeHighlights = async () => {
-    if (highlightsForSummary.length === 0) return;
+    const allContent = [...notes.map((n) => n.text), ...highlightsForSummary];
+    if (allContent.length === 0) return;
     setSummarizing(true);
     setError('');
     try {
-      await api.lessons.summarizeHighlights({ contextId, highlights: highlightsForSummary, lessonTitle });
+      await api.lessons.summarizeHighlights({ contextId, highlights: allContent, lessonTitle });
       load();
     } catch {
       setError(tp.summarizeError);
@@ -118,8 +119,8 @@ export function NotesPanel({ contextType, contextId, lessonTitle, highlightsForS
         </div>
         <button
           onClick={summarizeHighlights}
-          disabled={summarizing || highlightsForSummary.length === 0}
-          title={highlightsForSummary.length === 0 ? tp.noHighlightsYet : undefined}
+          disabled={summarizing || (notes.length === 0 && highlightsForSummary.length === 0)}
+          title={notes.length === 0 && highlightsForSummary.length === 0 ? tp.noHighlightsYet : undefined}
           className="flex items-center gap-1.5 text-xs font-semibold text-white/90 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {summarizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
