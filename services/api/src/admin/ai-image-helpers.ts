@@ -77,24 +77,9 @@ export async function buildVisualPrompt(lessonTitle: string, moduleTitle: string
   return `Flat illustration of "${lessonTitle.slice(0, 60)}", colorful educational scene with objects and people, clean white background, modern design, no text, no labels`;
 }
 
-// Claude Haiku → SVG infographic (card-grid, multi-color) for lesson cards.
-// Original design (Trello DmPpbrff, pre-Sep-29): 2×2 card grid, institutional blue
-// (#1E3A5F) + gold (#F5C518), 8192 max_tokens so SVG fits without truncation.
-export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
-  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Create a complete, modern, colorful educational SVG infographic for Lux Learning (viewBox="0 0 1200 900").
-
-Lesson: "${lessonTitle}"
-Module: "${moduleTitle}"
-Content: ${snippet}
-
-VISUAL STYLE — Flat UI with depth (soft drop shadows):
-- Each card/container: <filter> with <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/> for floating effect.
-- Colors VIVID and INSTITUTIONAL: primary #0B3A6F (navy), accent #FFC107 (gold), complementary accents (turquoise #00BCD4 or soft purple #7C4DFF) for variety. White or ultra-light gray (#F8FAFC) background.
-- Use subtle linear gradients on card headers: from #0B3A6F to #1565C0 or similar.
-
-ICON LIBRARY — add ALL of these <symbol> definitions VERBATIM inside <defs>. The AI must pick the most relevant icon ID for each card from this list:
-<symbol id="ico-lightbulb" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21h6M12 3a6 6 0 0 1 6 6c0 2.22-1.2 4.16-3 5.2V17H9v-2.8A6 6 0 0 1 6 9a6 6 0 0 1 6-6z"/></symbol>
+// Pre-defined icon symbols and logo mark — injected into SVG after Bedrock response
+// to keep the prompt short and avoid Lambda timeout.
+const INFOGRAPHIC_SYMBOLS = `<symbol id="ico-lightbulb" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21h6M12 3a6 6 0 0 1 6 6c0 2.22-1.2 4.16-3 5.2V17H9v-2.8A6 6 0 0 1 6 9a6 6 0 0 1 6-6z"/></symbol>
 <symbol id="ico-book" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
 <symbol id="ico-star" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
 <symbol id="ico-check" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></symbol>
@@ -110,6 +95,24 @@ ICON LIBRARY — add ALL of these <symbol> definitions VERBATIM inside <defs>. T
 <symbol id="ico-mic" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></symbol>
 <symbol id="ico-headphones" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></symbol>
 <symbol id="ico-award" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></symbol>
+<symbol id="lux-mark" viewBox="768 48 507 479"><path fill="#E2B84E" d="M1102.38 196.731C1116.83 192.19 1134.78 187.663 1146.77 178.259C1157.56 169.792 1158.69 148.571 1165.19 138.567L1166.49 138.207C1169.61 142.744 1173.24 155.651 1174.86 161.393C1181.63 185.499 1208.08 188.771 1228.68 196.672C1210.64 202.641 1188.85 206.26 1179.95 223.56C1174.85 233.49 1171.6 253.35 1168.21 258.882L1166.44 259.367C1161.79 255.465 1157.62 238.44 1155.66 231.751C1129.54 274.43 1092.93 314.142 1058.55 350.563C1013.37 398.418 966.232 445.714 913.503 485.333C880.197 510.358 832.788 542.465 790.59 518.131C764.298 502.799 762.916 467.434 778.265 443.835C791.338 423.144 812.114 410.931 834.329 400.866C849.81 394.675 872.333 387.848 886.418 381.311C986.498 349.7 1070.34 287.786 1139.39 209.748C1127.61 204.349 1114.77 200.724 1102.38 196.731ZM810.861 492.374C834.91 505.024 871.621 475.763 890.359 461.656C925.707 435.044 960.769 404.159 991.303 372.152L991.601 370.467L989.927 369.874A756 756 0 0 1 922.867 401.42C884.59 416.77 836.993 424.743 809.079 456.983C799.309 468.265 799.334 482.246 810.861 492.374Z"/><path fill="#19547F" d="M1108.27 315.843C1111.85 320.688 1119.16 333.934 1122.47 339.536L1149.81 385.654L1183.87 443.12C1195.02 461.95 1219.8 493.429 1199.92 514.128C1189.87 524.595 1166.99 522.075 1152.96 522.076L1098.95 522.073L911.98 522.015L895.534 522.255C909.366 511.854 922.852 500.616 936.717 490.085C1014.74 488.996 1095.27 490.071 1173.49 489.924C1163.45 474.728 1152.29 454.825 1142.83 438.962A6399 6399 0 0 1 1087.64 345.471C1093.69 336.085 1101.76 325.147 1108.27 315.843ZM834.329 400.866C840.72 392.535 853.063 370.532 859.221 360.259L938.272 227.509C950.969 206.106 963.309 184.651 976.321 163.346C985.056 149.044 1003.39 144.91 1014.41 159.025C1022 168.747 1028.24 180.71 1034.57 191.473L1070.65 252.669L1045.08 273.799C1028.5 247.69 1013.36 219.932 997.154 193.461C991.385 202.048 984.233 215.075 978.862 224.187L945.03 281.347L908.745 342.454C901.505 354.673 892.712 368.763 886.418 381.311C872.333 387.848 849.81 394.675 834.329 400.866Z"/></symbol>`;
+
+// Claude Haiku → SVG infographic (card-grid, multi-color) for lesson cards.
+export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const prompt = `Create a complete, modern, colorful educational SVG infographic for Lux Learning (viewBox="0 0 1200 900").
+
+Lesson: "${lessonTitle}"
+Module: "${moduleTitle}"
+Content: ${snippet}
+
+VISUAL STYLE — Flat UI with depth (soft drop shadows):
+- Each card/container: <filter> with <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/> for floating effect.
+- Colors VIVID and INSTITUTIONAL: primary #0B3A6F (navy), accent #FFC107 (gold), complementary accents (turquoise #00BCD4 or soft purple #7C4DFF) for variety. White or ultra-light gray (#F8FAFC) background.
+- Use subtle linear gradients on card headers: from #0B3A6F to #1565C0 or similar.
+
+AVAILABLE ICONS (use <use href="#ICO_ID"> — symbols are pre-defined, do NOT redefine them):
+ico-lightbulb, ico-book, ico-star, ico-check, ico-chart, ico-music, ico-user, ico-gear, ico-search, ico-clock, ico-target, ico-zap, ico-layers, ico-mic, ico-headphones, ico-award
 
 LAYOUT (exact coordinates):
 1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
@@ -133,12 +136,7 @@ Card SVG:
     <tspan x="CARD_X+82" dy="24">line 3 text max 52 chars</tspan>
   </text>
 Strip colors: card1=#0B3A6F, card2=#00BCD4, card3=#7C4DFF, card4=#FFC107. Yellow strip → text fill="#0F172A".
-6. FOOTER: rect y="860" height="40" fill="#0B3A6F". In <defs>, include this <symbol> VERBATIM (copy paths exactly):
-<symbol id="lux-mark" viewBox="768 48 507 479">
-  <path fill="#E2B84E" d="M1102.38 196.731C1116.83 192.19 1134.78 187.663 1146.77 178.259C1157.56 169.792 1158.69 148.571 1165.19 138.567L1166.49 138.207C1169.61 142.744 1173.24 155.651 1174.86 161.393C1181.63 185.499 1208.08 188.771 1228.68 196.672C1210.64 202.641 1188.85 206.26 1179.95 223.56C1174.85 233.49 1171.6 253.35 1168.21 258.882L1166.44 259.367C1161.79 255.465 1157.62 238.44 1155.66 231.751C1129.54 274.43 1092.93 314.142 1058.55 350.563C1013.37 398.418 966.232 445.714 913.503 485.333C880.197 510.358 832.788 542.465 790.59 518.131C764.298 502.799 762.916 467.434 778.265 443.835C791.338 423.144 812.114 410.931 834.329 400.866C849.81 394.675 872.333 387.848 886.418 381.311C986.498 349.7 1070.34 287.786 1139.39 209.748C1127.61 204.349 1114.77 200.724 1102.38 196.731ZM810.861 492.374C834.91 505.024 871.621 475.763 890.359 461.656C925.707 435.044 960.769 404.159 991.303 372.152L991.601 370.467L989.927 369.874A756 756 0 0 1 922.867 401.42C884.59 416.77 836.993 424.743 809.079 456.983C799.309 468.265 799.334 482.246 810.861 492.374Z"/>
-  <path fill="#19547F" d="M1108.27 315.843C1111.85 320.688 1119.16 333.934 1122.47 339.536L1149.81 385.654L1183.87 443.12C1195.02 461.95 1219.8 493.429 1199.92 514.128C1189.87 524.595 1166.99 522.075 1152.96 522.076L1098.95 522.073L911.98 522.015L895.534 522.255C909.366 511.854 922.852 500.616 936.717 490.085C1014.74 488.996 1095.27 490.071 1173.49 489.924C1163.45 474.728 1152.29 454.825 1142.83 438.962A6399 6399 0 0 1 1087.64 345.471C1093.69 336.085 1101.76 325.147 1108.27 315.843ZM834.329 400.866C840.72 392.535 853.063 370.532 859.221 360.259L938.272 227.509C950.969 206.106 963.309 184.651 976.321 163.346C985.056 149.044 1003.39 144.91 1014.41 159.025C1022 168.747 1028.24 180.71 1034.57 191.473L1070.65 252.669L1045.08 273.799C1028.5 247.69 1013.36 219.932 997.154 193.461C991.385 202.048 984.233 215.075 978.862 224.187L945.03 281.347L908.745 342.454C901.505 354.673 892.712 368.763 886.418 381.311C872.333 387.848 849.81 394.675 834.329 400.866Z"/>
-</symbol>
-Then in footer: <use href="#lux-mark" x="490" y="861" width="38" height="36"/> <text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
+6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Logo (lux-mark symbol is pre-defined — just use it): <use href="#lux-mark" x="490" y="861" width="38" height="36"/> then <text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
 
 TYPOGRAPHY (Lux Learning platform standard):
 - Font family: font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" on ALL text elements.
@@ -179,10 +177,16 @@ Return ONLY <svg>...</svg>. No markdown, no explanation.`;
     const svgRaw: string = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
     const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
     if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
-    const svg = match[0]
+    let svg = match[0]
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/javascript\s*:/gi, 'nojavascript:')
       .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
+    // Inject icon symbols + logo mark (kept out of prompt to reduce token usage)
+    if (svg.includes('</defs>')) {
+      svg = svg.replace('</defs>', `${INFOGRAPHIC_SYMBOLS}</defs>`);
+    } else {
+      svg = svg.replace(/(<svg[^>]*>)/, `$1<defs>${INFOGRAPHIC_SYMBOLS}</defs>`);
+    }
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET, Key: key,
