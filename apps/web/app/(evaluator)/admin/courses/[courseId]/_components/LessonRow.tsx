@@ -264,7 +264,7 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
                   <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 space-y-1">
                     <p className="text-xs font-semibold text-indigo-700">¿Qué genera?</p>
                     <p className="text-xs text-indigo-600 leading-relaxed">
-                      Claude analiza el contenido de la lección y genera una <strong>infografía SVG educativa</strong> con título, íconos y secciones de texto real — sin pseudo-texto ni alucinaciones tipográficas.
+                      Lux Mentor analiza el contenido de la lección y genera una <strong>infografía SVG educativa</strong> con título, íconos y secciones de texto real — sin pseudo-texto ni alucinaciones tipográficas.
                     </p>
                     <p className="text-xs text-indigo-500 mt-1">El archivo se guarda como imagen de la lección y puede descargarse.</p>
                   </div>
