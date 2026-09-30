@@ -313,7 +313,13 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       // Trello DmPpbrff, 2026-09-07 (Mack): "no me gusta [Kai]; me gustaba más la
       // anterior... latina y agradable" — reverted to Clara (the pre-2026-08-10
       // voice, see commit 56b1ba8) while keeping the es-419 locale fix above.
-      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Trello DmPpbrff, 2026-09-30 (Mack): "la voz de Lux Mentor en las clases debe
+      // ser masculina" — switched to Hector (male, built-in, Spanish-native).
+      voice: { provider: 'vapi', voiceId: 'Hector', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Trello DmPpbrff, 2026-09-30 (Mack): model was picking up its own speaker
+      // output and responding to itself, causing an echo loop that eventually killed
+      // the call. backgroundDenoisingEnabled strips non-speech from the mic input.
+      backgroundDenoisingEnabled: true,
       name: 'Lux Mentor',
       maxDurationSeconds: QA_HARD_LIMIT_SECONDS + 30, // absolute Vapi-side safety net above the client-side cutoff
       firstMessage: lang === 'en'
@@ -322,7 +328,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       endCallMessage: lang === 'en'
         ? 'Thank you for our conversation today. Keep up the great work!'
         : 'Gracias por nuestra conversación de hoy. ¡Sigue adelante con tu aprendizaje!',
-    });
+    } as any);
   };
 
   // ── REVIEW mode (post-class tabs) ────────────────────────────────────────────

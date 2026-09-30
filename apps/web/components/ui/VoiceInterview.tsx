@@ -140,7 +140,11 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       // shifted (can't verify audio output from here).
       // Trello DmPpbrff, 2026-09-07 (Mack): reverted voiceId to Clara — same change
       // as LuxMentorClass.tsx, see that file for context.
-      voice: { provider: 'vapi', voiceId: 'Clara', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Trello DmPpbrff, 2026-09-30 (Mack): "la voz de Lux Mentor en las clases debe
+      // ser masculina. Igual en la sesión en Vapi." — switched to Hector (male).
+      voice: { provider: 'vapi', voiceId: 'Hector', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      // Echo loop fix (Trello DmPpbrff, 2026-09-30): strips speaker output from mic input.
+      backgroundDenoisingEnabled: true,
       name: 'Lux Mentor',
       maxDurationSeconds: 600,
       firstMessage: lang === 'en'
@@ -149,7 +153,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       endCallMessage: lang === 'en'
         ? 'Thank you for your responses. The interview is now complete. Your evaluator will review your results shortly.'
         : 'Gracias por tus respuestas. La entrevista ha concluido. Tu evaluador revisará tu resultado en breve.',
-    });
+    } as any);
   };
 
   const endCall = () => {
