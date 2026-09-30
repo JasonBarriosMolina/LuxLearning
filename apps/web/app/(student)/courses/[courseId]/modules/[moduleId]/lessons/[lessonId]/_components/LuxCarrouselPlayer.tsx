@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight, Captions, FileText, ChevronDown, ChevronUp, Music, VolumeX } from 'lucide-react';
+import { Lock, Download, Play, Pause, Maximize, Minimize, ChevronRight, Captions, FileText, ChevronDown, ChevronUp, Music, VolumeX, BookOpen, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
   findActiveSlideIndex, slideProgress, canScrub, findActiveCaptionIndex, buildCarouselTranscript,
@@ -79,6 +79,7 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   // request builds + caches it on the Lesson row; later visits (any student) just get
   // the cached URL back instantly via the same endpoint.
   const [pdfRecapUrl, setPdfRecapUrl] = useState(initialPdfRecapUrl);
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
   const [pdfRequesting, setPdfRequesting] = useState(false);
   // Bug fix (Trello DmPpbrff, 2026-09-07 — Mack: "no hay nada que me esté
   // brindando la notificación de que se generó el Lux recap... ese botón no
@@ -314,16 +315,37 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
               )}
             </div>
           )}
-          <div>
+          <div className="space-y-2">
             {pdfRecapUrl ? (
-              <a
-                href={pdfRecapUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-cta-from hover:underline"
-              >
-                <Download className="w-3.5 h-3.5" /> Descargar Lux Recap (PDF)
-              </a>
+              <>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowPdfViewer((v) => !v)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-700"
+                  >
+                    {showPdfViewer ? <X className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
+                    {showPdfViewer ? 'Cerrar Lux Recap' : 'Ver Lux Recap (PDF)'}
+                  </button>
+                  <a
+                    href={pdfRecapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Descargar
+                  </a>
+                </div>
+                {showPdfViewer && (
+                  <div className="rounded-xl overflow-hidden border border-border shadow-md">
+                    <iframe
+                      src={`${pdfRecapUrl}#view=FitH`}
+                      className="w-full"
+                      style={{ height: '520px' }}
+                      title="Lux Recap PDF"
+                    />
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <button

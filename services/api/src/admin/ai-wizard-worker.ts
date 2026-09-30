@@ -127,6 +127,7 @@ STRUCTURE for every text lesson's "content" field (HTML, no full markdown) — 5
 4. PRACTICE IT YOURSELF — specific <h3> (e.g. "<h3>Try It: Estimate the Heuristic for Your Own Route</h3>") with ONE short self-guided exercise or thought experiment the student can attempt alone, using only what was just taught — not graded, just applied practice. NEVER title it "Exercise" or "Practice" alone.
 5. (Last text lesson of the module only) CLOSING — specific <h3> naming the module topic (e.g. "<h3>Key Takeaways: Heuristic Search Algorithms</h3>") with a bullet summary of key points and 1-2 self-assessment questions. NEVER use "Reflective Close" or "Summary" as the title.
 VISUAL VARIETY (required in every text lesson, not just walls of paragraphs): include exactly one colored callout box highlighting a key insight or warning, using this exact pattern: <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;"><strong>💡 [short label]:</strong> [one or two sentences]</div>. Combined with the required bullet list and bolded term above, this gives the student a visual break from plain text.
+STRICT WRITING RULE — NO META-TALK: Never write phrases like "we will see next", "in the following exercise", "look at the screen", "map this live", or any reference to on-screen interactions that don't exist in the text. Every concept must be fully EXPLAINED and NARRATED in the text itself. Content must be self-sufficient for audio reading (Text-to-Speech). For the last text lesson of a Lux Mentor module, end with 2 deep conceptual questions that prepare the student for the voice session, prefaced with a natural transition (e.g., "As you prepare for your conversation with Lux Mentor, reflect on:").
 Write in neutral, formal international English — no slang or regionalisms.
 Return ONLY a JSON array of exactly ${lessonCount} objects with no markdown fencing:
 [{"title":"Lesson title","content":"<h3>Specific concept subtitle</h3><p>HTML paragraph content</p>","points":["key point 1 (plain text, no markdown or HTML)","key point 2","key point 3"],"tip":"one practical tip","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`
@@ -140,6 +141,7 @@ ESTRUCTURA obligatoria para el campo "content" de cada lección de texto (HTML, 
 4. PONLO EN PRÁCTICA — <h3> específico (ej. "<h3>Inténtalo: Estima la Heurística de tu Propia Ruta</h3>") con UN ejercicio autoguiado corto o experimento mental que el estudiante pueda intentar solo, usando solo lo que se acaba de enseñar — no es calificado, es práctica aplicada. NUNCA titularlo solo "Ejercicio" o "Práctica".
 5. (Solo última lección de texto del módulo) CIERRE — <h3> que nombre el tema del módulo (ej. "<h3>Síntesis: Algoritmos de Búsqueda Heurística</h3>") con resumen en puntos clave y 1-2 preguntas de autoevaluación. NUNCA usar "Cierre Reflexivo" ni "Resumen" como título.
 VARIEDAD VISUAL (obligatorio en cada lección de texto, no solo párrafos de texto plano): incluye exactamente un recuadro destacado con color resaltando una idea clave o advertencia, usando este patrón exacto: <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;border-radius:8px;margin:16px 0;"><strong>💡 [etiqueta corta]:</strong> [una o dos oraciones]</div>. Combinado con la lista de viñetas y el término en negrita ya requeridos arriba, esto le da al estudiante un descanso visual de solo texto plano.
+REGLA ESTRICTA — SIN META-HABLA: Nunca escribas frases como "veremos a continuación", "en el siguiente ejercicio", "mira en pantalla", "mapearemos en vivo", ni ninguna referencia a interacciones visuales que no existen en el texto. Cada concepto debe ser EXPLICADO Y NARRADO de forma directa y autosuficiente. El contenido debe funcionar como clase magistral para lectura por voz (Text-to-Speech). En la última lección de texto de un módulo con sesión Lux Mentor, cierra con 2 preguntas conceptuales profundas que preparen al estudiante para la sesión de voz, precedidas de una transición natural (ej. "Antes de tu sesión con Lux Mentor, reflexiona sobre:").
 Redacta en español latino neutro y formal — sin modismos ni jerga local de ningún país.
 Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin markdown de cercado:
 [{"title":"Título lección","content":"<h3>Subtítulo del concepto específico</h3><p>Párrafo HTML con contenido</p>","points":["punto clave 1 (texto plano, sin markdown ni HTML)","punto clave 2","punto clave 3"],"tip":"un consejo práctico","type":"video|text","duration":"5 min|${TEXT_COMPREHENSION_MIN} min"}]`;
@@ -260,11 +262,12 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             let targetIdx = lessonData.findLastIndex((l) => l.type === 'text');
             if (targetIdx < 0) targetIdx = lessonData.length - 1; // fallback to last lesson
             if (targetIdx >= 0 && lessonData[targetIdx]) {
-              let resourcesHtml = '<section class="lesson-resources" style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;">';
+              const CARD_STYLE = 'background:#F5F3FF;border-left:4px solid #7C3AED;border-radius:10px;padding:20px 24px;margin-top:32px;';
+              let resourcesHtml = `<section class="lesson-resources" style="${CARD_STYLE}">`;
               if (refs.length > 0) {
                 resourcesHtml += isBlEN
-                  ? `<h3>📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ol>`
-                  : `<h3>📚 Referencias</h3><ol style="font-size:0.875rem;color:#4b5563;">${refs.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ol>`;
+                  ? `<h3 style="margin-top:0;color:#5B21B6;font-size:1rem;">📚 Bibliography</h3><ol style="font-size:0.875rem;color:#4b5563;line-height:1.7;margin-bottom:12px;">${refs.map((r) => `<li style="margin-bottom:6px;">${escapeHtml(r)}</li>`).join('')}</ol>`
+                  : `<h3 style="margin-top:0;color:#5B21B6;font-size:1rem;">📚 Referencias Bibliográficas</h3><ol style="font-size:0.875rem;color:#4b5563;line-height:1.7;margin-bottom:12px;">${refs.map((r) => `<li style="margin-bottom:6px;">${escapeHtml(r)}</li>`).join('')}</ol>`;
               }
               if (ytQueries.length > 0) {
                 // Real, verified video links instead of a keyword-search URL the student
@@ -285,10 +288,10 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
                 // escapeHtml on the label — found.title is untrusted third-party text from
                 // Google's API, not something Lux controls (code-review finding: stored XSS
                 // via dangerouslySetInnerHTML on the student lesson page otherwise).
-                const ytLinks = resolved.map(({ href, label }) => `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a></li>`).join('');
+                const ytLinks = resolved.map(({ href, label }) => `<li style="margin-bottom:8px;"><a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#7C3AED;text-decoration:underline;">${escapeHtml(label)}</a></li>`).join('');
                 resourcesHtml += isBlEN
-                  ? `<h3>🎥 Suggested Videos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`
-                  : `<h3>🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;">${ytLinks}</ul>`;
+                  ? `<h3 style="margin-top:${refs.length > 0 ? '16px' : '0'};color:#5B21B6;font-size:1rem;">🎥 Suggested Videos</h3><ul style="font-size:0.875rem;line-height:1.7;margin:0;padding-left:20px;">${ytLinks}</ul>`
+                  : `<h3 style="margin-top:${refs.length > 0 ? '16px' : '0'};color:#5B21B6;font-size:1rem;">🎥 Videos Sugeridos</h3><ul style="font-size:0.875rem;line-height:1.7;margin:0;padding-left:20px;">${ytLinks}</ul>`;
               }
               resourcesHtml += '</section>';
               const existing = lessonData[targetIdx].content ?? '';

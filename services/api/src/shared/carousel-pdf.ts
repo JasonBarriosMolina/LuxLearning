@@ -16,8 +16,13 @@ import { createId } from '@paralleldrive/cuid2';
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const S3_IMAGES_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 
+const LOGO_URL = process.env.APP_BASE_URL
+  ? `${process.env.APP_BASE_URL}/lux-logo.png`
+  : 'https://luxlearning.academy/lux-logo.png';
+
 export interface RecapSlide {
   onScreenText: { title: string; bullets: string[] };
+  narrationSegment?: string;
   imageUrl: string | null;
 }
 
@@ -26,6 +31,12 @@ export async function buildRecapPdf(moduleTitle: string, slides: RecapSlide[]): 
     // Lazy require to avoid cold-start cost on other routes — same pattern as certificates/handler.ts
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const PDFDocument = require('pdfkit') as typeof import('pdfkit');
+
+    const [logoBuf] = await Promise.allSettled([
+      fetch(LOGO_URL).then((r) => r.ok ? r.arrayBuffer().then(Buffer.from) : null).catch(() => null),
+    ]);
+    const logoBuffer: Buffer | null = logoBuf.status === 'fulfilled' ? logoBuf.value : null;
+
     const pdfBuffer = await new Promise<Buffer>(async (resolve, reject) => {
       try {
         const doc = new PDFDocument({ size: 'A4', margin: 50 });
@@ -34,28 +45,48 @@ export async function buildRecapPdf(moduleTitle: string, slides: RecapSlide[]): 
         doc.on('end', () => resolve(Buffer.concat(chunks)));
         doc.on('error', reject);
 
-        doc.fontSize(20).font('Helvetica-Bold').text('Lux Recap', { align: 'center' });
-        doc.fontSize(12).font('Helvetica').fillColor('#555').text(moduleTitle, { align: 'center' });
+        // Header
+        doc.fontSize(22).font('Helvetica-Bold').fillColor('#1A1A2E').text('Lux Recap', { align: 'center' });
+        doc.fontSize(13).font('Helvetica').fillColor('#6B21A8').text(moduleTitle, { align: 'center' });
         doc.moveDown(1.5);
 
         for (const slide of slides) {
-          if (doc.y > doc.page.height - 220) doc.addPage();
+          if (doc.y > doc.page.height - 240) doc.addPage();
           if (slide.imageUrl) {
             try {
               const res = await fetch(slide.imageUrl);
               if (res.ok) {
                 const buf = Buffer.from(await res.arrayBuffer());
-                doc.image(buf, { fit: [200, 200] });
+                doc.image(buf, { fit: [180, 180] });
+                doc.moveDown(0.3);
               }
             } catch { /* skip image, keep the text */ }
           }
+          doc.fontSize(14).font('Helvetica-Bold').fillColor('#1A1A2E').text(slide.onScreenText?.title ?? '');
           doc.moveDown(0.3);
-          doc.fontSize(14).font('Helvetica-Bold').fillColor('#2C2C2C').text(slide.onScreenText?.title ?? '');
+          // Narration body text
+          if (slide.narrationSegment) {
+            doc.fontSize(11).font('Helvetica').fillColor('#374151').text(slide.narrationSegment, { lineGap: 2 });
+            doc.moveDown(0.4);
+          }
+          // Key points
           const bullets: string[] = Array.isArray(slide.onScreenText?.bullets) ? slide.onScreenText.bullets : [];
-          doc.fontSize(11).font('Helvetica').fillColor('#444');
-          for (const b of bullets) doc.text(`•  ${b}`);
-          doc.moveDown(1);
+          if (bullets.length > 0) {
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#6B21A8').text('Puntos clave:');
+            doc.fontSize(10).font('Helvetica').fillColor('#4B5563');
+            for (const b of bullets) doc.text(`•  ${b}`, { indent: 8 });
+          }
+          doc.moveDown(1.2);
         }
+
+        // Footer with logo
+        const footerY = doc.page.height - 55;
+        doc.fontSize(8).font('Helvetica').fillColor('#9CA3AF')
+          .text('Lux Learning — Todos los derechos reservados', 50, footerY, { align: 'center', width: doc.page.width - 100 });
+        if (logoBuffer) {
+          try { doc.image(logoBuffer, doc.page.width / 2 - 30, footerY + 10, { width: 60 }); } catch { /* skip */ }
+        }
+
         doc.end();
       } catch (e) { reject(e); }
     });
