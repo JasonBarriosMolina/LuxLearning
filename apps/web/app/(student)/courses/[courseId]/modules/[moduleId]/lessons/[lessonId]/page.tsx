@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, Video, BookOpen, UsersRound, NotebookPen, Music, VolumeX,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, UsersRound, NotebookPen, Music, VolumeX,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -212,7 +212,6 @@ export default function LessonPage() {
 
   // YouTube error detection
   const [videoError, setVideoError] = useState(false);
-  const [activeTab, setActiveTab] = useState<'video' | 'text'>('text');
 
   // Progress gate — student must watch ≥80% of video before marking complete
   const [videoProgress, setVideoProgress] = useState(0); // 0-100
@@ -295,7 +294,6 @@ export default function LessonPage() {
         // YouTube sends {event:'onError', info: <code>} — codes 100/101=video unavailable, 150=embedding disabled
         if (data?.event === 'onError' || [100, 101, 150].includes(data?.info)) {
           setVideoError(true);
-          if (lesson?.content) setActiveTab('text');
         }
       } catch { /* ignore non-JSON messages */ }
     };
@@ -303,28 +301,17 @@ export default function LessonPage() {
     return () => window.removeEventListener('message', handler);
   }, [lesson]);
 
-  // Reset video error state and visited flags when lesson changes
+  // Reset video state when lesson changes. Text is always visible so textVisited is always true.
   useEffect(() => {
-    setVideoError(false); setVideoProgress(0); setTextVisited(false);
+    setVideoError(false); setVideoProgress(0); setTextVisited(true);
     if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
     if (ytPlayerRef.current?.destroy) { try { ytPlayerRef.current.destroy(); } catch { /* ignore */ } ytPlayerRef.current = null; }
   }, [lessonId]);
 
-  // Default to video tab when lesson has a YouTube video (div must exist before player init)
-  useEffect(() => {
-    if (lesson?.youtubeId) setActiveTab('video');
-    else setActiveTab('text');
-  }, [lesson?.youtubeId]);
-
-  // Track text tab visits
-  useEffect(() => {
-    if (activeTab === 'text') setTextVisited(true);
-  }, [activeTab]);
-
   // YouTube IFrame Player API — load script once, then create player per lesson.
-  // Guard on activeTab === 'video': the player div only exists in the DOM when on the video tab.
+  // Video is always inline (no tab toggle) so the player div is always in the DOM.
   useEffect(() => {
-    if (!lesson?.youtubeId || videoError || activeTab !== 'video') return;
+    if (!lesson?.youtubeId || videoError) return;
     const divId = `yt-player-${lessonId}`;
 
     function startPlayer() {
@@ -333,7 +320,7 @@ export default function LessonPage() {
         videoId: lesson!.youtubeId,
         playerVars: { rel: 0, modestbranding: 1 },
         events: {
-          onError: () => { setVideoError(true); if (lesson?.content) setActiveTab('text'); },
+          onError: () => { setVideoError(true); },
           onStateChange: (e: any) => {
             if (e.data === 1) { // playing
               if (ytIntervalRef.current) clearInterval(ytIntervalRef.current);
@@ -369,7 +356,7 @@ export default function LessonPage() {
       if (ytIntervalRef.current) { clearInterval(ytIntervalRef.current); ytIntervalRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lesson?.youtubeId, videoError, lessonId, activeTab]);
+  }, [lesson?.youtubeId, videoError, lessonId]);
 
   // ── Highlight logic ──────────────────────────────────────────────────────────
 
@@ -624,88 +611,63 @@ export default function LessonPage() {
         </div>
       </div>
 
-      {/* Lesson content: video player OR text content */}
-
-      {/* Tabs — only when lesson has both video and text content */}
-      {lesson.youtubeId && lesson.content && !videoError && (
-        <div className="inline-flex gap-1 p-1 rounded-full bg-surface border border-border">
-          {(['video', 'text'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                activeTab === tab
-                  ? 'bg-cta-gradient text-white shadow-glow'
-                  : 'text-gray-500 hover:text-charcoal'
-              }`}
-            >
-              {tab === 'video' ? <Video className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
-              {tab === 'video' ? t.lessonPage.tabVideo : t.lessonPage.tabText}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {lesson.youtubeId && !videoError && activeTab === 'video' ? (
-        <div className="lesson-active-card bg-black space-y-0">
-          <div id={`yt-player-${lessonId}`} className="w-full aspect-video" />
-          {!videoWatchedEnough && (
-            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/20 border-t border-amber-200 px-4 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{t.lessonPage.videoGateHint} ({videoProgress}%)</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="lesson-active-card p-6 space-y-3 bg-white dark:bg-[#1A1A2E]" ref={bodyRef}>
-          {videoError && (
-            <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{t.lessonPage.videoUnavailable}</span>
-            </div>
-          )}
-          {lesson.content ? (
-            <>
-              <TextToSpeechButton text={lesson.content} audioUrl={lesson.audioUrl} lessonId={lessonId} className="pb-1" />
-              {(() => {
-                const htmlWithHL = applyHighlightsToHtml(lesson.content, highlights);
-                const challenge = challenges.find((c) => c.lessonId === lessonId);
-                if (!challenge) {
-                  return (
-                    <div
-                      className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
-                      dangerouslySetInnerHTML={{ __html: htmlWithHL }}
-                    />
-                  );
-                }
-                // Split HTML at paragraphIndex to insert challenge inline
-                const splitIdx = challenge.paragraphIndex ?? 2;
-                const parts = htmlWithHL.split(/(?<=<\/(?:p|h[1-6]|div|blockquote)>)/i);
-                const breakAt = Math.min(Math.max(1, splitIdx), parts.length - 1);
-                const before = parts.slice(0, breakAt).join('');
-                const after = parts.slice(breakAt).join('');
+      {/* Lesson content: text always shown, video embedded inline after text */}
+      <div className="lesson-active-card p-6 space-y-3 bg-white dark:bg-[#1A1A2E]" ref={bodyRef}>
+        {lesson.content ? (
+          <>
+            <TextToSpeechButton text={lesson.content} audioUrl={lesson.audioUrl} lessonId={lessonId} className="pb-1" />
+            {(() => {
+              const htmlWithHL = applyHighlightsToHtml(lesson.content, highlights);
+              const challenge = challenges.find((c) => c.lessonId === lessonId);
+              if (!challenge) {
                 return (
-                  <>
+                  <div
+                    className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                    dangerouslySetInnerHTML={{ __html: htmlWithHL }}
+                  />
+                );
+              }
+              // Split HTML at paragraphIndex to insert challenge inline
+              const splitIdx = challenge.paragraphIndex ?? 2;
+              const parts = htmlWithHL.split(/(?<=<\/(?:p|h[1-6]|div|blockquote)>)/i);
+              const breakAt = Math.min(Math.max(1, splitIdx), parts.length - 1);
+              const before = parts.slice(0, breakAt).join('');
+              const after = parts.slice(breakAt).join('');
+              return (
+                <>
+                  <div
+                    className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
+                    dangerouslySetInnerHTML={{ __html: before }}
+                  />
+                  <ChallengeCard challenge={{ ...challenge, lessonId, moduleId }} />
+                  {after && (
                     <div
                       className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
-                      dangerouslySetInnerHTML={{ __html: before }}
+                      dangerouslySetInnerHTML={{ __html: after }}
                     />
-                    <ChallengeCard challenge={{ ...challenge, lessonId, moduleId }} />
-                    {after && (
-                      <div
-                        className="prose prose-sm max-w-none dark:prose-invert leading-relaxed text-charcoal prose-h3:text-base prose-h3:font-semibold prose-h3:text-charcoal prose-blockquote:border-cta-from prose-blockquote:text-gray-500 prose-li:text-charcoal"
-                        dangerouslySetInnerHTML={{ __html: after }}
-                      />
-                    )}
-                  </>
-                );
-              })()}
-            </>
-          ) : (
-            <p className="text-gray-400 text-sm text-center py-8">{t.lessonPage.contentUnavailable}</p>
-          )}
-        </div>
-      )}
+                  )}
+                </>
+              );
+            })()}
+          </>
+        ) : (
+          <p className="text-gray-400 text-sm text-center py-8">{t.lessonPage.contentUnavailable}</p>
+        )}
+
+        {/* Video embedded inline after text — complementary, never at start */}
+        {lesson.youtubeId && !videoError && (
+          <div className="mt-6 pt-4 border-t border-border/50">
+            <p className="text-xs text-gray-400 italic mb-3">{t.lessonPage.videoComplement}</p>
+            <div id={`yt-player-${lessonId}`} className="w-full aspect-video rounded-lg overflow-hidden bg-black" />
+          </div>
+        )}
+        {videoError && (
+          <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{t.lessonPage.videoUnavailable}</span>
+          </div>
+        )}
+      </div>
 
       {/* Transcript toggle — for any lesson with a youtubeId */}
       {lesson.youtubeId && (
@@ -1001,7 +963,14 @@ export default function LessonPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-end gap-2">
+          {!completed && !gatePassed && lesson?.youtubeId && !videoError && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 rounded-lg px-3 py-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{t.lessonPage.videoGateHint} ({videoProgress}%)</span>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
           {!completed && (
             <Button
               onClick={handleMarkComplete}
@@ -1042,6 +1011,7 @@ export default function LessonPage() {
               {t.lessonPage.backToModule} <ArrowRight className="w-4 h-4" />
             </Link>
           )}
+          </div>
         </div>
       </div>
     </div>
