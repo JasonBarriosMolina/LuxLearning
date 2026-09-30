@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, MessageCircle, X, Send, AlertCircle, UsersRound, NotebookPen, Music, VolumeX,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, X, Send, AlertCircle, UsersRound, NotebookPen, Music, VolumeX,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';
@@ -241,6 +241,8 @@ export default function LessonPage() {
 
   // Chat
   const [chatOpen, setChatOpen] = useState(false);
+  const [showMentorHint, setShowMentorHint] = useState(false);
+  const [mentorPulse, setMentorPulse] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -490,6 +492,22 @@ export default function LessonPage() {
   useEffect(() => {
     if (forumOpen) loadForumMessages();
   }, [forumOpen, loadForumMessages]);
+
+  // Mentor hint: subtle lift + ephemeral tooltip on first lesson of each module,
+  // 5s after arrival, shown once per session.
+  useEffect(() => {
+    if (!lesson || lesson.order !== 1 || chatOpen) return;
+    const storageKey = `mentor-hint-${moduleId}`;
+    try { if (sessionStorage.getItem(storageKey)) return; } catch {}
+    const t1 = setTimeout(() => {
+      setMentorPulse(true);
+      setShowMentorHint(true);
+      try { sessionStorage.setItem(storageKey, '1'); } catch {}
+      const t2 = setTimeout(() => { setMentorPulse(false); setShowMentorHint(false); }, 5000);
+      return () => clearTimeout(t2);
+    }, 5000);
+    return () => clearTimeout(t1);
+  }, [lesson, moduleId, chatOpen]);
 
   // ── Mark complete ────────────────────────────────────────────────────────────
 
@@ -823,13 +841,22 @@ export default function LessonPage() {
         </div>
       )}
 
-      {/* Floating chat button */}
+      {/* Mentor hint tooltip — ephemeral, no close button, fades after 5s */}
+      {showMentorHint && !chatOpen && (
+        <div className="fixed bottom-20 right-4 z-50 w-52 bg-white border border-gray-200 rounded-xl shadow-lg px-3 py-2 text-xs text-gray-600 animate-fade-in pointer-events-none">
+          Mentor está disponible para repasar este tema
+        </div>
+      )}
+
+      {/* Floating chat button — white + border, Lux icon */}
       <button
-        onClick={() => setChatOpen((prev) => !prev)}
+        onClick={() => { setChatOpen((prev) => !prev); setShowMentorHint(false); setMentorPulse(false); }}
         title="Mentor"
-        className="fixed bottom-6 right-4 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-cta-from to-cta-to text-white shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
+        className={`fixed bottom-6 right-4 z-50 w-12 h-12 rounded-full bg-white border shadow-xl flex items-center justify-center hover:scale-110 transition-all duration-300 ${mentorPulse ? 'border-yellow-400 ring-2 ring-yellow-300 ring-offset-1 -translate-y-1' : 'border-gray-200'}`}
       >
-        {chatOpen ? <X className="w-5 h-5" /> : <MessageCircle className="w-5 h-5" />}
+        {chatOpen
+          ? <X className="w-5 h-5 text-gray-600" />
+          : <img src="/lux-icon-fullcolor.svg" className="w-7 h-7" alt="Mentor" />}
       </button>
 
       {/* Forum panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack): "Elimina
