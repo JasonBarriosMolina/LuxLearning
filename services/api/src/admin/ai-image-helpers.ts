@@ -98,15 +98,34 @@ LAYOUT (exact coordinates):
 2. HEADER BAR: rect y="0" height="80" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="52" x="600" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
 3. SUBTITLE: rect y="80" height="44" fill="#FFC107". Lesson title: text y="108" x="600" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
 4. CARD GRID (4 cards, 2×2): Each card 540×210, with 30px gaps. Positions: card1(x=30,y=140), card2(x=600,y=140), card3(x=30,y=380), card4(x=600,y=380).
-   Per card:
-   a. Drop shadow filter applied to card group.
-   b. Background: rect fill="#FFFFFF" rx="12" stroke="none".
-   c. Top accent strip height=38 with gradient fill (alternate colors: #0B3A6F, #00BCD4, #7C4DFF, #FFC107) rx="12" (top corners only via separate rect).
-   d. Section title in strip: text fill="#FFFFFF" (or fill="#0F172A" if yellow strip) font-size="17" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" x=card_x+16 y=card_y+26. Clip to strip rect width.
-   e. ICON (left): simple SVG path/circle/line icon, stroke color matching strip, fill="none" stroke-width="2.5", in 56×56 box at (card_x+14, card_y+52). Use clipPath to contain it.
-   f. TEXT (right of icon): 3 lines font-size="16" fill="#475569" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" at x=card_x+84, y=card_y+72, y=card_y+94, y=card_y+116. Max 44 chars per line. Paired with clipPath of width=450 from x=card_x+80.
+
+CARD STRUCTURE — use this exact SVG pattern for each card (replace CARD_X, CARD_Y, N, STRIP_COLOR, TITLE, content):
+In <defs> add for card N:
+  <clipPath id="strip-clip-N"><rect x="CARD_X" y="CARD_Y" width="540" height="38"/></clipPath>
+  <clipPath id="icon-clip-N"><rect x="CARD_X+14" y="CARD_Y+46" width="56" height="56"/></clipPath>
+  <clipPath id="body-clip-N"><rect x="CARD_X+80" y="CARD_Y+44" width="450" height="155"/></clipPath>
+Card SVG:
+  <rect x="CARD_X" y="CARD_Y" width="540" height="210" rx="12" fill="#FFFFFF" filter="url(#card-shadow)"/>
+  <rect x="CARD_X" y="CARD_Y" width="540" height="38" fill="STRIP_COLOR" rx="4"/>
+  <text x="CARD_X+16" y="CARD_Y+26" font-size="17" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="#FFFFFF" clip-path="url(#strip-clip-N)">TITLE HERE</text>
+  <g clip-path="url(#icon-clip-N)">
+    <!-- ALL icon shapes MUST use coordinates within the box: x in [CARD_X+14 .. CARD_X+70], y in [CARD_Y+46 .. CARD_Y+102]. NEVER coordinates outside this range. -->
+    <!-- Example: <circle cx="CARD_X+42" cy="CARD_Y+74" r="22" stroke="STRIP_COLOR" stroke-width="2.5" fill="none"/> -->
+  </g>
+  <text font-size="16" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#body-clip-N)">
+    <tspan x="CARD_X+84" y="CARD_Y+72">line 1 text max 44 chars</tspan>
+    <tspan x="CARD_X+84" dy="24">line 2 text max 44 chars</tspan>
+    <tspan x="CARD_X+84" dy="24">line 3 text max 44 chars</tspan>
+  </text>
+Strip colors (one per card): card1=#0B3A6F, card2=#00BCD4, card3=#7C4DFF, card4=#FFC107. For yellow strip (#FFC107), use fill="#0F172A" on text.
+
 5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="5".
-6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Logo mark at x=480 y=865: (a) navy triangle <polygon points="480,895 498,865 516,895" fill="#FFFFFF" opacity="0.9"/>; (b) gold swoosh arc <path d="M482,892 Q499,870 514,868" stroke="#FFC107" stroke-width="2.5" fill="none" stroke-linecap="round"/>; (c) gold star dot <circle cx="514" cy="866" r="2.5" fill="#FFC107"/>. Wordmark right of mark: text x="522" y="885" font-size="15" font-weight="700" font-family="system-ui, Arial, sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
+6. FOOTER: rect y="860" height="40" fill="#0B3A6F". In <defs>, include this <symbol> VERBATIM (copy paths exactly):
+<symbol id="lux-mark" viewBox="768 48 507 479">
+  <path fill="#E2B84E" d="M1102.38 196.731C1116.83 192.19 1134.78 187.663 1146.77 178.259C1157.56 169.792 1158.69 148.571 1165.19 138.567L1166.49 138.207C1169.61 142.744 1173.24 155.651 1174.86 161.393C1181.63 185.499 1208.08 188.771 1228.68 196.672C1210.64 202.641 1188.85 206.26 1179.95 223.56C1174.85 233.49 1171.6 253.35 1168.21 258.882L1166.44 259.367C1161.79 255.465 1157.62 238.44 1155.66 231.751C1129.54 274.43 1092.93 314.142 1058.55 350.563C1013.37 398.418 966.232 445.714 913.503 485.333C880.197 510.358 832.788 542.465 790.59 518.131C764.298 502.799 762.916 467.434 778.265 443.835C791.338 423.144 812.114 410.931 834.329 400.866C849.81 394.675 872.333 387.848 886.418 381.311C986.498 349.7 1070.34 287.786 1139.39 209.748C1127.61 204.349 1114.77 200.724 1102.38 196.731ZM810.861 492.374C834.91 505.024 871.621 475.763 890.359 461.656C925.707 435.044 960.769 404.159 991.303 372.152L991.601 370.467L989.927 369.874A756 756 0 0 1 922.867 401.42C884.59 416.77 836.993 424.743 809.079 456.983C799.309 468.265 799.334 482.246 810.861 492.374Z"/>
+  <path fill="#19547F" d="M1108.27 315.843C1111.85 320.688 1119.16 333.934 1122.47 339.536L1149.81 385.654L1183.87 443.12C1195.02 461.95 1219.8 493.429 1199.92 514.128C1189.87 524.595 1166.99 522.075 1152.96 522.076L1098.95 522.073L911.98 522.015L895.534 522.255C909.366 511.854 922.852 500.616 936.717 490.085C1014.74 488.996 1095.27 490.071 1173.49 489.924C1163.45 474.728 1152.29 454.825 1142.83 438.962A6399 6399 0 0 1 1087.64 345.471C1093.69 336.085 1101.76 325.147 1108.27 315.843ZM834.329 400.866C840.72 392.535 853.063 370.532 859.221 360.259L938.272 227.509C950.969 206.106 963.309 184.651 976.321 163.346C985.056 149.044 1003.39 144.91 1014.41 159.025C1022 168.747 1028.24 180.71 1034.57 191.473L1070.65 252.669L1045.08 273.799C1028.5 247.69 1013.36 219.932 997.154 193.461C991.385 202.048 984.233 215.075 978.862 224.187L945.03 281.347L908.745 342.454C901.505 354.673 892.712 368.763 886.418 381.311C872.333 387.848 849.81 394.675 834.329 400.866Z"/>
+</symbol>
+Then in footer: <use href="#lux-mark" x="490" y="861" width="38" height="36"/> <text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
 
 TYPOGRAPHY (Lux Learning platform standard):
 - Font family: font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" on ALL text elements.
@@ -119,15 +138,17 @@ TYPOGRAPHY (Lux Learning platform standard):
   • White-on-dark text (strip headers): #FFFFFF.
 
 TEXT CONTAINMENT (critical — no floating or overflowing text):
-- Every text element must be paired with a <clipPath> that matches its parent container bounds minus 12px padding on all sides.
-- Card text area (right of icon): max width = 460px. Use two lines max, each max 52 chars, clipped by clipPath.
-- Section title in accent strip: max width = card_width - 32px, clipped to strip bounds.
-- NEVER place text outside its enclosing rect. NEVER position text that would render outside the viewBox.
+- EVERY text element MUST have clip-path="url(#...)" referencing a <clipPath> in <defs> that wraps its container bounds.
+- Multi-line body text: use ONE <text> element with multiple <tspan> children. Each <tspan> must have explicit x="..." and dy="..." attributes. NEVER use separate <text> elements for each line.
+- Strip title: clip-path to strip rect. Body text: clip-path to body area rect. Header/subtitle: clip-path to header/subtitle rect.
+- NEVER place text outside its enclosing rect. NEVER position text that would render outside the viewBox (0 0 1200 900).
 
-ICON DISCIPLINE:
-- Icons ONLY inside designated icon boxes (the 52×52 area per card). NEVER free-floating elsewhere.
-- Use only simple geometric SVG shapes (lines, circles, rects, simple paths) — no ornamental or random icon placement.
-- Each icon group wrapped in <g clip-path="url(#icon-clip-N)"> with matching clipPath rect.
+ICON DISCIPLINE (CRITICAL):
+- Icons live ONLY inside the designated icon box per card (56×56 box at card_x+14, card_y+46).
+- Icon group MUST use <g clip-path="url(#icon-clip-N)">. All child shapes MUST have coordinates computed RELATIVE to that box.
+- For card at (CARD_X, CARD_Y): icon center = (CARD_X+42, CARD_Y+74). NEVER use absolute coordinates that ignore CARD_X/CARD_Y.
+- Use only simple shapes: circle, rect, line, polyline, simple path. Stroke-based (fill="none") preferred.
+- ZERO icon shapes outside the icon box. If unsure, just draw a single circle at the box center.
 
 REQUIREMENTS:
 - NO external images, NO base64, NO JavaScript, NO <style> blocks — pure SVG attributes only.
