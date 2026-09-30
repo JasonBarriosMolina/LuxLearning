@@ -61,7 +61,17 @@ $SHARP_DETECT_LIBC = "$MODULES\detect-libc"
 # a well-known pdfkit+bundler gotcha against the reported endpoint, not from a
 # CloudWatch stack trace (none turned up in the retention window). Fixed the same
 # way as Prisma/sharp: mark pdfkit --external, stage the real folder into the zip.
-$PDFKIT_PKG = "$MODULES\pdfkit"
+# pdfkit's own runtime deps must also be staged — esbuild --external:pdfkit means
+# pdfkit's require() calls are also not bundled. All 6 are pure-JS. fflate was
+# missing from root node_modules until 2026-09-30 (Trello DmPpbrff) — install with
+# `npm install fflate --save` at repo root if the path below is missing.
+$PDFKIT_PKG           = "$MODULES\pdfkit"
+$PDFKIT_FFLATE        = "$MODULES\fflate"
+$PDFKIT_PNG_JS        = "$MODULES\png-js"
+$PDFKIT_FONTKIT       = "$MODULES\fontkit"
+$PDFKIT_LINEBREAK     = "$MODULES\linebreak"
+$PDFKIT_NOBLE_HASHES  = "$MODULES\@noble\hashes"
+$PDFKIT_NOBLE_CIPHERS = "$MODULES\@noble\ciphers"
 
 # Map: lambda-name -> [ entrypoint, usesPrisma, usesSharp?, usesPdfkit? ]
 # (usesSharp/usesPdfkit omitted = false)
@@ -186,9 +196,22 @@ function Deploy-Lambda([string]$name) {
   }
 
   if ($usesPdfkit) {
-    if (-not (Test-Path $PDFKIT_PKG)) { throw 'pdfkit is missing from node_modules - run npm install in services\api' }
-    # Pure JS, no native binary — a straight folder copy is enough (unlike sharp).
-    Copy-Item $PDFKIT_PKG "$stage\node_modules\pdfkit" -Recurse
+    if (-not (Test-Path $PDFKIT_PKG))           { throw 'pdfkit missing — run npm install at repo root' }
+    if (-not (Test-Path $PDFKIT_FFLATE))        { throw 'fflate missing — run: npm install fflate --save at repo root' }
+    if (-not (Test-Path $PDFKIT_PNG_JS))        { throw 'png-js missing — run npm install at repo root' }
+    if (-not (Test-Path $PDFKIT_FONTKIT))       { throw 'fontkit missing — run npm install at repo root' }
+    if (-not (Test-Path $PDFKIT_LINEBREAK))     { throw 'linebreak missing — run npm install at repo root' }
+    if (-not (Test-Path $PDFKIT_NOBLE_HASHES))  { throw '@noble/hashes missing — run npm install at repo root' }
+    if (-not (Test-Path $PDFKIT_NOBLE_CIPHERS)) { throw '@noble/ciphers missing — run npm install at repo root' }
+    # Pure JS — stage pdfkit + all 6 direct runtime deps (no native binaries).
+    New-Item -ItemType Directory "$stage\node_modules\@noble" -Force | Out-Null
+    Copy-Item $PDFKIT_PKG           "$stage\node_modules\pdfkit"          -Recurse
+    Copy-Item $PDFKIT_FFLATE        "$stage\node_modules\fflate"          -Recurse
+    Copy-Item $PDFKIT_PNG_JS        "$stage\node_modules\png-js"          -Recurse
+    Copy-Item $PDFKIT_FONTKIT       "$stage\node_modules\fontkit"         -Recurse
+    Copy-Item $PDFKIT_LINEBREAK     "$stage\node_modules\linebreak"       -Recurse
+    Copy-Item $PDFKIT_NOBLE_HASHES  "$stage\node_modules\@noble\hashes"  -Recurse
+    Copy-Item $PDFKIT_NOBLE_CIPHERS "$stage\node_modules\@noble\ciphers" -Recurse
   }
 
   # 3. Zip
