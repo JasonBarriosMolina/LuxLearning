@@ -93,33 +93,46 @@ VISUAL STYLE — Flat UI with depth (soft drop shadows):
 - Colors VIVID and INSTITUTIONAL: primary #0B3A6F (navy), accent #FFC107 (gold), complementary accents (turquoise #00BCD4 or soft purple #7C4DFF) for variety. White or ultra-light gray (#F8FAFC) background.
 - Use subtle linear gradients on card headers: from #0B3A6F to #1565C0 or similar.
 
+ICON LIBRARY — add ALL of these <symbol> definitions VERBATIM inside <defs>. The AI must pick the most relevant icon ID for each card from this list:
+<symbol id="ico-lightbulb" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21h6M12 3a6 6 0 0 1 6 6c0 2.22-1.2 4.16-3 5.2V17H9v-2.8A6 6 0 0 1 6 9a6 6 0 0 1 6-6z"/></symbol>
+<symbol id="ico-book" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+<symbol id="ico-star" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+<symbol id="ico-check" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></symbol>
+<symbol id="ico-chart" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="18" y="3" width="4" height="18"/><rect x="10" y="8" width="4" height="13"/><rect x="2" y="13" width="4" height="8"/></symbol>
+<symbol id="ico-music" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+<symbol id="ico-user" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+<symbol id="ico-gear" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+<symbol id="ico-search" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+<symbol id="ico-clock" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+<symbol id="ico-target" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+<symbol id="ico-zap" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+<symbol id="ico-layers" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+<symbol id="ico-mic" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></symbol>
+<symbol id="ico-headphones" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></symbol>
+<symbol id="ico-award" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></symbol>
+
 LAYOUT (exact coordinates):
 1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
 2. HEADER BAR: rect y="0" height="80" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="52" x="600" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
 3. SUBTITLE: rect y="80" height="44" fill="#FFC107". Lesson title: text y="108" x="600" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
-4. CARD GRID (4 cards, 2×2): Each card 540×210, with 30px gaps. Positions: card1(x=30,y=140), card2(x=600,y=140), card3(x=30,y=380), card4(x=600,y=380).
+4. CONNECTING LINES — draw these FIRST (BEFORE cards) so they render behind card content. Center points: card1=(300,245), card2=(870,245), card3=(300,485), card4=(870,485). Draw: line card1→card2 (y=245, x=300→870), line card1→card3 (x=300, y=245→485), line card2→card4 (x=870, y=245→485), line card3→card4 (y=485, x=300→870). Style: stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4". Circle at each midpoint r="6" fill="#FFC107" stroke="none". These lines MUST appear in SVG before any card <rect> element.
+5. CARD GRID (draw AFTER connecting lines): 4 cards 2×2, each 540×210. Positions: card1(x=30,y=140), card2(x=600,y=140), card3(x=30,y=380), card4(x=600,y=380).
 
-CARD STRUCTURE — use this exact SVG pattern for each card (replace CARD_X, CARD_Y, N, STRIP_COLOR, TITLE, content):
+CARD STRUCTURE — use this exact SVG pattern for each card (replace CARD_X, CARD_Y, N, STRIP_COLOR, ICO_ID, TITLE, content):
 In <defs> add for card N:
   <clipPath id="strip-clip-N"><rect x="CARD_X" y="CARD_Y" width="540" height="38"/></clipPath>
-  <clipPath id="icon-clip-N"><rect x="CARD_X+14" y="CARD_Y+46" width="56" height="56"/></clipPath>
   <clipPath id="body-clip-N"><rect x="CARD_X+80" y="CARD_Y+44" width="450" height="155"/></clipPath>
 Card SVG:
   <rect x="CARD_X" y="CARD_Y" width="540" height="210" rx="12" fill="#FFFFFF" filter="url(#card-shadow)"/>
   <rect x="CARD_X" y="CARD_Y" width="540" height="38" fill="STRIP_COLOR" rx="4"/>
   <text x="CARD_X+16" y="CARD_Y+26" font-size="17" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="#FFFFFF" clip-path="url(#strip-clip-N)">TITLE HERE</text>
-  <g clip-path="url(#icon-clip-N)">
-    <!-- ALL icon shapes MUST use coordinates within the box: x in [CARD_X+14 .. CARD_X+70], y in [CARD_Y+46 .. CARD_Y+102]. NEVER coordinates outside this range. -->
-    <!-- Example: <circle cx="CARD_X+42" cy="CARD_Y+74" r="22" stroke="STRIP_COLOR" stroke-width="2.5" fill="none"/> -->
-  </g>
+  <use href="#ICO_ID" x="CARD_X+14" y="CARD_Y+50" width="52" height="52" stroke="STRIP_COLOR" fill="none"/>
   <text font-size="16" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#body-clip-N)">
-    <tspan x="CARD_X+84" y="CARD_Y+72">line 1 text max 44 chars</tspan>
-    <tspan x="CARD_X+84" dy="24">line 2 text max 44 chars</tspan>
-    <tspan x="CARD_X+84" dy="24">line 3 text max 44 chars</tspan>
+    <tspan x="CARD_X+82" y="CARD_Y+72">line 1 text max 52 chars</tspan>
+    <tspan x="CARD_X+82" dy="24">line 2 text max 52 chars</tspan>
+    <tspan x="CARD_X+82" dy="24">line 3 text max 52 chars</tspan>
   </text>
-Strip colors (one per card): card1=#0B3A6F, card2=#00BCD4, card3=#7C4DFF, card4=#FFC107. For yellow strip (#FFC107), use fill="#0F172A" on text.
-
-5. CONNECTING LINES: thin dashed lines stroke="#0B3A6F" stroke-width="1" stroke-dasharray="4,4" between cards (center-to-center), with small circle markers stroke="#FFC107" fill="#FFC107" r="5".
+Strip colors: card1=#0B3A6F, card2=#00BCD4, card3=#7C4DFF, card4=#FFC107. Yellow strip → text fill="#0F172A".
 6. FOOTER: rect y="860" height="40" fill="#0B3A6F". In <defs>, include this <symbol> VERBATIM (copy paths exactly):
 <symbol id="lux-mark" viewBox="768 48 507 479">
   <path fill="#E2B84E" d="M1102.38 196.731C1116.83 192.19 1134.78 187.663 1146.77 178.259C1157.56 169.792 1158.69 148.571 1165.19 138.567L1166.49 138.207C1169.61 142.744 1173.24 155.651 1174.86 161.393C1181.63 185.499 1208.08 188.771 1228.68 196.672C1210.64 202.641 1188.85 206.26 1179.95 223.56C1174.85 233.49 1171.6 253.35 1168.21 258.882L1166.44 259.367C1161.79 255.465 1157.62 238.44 1155.66 231.751C1129.54 274.43 1092.93 314.142 1058.55 350.563C1013.37 398.418 966.232 445.714 913.503 485.333C880.197 510.358 832.788 542.465 790.59 518.131C764.298 502.799 762.916 467.434 778.265 443.835C791.338 423.144 812.114 410.931 834.329 400.866C849.81 394.675 872.333 387.848 886.418 381.311C986.498 349.7 1070.34 287.786 1139.39 209.748C1127.61 204.349 1114.77 200.724 1102.38 196.731ZM810.861 492.374C834.91 505.024 871.621 475.763 890.359 461.656C925.707 435.044 960.769 404.159 991.303 372.152L991.601 370.467L989.927 369.874A756 756 0 0 1 922.867 401.42C884.59 416.77 836.993 424.743 809.079 456.983C799.309 468.265 799.334 482.246 810.861 492.374Z"/>
@@ -144,11 +157,9 @@ TEXT CONTAINMENT (critical — no floating or overflowing text):
 - NEVER place text outside its enclosing rect. NEVER position text that would render outside the viewBox (0 0 1200 900).
 
 ICON DISCIPLINE (CRITICAL):
-- Icons live ONLY inside the designated icon box per card (56×56 box at card_x+14, card_y+46).
-- Icon group MUST use <g clip-path="url(#icon-clip-N)">. All child shapes MUST have coordinates computed RELATIVE to that box.
-- For card at (CARD_X, CARD_Y): icon center = (CARD_X+42, CARD_Y+74). NEVER use absolute coordinates that ignore CARD_X/CARD_Y.
-- Use only simple shapes: circle, rect, line, polyline, simple path. Stroke-based (fill="none") preferred.
-- ZERO icon shapes outside the icon box. If unsure, just draw a single circle at the box center.
+- ALWAYS use <use href="#ICO_ID" x="CARD_X+14" y="CARD_Y+50" width="52" height="52" stroke="STRIP_COLOR" fill="none"/> — never draw custom icon shapes.
+- Choose ICO_ID from the ICON LIBRARY symbols defined in <defs> above. Pick the icon most semantically relevant to the card topic.
+- NEVER place any icon-related shape outside the symbol/use pattern. No raw circles, paths, or lines as icons.
 
 REQUIREMENTS:
 - NO external images, NO base64, NO JavaScript, NO <style> blocks — pure SVG attributes only.
