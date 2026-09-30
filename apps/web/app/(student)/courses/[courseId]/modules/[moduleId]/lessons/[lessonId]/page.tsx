@@ -856,7 +856,7 @@ export default function LessonPage() {
       >
         {chatOpen
           ? <X className="w-5 h-5 text-gray-600" />
-          : <img src="/lux-icon-fullcolor.svg" className="w-7 h-7" alt="Mentor" />}
+          : <img src="/lux-mentor-icon.svg" className="w-7 h-7" alt="Mentor" />}
       </button>
 
       {/* Forum panel (fixed overlay) — Trello DmPpbrff, 2026-09-05 (Mack): "Elimina
