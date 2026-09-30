@@ -10,6 +10,8 @@ node_modules/
 .next/
 out/
 dist/
+# Note: dist/pdfkit-deps/node_modules/ is required by deploy-lambda.ps1 (usesPdfkit).
+# Regenerate with: cd dist/pdfkit-deps && npm install pdfkit@0.18.0
 build/
 .turbo/
 cdk.out/
@@ -70,3 +72,11 @@ scripts/setup-devbot.ps1
 LUX_CONTEXT.md
 .serena/
 services/api/.env.test
+
+# Headroom artifacts
+.claude/.headroom_wrap_owners.json
+.claude/.headroom_wrap_settings.lock
+
+# Local MCP config (contains secrets)
+.mcp.json.disabled
+.codegraph/daemon.pid
