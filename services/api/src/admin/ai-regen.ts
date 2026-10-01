@@ -104,7 +104,23 @@ export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
     }
 
     if (regenType === 'infographic') {
-      const imageUrl = await generateLessonInfographic(lesson.title, modTitle, lesson.content ?? '');
+      let infTitle = lesson.title;
+      let infContent = lesson.content ?? '';
+      let numCards: 4 | 8 = 4;
+      if (lesson.order === 1) {
+        const moduleLessons = await prisma.lesson.findMany({
+          where: { moduleId: lesson.moduleId },
+          orderBy: { order: 'asc' },
+          select: { title: true, content: true },
+        });
+        infTitle = modTitle;
+        infContent = moduleLessons.map(l => {
+          const body = (l.content ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+          return l.title + (body ? ': ' + body : '');
+        }).join(' | ');
+        numCards = 8;
+      }
+      const imageUrl = await generateLessonInfographic(infTitle, modTitle, infContent, numCards);
       if (!imageUrl) return badRequest('No se pudo generar la infografía');
       if (previewMode) return ok({ imageUrl, preview: true });
       const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
