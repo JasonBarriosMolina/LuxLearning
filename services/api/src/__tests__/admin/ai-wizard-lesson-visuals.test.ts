@@ -30,7 +30,7 @@ describe('attachLessonVisuals — ONE infographic per module, not per lesson (Tr
     expect(lessons[1]!.imageUrl).toBeNull();
     expect(lessons[2]!.imageUrl).toBeNull();
     expect(generateLessonInfographic).toHaveBeenCalledTimes(1);
-    expect(generateLessonInfographic).toHaveBeenCalledWith('Módulo X', 'Módulo X', 'L1, L2, L3');
+    expect(generateLessonInfographic).toHaveBeenCalledWith('Módulo X', 'Módulo X', expect.stringContaining('L1'), 8);
   });
 
   it('leaves imageUrl null (never throws) when infographic generation fails — never blocks the batch', async () => {

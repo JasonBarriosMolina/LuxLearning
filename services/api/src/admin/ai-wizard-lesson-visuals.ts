@@ -38,8 +38,12 @@ export interface DraftLessonRow {
  */
 export async function attachLessonVisuals(lessons: DraftLessonRow[], moduleTitle: string): Promise<void> {
   if (lessons.length > 0) {
-    const overview = lessons.map((l) => l.title).filter(Boolean).join(', ');
-    const url = await generateLessonInfographic(moduleTitle, moduleTitle, overview).catch(() => null);
+    // Build a rich module overview: title + first 120 chars of content per lesson
+    const overview = lessons.map((l) => {
+      const body = (l.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+      return l.title + (body ? ': ' + body : '');
+    }).filter(Boolean).join(' | ');
+    const url = await generateLessonInfographic(moduleTitle, moduleTitle, overview, 8).catch(() => null);
     lessons[0]!.imageUrl = url;
   }
   for (const lesson of lessons) {

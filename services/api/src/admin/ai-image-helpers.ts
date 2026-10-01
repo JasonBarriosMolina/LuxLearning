@@ -102,68 +102,107 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+function detectLang(text: string): 'es' | 'en' {
+  return (text.match(/[áéíóúñüÁÉÍÓÚÑÜ¿¡]/g) || []).length >= 3 ? 'es' : 'en';
+}
+
 interface InfographicCard { title: string; lines: string[]; icon: string; }
 const VALID_ICONS = new Set(['ico-lightbulb','ico-book','ico-star','ico-check','ico-chart','ico-music','ico-user','ico-gear','ico-search','ico-clock','ico-target','ico-zap','ico-layers','ico-mic','ico-headphones','ico-award']);
-const STRIP_COLORS = ['#0B3A6F','#00BCD4','#7C4DFF','#FFC107'];
-const STRIP_TEXT  = ['#FFFFFF','#FFFFFF','#FFFFFF','#0F172A'];
-const CARD_POS    = [{x:30,y:140},{x:600,y:140},{x:30,y:380},{x:600,y:380}];
+const STRIP_COLORS_CYCLE = ['#0B3A6F','#00BCD4','#7C4DFF','#FFC107'];
+const STRIP_TEXT_CYCLE   = ['#FFFFFF','#FFFFFF','#FFFFFF','#0F172A'];
 
-function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, moduleTitle: string): string {
+// 4-card layout: 2×2, cards 540×210, connecting lines, footer y=860
+const CARD_POS_4  = [{x:30,y:140},{x:600,y:140},{x:30,y:380},{x:600,y:380}];
+// 8-card layout: 2×4, cards 540×140, no connecting lines, footer y=730
+const CARD_POS_8  = [
+  {x:30,y:114},{x:600,y:114},
+  {x:30,y:268},{x:600,y:268},
+  {x:30,y:422},{x:600,y:422},
+  {x:30,y:576},{x:600,y:576},
+];
+
+function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, moduleTitle: string, numCards: 4 | 8 = 4): string {
   const ht = escapeXml(moduleTitle.slice(0, 55));
   const st = escapeXml(lessonTitle.slice(0, 65));
+  const is8 = numCards === 8;
+  const CARD_POS    = is8 ? CARD_POS_8 : CARD_POS_4;
+  const cardHeight  = is8 ? 140 : 210;
+  const stripH      = is8 ? 26 : 38;
+  const iconSize    = is8 ? 40 : 52;
+  const iconOffX    = is8 ? 10 : 14;
+  const iconOffY    = is8 ? 32 : 50;
+  const textOffX    = is8 ? 62 : 82;
+  const textOffY    = is8 ? 44 : 72;
+  const textDy      = is8 ? 20 : 24;
+  const maxLines    = is8 ? 2 : 3;
+  const titleFSize  = is8 ? 14 : 17;
+  const titleY      = is8 ? 20 : 26;
+  const bodyFSize   = is8 ? 14 : 16;
+  const hdrH        = is8 ? 70 : 80;
+  const subH        = is8 ? 34 : 44;
+  const subTY       = is8 ? 95 : 108;
+  const footerY     = is8 ? 730 : 860;
+
   const clipDefs = CARD_POS.map(({x, y}, i) =>
-    `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="38"/></clipPath>` +
-    `<clipPath id="bc${i}"><rect x="${x+80}" y="${y+44}" width="450" height="155"/></clipPath>`
+    `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="${stripH}"/></clipPath>` +
+    `<clipPath id="bc${i}"><rect x="${x+textOffX-4}" y="${y+stripH+4}" width="450" height="${cardHeight - stripH - 8}"/></clipPath>`
   ).join('');
-  const cardsSvg = cards.slice(0,4).map((card, i) => {
-    const {x, y} = CARD_POS[i];
-    const sc = STRIP_COLORS[i], stc = STRIP_TEXT[i];
+
+  const cardsSvg = cards.slice(0, numCards).map((card, i) => {
+    const {x, y} = CARD_POS[i]!;
+    const sc = STRIP_COLORS_CYCLE[i % 4]!, stc = STRIP_TEXT_CYCLE[i % 4]!;
     const title = escapeXml((card.title || '').slice(0, 30));
-    const lines = (card.lines || []).slice(0, 3).map(l => escapeXml(String(l).slice(0, 52)));
+    const lines = (card.lines || []).slice(0, maxLines).map(l => escapeXml(String(l).slice(0, 52)));
     const icon = VALID_ICONS.has(card.icon) ? card.icon : 'ico-lightbulb';
     const tspans = lines.map((l, li) =>
-      li === 0 ? `<tspan x="${x+82}" y="${y+72}">${l}</tspan>`
-               : `<tspan x="${x+82}" dy="24">${l}</tspan>`
+      li === 0 ? `<tspan x="${x+textOffX}" y="${y+textOffY}">${l}</tspan>`
+               : `<tspan x="${x+textOffX}" dy="${textDy}">${l}</tspan>`
     ).join('');
-    return `<rect x="${x}" y="${y}" width="540" height="210" rx="12" fill="#FFFFFF" filter="url(#cs)"/>` +
-      `<rect x="${x}" y="${y}" width="540" height="38" fill="${sc}" rx="4"/>` +
-      `<text x="${x+16}" y="${y+26}" font-size="17" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="${stc}" clip-path="url(#sc${i})">${title}</text>` +
-      `<use href="#${icon}" x="${x+14}" y="${y+50}" width="52" height="52" stroke="${sc}" fill="none"/>` +
-      `<text font-size="16" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#bc${i})">${tspans}</text>`;
+    return `<rect x="${x}" y="${y}" width="540" height="${cardHeight}" rx="10" fill="#FFFFFF" filter="url(#cs)"/>` +
+      `<rect x="${x}" y="${y}" width="540" height="${stripH}" fill="${sc}" rx="4"/>` +
+      `<text x="${x+12}" y="${y+titleY}" font-size="${titleFSize}" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="${stc}" clip-path="url(#sc${i})">${title}</text>` +
+      `<use href="#${icon}" x="${x+iconOffX}" y="${y+iconOffY}" width="${iconSize}" height="${iconSize}" stroke="${sc}" fill="none"/>` +
+      `<text font-size="${bodyFSize}" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#bc${i})">${tspans}</text>`;
   }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">` +
-    `<defs><filter id="cs"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/></filter>` +
-    `<linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0B3A6F"/><stop offset="100%" stop-color="#1565C0"/></linearGradient>` +
-    `<clipPath id="hc"><rect x="0" y="0" width="1200" height="80"/></clipPath>` +
-    `<clipPath id="stc"><rect x="0" y="80" width="1200" height="44"/></clipPath>` +
-    `${clipDefs}${INFOGRAPHIC_SYMBOLS}</defs>` +
-    `<rect width="1200" height="900" fill="#F8FAFC"/>` +
-    `<rect y="0" width="1200" height="80" fill="url(#hg)"/>` +
-    `<text x="600" y="52" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui,Arial,sans-serif" clip-path="url(#hc)">${ht}</text>` +
-    `<rect y="80" width="1200" height="44" fill="#FFC107"/>` +
-    `<text x="600" y="108" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui,Arial,sans-serif" clip-path="url(#stc)">${st}</text>` +
-    // connecting lines (behind cards)
+
+  const connectingLines = is8 ? '' :
     `<line x1="300" y1="245" x2="870" y2="245" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
     `<line x1="300" y1="245" x2="300" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
     `<line x1="870" y1="245" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
     `<line x1="300" y1="485" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
     `<circle cx="585" cy="245" r="6" fill="#FFC107"/><circle cx="300" cy="365" r="6" fill="#FFC107"/>` +
-    `<circle cx="870" cy="365" r="6" fill="#FFC107"/><circle cx="585" cy="485" r="6" fill="#FFC107"/>` +
-    cardsSvg +
-    `<rect y="860" width="1200" height="40" fill="#0B3A6F"/>` +
-    `<use href="#lux-mark" x="490" y="861" width="38" height="36"/>` +
-    `<text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>` +
+    `<circle cx="870" cy="365" r="6" fill="#FFC107"/><circle cx="585" cy="485" r="6" fill="#FFC107"/>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">` +
+    `<defs><filter id="cs"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/></filter>` +
+    `<linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0B3A6F"/><stop offset="100%" stop-color="#1565C0"/></linearGradient>` +
+    `<clipPath id="hc"><rect x="0" y="0" width="1200" height="${hdrH}"/></clipPath>` +
+    `<clipPath id="stc"><rect x="0" y="${hdrH}" width="1200" height="${subH}"/></clipPath>` +
+    `${clipDefs}${INFOGRAPHIC_SYMBOLS}</defs>` +
+    `<rect width="1200" height="900" fill="#F8FAFC"/>` +
+    `<rect y="0" width="1200" height="${hdrH}" fill="url(#hg)"/>` +
+    `<text x="600" y="${Math.round(hdrH*0.65)}" text-anchor="middle" fill="#FFFFFF" font-size="${is8?28:32}" font-weight="700" font-family="system-ui,Arial,sans-serif" clip-path="url(#hc)">${ht}</text>` +
+    `<rect y="${hdrH}" width="1200" height="${subH}" fill="#FFC107"/>` +
+    `<text x="600" y="${subTY}" text-anchor="middle" fill="#0F172A" font-size="${is8?17:20}" font-weight="600" font-family="system-ui,Arial,sans-serif" clip-path="url(#stc)">${st}</text>` +
+    connectingLines + cardsSvg +
+    `<rect y="${footerY}" width="1200" height="40" fill="#0B3A6F"/>` +
+    `<use href="#lux-mark" x="490" y="${footerY+1}" width="38" height="36"/>` +
+    `<text x="534" y="${footerY+24}" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>` +
     `</svg>`;
 }
 
 // Claude Haiku → JSON card data → TypeScript SVG template (fast, avoids API GW 29s timeout)
-export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
-  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Extract exactly 4 key concepts from this lesson as a JSON array.
-Each element: {"title": "max 30 chars", "lines": ["line1 max 52 chars", "line2", "line3"], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award"}
+export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string, numCards: 4 | 8 = 4): Promise<string | null> {
+  const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, numCards === 8 ? 1200 : 600);
+  const lang = detectLang(lessonTitle + ' ' + moduleTitle + ' ' + snippet);
+  const langNote = lang === 'es'
+    ? 'IMPORTANTE: Responde ÚNICAMENTE en español. Todos los títulos y textos deben estar en español.'
+    : 'IMPORTANT: Respond ONLY in English. All titles and text must be in English.';
+  const prompt = `${langNote}
+Extract exactly ${numCards} key concepts from this ${numCards === 8 ? 'module' : 'lesson'} as a JSON array.
+Each element: {"title": "max 30 chars", "lines": ["line1 max 52 chars", "line2"${numCards === 4 ? ', "line3"' : ''}], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award"}
 Pick the most relevant icon for each concept topic.
-Lesson: "${lessonTitle}"
-Module: "${moduleTitle}"
+${numCards === 8 ? 'Module' : 'Lesson'}: "${numCards === 8 ? moduleTitle : lessonTitle}"
 Content: ${snippet}
 Return ONLY a valid JSON array, no markdown, no explanation.`;
 
@@ -181,7 +220,7 @@ Return ONLY a valid JSON array, no markdown, no explanation.`;
       cards = Array.isArray(parsed) ? parsed : [];
     } catch { console.error('[InfographicGen] JSON parse error, raw:', raw.slice(0, 200)); }
     if (cards.length === 0) return null;
-    const svg = buildInfographicSVG(cards, lessonTitle, moduleTitle);
+    const svg = buildInfographicSVG(cards, lessonTitle, moduleTitle, numCards);
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET, Key: key,
