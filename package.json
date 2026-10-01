@@ -18,7 +18,7 @@
     "cdk:deploy": "npm run deploy --workspace=infrastructure/cdk"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "24.x"
   },
   "dependencies": {
     "fflate": "^0.8.3",
