@@ -38,6 +38,7 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
   const [regenPreviewData, setRegenPreviewData] = useState<any>(null);
   const [lessonPreviewOpen, setLessonPreviewOpen] = useState(false);
   const [regenExtraContext, setRegenExtraContext] = useState('');
+  const [infographicLightbox, setInfographicLightbox] = useState(false);
 
   // Phase 1: generate preview without saving
   const handlePreview = async () => {
@@ -352,11 +353,26 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
                         Descargar
                       </a>
                     </div>
-                    <img
-                      src={regenPreviewData.imageUrl}
-                      alt="Vista previa"
-                      className={`w-full rounded-lg ${regenType === 'infographic' ? 'object-contain' : 'object-cover max-h-48'}`}
-                    />
+                    {regenType === 'infographic' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setInfographicLightbox(true)}
+                          className="w-full rounded-lg overflow-hidden border border-indigo-200 hover:border-indigo-400 transition-colors cursor-zoom-in"
+                          title="Clic para ampliar"
+                        >
+                          <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full object-contain" />
+                        </button>
+                        <p className="text-xs text-center text-indigo-400">Clic en la imagen para ampliar</p>
+                        <Modal open={infographicLightbox} onClose={() => setInfographicLightbox(false)} title="Vista previa de infografía" size="2xl">
+                          <div className="w-full overflow-auto max-h-[80vh]">
+                            <img src={regenPreviewData.imageUrl} alt="Infografía" className="w-full object-contain" />
+                          </div>
+                        </Modal>
+                      </>
+                    ) : (
+                      <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
+                    )}
                   </div>
                 ) : null}
 
