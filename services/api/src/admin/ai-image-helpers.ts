@@ -111,14 +111,14 @@ const VALID_ICONS = new Set(['ico-lightbulb','ico-book','ico-star','ico-check','
 const STRIP_COLORS_CYCLE = ['#0B3A6F','#00BCD4','#7C4DFF','#FFC107'];
 const STRIP_TEXT_CYCLE   = ['#FFFFFF','#FFFFFF','#FFFFFF','#0F172A'];
 
-// 4-card layout: 2×2, cards 540×210, connecting lines, footer y=860
-const CARD_POS_4  = [{x:30,y:140},{x:600,y:140},{x:30,y:380},{x:600,y:380}];
-// 8-card layout: 2×4, cards 540×140, no connecting lines, footer y=730
+// 4-card layout: 2×2, cards 540×290, connecting lines, footer y=820, viewBox 1200×868
+const CARD_POS_4  = [{x:30,y:140},{x:600,y:140},{x:30,y:456},{x:600,y:456}];
+// 8-card layout: 2×4, cards 540×185, no connecting lines, footer y=908, viewBox 1200×956
 const CARD_POS_8  = [
-  {x:30,y:114},{x:600,y:114},
-  {x:30,y:268},{x:600,y:268},
-  {x:30,y:422},{x:600,y:422},
-  {x:30,y:576},{x:600,y:576},
+  {x:30,y:110},{x:600,y:110},
+  {x:30,y:311},{x:600,y:311},
+  {x:30,y:512},{x:600,y:512},
+  {x:30,y:713},{x:600,y:713},
 ];
 
 function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, moduleTitle: string, numCards: 4 | 8 = 4): string {
@@ -126,22 +126,23 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
   const st = escapeXml(lessonTitle.slice(0, 65));
   const is8 = numCards === 8;
   const CARD_POS    = is8 ? CARD_POS_8 : CARD_POS_4;
-  const cardHeight  = is8 ? 140 : 210;
-  const stripH      = is8 ? 26 : 38;
-  const iconSize    = is8 ? 40 : 52;
+  const cardHeight  = is8 ? 185 : 290;
+  const stripH      = is8 ? 30 : 40;
+  const iconSize    = is8 ? 42 : 54;
   const iconOffX    = is8 ? 10 : 14;
-  const iconOffY    = is8 ? 32 : 50;
-  const textOffX    = is8 ? 62 : 82;
-  const textOffY    = is8 ? 44 : 72;
-  const textDy      = is8 ? 20 : 24;
-  const maxLines    = is8 ? 2 : 3;
+  const iconOffY    = is8 ? 36 : 52;
+  const textOffX    = is8 ? 64 : 84;
+  const textOffY    = is8 ? 50 : 76;
+  const textDy      = is8 ? 20 : 22;
+  const maxLines    = is8 ? 4 : 5;
   const titleFSize  = is8 ? 14 : 17;
-  const titleY      = is8 ? 20 : 26;
-  const bodyFSize   = is8 ? 14 : 16;
+  const titleY      = is8 ? 22 : 27;
+  const bodyFSize   = is8 ? 13 : 15;
   const hdrH        = is8 ? 70 : 80;
   const subH        = is8 ? 34 : 44;
   const subTY       = is8 ? 95 : 108;
-  const footerY     = is8 ? 730 : 860;
+  const footerY     = is8 ? 908 : 820;
+  const viewH       = is8 ? 956 : 868;
 
   const clipDefs = CARD_POS.map(({x, y}, i) =>
     `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="${stripH}"/></clipPath>` +
@@ -152,7 +153,7 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
     const {x, y} = CARD_POS[i]!;
     const sc = STRIP_COLORS_CYCLE[i % 4]!, stc = STRIP_TEXT_CYCLE[i % 4]!;
     const title = escapeXml((card.title || '').slice(0, 30));
-    const lines = (card.lines || []).slice(0, maxLines).map(l => escapeXml(String(l).slice(0, 52)));
+    const lines = (card.lines || []).slice(0, maxLines).map(l => escapeXml(String(l).slice(0, 55)));
     const icon = VALID_ICONS.has(card.icon) ? card.icon : 'ico-lightbulb';
     const tspans = lines.map((l, li) =>
       li === 0 ? `<tspan x="${x+textOffX}" y="${y+textOffY}">${l}</tspan>`
@@ -166,20 +167,20 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
   }).join('');
 
   const connectingLines = is8 ? '' :
-    `<line x1="300" y1="245" x2="870" y2="245" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
-    `<line x1="300" y1="245" x2="300" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
-    `<line x1="870" y1="245" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
-    `<line x1="300" y1="485" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
-    `<circle cx="585" cy="245" r="6" fill="#FFC107"/><circle cx="300" cy="365" r="6" fill="#FFC107"/>` +
-    `<circle cx="870" cy="365" r="6" fill="#FFC107"/><circle cx="585" cy="485" r="6" fill="#FFC107"/>`;
+    `<line x1="300" y1="285" x2="870" y2="285" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="300" y1="285" x2="300" y2="601" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="870" y1="285" x2="870" y2="601" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="300" y1="601" x2="870" y2="601" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<circle cx="585" cy="285" r="6" fill="#FFC107"/><circle cx="300" cy="443" r="6" fill="#FFC107"/>` +
+    `<circle cx="870" cy="443" r="6" fill="#FFC107"/><circle cx="585" cy="601" r="6" fill="#FFC107"/>`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 ${viewH}">` +
     `<defs><filter id="cs"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/></filter>` +
     `<linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0B3A6F"/><stop offset="100%" stop-color="#1565C0"/></linearGradient>` +
     `<clipPath id="hc"><rect x="0" y="0" width="1200" height="${hdrH}"/></clipPath>` +
     `<clipPath id="stc"><rect x="0" y="${hdrH}" width="1200" height="${subH}"/></clipPath>` +
     `${clipDefs}${INFOGRAPHIC_SYMBOLS}</defs>` +
-    `<rect width="1200" height="900" fill="#F8FAFC"/>` +
+    `<rect width="1200" height="${viewH}" fill="#F8FAFC"/>` +
     `<rect y="0" width="1200" height="${hdrH}" fill="url(#hg)"/>` +
     `<text x="600" y="${Math.round(hdrH*0.65)}" text-anchor="middle" fill="#FFFFFF" font-size="${is8?28:32}" font-weight="700" font-family="system-ui,Arial,sans-serif" clip-path="url(#hc)">${ht}</text>` +
     `<rect y="${hdrH}" width="1200" height="${subH}" fill="#FFC107"/>` +
@@ -200,7 +201,8 @@ export async function generateLessonInfographic(lessonTitle: string, moduleTitle
     : 'IMPORTANT: Respond ONLY in English. All titles and text must be in English.';
   const prompt = `${langNote}
 Extract exactly ${numCards} key concepts from this ${numCards === 8 ? 'module' : 'lesson'} as a JSON array.
-Each element: {"title": "max 30 chars", "lines": ["line1 max 52 chars", "line2"${numCards === 4 ? ', "line3"' : ''}], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award"}
+Each element: {"title": "concept name max 30 chars", "lines": ["one-sentence summary max 55 chars", "• subtopic or detail max 53 chars", "• subtopic or detail max 53 chars"${numCards === 4 ? ', "• subtopic max 53 chars", "• subtopic max 53 chars"' : ', "• subtopic max 53 chars"'}], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award"}
+Lines[0] is a brief summary. Lines[1..] start with "• " and list specific subtopics, skills, or key points covered under this concept. Be concrete and informative.
 Pick the most relevant icon for each concept topic.
 ${numCards === 8 ? 'Module' : 'Lesson'}: "${numCards === 8 ? moduleTitle : lessonTitle}"
 Content: ${snippet}
@@ -210,7 +212,7 @@ Return ONLY a valid JSON array, no markdown, no explanation.`;
     const res = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json', accept: 'application/json',
-      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 600,
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 900,
         messages: [{ role: 'user', content: prompt }] }),
     }));
     const raw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
