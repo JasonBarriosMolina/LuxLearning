@@ -122,20 +122,25 @@ describe('generateLessonInfographic', () => {
     vi.spyOn(s3Client, 'send').mockResolvedValue({});
   });
 
-  const fakeSvg = '<svg viewBox="0 0 1200 900" width="1200" height="900"><rect width="100%" height="100%" fill="#FFFFFF"/><rect height="70" width="1200" fill="#1E3A5F"/><text x="600" y="45" fill="#FFFFFF">Module</text></svg>';
+  const fakeCards = [
+    { title: 'Formatos de Audio', lines: ['WAV es sin compresión', 'MP3 usa compresión con pérdida', 'AAC mejora eficiencia'], icon: 'ico-music' },
+    { title: 'Calidad de Sonido',  lines: ['Sample rate define frecuencia', 'Bit depth afecta rango dinámico', '44.1kHz es estándar CD'],   icon: 'ico-chart' },
+    { title: 'Casos de Uso',       lines: ['WAV para producción',          'MP3 para distribución',           'AAC para streaming'],         icon: 'ico-headphones' },
+    { title: 'Codecs',             lines: ['Codec codifica y decodifica',  'Pérdida vs sin pérdida',           'Elegir según contexto'],      icon: 'ico-gear' },
+  ];
 
-  function makeHaikuBody(text = fakeSvg) {
+  function makeHaikuBody(text = JSON.stringify(fakeCards)) {
     return Buffer.from(JSON.stringify({ content: [{ text }] }));
   }
 
-  it('returns S3 SVG URL when Haiku returns valid SVG', async () => {
+  it('returns S3 SVG URL when Haiku returns valid JSON cards', async () => {
     vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody() });
     const result = await generateLessonInfographic('Formatos de Audio', 'Módulo 1', '<p>WAV, MP3, AAC</p>');
     expect(result).toMatch(/^https:\/\/lux-learning-images\.s3\.amazonaws\.com\/lessons\/.+\.svg$/);
     expect(s3Client.send).toHaveBeenCalled();
   });
 
-  it('uploads SVG with correct content type', async () => {
+  it('uploads SVG with correct content type and template structure', async () => {
     vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody() });
     let uploadCmd: any;
     vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => {
@@ -144,20 +149,14 @@ describe('generateLessonInfographic', () => {
     });
     await generateLessonInfographic('Test', 'Módulo', '');
     expect(uploadCmd?.ContentType).toBe('image/svg+xml');
-    expect(uploadCmd?.Body?.toString()).toContain('<svg');
+    const body = uploadCmd?.Body?.toString() ?? '';
+    expect(body).toContain('<svg');
+    expect(body).toContain('ico-music'); // icon from fakeCards used
+    expect(body).not.toContain('<script'); // no script injection possible
   });
 
-  it('sanitizes script tags from SVG', async () => {
-    const malicious = fakeSvg.replace('</svg>', '<script>alert(1)</script></svg>');
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody(malicious) });
-    let uploadCmd: any;
-    vi.mocked(s3Client.send).mockImplementationOnce((cmd: any) => { uploadCmd = cmd; return Promise.resolve({}); });
-    await generateLessonInfographic('Test', 'Módulo', '');
-    expect(uploadCmd?.Body?.toString()).not.toContain('<script');
-  });
-
-  it('returns null when Haiku returns no SVG block', async () => {
-    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody('No SVG here, just text.') });
+  it('returns null when Haiku returns invalid JSON', async () => {
+    vi.mocked(bedrock.send).mockResolvedValueOnce({ body: makeHaikuBody('Not valid JSON at all.') });
     const result = await generateLessonInfographic('Lección', 'Módulo', '');
     expect(result).toBeNull();
   });
