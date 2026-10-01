@@ -97,96 +97,91 @@ const INFOGRAPHIC_SYMBOLS = `<symbol id="ico-lightbulb" viewBox="0 0 24 24" fill
 <symbol id="ico-award" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></symbol>
 <symbol id="lux-mark" viewBox="768 48 507 479"><path fill="#E2B84E" d="M1102.38 196.731C1116.83 192.19 1134.78 187.663 1146.77 178.259C1157.56 169.792 1158.69 148.571 1165.19 138.567L1166.49 138.207C1169.61 142.744 1173.24 155.651 1174.86 161.393C1181.63 185.499 1208.08 188.771 1228.68 196.672C1210.64 202.641 1188.85 206.26 1179.95 223.56C1174.85 233.49 1171.6 253.35 1168.21 258.882L1166.44 259.367C1161.79 255.465 1157.62 238.44 1155.66 231.751C1129.54 274.43 1092.93 314.142 1058.55 350.563C1013.37 398.418 966.232 445.714 913.503 485.333C880.197 510.358 832.788 542.465 790.59 518.131C764.298 502.799 762.916 467.434 778.265 443.835C791.338 423.144 812.114 410.931 834.329 400.866C849.81 394.675 872.333 387.848 886.418 381.311C986.498 349.7 1070.34 287.786 1139.39 209.748C1127.61 204.349 1114.77 200.724 1102.38 196.731ZM810.861 492.374C834.91 505.024 871.621 475.763 890.359 461.656C925.707 435.044 960.769 404.159 991.303 372.152L991.601 370.467L989.927 369.874A756 756 0 0 1 922.867 401.42C884.59 416.77 836.993 424.743 809.079 456.983C799.309 468.265 799.334 482.246 810.861 492.374Z"/><path fill="#19547F" d="M1108.27 315.843C1111.85 320.688 1119.16 333.934 1122.47 339.536L1149.81 385.654L1183.87 443.12C1195.02 461.95 1219.8 493.429 1199.92 514.128C1189.87 524.595 1166.99 522.075 1152.96 522.076L1098.95 522.073L911.98 522.015L895.534 522.255C909.366 511.854 922.852 500.616 936.717 490.085C1014.74 488.996 1095.27 490.071 1173.49 489.924C1163.45 474.728 1152.29 454.825 1142.83 438.962A6399 6399 0 0 1 1087.64 345.471C1093.69 336.085 1101.76 325.147 1108.27 315.843ZM834.329 400.866C840.72 392.535 853.063 370.532 859.221 360.259L938.272 227.509C950.969 206.106 963.309 184.651 976.321 163.346C985.056 149.044 1003.39 144.91 1014.41 159.025C1022 168.747 1028.24 180.71 1034.57 191.473L1070.65 252.669L1045.08 273.799C1028.5 247.69 1013.36 219.932 997.154 193.461C991.385 202.048 984.233 215.075 978.862 224.187L945.03 281.347L908.745 342.454C901.505 354.673 892.712 368.763 886.418 381.311C872.333 387.848 849.81 394.675 834.329 400.866Z"/></symbol>`;
 
-// Claude Haiku → SVG infographic (card-grid, multi-color) for lesson cards.
+// SVG builder — constructs infographic from JSON card data (no AI involvement)
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+interface InfographicCard { title: string; lines: string[]; icon: string; }
+const VALID_ICONS = new Set(['ico-lightbulb','ico-book','ico-star','ico-check','ico-chart','ico-music','ico-user','ico-gear','ico-search','ico-clock','ico-target','ico-zap','ico-layers','ico-mic','ico-headphones','ico-award']);
+const STRIP_COLORS = ['#0B3A6F','#00BCD4','#7C4DFF','#FFC107'];
+const STRIP_TEXT  = ['#FFFFFF','#FFFFFF','#FFFFFF','#0F172A'];
+const CARD_POS    = [{x:30,y:140},{x:600,y:140},{x:30,y:380},{x:600,y:380}];
+
+function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, moduleTitle: string): string {
+  const ht = escapeXml(moduleTitle.slice(0, 55));
+  const st = escapeXml(lessonTitle.slice(0, 65));
+  const clipDefs = CARD_POS.map(({x, y}, i) =>
+    `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="38"/></clipPath>` +
+    `<clipPath id="bc${i}"><rect x="${x+80}" y="${y+44}" width="450" height="155"/></clipPath>`
+  ).join('');
+  const cardsSvg = cards.slice(0,4).map((card, i) => {
+    const {x, y} = CARD_POS[i];
+    const sc = STRIP_COLORS[i], stc = STRIP_TEXT[i];
+    const title = escapeXml((card.title || '').slice(0, 30));
+    const lines = (card.lines || []).slice(0, 3).map(l => escapeXml(String(l).slice(0, 52)));
+    const icon = VALID_ICONS.has(card.icon) ? card.icon : 'ico-lightbulb';
+    const tspans = lines.map((l, li) =>
+      li === 0 ? `<tspan x="${x+82}" y="${y+72}">${l}</tspan>`
+               : `<tspan x="${x+82}" dy="24">${l}</tspan>`
+    ).join('');
+    return `<rect x="${x}" y="${y}" width="540" height="210" rx="12" fill="#FFFFFF" filter="url(#cs)"/>` +
+      `<rect x="${x}" y="${y}" width="540" height="38" fill="${sc}" rx="4"/>` +
+      `<text x="${x+16}" y="${y+26}" font-size="17" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="${stc}" clip-path="url(#sc${i})">${title}</text>` +
+      `<use href="#${icon}" x="${x+14}" y="${y+50}" width="52" height="52" stroke="${sc}" fill="none"/>` +
+      `<text font-size="16" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#bc${i})">${tspans}</text>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">` +
+    `<defs><filter id="cs"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/></filter>` +
+    `<linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0B3A6F"/><stop offset="100%" stop-color="#1565C0"/></linearGradient>` +
+    `<clipPath id="hc"><rect x="0" y="0" width="1200" height="80"/></clipPath>` +
+    `<clipPath id="stc"><rect x="0" y="80" width="1200" height="44"/></clipPath>` +
+    `${clipDefs}${INFOGRAPHIC_SYMBOLS}</defs>` +
+    `<rect width="1200" height="900" fill="#F8FAFC"/>` +
+    `<rect y="0" width="1200" height="80" fill="url(#hg)"/>` +
+    `<text x="600" y="52" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui,Arial,sans-serif" clip-path="url(#hc)">${ht}</text>` +
+    `<rect y="80" width="1200" height="44" fill="#FFC107"/>` +
+    `<text x="600" y="108" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui,Arial,sans-serif" clip-path="url(#stc)">${st}</text>` +
+    // connecting lines (behind cards)
+    `<line x1="300" y1="245" x2="870" y2="245" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="300" y1="245" x2="300" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="870" y1="245" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<line x1="300" y1="485" x2="870" y2="485" stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4"/>` +
+    `<circle cx="585" cy="245" r="6" fill="#FFC107"/><circle cx="300" cy="365" r="6" fill="#FFC107"/>` +
+    `<circle cx="870" cy="365" r="6" fill="#FFC107"/><circle cx="585" cy="485" r="6" fill="#FFC107"/>` +
+    cardsSvg +
+    `<rect y="860" width="1200" height="40" fill="#0B3A6F"/>` +
+    `<use href="#lux-mark" x="490" y="861" width="38" height="36"/>` +
+    `<text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>` +
+    `</svg>`;
+}
+
+// Claude Haiku → JSON card data → TypeScript SVG template (fast, avoids API GW 29s timeout)
 export async function generateLessonInfographic(lessonTitle: string, moduleTitle: string, lessonContent: string): Promise<string | null> {
   const snippet = lessonContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-  const prompt = `Create a complete, modern, colorful educational SVG infographic for Lux Learning (viewBox="0 0 1200 900").
-
+  const prompt = `Extract exactly 4 key concepts from this lesson as a JSON array.
+Each element: {"title": "max 30 chars", "lines": ["line1 max 52 chars", "line2", "line3"], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award"}
+Pick the most relevant icon for each concept topic.
 Lesson: "${lessonTitle}"
 Module: "${moduleTitle}"
 Content: ${snippet}
-
-VISUAL STYLE — Flat UI with depth (soft drop shadows):
-- Each card/container: <filter> with <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B3A6F" flood-opacity="0.15"/> for floating effect.
-- Colors VIVID and INSTITUTIONAL: primary #0B3A6F (navy), accent #FFC107 (gold), complementary accents (turquoise #00BCD4 or soft purple #7C4DFF) for variety. White or ultra-light gray (#F8FAFC) background.
-- Use subtle linear gradients on card headers: from #0B3A6F to #1565C0 or similar.
-
-AVAILABLE ICONS (use <use href="#ICO_ID"> — symbols are pre-defined, do NOT redefine them):
-ico-lightbulb, ico-book, ico-star, ico-check, ico-chart, ico-music, ico-user, ico-gear, ico-search, ico-clock, ico-target, ico-zap, ico-layers, ico-mic, ico-headphones, ico-award
-
-LAYOUT (exact coordinates):
-1. viewBox="0 0 1200 900", background rect fill="#F8FAFC".
-2. HEADER BAR: rect y="0" height="80" fill="url(#headerGrad)". Gradient headerGrad: #0B3A6F → #1565C0 horizontal. Module title: text y="52" x="600" text-anchor="middle" fill="#FFFFFF" font-size="32" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to header rect.
-3. SUBTITLE: rect y="80" height="44" fill="#FFC107". Lesson title: text y="108" x="600" text-anchor="middle" fill="#0F172A" font-size="20" font-weight="600" font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif". Clip to subtitle rect.
-4. CONNECTING LINES — draw these FIRST (BEFORE cards) so they render behind card content. Center points: card1=(300,245), card2=(870,245), card3=(300,485), card4=(870,485). Draw: line card1→card2 (y=245, x=300→870), line card1→card3 (x=300, y=245→485), line card2→card4 (x=870, y=245→485), line card3→card4 (y=485, x=300→870). Style: stroke="#CBD5E1" stroke-width="2" stroke-dasharray="6,4". Circle at each midpoint r="6" fill="#FFC107" stroke="none". These lines MUST appear in SVG before any card <rect> element.
-5. CARD GRID (draw AFTER connecting lines): 4 cards 2×2, each 540×210. Positions: card1(x=30,y=140), card2(x=600,y=140), card3(x=30,y=380), card4(x=600,y=380).
-
-CARD STRUCTURE — use this exact SVG pattern for each card (replace CARD_X, CARD_Y, N, STRIP_COLOR, ICO_ID, TITLE, content):
-In <defs> add for card N:
-  <clipPath id="strip-clip-N"><rect x="CARD_X" y="CARD_Y" width="540" height="38"/></clipPath>
-  <clipPath id="body-clip-N"><rect x="CARD_X+80" y="CARD_Y+44" width="450" height="155"/></clipPath>
-Card SVG:
-  <rect x="CARD_X" y="CARD_Y" width="540" height="210" rx="12" fill="#FFFFFF" filter="url(#card-shadow)"/>
-  <rect x="CARD_X" y="CARD_Y" width="540" height="38" fill="STRIP_COLOR" rx="4"/>
-  <text x="CARD_X+16" y="CARD_Y+26" font-size="17" font-weight="600" font-family="system-ui,Arial,sans-serif" fill="#FFFFFF" clip-path="url(#strip-clip-N)">TITLE HERE</text>
-  <use href="#ICO_ID" x="CARD_X+14" y="CARD_Y+50" width="52" height="52" stroke="STRIP_COLOR" fill="none"/>
-  <text font-size="16" font-family="system-ui,Arial,sans-serif" fill="#475569" clip-path="url(#body-clip-N)">
-    <tspan x="CARD_X+82" y="CARD_Y+72">line 1 text max 52 chars</tspan>
-    <tspan x="CARD_X+82" dy="24">line 2 text max 52 chars</tspan>
-    <tspan x="CARD_X+82" dy="24">line 3 text max 52 chars</tspan>
-  </text>
-Strip colors: card1=#0B3A6F, card2=#00BCD4, card3=#7C4DFF, card4=#FFC107. Yellow strip → text fill="#0F172A".
-6. FOOTER: rect y="860" height="40" fill="#0B3A6F". Logo (lux-mark symbol is pre-defined — just use it): <use href="#lux-mark" x="490" y="861" width="38" height="36"/> then <text x="534" y="884" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>.
-
-TYPOGRAPHY (Lux Learning platform standard):
-- Font family: font-family="system-ui, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif" on ALL text elements.
-- Weights: titles bold (font-weight="700"), section labels semibold (font-weight="600"), body regular (font-weight="400").
-- Color palette (NO pure black #000000):
-  • Primary titles / active labels: #1E293B (dark navy-black, soft).
-  • Section headers on white background: #0F172A.
-  • Secondary / body text: #475569 (neutral gray).
-  • Captions / metadata: #64748B.
-  • White-on-dark text (strip headers): #FFFFFF.
-
-TEXT CONTAINMENT (critical — no floating or overflowing text):
-- EVERY text element MUST have clip-path="url(#...)" referencing a <clipPath> in <defs> that wraps its container bounds.
-- Multi-line body text: use ONE <text> element with multiple <tspan> children. Each <tspan> must have explicit x="..." and dy="..." attributes. NEVER use separate <text> elements for each line.
-- Strip title: clip-path to strip rect. Body text: clip-path to body area rect. Header/subtitle: clip-path to header/subtitle rect.
-- NEVER place text outside its enclosing rect. NEVER position text that would render outside the viewBox (0 0 1200 900).
-
-ICON DISCIPLINE (CRITICAL):
-- ALWAYS use <use href="#ICO_ID" x="CARD_X+14" y="CARD_Y+50" width="52" height="52" stroke="STRIP_COLOR" fill="none"/> — never draw custom icon shapes.
-- Choose ICO_ID from the ICON LIBRARY symbols defined in <defs> above. Pick the icon most semantically relevant to the card topic.
-- NEVER place any icon-related shape outside the symbol/use pattern. No raw circles, paths, or lines as icons.
-
-REQUIREMENTS:
-- NO external images, NO base64, NO JavaScript, NO <style> blocks — pure SVG attributes only.
-- Use <defs> for all filters, gradients, clipPaths (one per icon + one per text area).
-- Text must be fully legible: minimum 13px, line-height via y offsets of 20px.
-- Validate mentally: every text x/y coordinate must fall inside its container rect.
-
-Return ONLY <svg>...</svg>. No markdown, no explanation.`;
+Return ONLY a valid JSON array, no markdown, no explanation.`;
 
   try {
     const res = await bedrock.send(new InvokeModelCommand({
       modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json', accept: 'application/json',
-      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 8192,
+      body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 600,
         messages: [{ role: 'user', content: prompt }] }),
     }));
-    const svgRaw: string = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
-    const match = svgRaw.match(/<svg[\s\S]*<\/svg>/i);
-    if (!match) { console.error('[InfographicGen] No valid SVG in response'); return null; }
-    let svg = match[0]
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/javascript\s*:/gi, 'nojavascript:')
-      .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
-    // Inject icon symbols + logo mark (kept out of prompt to reduce token usage)
-    if (svg.includes('</defs>')) {
-      svg = svg.replace('</defs>', `${INFOGRAPHIC_SYMBOLS}</defs>`);
-    } else {
-      svg = svg.replace(/(<svg[^>]*>)/, `$1<defs>${INFOGRAPHIC_SYMBOLS}</defs>`);
-    }
+    const raw = JSON.parse(new TextDecoder().decode(res.body)).content?.[0]?.text?.trim() ?? '';
+    let cards: InfographicCard[] = [];
+    try {
+      const parsed = JSON.parse(raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, ''));
+      cards = Array.isArray(parsed) ? parsed : [];
+    } catch { console.error('[InfographicGen] JSON parse error, raw:', raw.slice(0, 200)); }
+    if (cards.length === 0) return null;
+    const svg = buildInfographicSVG(cards, lessonTitle, moduleTitle);
     const key = `lessons/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.svg`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET, Key: key,
