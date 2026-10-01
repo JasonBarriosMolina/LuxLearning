@@ -16,7 +16,7 @@ export type NavKey =
   | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
   | 'communications' | 'myResources' | 'adminCerts' | 'groups' | 'submissions'
-  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases' | 'luxScheduler';
+  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases' | 'luxScheduler' | 'mentorAnalytics';
 
 export interface NavItem {
   href: string;
@@ -110,7 +110,8 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
     labelEn: 'Reports',
     flat: true,
     items: [
-      { href: '/admin/reports', labelKey: 'reports', icon: <BarChart2 className="w-5 h-5" /> },
+      { href: '/admin/reports',           labelKey: 'reports',         icon: <BarChart2     className="w-5 h-5" /> },
+      { href: '/admin/mentor-analytics',  labelKey: 'mentorAnalytics', icon: <MessageSquare className="w-5 h-5" /> },
     ],
   },
 ];
@@ -182,8 +183,9 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     labelEn: 'Results & Reports',
     icon: <BarChart2 className="w-5 h-5" />,
     items: [
-      { href: '/admin/reports',       labelKey: 'reports',    icon: <BarChart2 className="w-5 h-5" /> },
-      { href: '/admin/certificates',  labelKey: 'adminCerts', icon: <Download  className="w-5 h-5" /> },
+      { href: '/admin/reports',           labelKey: 'reports',         icon: <BarChart2     className="w-5 h-5" /> },
+      { href: '/admin/mentor-analytics',  labelKey: 'mentorAnalytics', icon: <MessageSquare className="w-5 h-5" /> },
+      { href: '/admin/certificates',      labelKey: 'adminCerts',      icon: <Download      className="w-5 h-5" /> },
     ],
   },
 ];

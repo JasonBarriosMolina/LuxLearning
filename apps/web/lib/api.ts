@@ -312,6 +312,8 @@ export const api = {
       compliance: () =>
         request<any>('/evaluator/study-plan/compliance'),
     },
+    mentorAnalytics: (courseId: string) =>
+      request<any>(`/evaluator/mentor/analytics?courseId=${encodeURIComponent(courseId)}`),
   },
 
   studyPlan: {

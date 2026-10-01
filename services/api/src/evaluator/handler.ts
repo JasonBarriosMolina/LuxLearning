@@ -13,6 +13,7 @@ import { handleSubmissions } from './submissions';
 import { handleMisc } from './misc';
 import { handleEvalStudyPlans } from './study-plans';
 import { handleSlides } from './slides';
+import { handleMentorAnalytics } from './mentor-analytics';
 
 export const handler = async (event: Event) => {
   const origin = event.headers?.origin ?? event.headers?.Origin;
@@ -48,6 +49,7 @@ export const handler = async (event: Event) => {
       await handleSubmissions(ctx) ??
       await handleEvalStudyPlans(ctx) ??
       await handleSlides(ctx) ??
+      await handleMentorAnalytics(ctx) ??
       await handleMisc(ctx) ??
       notFound('Ruta no encontrada');
 

@@ -32,6 +32,7 @@ export const navEs = {
     attendance: 'Asistencia',
     studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Clases',
+    mentorAnalytics: 'Mentor Analytics',
   },
   roles: {
     superAdmin: 'Super Admin',
@@ -132,6 +133,7 @@ export const navEn = {
     attendance: 'Attendance',
     studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Classes',
+    mentorAnalytics: 'Mentor Analytics',
   },
   roles: {
     superAdmin: 'Super Admin',

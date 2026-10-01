@@ -317,6 +317,16 @@ export const handler = async (event: Event) => {
       );
       const parsed = JSON.parse(new TextDecoder().decode(bedrockRes.body));
       const reply = parsed.content?.[0]?.text ?? '';
+
+      // Fire-and-forget: track mentor interaction for analytics
+      if (lessonId && userId) {
+        const ts = new Date().toISOString();
+        ddb.send(new PutCommand({
+          TableName: TABLES.MENTOR_INTERACTIONS,
+          Item: { lessonId, sk: `${ts}#${userId}`, userId, ts },
+        })).catch(() => {});
+      }
+
       return ok({ reply });
     }
 
