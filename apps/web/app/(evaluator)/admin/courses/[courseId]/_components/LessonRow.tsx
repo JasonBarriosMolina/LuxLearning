@@ -352,7 +352,11 @@ export function LessonRow({ lesson, onRefresh, onMoveUp, onMoveDown, isFirst, is
                         Descargar
                       </a>
                     </div>
-                    <img src={regenPreviewData.imageUrl} alt="Vista previa" className="w-full rounded-lg object-cover max-h-48" />
+                    <img
+                      src={regenPreviewData.imageUrl}
+                      alt="Vista previa"
+                      className={`w-full rounded-lg ${regenType === 'infographic' ? 'object-contain' : 'object-cover max-h-48'}`}
+                    />
                   </div>
                 ) : null}
 
