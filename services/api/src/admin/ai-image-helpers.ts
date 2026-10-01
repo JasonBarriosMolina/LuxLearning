@@ -132,17 +132,17 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
   const iconOffX    = is8 ? 10 : 14;
   const iconOffY    = is8 ? 36 : 52;
   const textOffX    = is8 ? 64 : 84;
-  const textOffY    = is8 ? 50 : 76;
-  const textDy      = is8 ? 20 : 22;
+  const textOffY    = is8 ? 52 : 70;
+  const textDy      = is8 ? 33 : 36;
   const maxLines    = is8 ? 4 : 5;
   const titleFSize  = is8 ? 14 : 17;
   const titleY      = is8 ? 22 : 27;
-  const bodyFSize   = is8 ? 13 : 15;
+  const bodyFSize   = is8 ? 16 : 19;
   const hdrH        = is8 ? 70 : 80;
   const subH        = is8 ? 34 : 44;
   const subTY       = is8 ? 95 : 108;
   const footerY     = is8 ? 908 : 820;
-  const viewH       = is8 ? 956 : 868;
+  const viewH       = is8 ? 958 : 870;
 
   const clipDefs = CARD_POS.map(({x, y}, i) =>
     `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="${stripH}"/></clipPath>` +
@@ -186,9 +186,10 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
     `<rect y="${hdrH}" width="1200" height="${subH}" fill="#FFC107"/>` +
     `<text x="600" y="${subTY}" text-anchor="middle" fill="#0F172A" font-size="${is8?17:20}" font-weight="600" font-family="system-ui,Arial,sans-serif" clip-path="url(#stc)">${st}</text>` +
     connectingLines + cardsSvg +
-    `<rect y="${footerY}" width="1200" height="40" fill="#0B3A6F"/>` +
-    `<use href="#lux-mark" x="490" y="${footerY+1}" width="38" height="36"/>` +
-    `<text x="534" y="${footerY+24}" font-size="15" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#FFC107">Lux </tspan><tspan fill="#FFFFFF">Learning</tspan></text>` +
+    `<rect y="${footerY}" width="1200" height="50" fill="#FFFFFF"/>` +
+    `<line x1="0" y1="${footerY}" x2="1200" y2="${footerY}" stroke="#CBD5E1" stroke-width="1"/>` +
+    `<use href="#lux-mark" x="483" y="${footerY+3}" width="46" height="44"/>` +
+    `<text x="536" y="${footerY+31}" font-size="17" font-weight="700" font-family="system-ui,Arial,sans-serif"><tspan fill="#0B3A6F">Lux </tspan><tspan fill="#475569">Learning</tspan></text>` +
     `</svg>`;
 }
 
