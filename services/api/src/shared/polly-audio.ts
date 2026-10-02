@@ -6,7 +6,9 @@
 // voces agradables"). Own S3/Polly client instances, same pattern already used
 // by shared/carousel-pdf.ts for the same cross-lambda-reuse reason.
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { createHash } from 'node:crypto';
+import { acquireMedia, stubMediaUrl } from './media-budget';
 
 const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -36,7 +38,33 @@ export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefi
   return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Pedro';
 }
 
-export async function generateLessonAudio(lessonId: string, text: string, voiceId = 'Mia'): Promise<string | null> {
+/** Short stable hash of the narrated text — lets lazy audio routes key S3 objects by
+ *  content, so an edited lesson/question gets fresh audio and an unchanged one reuses it. */
+export function audioContentHash(text: string): string {
+  return createHash('sha1').update(text).digest('hex').slice(0, 10);
+}
+
+async function s3ObjectExists(key: string): Promise<boolean> {
+  try {
+    await s3Client.send(new HeadObjectCommand({ Bucket: S3_IMAGES_BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false; // missing object (or unavailable check) → just synthesize
+  }
+}
+
+/** Public URL of an already-synthesized audio object, or null — lets a caller skip costly
+ *  upstream work (e.g. a Haiku translation) when the audio for this exact content exists. */
+export async function existingAudioUrl(lessonId: string, voiceId: string): Promise<string | null> {
+  const key = `audio/${lessonId}-${voiceId.toLowerCase()}.mp3`;
+  return (await s3ObjectExists(key)) ? `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}` : null;
+}
+
+/** `reuseExisting`: for lazy student-facing routes whose lessonId already embeds a content
+ *  hash — an existing S3 object for that key is the same audio, so skip Polly entirely. */
+export async function generateLessonAudio(
+  lessonId: string, text: string, voiceId = 'Mia', opts: { reuseExisting?: boolean } = {},
+): Promise<string | null> {
   try {
     const plain = text
       .replace(/<[^>]+>/g, ' ')
@@ -44,6 +72,15 @@ export async function generateLessonAudio(lessonId: string, text: string, voiceI
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 2900); // Polly Neural limit per request
+
+    const key = `audio/${lessonId}-${voiceId.toLowerCase()}.mp3`;
+    if (opts.reuseExisting && await s3ObjectExists(key)) {
+      return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
+    }
+
+    const gate = await acquireMedia('polly', plain.length);
+    if (gate === 'stub') return stubMediaUrl('audio');
+    if (gate === 'deny') return null;
 
     const resp = await pollyClient.send(new SynthesizeSpeechCommand({
       Text: plain,
@@ -59,7 +96,6 @@ export async function generateLessonAudio(lessonId: string, text: string, voiceI
     for await (const chunk of resp.AudioStream as any) chunks.push(chunk);
     const audioBuffer = Buffer.concat(chunks);
 
-    const key = `audio/${lessonId}-${voiceId.toLowerCase()}.mp3`;
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,

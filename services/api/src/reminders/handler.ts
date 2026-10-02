@@ -5,6 +5,7 @@
  */
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getAllLessonProgress, getAllEnrollments, getAllReflections, getLastSeenAll, getAllPendingTasks, updateTask, getInactivityReminder, setInactivityReminder, createNotification, scanCalendarEventsInRange, updateCalendarEvent } from '../shared/db-dynamo';
 import { getPrismaClient } from '../shared/db-neon';
@@ -15,7 +16,7 @@ import { sendWeeklyEvaluatorSummaries, sendWeeklyStudentDigests } from './digest
 import { sendCourseStartNotifications, sendWeeklyCourseTopicNotifications } from './course-notifications';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';

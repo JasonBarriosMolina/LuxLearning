@@ -4,6 +4,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { getReflection, updateReflectionStatus, createNotification, getPushSubscriptionsByUserId, getUserLang, updateAttendanceRecord } from '../shared/db-dynamo';
 import { getVapidKeys } from '../shared/vapid';
 import { setCurrentEnv, AppEnv } from '../shared/env-context';
@@ -11,7 +12,7 @@ import { sendTemplatedEmail } from '../shared/email';
 import { detectAI } from './detect-ai';
 
 const s3 = new S3Client({ region: 'us-east-1' });
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const S3_BUCKET = process.env.S3_IMAGES_BUCKET ?? 'lux-learning-images';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 

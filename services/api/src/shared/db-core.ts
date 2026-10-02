@@ -35,6 +35,7 @@ const BASE_TABLES = {
   GAMIFICATION: process.env.DYNAMO_TABLE_GAMIFICATION ?? 'LuxGamification',
   SLIDES: process.env.DYNAMO_TABLE_SLIDES ?? 'LuxSlides',
   MENTOR_INTERACTIONS: process.env.DYNAMO_TABLE_MENTOR_INTERACTIONS ?? 'LuxMentorInteractions',
+  MEDIA_USAGE: process.env.DYNAMO_TABLE_MEDIA_USAGE ?? 'LuxMediaUsage',
 };
 
 export const TABLES: typeof BASE_TABLES = new Proxy(BASE_TABLES, {

@@ -1,14 +1,15 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveQuizAttempt, getQuizAttempts, getLessonProgress, autoCompleteTasks } from '../shared/db-dynamo';
 import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
-import { generateLessonAudio, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
+import { generateLessonAudio, audioContentHash, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -234,7 +235,10 @@ Máximo ${Math.min(incorrect.length, 3)} gaps.`;
           ? defaultMaleVoiceForLanguage(question.module?.course?.planLanguage)
           : defaultVoiceForLanguage(question.module?.course?.planLanguage);
         const text = [question.text, ...optionsOrder].filter(Boolean).join('. ');
-        const audioUrl = await generateLessonAudio(`question-${questionId}-${Date.now()}`, text, voiceId);
+        // Keyed by content hash (was Date.now(): every play re-synthesized and left an orphan
+        // S3 object). Same text + voice = byte-identical audio, so reuse is lossless; the
+        // shuffle only has a handful of distinct orders per question.
+        const audioUrl = await generateLessonAudio(`question-${questionId}-${audioContentHash(text)}`, text, voiceId, { reuseExisting: true });
         if (!audioUrl) return serverError('No se pudo generar el audio');
         return ok({ audioUrl });
       }

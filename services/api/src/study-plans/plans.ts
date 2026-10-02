@@ -2,6 +2,7 @@
 // Student CRUD routes for weekly study plans.
 import { createId } from '@paralleldrive/cuid2';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { LambdaClient, InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
 import { ok, badRequest } from '../shared/response';
 import {
@@ -14,7 +15,7 @@ import { isModuleUnlocked } from '../shared/db-progress';
 import { getPrismaClient } from '../shared/db-neon';
 import { extractYoutubeId, isYoutubeVideoAvailable } from '../shared/youtube';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const lambda = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
 type Ctx = { method: string; path: string; body: any; userId: string; event: any };

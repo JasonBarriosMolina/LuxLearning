@@ -1,8 +1,9 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import type { AIDetectionResult } from '@lux/types';
 import { wrapUntrustedText } from '../shared/prompt-safety';
 
-const client = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const client = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 
 // Note: user text is wrapped in <student_reflection> XML tags (angle brackets in the
 // text itself escaped by wrapUntrustedText) to prevent prompt injection.

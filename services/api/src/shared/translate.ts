@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from './bedrock-usage';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 const MEM_TTL_MS = 60 * 60 * 1000; // 1 hour
 

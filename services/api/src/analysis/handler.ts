@@ -4,6 +4,7 @@
  * Stores results in ReportAnalysis + CurriculumRecommendations tables
  */
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getPrismaClient } from '../shared/db-neon';
@@ -19,7 +20,7 @@ const ses = new SESClient({ region: 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: 'us-east-1' });
 const SES_FROM = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 const MIN_REFLECTIONS = 3; // minimum reflections needed to run AI analysis
 

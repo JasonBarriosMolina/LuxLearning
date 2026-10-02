@@ -9,14 +9,16 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { jsonrepair } from 'jsonrepair';
 import { POLLY_VOICE_LANGUAGE } from '../shared/polly-audio';
+import { acquireMedia, stubMediaUrl, syntheticSpeechMarks } from '../shared/media-budget';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 
 // ── AWS Clients ──────────────────────────────────────────────────────────────
 export const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-export const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+export const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 // Stability Image Core is only available in us-west-2
-export const bedrockImageClient = new BedrockRuntimeClient({ region: 'us-west-2' });
+export const bedrockImageClient = trackBedrockUsage(new BedrockRuntimeClient({ region: 'us-west-2' }));
 // Nova Canvas is only available in us-east-1
-export const bedrockNovaClient = new BedrockRuntimeClient({ region: 'us-east-1' });
+export const bedrockNovaClient = trackBedrockUsage(new BedrockRuntimeClient({ region: 'us-east-1' }));
 export const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -91,6 +93,11 @@ export async function generateCarouselNarration(
   try {
     const plain = text.replace(/\s+/g, ' ').trim().slice(0, 2900);
     const languageCode = (POLLY_VOICE_LANGUAGE[voiceId] ?? 'es-MX') as any;
+
+    // Two Polly requests (audio + speech marks) → both bill the full text.
+    const gate = await acquireMedia('polly', plain.length * 2);
+    if (gate === 'stub') return { audioUrl: stubMediaUrl('audio'), marks: syntheticSpeechMarks(plain) };
+    if (gate === 'deny') return null;
 
     const [audioResp, marksResp] = await Promise.all([
       pollyClient.send(new SynthesizeSpeechCommand({

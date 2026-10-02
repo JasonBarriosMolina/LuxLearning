@@ -8,6 +8,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { bedrock, bedrockImageClient, bedrockNovaClient, s3Client, S3_IMAGES_BUCKET } from './ctx';
 import { applyLuxWatermark } from '../shared/lux-watermark';
 import { generateImageWithGemini, isGeminiImageConfigured } from './ai-image-gemini';
+import { acquireMedia, stubMediaUrl } from '../shared/media-budget';
 
 // ── Image generation ─────────────────────────────────────────────────────────
 export const STYLE_SUFFIXES: Record<string, string> = {
@@ -273,6 +274,11 @@ export async function generateLessonImage(
     prompt = prompt + STYLE_SUFFIXES[override.style];
   }
   const isDiagram = override?.style === 'diagram';
+  // Test/staging cost guard (shared/media-budget.ts): fixture image in test, monthly cap in
+  // staging — null on cap reached, which every caller already treats as "no image".
+  const gate = await acquireMedia('image', 1);
+  if (gate === 'stub') return stubMediaUrl('image');
+  if (gate === 'deny') return null;
   try {
     // Provider selection (Trello DmPpbrff, 2026-09-08 — Jason: "adelante" on
     // trying Nano Banana Pro / Gemini for image quality). Stability stays the
@@ -344,6 +350,9 @@ export async function generateCarouselInfographic(concept: string): Promise<stri
     `Clean editorial appearance, no visual noise, no complex gradients. ` +
     `STRICTLY NO text, words, letters, numbers, labels, or typography of any kind inside the image. 100% graphic and visual only. ` +
     `NO human faces, NO photorealistic elements, NO 3D renders, NO dark backgrounds.`;
+  const gate = await acquireMedia('image', 1);
+  if (gate === 'stub') return stubMediaUrl('image');
+  if (gate === 'deny') return null;
   try {
     const resp = await bedrockImageClient.send(new InvokeModelCommand({
       modelId: 'stability.stable-image-core-v1:1',

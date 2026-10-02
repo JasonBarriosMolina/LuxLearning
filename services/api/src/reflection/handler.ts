@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestCo
 import type { SQSEvent } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import webpush from 'web-push';
 import { getPrismaClient } from '../shared/db-neon';
 import { saveReflection, getReflection, updateReflectionStatus, hasPassedQuiz, isModuleUnlocked, getPushSubscriptionsByRole, getLessonProgress } from '../shared/db-dynamo';
@@ -10,7 +11,7 @@ import { setEnvironmentFromOrigin, getCurrentEnv } from '../shared/env-context';
 import { getVapidKeys } from '../shared/vapid';
 import { wrapUntrustedText } from '../shared/prompt-safety';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 
 // VAPID keys loaded lazily from Secrets Manager via shared/vapid.ts
 

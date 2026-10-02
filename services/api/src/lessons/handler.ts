@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { YoutubeTranscript } from 'youtube-transcript';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { createId } from '@paralleldrive/cuid2';
 import {
   markLessonComplete, getLessonProgress,
@@ -25,10 +26,10 @@ import { getVapidKeys } from '../shared/vapid';
 import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
-import { generateLessonAudio, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
+import { generateLessonAudio, audioContentHash, existingAudioUrl, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
 import { handleLessonNotes } from './notes';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 
 type AuthContext = { userId: string; email: string; role: string };
 type Event = APIGatewayProxyEventV2WithRequestContext<APIGatewayEventRequestContextV2 & { authorizer?: { lambda?: AuthContext } }>;
@@ -178,6 +179,17 @@ export const handler = async (event: Event) => {
         : defaultVoiceForLanguage(isCrossLanguage ? lang : mod?.course?.planLanguage);
 
       let title = lesson.title, content = lesson.content, points = lesson.points ?? [], tip = lesson.tip ?? '';
+      // Male / cross-language narration was never cached (only the female native voice has a
+      // DB column), so every play re-ran Polly — and, cross-language, a Haiku translation
+      // first. Key those by a hash of the SOURCE content so an edited lesson gets fresh audio
+      // and an unchanged one is served from S3 with no translation and no synthesis.
+      const needsS3Cache = isCrossLanguage || gender === 'male';
+      const srcHash = audioContentHash([title, content, ...points, tip].join('|'));
+      const audioId = isCrossLanguage ? `${lessonId}-${lang!.toLowerCase()}-${srcHash}` : `${lessonId}-${srcHash}`;
+      if (needsS3Cache) {
+        const cached = await existingAudioUrl(audioId, voiceId);
+        if (cached) return ok({ audioUrl: cached });
+      }
       if (isCrossLanguage) {
         const { batchTranslate } = await import('../shared/translate');
         const translations = await batchTranslate(
@@ -196,8 +208,7 @@ export const handler = async (event: Event) => {
       // Cross-language narration is never cached on the Lesson row (that field is the
       // native-language slot) — S3 key includes the target lang so re-requests are still
       // cheap without needing a schema change for a per-language cache column.
-      const audioId = isCrossLanguage ? `${lessonId}-${lang!.toLowerCase()}` : lessonId;
-      const audioUrl = await generateLessonAudio(audioId, text, voiceId);
+      const audioUrl = await generateLessonAudio(needsS3Cache ? audioId : lessonId, text, voiceId);
       if (!audioUrl) return serverError('No se pudo generar el audio');
       if (!isCrossLanguage && gender !== 'male') await prisma.lesson.update({ where: { id: lessonId }, data: { audioUrl } });
       return ok({ audioUrl });

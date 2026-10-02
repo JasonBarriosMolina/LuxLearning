@@ -26,6 +26,7 @@ vi.mock('../../shared/db-neon', () => ({
 const generateLessonAudioMock = vi.fn();
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
+  audioContentHash: (t: string) => `h${t.length}`,
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Danielle' : 'Mia'),
   defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Pedro'),
 }));
@@ -109,7 +110,7 @@ describe('POST /quiz/question-audio', () => {
       const body = await bodyOf(res);
       expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-shuffled.mp3');
       expect(generateLessonAudioMock).toHaveBeenCalledWith(
-        expect.any(String), '¿Cuánto es 2+2?. 5. 3. 4', 'Mia',
+        expect.stringMatching(/^question-q1-h\d+$/), '¿Cuánto es 2+2?. 5. 3. 4', 'Mia', { reuseExisting: true },
       );
     });
 
@@ -130,7 +131,7 @@ describe('POST /quiz/question-audio', () => {
       generateLessonAudioMock.mockResolvedValue('https://s3.example.com/fresh-male.mp3');
 
       await handler(makeEvent({ questionId: 'q1', gender: 'male', optionsOrder: ['b', 'a'] }));
-      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'Pedro');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.stringMatching(/^question-q1-h\d+$/), expect.any(String), 'Pedro', { reuseExisting: true });
     });
 
     it('an empty optionsOrder array falls back to the cached/DB-order behavior (not treated as "provided")', async () => {

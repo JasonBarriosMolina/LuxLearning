@@ -47,8 +47,11 @@ vi.mock('../../shared/db-neon', () => ({
 }));
 
 const generateLessonAudioMock = vi.fn();
+const existingAudioUrlMock = vi.fn().mockResolvedValue(null);
 vi.mock('../../shared/polly-audio', () => ({
   generateLessonAudio: (...a: any[]) => generateLessonAudioMock(...a),
+  audioContentHash: (t: string) => `h${t.length}`,
+  existingAudioUrl: (...a: any[]) => existingAudioUrlMock(...a),
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Danielle' : 'Mia'),
   defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Gregory' : 'Pedro'),
 }));
@@ -144,8 +147,37 @@ describe('POST /lessons/audio', () => {
       expect(res.statusCode).toBe(200);
       const body = await bodyOf(res);
       expect(body.data.audioUrl).toBe('https://s3.example.com/fresh-male.mp3');
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.stringContaining('Contenido'), 'Pedro');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.stringMatching(/^l1-h\d+$/), expect.stringContaining('Contenido'), 'Pedro');
       expect(lessonUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('serves the male narration from S3 when this exact content was already synthesized (no Polly call)', async () => {
+      lessonFindUniqueMock.mockResolvedValue({
+        id: 'l1', audioUrl: null, moduleId: 'm1', title: 'Lección 1', content: '<p>Contenido</p>', points: [], tip: '',
+      });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+      existingAudioUrlMock.mockResolvedValueOnce('https://s3.example.com/audio/l1-h-pedro.mp3');
+
+      const res = await handler(makeEvent({ lessonId: 'l1', gender: 'male' }));
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/audio/l1-h-pedro.mp3');
+      expect(generateLessonAudioMock).not.toHaveBeenCalled();
+    });
+
+    it('cross-language cache hit skips BOTH the Haiku translation and Polly', async () => {
+      lessonFindUniqueMock.mockResolvedValue({
+        id: 'l1', audioUrl: 'https://s3.example.com/native.mp3', moduleId: 'm1',
+        title: 'Lección 1', content: '<p>Contenido</p>', points: [], tip: '',
+      });
+      moduleFindUniqueMock.mockResolvedValue({ course: { planLanguage: 'ES' } });
+      existingAudioUrlMock.mockResolvedValueOnce('https://s3.example.com/audio/l1-en-h-danielle.mp3');
+      batchTranslateMock.mockClear();
+
+      const res = await handler(makeEvent({ lessonId: 'l1', lang: 'en' }));
+      const body = await bodyOf(res);
+      expect(body.data.audioUrl).toBe('https://s3.example.com/audio/l1-en-h-danielle.mp3');
+      expect(batchTranslateMock).not.toHaveBeenCalled();
+      expect(generateLessonAudioMock).not.toHaveBeenCalled();
     });
 
     it('uses the language-matched male voice (English course -> Gregory)', async () => {
@@ -155,7 +187,7 @@ describe('POST /lessons/audio', () => {
 
       const res = await handler(makeEvent({ lessonId: 'l1', gender: 'male' }));
       expect(res.statusCode).toBe(200);
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1', expect.any(String), 'Gregory');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.stringMatching(/^l1-h\d+$/), expect.any(String), 'Gregory');
     });
 
     it('without gender (or gender=female), still returns the cached URL and never re-synthesizes', async () => {
@@ -194,7 +226,7 @@ describe('POST /lessons/audio', () => {
       );
       // English voice, translated text, S3 key namespaced by lang — and NEVER touches
       // the native-language cache column.
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1-en', expect.stringContaining('Content in English'), 'Danielle');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.stringMatching(/^l1-en-h\d+$/), expect.stringContaining('Content in English'), 'Danielle');
       expect(lessonUpdateMock).not.toHaveBeenCalled();
     });
 
@@ -221,7 +253,7 @@ describe('POST /lessons/audio', () => {
 
       const res = await handler(makeEvent({ lessonId: 'l1', lang: 'en' }));
       expect(res.statusCode).toBe(200);
-      expect(generateLessonAudioMock).toHaveBeenCalledWith('l1-en', expect.stringContaining('Contenido'), 'Danielle');
+      expect(generateLessonAudioMock).toHaveBeenCalledWith(expect.stringMatching(/^l1-en-h\d+$/), expect.stringContaining('Contenido'), 'Danielle');
     });
   });
 });

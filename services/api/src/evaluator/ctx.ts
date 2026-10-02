@@ -4,6 +4,7 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { CognitoIdentityProviderClient, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import webpush from 'web-push';
 
 // Configure VAPID for student push notifications
@@ -14,7 +15,7 @@ if (VAPID_PUBLIC_EV && VAPID_PRIVATE_EV) {
 }
 export { webpush };
 
-export const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+export const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 export const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 export const s3Ev = new S3Client({ region: 'us-east-1' });
 export const SUBMISSIONS_BUCKET_EV = process.env.SUBMISSIONS_BUCKET ?? 'lux-learning-submissions';

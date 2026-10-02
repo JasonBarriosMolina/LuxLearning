@@ -5,6 +5,7 @@
 // notification + async auto-grading, 2026-08-30).
 import { timingSafeEqual } from 'crypto';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import webpush from 'web-push';
@@ -18,7 +19,7 @@ import { getVapidKeys } from '../shared/vapid';
 import { getVapiKeys } from '../shared/vapi-keys';
 import { ok } from '../shared/response';
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
