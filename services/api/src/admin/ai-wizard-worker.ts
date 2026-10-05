@@ -244,7 +244,24 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
         }
         if (videoTargetIdx >= 0) {
           const videoLesson = lessonData[videoTargetIdx];
-          const query = `${mod.title} ${videoLesson.title}`;
+          // Build a focused YouTube search query via Haiku instead of raw title concatenation.
+          // Raw titles like "Síntesis: Fundamentos de Arranque y Estructura Musical" return
+          // irrelevant results (Google Calendar tutorials, etc.) because YouTube doesn't
+          // understand academic subject context from long descriptive titles.
+          // Skip when lesson is a placeholder (generation failed) — no point searching.
+          let query = `${mod.title} ${videoLesson.title}`;
+          if (!isPlaceholderContent(videoLesson.content ?? '')) {
+            try {
+              const lang = isBlEN ? 'English' : 'Spanish';
+              const suggested = await invokeBedrockForJson(
+                `Generate 4-6 ${lang} YouTube search keywords to find an educational video about this lesson. Module: "${mod.title}". Lesson: "${videoLesson.title}". Return only JSON: {"query": "keywords here"}`,
+                80,
+              );
+              if (typeof suggested?.query === 'string' && suggested.query.trim().length > 4) {
+                query = suggested.query.trim();
+              }
+            } catch { /* keep raw fallback query */ }
+          }
           // ES courses: search in Spanish first, then English fallback (Trello DmPpbrff
           // comment 6abc1470 — Mack: also show English results when no Spanish video found).
           // EN courses: English only.

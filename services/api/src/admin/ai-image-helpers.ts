@@ -162,14 +162,14 @@ function buildInfographicSVG(cards: InfographicCard[], lessonTitle: string, modu
 
   const clipDefs = CARD_POS.map(({x, y}, i) =>
     `<clipPath id="sc${i}"><rect x="${x}" y="${y}" width="540" height="${stripH}"/></clipPath>` +
-    `<clipPath id="bc${i}"><rect x="${x+textOffX-4}" y="${y+stripH+4}" width="450" height="${cardHeight - stripH - 8}"/></clipPath>`
+    `<clipPath id="bc${i}"><rect x="${x+textOffX-4}" y="${y+stripH+4}" width="476" height="${cardHeight - stripH - 8}"/></clipPath>`
   ).join('');
 
   const cardsSvg = cards.slice(0, numCards).map((card, i) => {
     const {x, y} = CARD_POS[i]!;
     const sc = STRIP_COLORS_CYCLE[i % 4]!, stc = STRIP_TEXT_CYCLE[i % 4]!;
-    const title = escapeXml((card.title || '').slice(0, 30));
-    const lines = (card.lines || []).slice(0, maxLines).map(l => escapeXml(String(l).slice(0, 55)));
+    const title = escapeXml((card.title || '').slice(0, 40));
+    const lines = (card.lines || []).slice(0, maxLines).map(l => escapeXml(String(l).slice(0, 62)));
     const icon = VALID_ICONS.has(card.icon) ? card.icon : 'ico-lightbulb';
     const tspans = lines.map((l, li) =>
       li === 0 ? `<tspan x="${x+textOffX}" y="${y+textOffY}">${l}</tspan>`
@@ -218,7 +218,7 @@ export async function generateLessonInfographic(lessonTitle: string, moduleTitle
     : 'IMPORTANT: Respond ONLY in English. All titles and text must be in English.';
   const prompt = `${langNote}
 Extract exactly ${numCards} key concepts from this ${numCards === 8 ? 'module' : 'lesson'} as a JSON array.
-Each element: {"title": "concept name max 30 chars", "lines": ["one-sentence summary max 55 chars", "• subtopic or detail max 53 chars", "• subtopic or detail max 53 chars"${numCards === 4 ? ', "• subtopic max 53 chars", "• subtopic max 53 chars"' : ', "• subtopic max 53 chars"'}], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award ico-globe ico-heart ico-shield ico-flag ico-compass ico-cpu ico-database ico-message ico-tool ico-trending ico-briefcase ico-activity ico-key ico-layout ico-camera"}
+Each element: {"title": "concept name max 38 chars, end at a word boundary", "lines": ["one-sentence summary max 58 chars", "• subtopic or detail max 58 chars", "• subtopic or detail max 58 chars"${numCards === 4 ? ', "• subtopic max 58 chars", "• subtopic max 58 chars"' : ', "• subtopic max 58 chars"'}], "icon": "one of: ico-lightbulb ico-book ico-star ico-check ico-chart ico-music ico-user ico-gear ico-search ico-clock ico-target ico-zap ico-layers ico-mic ico-headphones ico-award ico-globe ico-heart ico-shield ico-flag ico-compass ico-cpu ico-database ico-message ico-tool ico-trending ico-briefcase ico-activity ico-key ico-layout ico-camera"}
 Lines[0] is a brief summary. Lines[1..] start with "• " and list specific subtopics, skills, or key points covered under this concept. Be concrete and informative.
 Pick the most relevant icon for each concept topic.
 ${numCards === 8 ? 'Module' : 'Lesson'}: "${numCards === 8 ? moduleTitle : lessonTitle}"
