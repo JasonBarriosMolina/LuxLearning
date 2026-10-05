@@ -441,5 +441,25 @@ Responde ÚNICAMENTE con un array JSON de strings. Ejemplo: ["liderazgo","comuni
     return ok({ photos, totalPages: data.total_pages });
   }
 
+  // ── GET /admin/suggest-image-query ──────────────────────────────────────────
+  // Uses Haiku to turn a lesson title + optional course subject into a focused
+  // stock-photo search query, so the image picker auto-searches relevant results
+  // instead of returning unrelated photos (e.g. "estructura" → house instead of
+  // music notation). Called by LessonImagePicker when the modal opens.
+  if (path === '/admin/suggest-image-query' && method === 'GET') {
+    if (!isAuthorized(event)) return forbidden('Se requiere rol de administrador o evaluador');
+    const lessonTitle = (event.queryStringParameters?.lessonTitle ?? '').trim();
+    const courseSubject = (event.queryStringParameters?.courseSubject ?? '').trim();
+    if (!lessonTitle) return badRequest('lessonTitle es requerido');
+
+    const contextHint = courseSubject ? ` in a "${courseSubject}" course` : '';
+    const result = await bedrockJSON(
+      `Generate a concise English stock photo search query (3–5 words) for a lesson titled "${lessonTitle}"${contextHint}. Be specific to the academic subject — avoid generic words like "education" or "learning". Return only JSON: {"query": "your search terms"}`,
+      80,
+    );
+    const query = typeof result?.query === 'string' ? result.query.trim() : lessonTitle;
+    return ok({ query });
+  }
+
   return null; // not handled by this domain
 }

@@ -546,6 +546,8 @@ export const api = {
     // or 'pexels' (Trello DmPpbrff, 2026-09-07 — lesson cover picker, Jason's pick)
     stockPhotos: (q: string, page = 1, provider: 'unsplash' | 'pexels' = 'unsplash') =>
       request<any>(`/admin/stock-photos?q=${encodeURIComponent(q)}&page=${page}&provider=${provider}`),
+    suggestImageQuery: (lessonTitle: string, courseSubject?: string) =>
+      request<any>(`/admin/suggest-image-query?lessonTitle=${encodeURIComponent(lessonTitle)}${courseSubject ? `&courseSubject=${encodeURIComponent(courseSubject)}` : ''}`),
     groups: {
       list: () => request<any>('/admin/groups'),
       create: (body: { name: string; description?: string; color?: string; academicPeriod?: string }) =>

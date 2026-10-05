@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, X, ImagePlus } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { RichTextEditor, ImageModal } from '@/components/shared/RichTextEditor';
+import { api } from '@/lib/api';
 import type { LessonForm } from './types';
 
 // Trello DmPpbrff, 2026-09-07 (Mack): "como profesor, debo tener también la
@@ -13,9 +14,21 @@ import type { LessonForm } from './types';
 // RichTextEditor's ImageModal (AI/stock/upload picker) instead of the old raw
 // "pega una URL" text input — stockProvider='pexels' per Jason's pick
 // (2026-09-08, AskUserQuestion) for this specific picker.
-function LessonImagePicker({ imageUrl, onChange }: { imageUrl: string; onChange: (url: string) => void }) {
+function LessonImagePicker({ imageUrl, onChange, lessonTitle }: { imageUrl: string; onChange: (url: string) => void; lessonTitle?: string }) {
   const [open, setOpen] = useState(false);
   const [manualUrl, setManualUrl] = useState(false);
+  const [suggestedQuery, setSuggestedQuery] = useState<string | undefined>();
+
+  const handleOpen = async () => {
+    setOpen(true);
+    if (lessonTitle?.trim() && !suggestedQuery) {
+      try {
+        const res = await api.admin.suggestImageQuery(lessonTitle.trim());
+        const q = (res as any)?.data?.query;
+        if (q) setSuggestedQuery(q);
+      } catch { /* silent — falls back to manual search */ }
+    }
+  };
 
   return (
     <div className="space-y-2">
@@ -26,7 +39,7 @@ function LessonImagePicker({ imageUrl, onChange }: { imageUrl: string; onChange:
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={handleOpen}
           className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
         >
           <ImagePlus className="w-3.5 h-3.5" /> {imageUrl ? 'Cambiar imagen' : 'Elegir imagen'}
@@ -44,6 +57,7 @@ function LessonImagePicker({ imageUrl, onChange }: { imageUrl: string; onChange:
           confirmLabel="Usar como portada"
           stockProvider="pexels"
           uploadFolder="covers"
+          initialQuery={suggestedQuery}
           onInsert={(url) => { onChange(url); setOpen(false); }}
           onClose={() => setOpen(false)}
         />
@@ -104,7 +118,7 @@ export function LessonFields({ form, setForm }: { form: LessonForm; setForm: (f:
         <Input label="YouTube ID (opcional)" value={form.youtubeId} onChange={(e) => setForm({ ...form, youtubeId: e.target.value })} placeholder="dQw4w9WgXcQ" />
         <Input label="Orden" type="number" value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} required />
       </div>
-      <LessonImagePicker imageUrl={form.imageUrl} onChange={(url) => setForm({ ...form, imageUrl: url })} />
+      <LessonImagePicker imageUrl={form.imageUrl} onChange={(url) => setForm({ ...form, imageUrl: url })} lessonTitle={form.title} />
       <div className="space-y-1">
         <label className="text-sm font-medium text-charcoal">Contenido</label>
         <RichTextEditor

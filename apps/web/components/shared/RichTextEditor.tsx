@@ -82,13 +82,14 @@ type ImageTab = 'ai' | 'stock' | 'upload';
 // behavior, so the RichTextEditor's own usage below is unchanged.
 export function ImageModal({
   onInsert, onClose, title = 'Insertar imagen', confirmLabel = 'Insertar en editor',
-  stockProvider = 'unsplash', uploadFolder = 'uploads',
+  stockProvider = 'unsplash', uploadFolder = 'uploads', initialQuery,
 }: {
   onInsert: (url: string) => void; onClose: () => void;
   title?: string; confirmLabel?: string;
   stockProvider?: 'unsplash' | 'pexels'; uploadFolder?: 'tasks' | 'resources' | 'uploads' | 'photos' | 'covers' | 'editor';
+  initialQuery?: string;
 }) {
-  const [tab, setTab] = useState<ImageTab>('ai');
+  const [tab, setTab] = useState<ImageTab>(initialQuery ? 'stock' : 'ai');
 
   // AI tab state
   const [aiPrompt, setAiPrompt] = useState('');
@@ -98,7 +99,7 @@ export function ImageModal({
   const [aiError, setAiError] = useState('');
 
   // Stock tab state
-  const [stockQ, setStockQ] = useState('');
+  const [stockQ, setStockQ] = useState(initialQuery ?? '');
   const [stockPage, setStockPage] = useState(1);
   const [stockPhotos, setStockPhotos] = useState<any[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
@@ -123,17 +124,23 @@ export function ImageModal({
     finally { setAiLoading(false); }
   };
 
-  const searchStock = async (page = 1) => {
-    if (!stockQ.trim()) return;
+  const searchStock = async (page = 1, overrideQ?: string) => {
+    const q = (overrideQ ?? stockQ).trim();
+    if (!q) return;
     setStockLoading(true); setStockError('');
     try {
-      const res = await api.admin.stockPhotos(stockQ.trim(), page, stockProvider);
+      const res = await api.admin.stockPhotos(q, page, stockProvider);
       setStockPhotos((res as any)?.data?.photos ?? []);
       setStockTotalPages((res as any)?.data?.totalPages ?? 0);
       setStockPage(page);
     } catch { setStockError('Error al buscar imágenes.'); }
     finally { setStockLoading(false); }
   };
+
+  useEffect(() => {
+    if (initialQuery?.trim()) searchStock(1, initialQuery.trim());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith('image/')) { setUploadError('Solo se aceptan imágenes.'); return; }
