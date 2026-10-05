@@ -490,7 +490,7 @@ function CourseWizardInner() {
   // ── Layout ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-950">
+    <div className="min-h-screen bg-white dark:bg-gray-950 overflow-x-hidden">
       <div className="sticky top-0 z-10 bg-white/95 dark:bg-gray-950/95 backdrop-blur border-b border-border px-6 py-3 flex items-center gap-4">
         <button onClick={goBack} className="p-2 rounded-lg text-gray-400 hover:text-charcoal hover:bg-surface transition-colors"><ArrowLeft className="w-4 h-4" /></button>
         <div>
@@ -506,7 +506,9 @@ function CourseWizardInner() {
             <p className="text-sm text-blue-700 dark:text-blue-300">{s('Cargando datos del curso...', 'Loading course data...')}</p>
           </div>
         )}
-        <StepBar current={step} onStep={(n) => setStep(n as typeof step)} />
+        <div className="overflow-x-auto -mx-6 px-6 pb-1">
+          <StepBar current={step} onStep={(n) => setStep(n as typeof step)} />
+        </div>
 
         <div>
           {step === 1 && (
