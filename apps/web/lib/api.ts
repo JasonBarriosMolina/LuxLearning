@@ -405,6 +405,8 @@ export const api = {
   },
 
   admin: {
+    costs: (days = 30, refresh = false) =>
+      request<any>(`/admin/costs?days=${days}${refresh ? '&refresh=1' : ''}`).then((r) => r?.data ?? r),
     periods: {
       list: () => request<any>('/admin/periods'),
       create: (name: string) => request<any>('/admin/periods', { method: 'POST', body: JSON.stringify({ name }) }),

@@ -17,6 +17,7 @@ import { handleCarousel } from './carousel';
 import { handleCarouselWorker } from './carousel-worker';
 import { handleScheduler } from './scheduler';
 import { handleRooms } from './rooms';
+import { handleCosts } from './costs';
 
 export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
@@ -64,6 +65,7 @@ export const handler = async (event: Event) => {
       await handleCarouselWorker(ctx) ??
       await handleScheduler(ctx) ??
       await handleRooms(ctx) ??
+      await handleCosts(ctx) ??
       notFound('Ruta no encontrada');
 
     return result;
