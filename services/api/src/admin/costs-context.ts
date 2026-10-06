@@ -1,7 +1,18 @@
-// Static project knowledge handed to the cost-dashboard chat. Hand-condensed from CLAUDE.md /
-// docs/reference so the Lambda needs no repo files. Update when architecture or cost drivers change.
+// Static project knowledge handed to the platform assistant (costs-chat.ts). Hand-condensed from
+// CLAUDE.md / docs/reference so the Lambda needs no repo files. Update when architecture or cost drivers change.
 export const PROJECT_CONTEXT = `
-# Lux Learning — contexto de plataforma (para análisis de costos)
+# Lux Learning — contexto de plataforma
+
+## Estructura del repositorio (monorepo)
+- apps/web: frontend Next.js 14 (App Router). Vistas de estudiante en app/(student), de evaluador/admin en app/(evaluator). Todas las llamadas al API en lib/api.ts.
+- services/api/src: código de las Lambdas. admin/ (handler.ts router + ctx.ts + módulos por dominio: courses, users, reports, ai, profile, files, groups, interviews, classes, carousel, scheduler, rooms, costs), evaluator/, shared/ (db-neon.ts Prisma, db-dynamo.ts, response.ts con CORS, env-context.ts, media-budget.ts, bedrock-usage.ts).
+- packages/types: tipos compartidos (@lux/types). scripts/deploy-lambda.ps1: build + deploy canónico (-DeployEnv test|staging|prod; sin flag despliega a prod). docs/reference: variables de entorno, esquema DynamoDB, flujos de negocio, errores comunes.
+- Patrón de Lambdas admin/evaluator: handler.ts solo enruta; cada módulo de dominio exporta handleX(ctx) que devuelve null si no maneja la ruta. Rutas nuevas requieren crear la ruta en API Gateway Y el permiso lambda:InvokeFunction (si no, el frontend ve "Failed to fetch").
+- CORS en dos capas: API Gateway + ALLOWED_ORIGINS en shared/response.ts.
+- Trabajo largo con IA = job asíncrono (self-invoke con _action, estado en DynamoDB, polling a /admin/courses/ai-job).
+
+## Funcionalidades de la plataforma
+Cursos con módulos, lecciones, quizzes y reflexiones; generación de cursos con IA (Lux Planner); Lux Carrousel (lecciones narradas con imágenes y audio); mentor socrático por lección; inscripciones, progreso, certificados; grupos base; calendario y asistencia (OCR con Bedrock, riesgo de deserción); scheduler de clases y aulas; plan de estudio semanal; entrevistas por voz (Vapi); i18n ES/EN con traducción por Bedrock; notificaciones push y email (SES); gamificación.
 
 ## Stack
 - Frontend Next.js 14 en Vercel (no aparece en la factura AWS).
