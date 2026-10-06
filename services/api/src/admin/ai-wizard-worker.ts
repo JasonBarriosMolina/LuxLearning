@@ -254,7 +254,7 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             try {
               const lang = isBlEN ? 'English' : 'Spanish';
               const suggested = await invokeBedrockForJson(
-                `Generate 4-6 ${lang} YouTube search keywords to find an educational video about this lesson. Module: "${mod.title}". Lesson: "${videoLesson.title}". Return only JSON: {"query": "keywords here"}`,
+                `Generate 4-6 ${lang} YouTube search keywords to find an educational video specifically about this topic. The keywords MUST stay within the subject area of the course — do not use generic terms that could match unrelated fields. Course: "${blTitle}". Module: "${mod.title}". Lesson: "${videoLesson.title}". Return only JSON: {"query": "keywords here"}`,
                 80,
               );
               if (typeof suggested?.query === 'string' && suggested.query.trim().length > 4) {
@@ -262,11 +262,18 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
               }
             } catch { /* keep raw fallback query */ }
           }
+          // Domain terms extracted from course + module title — passed to fetchYoutubeEduVideo so
+          // title-based filtering can reject videos that share zero words with the course subject.
+          // Stops noise (e.g. "producción" matching "Control de Calidad" business videos when
+          // the course is about music production).
+          const stopWords = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'en', 'y', 'a', 'the', 'of', 'and', 'in', 'to', 'for']);
+          const domainTerms = `${blTitle} ${mod.title}`.toLowerCase()
+            .split(/\W+/).filter((w) => w.length >= 4 && !stopWords.has(w));
           // ES courses: search in Spanish first, then English fallback (Trello DmPpbrff
           // comment 6abc1470 — Mack: also show English results when no Spanish video found).
           // EN courses: English only.
-          let videoId = await fetchYoutubeEduVideo(query, undefined, isBlEN ? 'en' : 'es').catch(() => null);
-          if (!videoId && !isBlEN) videoId = await fetchYoutubeEduVideo(query, undefined, 'en').catch(() => null);
+          let videoId = await fetchYoutubeEduVideo(query, undefined, isBlEN ? 'en' : 'es', domainTerms).catch(() => null);
+          if (!videoId && !isBlEN) videoId = await fetchYoutubeEduVideo(query, undefined, 'en', domainTerms).catch(() => null);
           if (videoId) lessonData[videoTargetIdx] = { ...videoLesson, youtubeId: videoId };
         }
 

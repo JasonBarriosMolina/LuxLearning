@@ -82,6 +82,7 @@ export async function searchYoutubeVideo(
  *  contentDetails. Returns the first qualifying videoId, or the first result as fallback. */
 async function fetchYoutubeEduVideoOnce(
   keywords: string, apiKey: string, lang: string, strict: boolean,
+  domainTerms?: string[],
 ): Promise<string | null> {
   const cutoff = new Date(Date.now() - 5 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
   const q = encodeURIComponent(keywords.trim());
@@ -89,11 +90,21 @@ async function fetchYoutubeEduVideoOnce(
   // Broad pass: drop category+HD filters — many quality educational videos on YouTube
   // are NOT in category 27 (Education) or HD; strict pass returns 0 for most ES queries.
   const categoryFilter = strict ? '&videoCategoryId=27&videoDefinition=high&order=rating' : '&order=relevance';
-  const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&q=${q}&type=video${categoryFilter}&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=${lang}&publishedAfter=${encodeURIComponent(cutoff)}&maxResults=10&key=${apiKey}`;
+  // Use part=snippet to get titles for domain relevance filtering (checks that returned
+  // videos are actually about the course subject, not unrelated fields that share keywords).
+  const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video${categoryFilter}&safeSearch=strict&videoEmbeddable=true&videoDuration=medium&relevanceLanguage=${lang}&publishedAfter=${encodeURIComponent(cutoff)}&maxResults=10&key=${apiKey}`;
   const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(6000) });
   if (!searchRes.ok) return null;
   const searchData = await searchRes.json() as any;
-  const ids: string[] = (searchData?.items ?? []).map((it: any) => it?.id?.videoId).filter(Boolean);
+  // Filter by domain term overlap when provided — rejects videos whose title+channel share
+  // zero words with the course domain (e.g. "Control de Calidad" for a music sampling lesson).
+  const candidates: { videoId: string; title: string }[] = (searchData?.items ?? [])
+    .map((it: any) => ({ videoId: it?.id?.videoId as string, title: ((it?.snippet?.title ?? '') + ' ' + (it?.snippet?.channelTitle ?? '')).toLowerCase() }))
+    .filter((c: { videoId: string; title: string }) => c.videoId);
+  const filtered = domainTerms?.length
+    ? candidates.filter((c) => domainTerms.some((t) => c.title.includes(t.toLowerCase())))
+    : candidates;
+  const ids = (filtered.length ? filtered : candidates).map((c) => c.videoId);
   if (!ids.length) return null;
 
   const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids.join(',')}&key=${apiKey}`;
@@ -116,15 +127,16 @@ export async function fetchYoutubeEduVideo(
   keywords: string,
   apiKey: string | undefined = process.env.YOUTUBE_API_KEY,
   lang = 'en',
+  domainTerms?: string[],
 ): Promise<string | null> {
   if (!apiKey || !keywords.trim()) return null;
   try {
     // Try strict first (HD + Education category + rating). If no results, retry
     // without those filters — common for non-English content (Trello DmPpbrff
     // comment 6abc1587: videos missing after regen because strict filters return 0).
-    const strict = await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, true);
+    const strict = await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, true, domainTerms);
     if (strict) return strict;
-    return await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, false);
+    return await fetchYoutubeEduVideoOnce(keywords, apiKey, lang, false, domainTerms);
   } catch {
     return null;
   }
