@@ -29,8 +29,10 @@ Cursos con módulos, lecciones, quizzes y reflexiones; generación de cursos con
 
 ## Cómo se separan los costos por ambiente en el dashboard (estimado)
 - test y staging: contadores propios en la tabla LuxMediaUsage-<Env> (tokens de Bedrock por Lambda/modelo, imágenes y caracteres de Polly), valorados a precio de lista.
-- prod: factura AWS de IA/media menos lo atribuido a test y staging. Los contadores solo existen desde que se activó el guard de costos (commits recientes de Oct-2026); antes de eso el gasto de test cae en prod.
-- Lambda, Neon, DynamoDB, CloudWatch, etc. se muestran como infraestructura compartida sin repartir.
+- prod: factura AWS de IA/media menos lo atribuido a test y staging, SOLO desde que existen los contadores (activados el 2026-10-05). El gasto de IA/media anterior no se puede asignar a ningún ambiente y se reporta como "sin atribuir"; no asumas que es de prod.
+- Lambda y API Gateway: la factura real de cada servicio se reparte por uso medido en CloudWatch (GB-segundo e invocaciones; requests por API). Hoy esa factura es ~$0 por free tier.
+- Los recursos (Lambdas, tablas DynamoDB) llevan el tag lux-env (test|staging|prod). Cuando ese tag se active como tag de costo en Billing, el campo "tag" de get_costs traerá el costo real por ambiente (solo desde la activación). Mientras available=false no hay costo real por ambiente.
+- EC2, Security Hub, VPC, Secrets Manager, KMS, S3, DynamoDB, CloudWatch, etc. quedan sin repartir. La cuenta incluye recursos ajenos a Lux; Neon, Vercel y Vapi no están en la factura AWS.
 
 ## Principales generadores de costo conocidos
 - Generación de cursos (Lux Planner): ráfagas de ~270 imágenes/hora y un audio Polly por lección; en Sep-2026 imágenes + Polly fueron ~70% de la factura.

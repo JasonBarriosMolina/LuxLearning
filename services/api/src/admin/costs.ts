@@ -6,6 +6,7 @@ import { ddb } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
 import { ok, forbidden } from '../shared/response';
 import type { AdminCtx } from './ctx';
+import { lambdaUsage, apiUsage, costByTag, type EnvKey } from './costs-env';
 
 // GET /admin/costs?days=30[&refresh=1]  — ADMIN / SUPER_ADMIN only.
 // Two sources:
@@ -29,7 +30,7 @@ const cache = new Map<string, { at: number; data: any }>();
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 const addDays = (d: Date, n: number) => new Date(d.getTime() + n * 86_400_000);
-const round = (n: number) => Math.round(n * 100) / 100;
+const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
 async function costAndUsage(start: string, end: string) {
   const rows: any[] = [];
@@ -144,33 +145,91 @@ function categoryOf(service: string): Cat | null {
 // Cost Explorer cannot split by environment (no cost-allocation tags), so: test/staging come
 // from their own usage counters; prod = account AI/media bill minus test minus staging; every
 // other service is shared infra and left unsplit.
-function byEnvironment(cur: ReturnType<typeof summarize>, test: any, staging: any) {
+type Infra = { lambda: Awaited<ReturnType<typeof lambdaUsage>>; api: Awaited<ReturnType<typeof apiUsage>>; tag: Awaited<ReturnType<typeof costByTag>> };
+
+function byEnvironment(cur: ReturnType<typeof summarize>, test: any, staging: any, infra: Infra) {
   const ce: Record<Cat, number> = { text: 0, image: 0, polly: 0 };
-  const ceDaily: Record<string, number> = {};
+  const ceDayCat: Record<string, Record<Cat, number>> = {};
   let shared = 0;
   for (const [svc, cost] of Object.entries(cur.byService)) {
     const c = categoryOf(svc);
     if (c) ce[c] += cost; else shared += cost;
   }
   for (const [day, svcs] of Object.entries(cur.byDay)) {
-    for (const [svc, cost] of Object.entries(svcs)) if (categoryOf(svc)) ceDaily[day] = (ceDaily[day] ?? 0) + cost;
+    for (const [svc, cost] of Object.entries(svcs)) {
+      const c = categoryOf(svc);
+      if (c) (ceDayCat[day] ??= { text: 0, image: 0, polly: 0 })[c] += cost;
+    }
   }
-  const prodCat = (c: Cat) => Math.max(0, ce[c] - test.byCategory[c] - staging.byCategory[c]);
+  const ceDaily: Record<string, number> = Object.fromEntries(
+    Object.entries(ceDayCat).map(([d, v]) => [d, v.text + v.image + v.polly]));
+
+  // Cost Explorer lags ~24 h: counters for days it has not billed yet must not be subtracted from the
+  // bill, or the prod residual is understated. Drop that tail (pro-rata across categories).
+  const billedDays = Object.keys(cur.byDay).sort();
+  const lastCeDay = billedDays[billedDays.length - 1] ?? '';
+  const tail = (u: any) => (u.daily as any[]).filter((r) => r.date > lastCeDay).reduce((s, r) => s + r.cost, 0);
+  const comparable = (u: any): Record<Cat, number> => {
+    const keep = u.total > 0 ? Math.max(0, u.total - tail(u)) / u.total : 1;
+    return { text: u.byCategory.text * keep, image: u.byCategory.image * keep, polly: u.byCategory.polly * keep };
+  };
+  const tC = comparable(test), sC = comparable(staging);
+
+  // Counters only exist from the day they were switched on. AI/media billed BEFORE that day cannot be
+  // told apart by environment, so it is reported as unattributed instead of being dumped on prod.
+  const counterDays = [...test.daily, ...staging.daily].map((r: any) => r.date as string).sort();
+  const firstCounterDay: string | null = counterDays[0] ?? null;
+  const win: Record<Cat, number> = { text: 0, image: 0, polly: 0 };
+  let beforeCounters = 0;
+  for (const [d, v] of Object.entries(ceDayCat)) {
+    if (firstCounterDay && d >= firstCounterDay) { win.text += v.text; win.image += v.image; win.polly += v.polly; }
+    else beforeCounters += v.text + v.image + v.polly;
+  }
+  const prodCat = (c: Cat) => Math.max(0, win[c] - tC[c] - sC[c]);
   const prod = { text: round(prodCat('text')), image: round(prodCat('image')), polly: round(prodCat('polly')) };
   const dayMap = (u: any) => Object.fromEntries(u.daily.map((r: any) => [r.date, r.cost]));
   const tD = dayMap(test), sD = dayMap(staging);
-  const daily = Object.keys(ceDaily).sort().map((date) => ({
-    date, test: tD[date] ?? 0, staging: sD[date] ?? 0,
-    prod: round(Math.max(0, ceDaily[date] - (tD[date] ?? 0) - (sD[date] ?? 0))),
-  }));
+  const daily = Object.keys(ceDaily).sort().map((date) => {
+    const counted = !!firstCounterDay && date >= firstCounterDay;
+    return {
+      date, test: tD[date] ?? 0, staging: sD[date] ?? 0,
+      prod: counted ? round(Math.max(0, ceDaily[date] - (tD[date] ?? 0) - (sD[date] ?? 0))) : 0,
+      unattributed: counted ? 0 : round(ceDaily[date]),
+    };
+  });
+  // Lambda and API Gateway: split the REAL bill by usage share (CloudWatch metrics).
+  const lambdaBill = cur.byService['AWS Lambda'] ?? 0;
+  const apiBill = cur.byService['Amazon API Gateway'] ?? 0;
+  const infraBy = (bill: number, sh: Record<EnvKey, number>): Record<EnvKey, number> => ({ test: round(bill * sh.test, 4), staging: round(bill * sh.staging, 4), prod: round(bill * sh.prod, 4) });
+  const lam = infraBy(lambdaBill, infra.lambda.shares), api = infraBy(apiBill, infra.api.shares);
+  shared -= lambdaBill + apiBill;
+
+  const aiOf: Record<EnvKey, number> = { test: test.total, staging: staging.total, prod: round(prod.text + prod.image + prod.polly) };
+  const envTotal = (e: EnvKey) => round(aiOf[e] + lam[e] + api[e]);
+  const totals = { test: envTotal('test'), staging: envTotal('staging'), prod: envTotal('prod') };
+  const bill = Object.values(cur.byService).reduce((s, v) => s + v, 0);
+  const attributed = totals.test + totals.staging + totals.prod;
+
   return {
     test, staging,
-    prod: { byCategory: prod, total: round(prod.text + prod.image + prod.polly) },
-    shared: { total: round(shared) },
+    prod: { byCategory: prod, total: aiOf.prod },
+    shared: { total: round(Math.max(0, shared)) },
     aiBillTotal: round(ce.text + ce.image + ce.polly),
     ceByCategory: { text: round(ce.text), image: round(ce.image), polly: round(ce.polly) },
     daily,
-    note: 'Estimado. test/staging = contadores de uso a precio de lista; prod = factura AWS de IA/media menos test y staging (los contadores existen solo desde que se activaron, antes todo cae en prod). "Compartido" = infraestructura sin separar por ambiente (Lambda, Neon, DynamoDB, etc.).',
+    infra: {
+      lambda: { bill: round(lambdaBill, 4), byEnv: lam, usage: infra.lambda.usage, shares: infra.lambda.shares },
+      api: { bill: round(apiBill, 4), byEnv: api, requests: infra.api.requests, shares: infra.api.shares },
+    },
+    totals,
+    coverage: {
+      bill: round(bill), attributed: round(attributed), unattributed: round(Math.max(0, bill - attributed)),
+      attributedPct: bill ? round((attributed / bill) * 100, 1) : 0,
+      lastBilledDay: lastCeDay || null,
+      aiBeforeCounters: round(beforeCounters), countersSince: firstCounterDay,
+    },
+    tag: infra.tag,
+    note: 'Estimado. IA/media: test/staging = contadores de uso a precio de lista; prod = factura AWS de IA/media menos test y staging, solo desde que existen los contadores; el gasto de IA/media anterior no se puede asignar y queda sin atribuir. Lambda y API Gateway: factura real repartida por uso medido en CloudWatch. El resto (EC2, Security Hub, VPC, Secrets Manager, KMS, S3, DynamoDB, CloudWatch, etc.) no se reparte por ambiente. La cuenta AWS incluye recursos ajenos a Lux. Neon, Vercel y Vapi no están en esta factura.',
   };
 }
 
@@ -192,12 +251,13 @@ async function build(days: number) {
   const end = isoDay(addDays(now, 1)); // End is exclusive → include today
   const from = isoDay(addDays(now, -(days - 1)));
   const prevFrom = isoDay(addDays(now, -(2 * days - 1)));
-  const [rows, testUsage, stagingUsage, fc] = await Promise.all([
+  const [rows, testUsage, stagingUsage, fc, lam, api, tag] = await Promise.all([
     costAndUsage(prevFrom, end), mediaUsage(mediaTableFor('test'), days), mediaUsage(mediaTableFor('staging'), days), forecast(),
+    lambdaUsage(days), apiUsage(days), costByTag(from, end),
   ]);
 
   const cur = summarize(rows, from);
-  const prev = summarize(rows.filter((r) => r.TimePeriod.Start < from), prevFrom);
+  const prev = summarize(rows.filter((r: any) => r.TimePeriod.Start < from), prevFrom);
   const sum = (o: Record<string, number>) => Object.values(o).reduce((s, v) => s + v, 0);
   const total = sum(cur.byService), prevTotal = sum(prev.byService);
 
@@ -236,7 +296,7 @@ async function build(days: number) {
     daily,
     usageTypes: cur.usage.map((u) => ({ ...u, cost: round(u.cost) })).filter((u) => u.cost >= 0.01)
       .sort((a, b) => b.cost - a.cost).slice(0, 40),
-    environments: byEnvironment(cur, testUsage, stagingUsage),
+    environments: byEnvironment(cur, testUsage, stagingUsage, { lambda: lam, api, tag }),
   };
 }
 

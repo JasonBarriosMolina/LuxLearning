@@ -193,7 +193,9 @@ async function dynamoTables(input: any) {
 const trimCosts = (d: any) => ({
   periodo: { dias: d.days, desde: d.from, hasta: d.to }, resumen: d.summary, servicios: d.services, tipos_de_uso_top: d.usageTypes.slice(0, 25),
   costo_diario_total: d.daily.map((r: any) => ({ fecha: r.date, total: r.total })),
-  ambientes: { test: d.environments.test, staging: d.environments.staging, prod: d.environments.prod, compartido: d.environments.shared,
+  ambientes: { total_atribuido_por_ambiente: d.environments.totals, cobertura: d.environments.coverage,
+    lambda_y_apigw_repartidos_por_uso: d.environments.infra, costo_real_por_tag_lux_env: d.environments.tag,
+    test: d.environments.test, staging: d.environments.staging, prod: d.environments.prod, compartido: d.environments.shared,
     factura_ia_media_total: d.environments.aiBillTotal, diario_por_ambiente: d.environments.daily, nota: d.environments.note },
 });
 
