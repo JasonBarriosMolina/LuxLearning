@@ -2,12 +2,12 @@ import {
   CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand,
 } from '@aws-sdk/client-cost-explorer';
 import { QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { ddb, TABLES } from '../shared/db-dynamo';
+import { ddb } from '../shared/db-dynamo';
 import { getCurrentEnv } from '../shared/env-context';
 import { ok, forbidden } from '../shared/response';
 import type { AdminCtx } from './ctx';
 
-// GET /admin/costs?days=30[&refresh=1]  — SUPER_ADMIN only.
+// GET /admin/costs?days=30[&refresh=1]  — ADMIN / SUPER_ADMIN only.
 // Two sources:
 //  1. Cost Explorer (real AWS bill, account-wide: prod + staging + test together, daily).
 //  2. LuxMediaUsage counters (test/staging only): Bedrock tokens per Lambda/model and
@@ -19,6 +19,7 @@ const ce = new CostExplorerClient({ region: 'us-east-1' }); // CE only exists in
 // USD list prices used for the per-env estimate (Bedrock bills by model, not by caller).
 const PRICE = {
   haikuInPerM: 1, haikuOutPerM: 5,
+  sonnetInPerM: 3, sonnetOutPerM: 15, // assumed Sonnet-class list price (used by the cost chat)
   imageEach: 0.04,
   pollyPerMChars: 16,
 };
@@ -68,11 +69,15 @@ function summarize(rows: any[], from: string) {
   return { byService, byDay, usage: Object.values(usage) };
 }
 
-async function mediaUsage(days: number) {
+// Counter tables per env. Prod never writes counters (bedrock-usage / media-budget no-op there).
+const baseMediaTable = () => process.env.DYNAMO_TABLE_MEDIA_USAGE ?? 'LuxMediaUsage';
+const mediaTableFor = (env: 'test' | 'staging') => `${baseMediaTable()}-${env === 'test' ? 'Test' : 'Staging'}`;
+
+async function mediaUsage(table: string, days: number) {
   const today = new Date();
   const dates = Array.from({ length: days }, (_, i) => isoDay(addDays(today, -i)));
   const results = await Promise.all(dates.map((d) => ddb.send(new QueryCommand({
-    TableName: TABLES.MEDIA_USAGE,
+    TableName: table,
     KeyConditionExpression: 'pk = :p',
     ExpressionAttributeValues: { ':p': `use#${d}` },
   })).then((r: any) => ({ d, items: (r.Items ?? []) as any[] })).catch(() => ({ d, items: [] as any[] }))));
@@ -87,7 +92,8 @@ async function mediaUsage(days: number) {
         const [, lambda, ...m] = sk.split('#');
         const model = m.join('#');
         const inTok = Number(it.inTok ?? 0), outTok = Number(it.outTok ?? 0);
-        const cost = (inTok * PRICE.haikuInPerM + outTok * PRICE.haikuOutPerM) / 1e6;
+        const sonnet = /sonnet/i.test(model);
+        const cost = (inTok * (sonnet ? PRICE.sonnetInPerM : PRICE.haikuInPerM) + outTok * (sonnet ? PRICE.sonnetOutPerM : PRICE.haikuOutPerM)) / 1e6;
         const key = `${lambda}|${model}`;
         const b = (bedrock[key] ??= { lambda, model, calls: 0, inTok: 0, outTok: 0, cost: 0 });
         b.calls += Number(it.calls ?? 0); b.inTok += inTok; b.outTok += outTok; b.cost += cost;
@@ -103,7 +109,7 @@ async function mediaUsage(days: number) {
 
   const month = isoDay(today).slice(0, 7);
   const caps = await Promise.all(['image', 'polly'].map((kind) => ddb.send(new QueryCommand({
-    TableName: TABLES.MEDIA_USAGE,
+    TableName: table,
     KeyConditionExpression: 'pk = :p AND sk = :s',
     ExpressionAttributeValues: { ':p': `cap#${month}`, ':s': kind },
   })).then((r: any) => [kind, Number(r.Items?.[0]?.used ?? 0)] as const).catch(() => [kind, 0] as const)));
@@ -117,7 +123,54 @@ async function mediaUsage(days: number) {
       polly: { ...media.polly, cost: round(media.polly.cost), monthUsed: Object.fromEntries(caps).polly },
     },
     daily: Object.entries(daily).sort(([a], [b]) => (a < b ? -1 : 1)).map(([date, cost]) => ({ date, cost: round(cost) })),
+    byCategory: {
+      text: round(bedrockRows.reduce((s, b) => s + b.cost, 0)),
+      image: round(media.image.cost),
+      polly: round(media.polly.cost),
+    },
     total: round(bedrockRows.reduce((s, b) => s + b.cost, 0) + media.image.cost + media.polly.cost),
+  };
+}
+
+type Cat = 'text' | 'image' | 'polly';
+// Maps a Cost Explorer SERVICE name to the AI/media category the counters cover.
+function categoryOf(service: string): Cat | null {
+  if (/Polly/i.test(service)) return 'polly';
+  if (/Stable Image|Stability/i.test(service)) return 'image';
+  if (/Bedrock/i.test(service) && /Claude|Haiku|Sonnet|Opus|Anthropic/i.test(service)) return 'text';
+  return null;
+}
+
+// Cost Explorer cannot split by environment (no cost-allocation tags), so: test/staging come
+// from their own usage counters; prod = account AI/media bill minus test minus staging; every
+// other service is shared infra and left unsplit.
+function byEnvironment(cur: ReturnType<typeof summarize>, test: any, staging: any) {
+  const ce: Record<Cat, number> = { text: 0, image: 0, polly: 0 };
+  const ceDaily: Record<string, number> = {};
+  let shared = 0;
+  for (const [svc, cost] of Object.entries(cur.byService)) {
+    const c = categoryOf(svc);
+    if (c) ce[c] += cost; else shared += cost;
+  }
+  for (const [day, svcs] of Object.entries(cur.byDay)) {
+    for (const [svc, cost] of Object.entries(svcs)) if (categoryOf(svc)) ceDaily[day] = (ceDaily[day] ?? 0) + cost;
+  }
+  const prodCat = (c: Cat) => Math.max(0, ce[c] - test.byCategory[c] - staging.byCategory[c]);
+  const prod = { text: round(prodCat('text')), image: round(prodCat('image')), polly: round(prodCat('polly')) };
+  const dayMap = (u: any) => Object.fromEntries(u.daily.map((r: any) => [r.date, r.cost]));
+  const tD = dayMap(test), sD = dayMap(staging);
+  const daily = Object.keys(ceDaily).sort().map((date) => ({
+    date, test: tD[date] ?? 0, staging: sD[date] ?? 0,
+    prod: round(Math.max(0, ceDaily[date] - (tD[date] ?? 0) - (sD[date] ?? 0))),
+  }));
+  return {
+    test, staging,
+    prod: { byCategory: prod, total: round(prod.text + prod.image + prod.polly) },
+    shared: { total: round(shared) },
+    aiBillTotal: round(ce.text + ce.image + ce.polly),
+    ceByCategory: { text: round(ce.text), image: round(ce.image), polly: round(ce.polly) },
+    daily,
+    note: 'Estimado. test/staging = contadores de uso a precio de lista; prod = factura AWS de IA/media menos test y staging (los contadores existen solo desde que se activaron, antes todo cae en prod). "Compartido" = infraestructura sin separar por ambiente (Lambda, Neon, DynamoDB, etc.).',
   };
 }
 
@@ -139,7 +192,9 @@ async function build(days: number) {
   const end = isoDay(addDays(now, 1)); // End is exclusive → include today
   const from = isoDay(addDays(now, -(days - 1)));
   const prevFrom = isoDay(addDays(now, -(2 * days - 1)));
-  const [rows, media, fc] = await Promise.all([costAndUsage(prevFrom, end), mediaUsage(days), forecast()]);
+  const [rows, testUsage, stagingUsage, fc] = await Promise.all([
+    costAndUsage(prevFrom, end), mediaUsage(mediaTableFor('test'), days), mediaUsage(mediaTableFor('staging'), days), forecast(),
+  ]);
 
   const cur = summarize(rows, from);
   const prev = summarize(rows.filter((r) => r.TimePeriod.Start < from), prevFrom);
@@ -181,7 +236,7 @@ async function build(days: number) {
     daily,
     usageTypes: cur.usage.map((u) => ({ ...u, cost: round(u.cost) })).filter((u) => u.cost >= 0.01)
       .sort((a, b) => b.cost - a.cost).slice(0, 40),
-    envUsage: media, // this env's own counters (test/staging); empty in prod
+    environments: byEnvironment(cur, testUsage, stagingUsage),
   };
 }
 
@@ -189,17 +244,21 @@ export async function handleCosts(ctx: AdminCtx): Promise<any | null> {
   const { method, path, event } = ctx;
   if (!(method === 'GET' && path === '/admin/costs')) return null;
 
-  if (event.requestContext.authorizer?.lambda?.role !== 'SUPER_ADMIN') {
-    return forbidden('Solo SUPER_ADMIN puede ver los costos');
+  const role = event.requestContext.authorizer?.lambda?.role;
+  if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+    return forbidden('Solo ADMIN o SUPER_ADMIN pueden ver los costos');
   }
 
   const days = Math.min(90, Math.max(7, parseInt(event.queryStringParameters?.days ?? '30', 10) || 30));
+  return ok(await getCosts(days, event.queryStringParameters?.refresh === '1'));
+}
+
+/** Cached cost payload, shared with the cost-dashboard chat (costs-chat.ts). */
+export async function getCosts(days: number, refresh = false): Promise<any> {
   const key = `${getCurrentEnv()}:${days}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS && event.queryStringParameters?.refresh !== '1') {
-    return ok({ ...hit.data, cached: true });
-  }
+  if (hit && !refresh && Date.now() - hit.at < CACHE_MS) return { ...hit.data, cached: true };
   const data = await build(days);
   cache.set(key, { at: Date.now(), data });
-  return ok({ ...data, cached: false });
+  return { ...data, cached: false };
 }

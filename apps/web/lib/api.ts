@@ -407,6 +407,12 @@ export const api = {
   admin: {
     costs: (days = 30, refresh = false) =>
       request<any>(`/admin/costs?days=${days}${refresh ? '&refresh=1' : ''}`).then((r) => r?.data ?? r),
+    costsChat: {
+      send: (body: { question: string; history: { role: 'user' | 'assistant'; content: string }[]; days: number }) =>
+        request<any>('/admin/costs/chat', { method: 'POST', body: JSON.stringify(body) }).then((r) => r?.data ?? r),
+      job: (jobId: string) =>
+        request<any>(`/admin/courses/ai-job?jobId=${encodeURIComponent(jobId)}`).then((r) => r?.data ?? r),
+    },
     periods: {
       list: () => request<any>('/admin/periods'),
       create: (name: string) => request<any>('/admin/periods', { method: 'POST', body: JSON.stringify({ name }) }),

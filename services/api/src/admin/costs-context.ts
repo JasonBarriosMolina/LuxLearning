@@ -1,0 +1,38 @@
+// Static project knowledge handed to the cost-dashboard chat. Hand-condensed from CLAUDE.md /
+// docs/reference so the Lambda needs no repo files. Update when architecture or cost drivers change.
+export const PROJECT_CONTEXT = `
+# Lux Learning — contexto de plataforma (para análisis de costos)
+
+## Stack
+- Frontend Next.js 14 en Vercel (no aparece en la factura AWS).
+- Backend: AWS Lambda (Node 20, arm64) detrás de API Gateway v2 HTTP. Lambdas por dominio: lux-admin, lux-evaluator, lux-courses, lux-lessons, lux-quiz, lux-reflection, lux-reports, lux-certs, lux-notifs, lux-push, lux-attendance, lux-study-plans, lux-tasks, lux-messages, lux-sqsconsumer, lux-authorizer. Cada una existe en 3 ambientes (sufijo -test / -staging; prod sin sufijo).
+- DB relacional: Prisma + PostgreSQL en Neon (serverless, branches por ambiente; se factura aparte de AWS).
+- Estado/cache: DynamoDB (tablas por ambiente con sufijo -Test / -Staging; prod sin sufijo).
+- IA: Amazon Bedrock. Texto: Claude Haiku 4.5 (global.anthropic.claude-haiku-4-5-20251001-v1:0). Imágenes: Stability AI Image Core (us-west-2). Audio: Amazon Polly (neural). Este chat usa Sonnet.
+- Auth: Cognito (grupos STUDENT / EVALUATOR / ADMIN / SUPER_ADMIN). Cola: SQS. Storage: S3 lux-learning-images. Email: SES. Push: Web Push (VAPID).
+- Voz/entrevistas: Vapi (externo, no sale en la factura AWS).
+
+## Ambientes
+- prod (luxlearning.academy, API v4vabtmerb), staging (staging.luxlearning.academy), test (test.luxlearning.academy, API hxnd6tzmce). Una sola cuenta AWS (798694628803) y un solo user pool de Cognito.
+- Cost Explorer es de TODA la cuenta, y la cuenta también aloja proyectos ajenos a Lux (trading, inventario, etc.). No hay tags de costo por ambiente.
+
+## Cómo se separan los costos por ambiente en el dashboard (estimado)
+- test y staging: contadores propios en la tabla LuxMediaUsage-<Env> (tokens de Bedrock por Lambda/modelo, imágenes y caracteres de Polly), valorados a precio de lista.
+- prod: factura AWS de IA/media menos lo atribuido a test y staging. Los contadores solo existen desde que se activó el guard de costos (commits recientes de Oct-2026); antes de eso el gasto de test cae en prod.
+- Lambda, Neon, DynamoDB, CloudWatch, etc. se muestran como infraestructura compartida sin repartir.
+
+## Principales generadores de costo conocidos
+- Generación de cursos (Lux Planner): ráfagas de ~270 imágenes/hora y un audio Polly por lección; en Sep-2026 imágenes + Polly fueron ~70% de la factura.
+- Lux Carrousel: imágenes Stability por diapositiva + narración Polly.
+- Haiku: generación de cursos/módulos/lecciones/quizzes, mentor socrático, traducción i18n, OCR de asistencia, consultas semánticas de imágenes y YouTube.
+- Precios de lista usados: Haiku 4.5 $1/$5 por M tokens in/out; imagen Stability $0.04 c/u; Polly neural $16 por M caracteres; Sonnet (supuesto) $3/$15 por M tokens.
+
+## Controles de costo existentes
+- media-budget (services/api/src/shared/media-budget.ts): en test MEDIA_MODE='stub' (imágenes/audio fixture, costo 0); en staging modo real con caps mensuales (300 imágenes, 750k chars Polly); prod nunca se limita.
+- bedrock-usage (shared/bedrock-usage.ts): middleware que cuenta tokens por Lambda/modelo, solo test y staging.
+- Polly: free tier 1M chars neural/mes (primeros 12 meses, cuenta completa).
+
+## Reglas operativas
+- Todo cambio empieza en test; staging se promueve desde test; prod solo con orden explícita.
+- API Gateway corta a los 29 s: todo lo que usa Bedrock va por job asíncrono con polling.
+`.trim();

@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
       "port": 3000
+    },
+    {
+      "name": "lux-web-test-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
+      "port": 3000,
+      "env": { "NEXT_PUBLIC_API_URL": "https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com" }
     }
   ]
 }

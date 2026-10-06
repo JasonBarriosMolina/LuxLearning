@@ -6,9 +6,10 @@ import { DollarSign, TrendingUp, TrendingDown, CalendarDays, Gauge, Loader2, Ale
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { StackedBars, PALETTE } from './_components/StackedBars';
+import { EnvironmentSections } from './_components/EnvironmentSections';
+import { CostChat } from './_components/CostChat';
 
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const num = (n: number) => n.toLocaleString('en-US');
 
 function Stat({ icon: Icon, label, value, sub, tone }: { icon: any; label: string; value: string; sub?: string; tone?: 'up' | 'down' }) {
   return (
@@ -52,20 +53,19 @@ export default function CostDashboardPage() {
     setLoading(true); setError('');
     api.admin.costs(days, refresh)
       .then(setData)
-      .catch((e: any) => setError(e?.statusCode === 403 ? 'Solo SUPER_ADMIN puede ver los costos.' : (e?.message ?? 'No se pudieron cargar los costos')))
+      .catch((e: any) => setError(e?.statusCode === 403 ? 'Solo ADMIN o SUPER_ADMIN pueden ver los costos.' : (e?.message ?? 'No se pudieron cargar los costos')))
       .finally(() => setLoading(false));
   }, [days]);
 
-  useEffect(() => { if (role === 'SUPER_ADMIN') load(); }, [role, load]);
-  useEffect(() => { if (!authLoading && role && role !== 'SUPER_ADMIN') router.replace('/'); }, [authLoading, role, router]);
+  const allowed = role === 'ADMIN' || role === 'SUPER_ADMIN';
+  useEffect(() => { if (allowed) load(); }, [allowed, load]);
+  useEffect(() => { if (!authLoading && role && !allowed) router.replace('/'); }, [authLoading, role, allowed, router]);
 
-  if (authLoading || role !== 'SUPER_ADMIN') {
+  if (authLoading || !allowed) {
     return <div className="flex justify-center py-24 text-gray-400"><Lock className="w-6 h-6" /></div>;
   }
 
   const s = data?.summary;
-  const eu = data?.envUsage;
-  const hasEnvUsage = eu && (eu.bedrock.length > 0 || eu.media.image.calls > 0 || eu.media.polly.calls > 0);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
@@ -154,41 +154,10 @@ export default function CostDashboardPage() {
             </div>
           </Card>
 
-          {hasEnvUsage ? (
-            <Card title={`Consumo IA / media — ambiente ${data.env}`}
-              sub={`Estimado con precios de lista (Haiku $${eu.pricing.haikuInPerM}/$${eu.pricing.haikuOutPerM} por M tokens in/out, imagen $${eu.pricing.imageEach}, Polly $${eu.pricing.pollyPerMChars}/M chars). Total estimado: ${usd(eu.total)}`}>
-              <div className="grid sm:grid-cols-2 gap-4 mb-6">
-                {(['image', 'polly'] as const).map((k) => (
-                  <div key={k} className="rounded-lg bg-gray-50 p-4 text-sm">
-                    <p className="font-semibold text-gray-800">{k === 'image' ? 'Imágenes (Stability)' : 'Audio (Polly)'}</p>
-                    <p className="text-gray-600 mt-1">{num(eu.media[k].calls)} llamadas · {num(eu.media[k].units)} {k === 'image' ? 'imágenes' : 'caracteres'} · {usd(eu.media[k].cost)}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Cap mensual usado: {num(eu.media[k].monthUsed)}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr><th className={th}>Lambda</th><th className={th}>Modelo</th><th className={`${th} text-right`}>Llamadas</th><th className={`${th} text-right`}>Tokens in</th><th className={`${th} text-right`}>Tokens out</th><th className={`${th} text-right`}>Costo est.</th></tr></thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {eu.bedrock.map((b: any) => (
-                      <tr key={`${b.lambda}|${b.model}`} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-800">{b.lambda}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-gray-500 truncate max-w-[220px]">{b.model}</td>
-                        <td className={tdr}>{num(b.calls)}</td><td className={tdr}>{num(b.inTok)}</td><td className={tdr}>{num(b.outTok)}</td>
-                        <td className={`${tdr} font-semibold`}>{usd(b.cost)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ) : (
-            <p className="text-xs text-gray-400 text-center">
-              Sin contadores por ambiente (en prod no se registran; Bedrock factura por modelo, no por ambiente).
-            </p>
-          )}
+          <EnvironmentSections data={data} />
         </>
       )}
+      <CostChat days={days} />
     </div>
   );
 }

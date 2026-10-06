@@ -18,6 +18,7 @@ import { handleCarouselWorker } from './carousel-worker';
 import { handleScheduler } from './scheduler';
 import { handleRooms } from './rooms';
 import { handleCosts } from './costs';
+import { handleCostsChat } from './costs-chat';
 
 export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
@@ -52,6 +53,7 @@ export const handler = async (event: Event) => {
     const ctx = { event, method, path, prisma, body, action, userId };
 
     const result =
+      await handleCostsChat(ctx) ??
       await handleCourses(ctx) ??
       await handleUsers(ctx) ??
       await handleReports(ctx) ??
