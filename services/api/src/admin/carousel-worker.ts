@@ -1,16 +1,47 @@
 // ─── carousel-worker.ts ───────────────────────────────────────────────────────
 // Async asset generation for Lux Carrousel (Trello N1bbWdz0): narration audio +
-// speech marks (Polly) + per-slide images (Stability, reusing ai-image-helpers —
-// same no-text negative-prompt pipeline the spec asks for), then saves the
-// finished carousel as a new Lesson (type="carousel") on the target module. The
-// "Lux Recap" PDF is built later, on demand (see shared/carousel-pdf.ts) — not
-// here (2026-08-31 15:21: building it eagerly for every carousel, whether or not
-// anyone ever downloads it, was adding real time to every generation).
+// speech marks (Polly) + per-slide stock photos (Pexels/Unsplash), then saves
+// the finished carousel as a new Lesson (type="carousel") on the target module.
+// The "Lux Recap" PDF is built later, on demand (see shared/carousel-pdf.ts).
 import { createId } from '@paralleldrive/cuid2';
 import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage } from './ctx';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
-import { generateCarouselInfographic } from './ai-image-helpers';
+
+/** Fetches a landscape stock photo for a carousel slide concept via Pexels (preferred)
+ *  or Unsplash fallback. No cost per call — both are free APIs. */
+async function fetchStockPhotoForSlide(concept: string): Promise<string | null> {
+  const q = encodeURIComponent(concept.trim().slice(0, 100));
+  const pexelsKey = process.env.PEXELS_API_KEY ?? '';
+  if (pexelsKey) {
+    try {
+      const res = await fetch(`https://api.pexels.com/v1/search?query=${q}&per_page=3&orientation=landscape`, {
+        headers: { Authorization: pexelsKey },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        const photo = data?.photos?.[0];
+        if (photo?.src?.large) return photo.src.large as string;
+      }
+    } catch { /* fall through to Unsplash */ }
+  }
+  const unsplashKey = process.env.UNSPLASH_ACCESS_KEY ?? '';
+  if (unsplashKey) {
+    try {
+      const res = await fetch(`https://api.unsplash.com/search/photos?query=${q}&per_page=3&orientation=landscape`, {
+        headers: { Authorization: `Client-ID ${unsplashKey}` },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        const photo = data?.results?.[0];
+        if (photo?.urls?.regular) return photo.urls.regular as string;
+      }
+    } catch { /* no image */ }
+  }
+  return null;
+}
 
 const IMAGE_CONCURRENCY = 3;
 // ~750 chars/min is a rough Polly neural speaking-rate estimate — only used as a fallback
@@ -113,13 +144,14 @@ export async function generateCarouselAssets(
 
   const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
 
-  // Generate AI infographic per slide (DmPpbrff 2026-09-29 — Mack: Stability AI infographic/diagram style)
+  // Fetch stock photos from Pexels/Unsplash per slide (Mack Oct-06: no Stability AI for
+  // carousels, use free stock libraries instead — saves cost and gives relevant photos).
   const slideImages: (string | null)[] = new Array(fittedSlides.length).fill(null);
   for (let i = 0; i < fittedSlides.length; i += IMAGE_CONCURRENCY) {
     const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
     await Promise.all(batch.map(async (s, bi) => {
       const idx = i + bi;
-      slideImages[idx] = await generateCarouselInfographic(`${s.imagePrompt} ${mod.title}`).catch(() => null);
+      slideImages[idx] = await fetchStockPhotoForSlide(`${s.imagePrompt} ${mod.title}`).catch(() => null);
     }));
   }
 

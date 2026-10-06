@@ -117,19 +117,22 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     // now DERIVED from actual word count (Trello DmPpbrff, 2026-08-31 15:19), so the
     // "duration" field the model returns here is deliberately ignored/wrong to prove
     // the real content length is what determines the final stored duration.
+    // 10 lessons: 2 video (first + last) + 8 text — target is now 80 min (raised from 60 min)
     vi.spyOn(ctx, 'invokeBedrockForJson').mockResolvedValue([
-      { title: 'Lección 1', content: wordsOf(150), points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
-      { title: 'Lección 2', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 3', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 4', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 5', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 6', content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 7', content: wordsOf(1000) + '<ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
-      { title: 'Lección 8', content: wordsOf(150), points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 1',  content: wordsOf(150),  points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
+      { title: 'Lección 2',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 3',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 4',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 5',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 6',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 7',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 8',  content: wordsOf(1000), points: ['p1'], tip: 'tip', type: 'text',  duration: '9 min' },
+      { title: 'Lección 9',  content: wordsOf(1000) + '<ul><li>Punto clave</li></ul>', points: ['p1'], tip: 'tip', type: 'text', duration: '9 min' },
+      { title: 'Lección 10', content: wordsOf(150),  points: ['p1'], tip: 'tip', type: 'video', duration: '5 min' },
     ]);
   });
 
-  it('genera 8 lecciones sin clase (2 video + 6 texto = ~60 min, andamiaje de 9 min/lección)', async () => {
+  it('genera 10 lecciones sin clase (2 video + 8 texto = ~80 min, andamiaje de 9 min/lección)', async () => {
     const { handleAIWizard } = await import('../../admin/ai-wizard');
     const prisma = buildPrismaWithLessonCapture();
     const ctx = makeWizardBulkCtx({ classModuleIndices: [] });
@@ -137,12 +140,12 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
 
     await handleAIWizard(ctx as any);
 
-    expect(capturedLessons).toHaveLength(8);
+    expect(capturedLessons).toHaveLength(10);
 
     const videos = capturedLessons.filter((l: any) => l.type === 'video');
     const texts  = capturedLessons.filter((l: any) => l.type === 'text');
     expect(videos).toHaveLength(2);
-    expect(texts).toHaveLength(6);
+    expect(texts).toHaveLength(8);
   });
 
   it('la duración de cada lección se deriva del conteo real de palabras (~200 wpm), no del valor que devolvió el modelo (Trello DmPpbrff, 2026-08-31 15:19)', async () => {
@@ -206,15 +209,15 @@ describe('ai-wizard — dynamic lesson count (bug fix)', () => {
     await handleAIWizard(ctx as any);
 
     // Durations are now derived from real word count (Trello DmPpbrff, 2026-08-31
-    // 15:19): 2 video × ~1 min + 6 text × ~5 min = ~32 min, not the old static 64 min.
+    // 15:19): 2 video × ~1 min + 8 text × ~5 min = ~42 min (target raised to 80 min).
     const updateCall = updateSpy.mock.calls.find((c: any[]) =>
       c[0]?.data?.duration != null
     );
     expect(updateCall).toBeDefined();
     const durationStr: string = updateCall![0].data.duration;
     const totalMin = parseInt(durationStr, 10);
-    expect(totalMin).toBeGreaterThanOrEqual(28);
-    expect(totalMin).toBeLessThanOrEqual(38);
+    expect(totalMin).toBeGreaterThanOrEqual(36);
+    expect(totalMin).toBeLessThanOrEqual(52);
   });
 
   it('no genera menos de 6 lecciones por módulo', async () => {

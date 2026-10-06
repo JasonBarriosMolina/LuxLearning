@@ -546,16 +546,16 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     vi.mocked(invokeBedrockForJson)
       .mockResolvedValueOnce(null)  // lessonPrompt — total failure
       .mockResolvedValueOnce(null) // resourcesPrompt
-      .mockResolvedValueOnce(Array.from({ length: 8 }, (_, i) => ({    // in-generation retry — succeeds
-        title: `Lesson ${i + 1}`, content: `<h3>Real</h3><p>Genuine content ${i + 1}.</p>`, points: [], tip: '', type: i === 0 || i === 7 ? 'video' : 'text',
+      .mockResolvedValueOnce(Array.from({ length: 10 }, (_, i) => ({    // in-generation retry — succeeds
+        title: `Lesson ${i + 1}`, content: `<h3>Real</h3><p>Genuine content ${i + 1}.</p>`, points: [], tip: '', type: i === 0 || i === 9 ? 'video' : 'text',
       })));
 
-    const lessonCreateMany = vi.fn().mockResolvedValue({ count: 8 });
+    const lessonCreateMany = vi.fn().mockResolvedValue({ count: 10 });
     const prisma = makePrisma({
       module: { findUnique: vi.fn().mockResolvedValue({ title: 'Mod', description: 'Desc' }), update: vi.fn().mockResolvedValue({}) },
       lesson: {
         createMany: lessonCreateMany,
-        findMany: vi.fn().mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: `<p>Genuine content ${i + 1}.</p>`, points: [], tip: '' }))),
+        findMany: vi.fn().mockResolvedValue(Array.from({ length: 10 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, content: `<p>Genuine content ${i + 1}.</p>`, points: [], tip: '' }))),
       },
     });
     const ctx = makeAdminCtx({
@@ -570,7 +570,7 @@ describe('Async workers via ctx.action (wizard-lessons-bulk, wizard-copilot)', (
     // placeholders that a later repair pass has to fix.
     expect(lessonCreateMany).toHaveBeenCalledTimes(1);
     const inserted = (lessonCreateMany.mock.calls[0]![0] as any).data;
-    expect(inserted).toHaveLength(8);
+    expect(inserted).toHaveLength(10);
     inserted.forEach((l: any, i: number) => {
       expect(l.content).toContain(`Genuine content ${i + 1}`);
       expect(l.content).not.toContain('Generación incompleta');

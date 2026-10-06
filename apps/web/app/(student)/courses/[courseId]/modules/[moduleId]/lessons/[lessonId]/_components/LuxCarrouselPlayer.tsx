@@ -115,19 +115,62 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   const kenBurnsScale = 1 + progress * 0.08;
   const kenBurnsTranslate = (activeIdx % 2 === 0 ? 1 : -1) * progress * 2;
 
+  // Wall-clock fallback timer: when stub audio ends long before slides finish (test env),
+  // keep advancing currentMs using real elapsed time so all slides are visible.
+  const timerStartRef = useRef<{ wallMs: number; carouselMs: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const expectedTotalMs = slides.length > 0 ? (slides[slides.length - 1]?.endMs ?? 0) : 0;
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const onTime = () => setCurrentMs(audio.currentTime * 1000);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onEnded = () => {
+
+    let audioEnded = false;
+
+    const tick = () => {
+      if (!timerStartRef.current || !audioEnded) return;
+      const elapsed = Date.now() - timerStartRef.current.wallMs;
+      const ms = timerStartRef.current.carouselMs + elapsed;
+      setCurrentMs(ms);
+      if (ms < expectedTotalMs) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        setIsPlaying(false);
+        setEnded(true);
+        if (!completedRef.current && !hasCompletedBefore) {
+          completedRef.current = true;
+          api.lessons.complete({ courseId, moduleId, lessonId, durationMs: expectedTotalMs || audio.duration * 1000 }).catch(() => {});
+          onCompleted();
+        }
+      }
+    };
+
+    const onTime = () => {
+      if (!audioEnded) setCurrentMs(audio.currentTime * 1000);
+    };
+    const onPlay = () => {
+      setIsPlaying(true);
+      timerStartRef.current = null; // reset fallback timer on resume
+    };
+    const onPause = () => {
       setIsPlaying(false);
-      setEnded(true);
-      if (!completedRef.current && !hasCompletedBefore) {
-        completedRef.current = true;
-        api.lessons.complete({ courseId, moduleId, lessonId, durationMs: audio.duration * 1000 }).catch(() => {});
-        onCompleted();
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    };
+    const onEnded = () => {
+      audioEnded = true;
+      const audioMs = audio.currentTime * 1000;
+      // If audio ended well before slides finish, use wall-clock fallback timer
+      if (audioMs < expectedTotalMs * 0.9) {
+        timerStartRef.current = { wallMs: Date.now(), carouselMs: audioMs };
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        setIsPlaying(false);
+        setEnded(true);
+        if (!completedRef.current && !hasCompletedBefore) {
+          completedRef.current = true;
+          api.lessons.complete({ courseId, moduleId, lessonId, durationMs: audio.duration * 1000 }).catch(() => {});
+          onCompleted();
+        }
       }
     };
     audio.addEventListener('timeupdate', onTime);
@@ -139,9 +182,10 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [expectedTotalMs]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
