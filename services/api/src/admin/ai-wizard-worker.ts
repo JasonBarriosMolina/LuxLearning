@@ -148,20 +148,18 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${lessonCount} objetos sin mar
           ? `For the module "${mod.title}" in the course "${blTitle}": generate 2 APA bibliography references and 2 YouTube search queries for relevant educational videos. JSON only: {"references":["APA ref 1","APA ref 2"],"youtubeQueries":["search query 1","search query 2"]}`
           : `Para el módulo "${mod.title}" del curso "${blTitle}": genera 2 referencias bibliográficas APA y 2 consultas de búsqueda YouTube para videos educativos relevantes. Solo JSON: {"references":["Ref APA 1","Ref APA 2"],"youtubeQueries":["búsqueda 1","búsqueda 2"]}`;
 
-        const [rawLessons, moduleResources] = await Promise.all([
-          // 64000 = max output tokens for global.anthropic.claude-haiku-4-5-20251001-v1:0 (raised from 8000 — truncation fix)
-          // Logged now instead of a bare `.catch(() => null)` — that silent swallow left
-          // zero trace in CloudWatch for a run that clearly had failures (Trello DmPpbrff
-          // comment 6a926775 investigation).
-          invokeBedrockForJson(lessonPrompt, 64000).catch((e: any) => {
-            console.error(`[wizard-lessons-bulk] module ${moduleId} lessonPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
-            return null;
-          }),
-          invokeBedrockForJson(resourcesPrompt, 400).catch((e: any) => {
-            console.error(`[wizard-lessons-bulk] module ${moduleId} resourcesPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
-            return null;
-          }),
-        ]);
+        // Sequential instead of Promise.all to reduce concurrent Bedrock load:
+        // with MODULE_CONCURRENCY modules running in parallel, a Promise.all here
+        // multiplies the simultaneous large calls (N modules × 2 = 2N) and triggers
+        // ServiceUnavailableException throttling (observed 2026-10-06, all 4 modules failed).
+        const rawLessons = await invokeBedrockForJson(lessonPrompt, 64000).catch((e: any) => {
+          console.error(`[wizard-lessons-bulk] module ${moduleId} lessonPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+          return null;
+        });
+        const moduleResources = await invokeBedrockForJson(resourcesPrompt, 400).catch((e: any) => {
+          console.error(`[wizard-lessons-bulk] module ${moduleId} resourcesPrompt failed: ${e?.name ?? 'UnknownError'}: ${e?.message ?? e}`);
+          return null;
+        });
         // [] (not null) when Bedrock returned nothing usable — critical fix (Jason,
         // 2026-09-01: "sigues generando lecciones vacías"): invokeBedrockForJson
         // silently resolves to `{}` (not a thrown error) when it can't parse a JSON
@@ -470,11 +468,11 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
     };
 
     try {
-      // Bounded concurrency: 3 modules at a time within each phase. Wall-clock time is
-      // driven by ceil(N/3) batches instead of N sequential modules — a 16-module course
-      // that used to risk a ~10min timeout now finishes each phase in roughly 1/3 of that
-      // time, with enough Bedrock request headroom to avoid tripping throttling in a burst.
-      const MODULE_CONCURRENCY = 3;
+      // Bounded concurrency: 2 modules at a time for the lessons phase. Originally 3, but
+      // with 2 large Bedrock calls per module that multiplies to 6 simultaneous requests,
+      // which triggered ServiceUnavailableException throttling (2026-10-06, all 4 modules
+      // failed). At 2 modules, the peak is 4 concurrent Bedrock calls — within safe limits.
+      const MODULE_CONCURRENCY = 2;
       const allIdx = (moduleIds as string[]).map((_, i) => i);
       const totalModules = allIdx.length;
       let incompleteModuleIds: string[] = [];

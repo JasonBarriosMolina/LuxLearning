@@ -72,12 +72,12 @@ export default function MentorAnalyticsPage() {
     setLoading(true);
     setError('');
     api.evaluator.mentorAnalytics(courseId)
-      .then((res: any) => setData(res))
+      .then((res: any) => setData(res?.data ?? res))
       .catch(() => setError('No se pudieron cargar las estadísticas'))
       .finally(() => setLoading(false));
   }, [courseId]);
 
-  const activeLessons = data?.lessons.filter((l) => l.totalMessages > 0) ?? [];
+  const activeLessons = data?.lessons?.filter((l) => l.totalMessages > 0) ?? [];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
