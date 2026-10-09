@@ -29,6 +29,15 @@ interface Props {
   nextLessonTitle?: string | null;
 }
 
+// Keyword-card gradient palette — cycles per slide index so each slide looks distinct
+// while staying within Lux's indigo/blue brand range (Mack, 2026-10-09).
+const SLIDE_GRADIENTS = [
+  'linear-gradient(145deg, #312e81 0%, #4338ca 100%)',
+  'linear-gradient(145deg, #1e3a5f 0%, #1d4ed8 100%)',
+  'linear-gradient(145deg, #2e1065 0%, #6d28d9 100%)',
+  'linear-gradient(145deg, #0f172a 0%, #1e40af 100%)',
+] as const;
+
 // Lux Carrousel player (Trello N1bbWdz0, 2026-08-30) — student-facing playback of a
 // pre-generated narrated slide sequence. First view is locked (no scrub/skip, must
 // finish once); later views unlock free navigation + the "Lux Recap" PDF download.
@@ -111,10 +120,6 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
   const activeCaptionIdx = findActiveCaptionIndex(speechMarks, currentMs);
   const activeCaption = activeCaptionIdx >= 0 ? speechMarks[activeCaptionIdx]!.value : null;
   const transcript = buildCarouselTranscript(speechMarks);
-  // Ken Burns: slow pan+zoom across the slide's own duration, direction alternates per slide.
-  const kenBurnsScale = 1 + progress * 0.08;
-  const kenBurnsTranslate = (activeIdx % 2 === 0 ? 1 : -1) * progress * 2;
-
   // Wall-clock fallback timer: when stub audio ends long before slides finish (test env),
   // keep advancing currentMs using real elapsed time so all slides are visible.
   const timerStartRef = useRef<{ wallMs: number; carouselMs: number } | null>(null);
@@ -228,46 +233,53 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
 
   return (
     <div className="rounded-2xl overflow-hidden border border-border bg-black">
-      {/* Slide stage */}
-      <div ref={stageRef} className="relative aspect-video bg-charcoal overflow-hidden">
-        {activeSlide?.imageUrl && (
-          <>
-            <img
-              src={activeSlide.imageUrl}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 ease-linear"
-              style={{ transform: `scale(${kenBurnsScale}) translateX(${kenBurnsTranslate}%)` }}
-            />
-            {/* Lux logo watermark — bottom-right, 40% opacity (DmPpbrff 2026-09-28) */}
+      {/* Slide stage — keyword card design (Mack 2026-10-09: "palabras clave para aprendizaje") */}
+      <div ref={stageRef} className="relative aspect-video overflow-hidden">
+        {/* Gradient background — cycles through Lux-brand indigo/blue hues per slide */}
+        <div
+          className="absolute inset-0"
+          style={{ background: SLIDE_GRADIENTS[activeIdx % SLIDE_GRADIENTS.length] }}
+        />
+        {/* Keyword card content */}
+        {activeSlide && (
+          <div className="absolute inset-0 flex flex-col px-6 py-5">
+            {/* Slide counter */}
+            <p className="text-[11px] font-semibold text-white/40 uppercase tracking-widest mb-auto">
+              {activeIdx + 1} / {slides.length}
+            </p>
+            {/* Title */}
+            <h2 className="text-white font-bold text-xl md:text-2xl leading-snug mb-4 mt-2">
+              {activeSlide.onScreenText.title}
+            </h2>
+            {/* Keyword chips */}
+            {activeSlide.onScreenText.bullets.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {activeSlide.onScreenText.bullets.map((b, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 text-white/90 text-sm font-medium bg-white/10 border border-white/20 rounded-full px-3 py-1"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* Lux watermark */}
             <img
               src="/lux-icon-fullcolor.svg"
               alt=""
               aria-hidden="true"
-              className="absolute bottom-2 right-2 w-10 h-10 opacity-40 pointer-events-none"
+              className="absolute bottom-3 right-3 w-8 h-8 opacity-25 pointer-events-none"
             />
-          </>
+          </div>
         )}
-        {/* Close captions (Trello DmPpbrff, 2026-09-04/05 — Mack, 09-05 follow-up:
-            "deberían estar a una altura diferente para que no interrumpan con lo que ya
-            está escrito ... un poco más altos"): raised further above the always-on
-            title/bullets overlay below — that overlay's height varies with how many
-            bullets a slide has, so bottom-24 wasn't always enough clearance. */}
+        {/* Close captions */}
         {ccEnabled && activeCaption && (
-          <div className="absolute inset-x-0 bottom-36 flex justify-center px-4 pointer-events-none z-10">
+          <div className="absolute inset-x-0 bottom-5 flex justify-center px-4 pointer-events-none z-10">
             <p className="max-w-[90%] text-center text-white text-sm md:text-base font-medium bg-black/75 rounded-lg px-3 py-1.5">
               {activeCaption}
             </p>
-          </div>
-        )}
-        {/* Text overlay — Capa 2: 100% legible native HTML/CSS, not AI-drawn */}
-        {activeSlide && (
-          <div className="absolute inset-x-0 bottom-0 p-5 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-            <p className="text-white font-heading font-bold text-lg mb-1">{activeSlide.onScreenText.title}</p>
-            {activeSlide.onScreenText.bullets.length > 0 && (
-              <ul className="text-white/90 text-sm space-y-0.5 list-disc list-inside">
-                {activeSlide.onScreenText.bullets.map((b, i) => <li key={i}>{b}</li>)}
-              </ul>
-            )}
           </div>
         )}
         {/* Lock overlay hint on first view */}
