@@ -315,7 +315,7 @@ export function LuxMentorClass({ courseId, moduleId, sessions, onCompleted }: Pr
       // voice, see commit 56b1ba8) while keeping the es-419 locale fix above.
       // Trello DmPpbrff, 2026-09-30 (Mack): "la voz de Lux Mentor en las clases debe
       // ser masculina" — switched to Hector (male, built-in, Spanish-native).
-      voice: { provider: 'vapi', voiceId: 'Hector', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      voice: { provider: 'vapi', voiceId: 'Hector' } as any,
       // Trello DmPpbrff, 2026-09-30 (Mack): model was picking up its own speaker
       // output and responding to itself, causing an echo loop that eventually killed
       // the call. backgroundDenoisingEnabled strips non-speech from the mic input.

@@ -151,7 +151,10 @@ export async function generateCarouselAssets(
     const batch = fittedSlides.slice(i, i + IMAGE_CONCURRENCY);
     await Promise.all(batch.map(async (s, bi) => {
       const idx = i + bi;
-      slideImages[idx] = await fetchStockPhotoForSlide(`${s.imagePrompt} ${mod.title}`).catch(() => null);
+      // Use the slide's on-screen title (specific to the concept) over imagePrompt
+      // which AI tends to generate as generic landscape/nature descriptions.
+      const searchTerm = s.onScreenText.title || s.imagePrompt;
+      slideImages[idx] = await fetchStockPhotoForSlide(`${searchTerm} ${mod.title}`).catch(() => null);
     }));
   }
 

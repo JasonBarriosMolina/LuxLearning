@@ -142,7 +142,7 @@ export function VoiceInterview({ courseId, moduleId, interviews, onCompleted }: 
       // as LuxMentorClass.tsx, see that file for context.
       // Trello DmPpbrff, 2026-09-30 (Mack): "la voz de Lux Mentor en las clases debe
       // ser masculina. Igual en la sesión en Vapi." — switched to Hector (male).
-      voice: { provider: 'vapi', voiceId: 'Hector', version: 2, language: lang === 'en' ? 'en' : 'es-419' } as any,
+      voice: { provider: 'vapi', voiceId: 'Hector' } as any,
       // Echo loop fix (Trello DmPpbrff, 2026-09-30): strips speaker output from mic input.
       backgroundDenoisingEnabled: true,
       name: 'Lux Mentor',
