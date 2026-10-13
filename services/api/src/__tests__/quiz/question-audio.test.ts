@@ -29,6 +29,7 @@ vi.mock('../../shared/polly-audio', () => ({
   audioContentHash: (t: string) => `h${t.length}`,
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Danielle' : 'Mia'),
   defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang === 'EN' ? 'Gregory' : 'Pedro'),
+  isStubAudioUrl: (url: string) => url.includes('/fixtures/stub.'),
 }));
 
 import { handler } from '../../quiz/handler';

@@ -38,6 +38,12 @@ export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefi
   return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Pedro';
 }
 
+/** Returns true when the URL points to the stub fixture instead of real Polly audio.
+ *  Used by workers and handlers to avoid caching or re-serving stub audio as real narration. */
+export function isStubAudioUrl(url: string): boolean {
+  return url.includes('/fixtures/stub.');
+}
+
 /** Short stable hash of the narrated text — lets lazy audio routes key S3 objects by
  *  content, so an edited lesson/question gets fresh audio and an unchanged one reuses it. */
 export function audioContentHash(text: string): string {

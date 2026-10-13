@@ -79,7 +79,7 @@ export async function getCallerName(event: Event): Promise<string | null> {
 // lambda can lazily generate audio on demand too — re-exported here so every
 // existing caller importing from './ctx' keeps working unchanged.
 export {
-  POLLY_VOICE_LANGUAGE, defaultVoiceForLanguage, defaultMaleVoiceForLanguage, generateLessonAudio,
+  POLLY_VOICE_LANGUAGE, defaultVoiceForLanguage, defaultMaleVoiceForLanguage, generateLessonAudio, isStubAudioUrl,
 } from '../shared/polly-audio';
 
 /** Synthesizes narration audio for a Lux Carrousel AND its sentence-level Speech Marks

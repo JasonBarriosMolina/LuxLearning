@@ -6,7 +6,7 @@ import { saveAiJob } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 import {
   AdminCtx, shuffleQuestionOptions, invokeBedrockForJson, generateLessonAudio, defaultMaleVoiceForLanguage,
-  generateCarouselNarration,
+  generateCarouselNarration, isStubAudioUrl,
 } from './ctx';
 import { dispatchLessonAudioGeneration } from './ai-audio-worker';
 import { generateModuleCarousel } from './ai-wizard-carousel-phase';
@@ -440,11 +440,14 @@ Devuelve ÚNICAMENTE un array JSON de exactamente ${missing} objetos sin markdow
             lessonScript ? generateCarouselNarration(`class-${moduleId}`, lessonScript + transitionLine, maleVoice) : Promise.resolve(null),
             closingScript ? generateLessonAudio(`class-closing-${moduleId}`, closingScript, maleVoice) : Promise.resolve(null),
           ]);
+          const lessonAudioUrl = lessonNarration?.audioUrl && !isStubAudioUrl(lessonNarration.audioUrl)
+            ? lessonNarration.audioUrl : null;
           const classData = {
             vapiPrompt: classContent.vapiPrompt, lessonScript: lessonScript || null,
-            lessonAudioUrl: lessonNarration?.audioUrl ?? null,
-            lessonSpeechMarks: (lessonNarration?.marks as any) ?? null,
-            closingScript: closingScript || null, closingAudioUrl,
+            lessonAudioUrl,
+            lessonSpeechMarks: lessonAudioUrl ? ((lessonNarration?.marks as any) ?? null) : null,
+            closingScript: closingScript || null,
+            closingAudioUrl: closingAudioUrl && !isStubAudioUrl(closingAudioUrl) ? closingAudioUrl : null,
           };
           const existingClass = await prisma.evaluationEvent.findFirst({ where: { courseId: blCourseId, moduleId, type: 'CLASS' } });
           if (existingClass) {

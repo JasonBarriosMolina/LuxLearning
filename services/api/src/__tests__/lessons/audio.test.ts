@@ -54,6 +54,7 @@ vi.mock('../../shared/polly-audio', () => ({
   existingAudioUrl: (...a: any[]) => existingAudioUrlMock(...a),
   defaultVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Danielle' : 'Mia'),
   defaultMaleVoiceForLanguage: (lang: string | null | undefined) => (lang?.toUpperCase() === 'EN' ? 'Gregory' : 'Pedro'),
+  isStubAudioUrl: (url: string) => url.includes('/fixtures/stub.'),
 }));
 
 const batchTranslateMock = vi.fn();

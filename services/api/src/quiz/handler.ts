@@ -7,7 +7,7 @@ import { checkAndCompleteCourse } from '../shared/db-course-completion';
 import { sendTemplatedEmail } from '../shared/email';
 import { ok, badRequest, forbidden, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
-import { generateLessonAudio, audioContentHash, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
+import { generateLessonAudio, audioContentHash, defaultVoiceForLanguage, defaultMaleVoiceForLanguage, isStubAudioUrl } from '../shared/polly-audio';
 
 const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 
@@ -243,8 +243,8 @@ Máximo ${Math.min(incorrect.length, 3)} gaps.`;
         return ok({ audioUrl });
       }
 
-      if (gender !== 'male' && question.audioUrl) return ok({ audioUrl: question.audioUrl });
-      if (gender === 'male' && question.audioUrlMale) return ok({ audioUrl: question.audioUrlMale });
+      if (gender !== 'male' && question.audioUrl && !isStubAudioUrl(question.audioUrl)) return ok({ audioUrl: question.audioUrl });
+      if (gender === 'male' && question.audioUrlMale && !isStubAudioUrl(question.audioUrlMale)) return ok({ audioUrl: question.audioUrlMale });
 
       const voiceId = gender === 'male'
         ? defaultMaleVoiceForLanguage(question.module?.course?.planLanguage)

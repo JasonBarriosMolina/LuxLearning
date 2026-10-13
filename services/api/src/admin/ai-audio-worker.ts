@@ -11,7 +11,7 @@
 // competes with that budget, and a slow/failed audio pass can't mark a course
 // incomplete.
 import { InvokeCommand as LambdaInvokeCommand } from '@aws-sdk/client-lambda';
-import { AdminCtx, lambdaClient, generateLessonAudio, defaultVoiceForLanguage } from './ctx';
+import { AdminCtx, lambdaClient, generateLessonAudio, defaultVoiceForLanguage, isStubAudioUrl } from './ctx';
 import { ok } from '../shared/response';
 import { getCurrentEnv } from '../shared/env-context';
 
@@ -54,7 +54,7 @@ export async function handleAIAudioWorker(ctx: AdminCtx): Promise<any | null> {
       await Promise.all(batch.map(async (lesson: any) => {
         try {
           const audioUrl = await generateLessonAudio(lesson.id, lesson.content ?? '', voiceId);
-          if (audioUrl) {
+          if (audioUrl && !isStubAudioUrl(audioUrl)) {
             await prisma.lesson.update({ where: { id: lesson.id }, data: { audioUrl } });
             done++;
           } else {

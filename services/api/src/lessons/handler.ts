@@ -26,7 +26,7 @@ import { getVapidKeys } from '../shared/vapid';
 import { ok, badRequest, notFound, serverError, cors, setRequestOrigin } from '../shared/response';
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 import { buildRecapPdf } from '../shared/carousel-pdf';
-import { generateLessonAudio, audioContentHash, existingAudioUrl, defaultVoiceForLanguage, defaultMaleVoiceForLanguage } from '../shared/polly-audio';
+import { generateLessonAudio, audioContentHash, existingAudioUrl, defaultVoiceForLanguage, defaultMaleVoiceForLanguage, isStubAudioUrl } from '../shared/polly-audio';
 import { handleLessonNotes } from './notes';
 
 const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
@@ -171,7 +171,7 @@ export const handler = async (event: Event) => {
       const courseLang = (mod?.course?.planLanguage ?? 'ES').toLowerCase();
       const isCrossLanguage = !!lang && lang.toLowerCase() !== courseLang;
 
-      if (!isCrossLanguage && gender !== 'male' && lesson.audioUrl) return ok({ audioUrl: lesson.audioUrl });
+      if (!isCrossLanguage && gender !== 'male' && lesson.audioUrl && !isStubAudioUrl(lesson.audioUrl)) return ok({ audioUrl: lesson.audioUrl });
       if (!lesson.content) return badRequest('La lección no tiene contenido para narrar');
 
       const voiceId = gender === 'male'

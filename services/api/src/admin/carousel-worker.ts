@@ -5,7 +5,7 @@
 // frontend now renders keyword cards with gradient backgrounds instead.
 // The "Lux Recap" PDF is built later, on demand (see shared/carousel-pdf.ts).
 import { createId } from '@paralleldrive/cuid2';
-import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage } from './ctx';
+import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage, isStubAudioUrl } from './ctx';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
 import { ok } from '../shared/response';
 
@@ -105,7 +105,7 @@ export async function generateCarouselAssets(
   const narrationText = fittedSlides.map(normalizedSegment).join(' ');
 
   const narration = await generateCarouselNarration(`carousel-${moduleId}`, narrationText, voiceId);
-  if (!narration) return null;
+  if (!narration || isStubAudioUrl(narration.audioUrl)) return null;
 
   const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
 
