@@ -8,7 +8,7 @@
 import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
-import { acquireMedia, stubMediaUrl } from './media-budget';
+import { acquireMedia, stubMediaUrl, isStubMediaUrl } from './media-budget';
 
 const pollyClient = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -38,11 +38,9 @@ export function defaultMaleVoiceForLanguage(planLanguage: string | null | undefi
   return (planLanguage ?? 'ES').toUpperCase() === 'EN' ? 'Gregory' : 'Pedro';
 }
 
-/** Returns true when the URL points to the stub fixture instead of real Polly audio.
- *  Used by workers and handlers to avoid caching or re-serving stub audio as real narration. */
-export function isStubAudioUrl(url: string): boolean {
-  return url.includes('/fixtures/stub.');
-}
+/** Returns true when the URL points to a stub fixture instead of real Polly audio.
+ *  Re-exported from media-budget for callers that already import polly-audio. */
+export { isStubMediaUrl as isStubAudioUrl } from './media-budget';
 
 /** Short stable hash of the narrated text — lets lazy audio routes key S3 objects by
  *  content, so an edited lesson/question gets fresh audio and an unchanged one reuses it. */

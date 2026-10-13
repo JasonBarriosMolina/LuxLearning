@@ -12,6 +12,7 @@ import {
   invokeBedrockForJson, shuffleQuestionOptions, DISTRACTOR_QUALITY_RULES,
 } from './ctx';
 import { generateLessonImage, generateLessonInfographic } from './ai-image-helpers';
+import { isStubMediaUrl } from '../shared/media-budget';
 
 export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
   const { event, method, path, prisma, body } = ctx;
@@ -97,7 +98,7 @@ export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
 
     if (regenType === 'image') {
       const imageUrl = await generateLessonImage(lesson.title, modTitle, lesson.order, { style: regenStyle, lessonContent: lesson.content ?? '' });
-      if (!imageUrl) return badRequest('No se pudo generar la imagen. Intenta de nuevo en unos segundos.');
+      if (!imageUrl || isStubMediaUrl(imageUrl)) return badRequest('No se pudo generar la imagen. Intenta de nuevo en unos segundos.');
       if (previewMode) return ok({ imageUrl, preview: true });
       const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
       return ok(updated);
@@ -121,7 +122,7 @@ export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
         numCards = 8;
       }
       const imageUrl = await generateLessonInfographic(infTitle, modTitle, infContent, numCards);
-      if (!imageUrl) return badRequest('No se pudo generar la infografía');
+      if (!imageUrl || isStubMediaUrl(imageUrl)) return badRequest('No se pudo generar la infografía');
       if (previewMode) return ok({ imageUrl, preview: true });
       const updated = await prisma.lesson.update({ where: { id: lessonId }, data: { imageUrl } });
       return ok(updated);

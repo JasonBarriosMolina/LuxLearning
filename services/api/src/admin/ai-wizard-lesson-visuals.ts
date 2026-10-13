@@ -17,6 +17,7 @@
 // limit (CLAUDE.md).
 import { generateLessonInfographic } from './ai-image-helpers';
 import { lessonDurationLabel } from '../shared/reading-time';
+import { isStubMediaUrl } from '../shared/media-budget';
 
 export interface DraftLessonRow {
   title: string;
@@ -44,7 +45,7 @@ export async function attachLessonVisuals(lessons: DraftLessonRow[], moduleTitle
       return l.title + (body ? ': ' + body : '');
     }).filter(Boolean).join(' | ');
     const url = await generateLessonInfographic(moduleTitle, moduleTitle, overview, 8).catch(() => null);
-    lessons[0]!.imageUrl = url;
+    lessons[0]!.imageUrl = url && !isStubMediaUrl(url) ? url : null;
   }
   for (const lesson of lessons) {
     lesson.duration = lessonDurationLabel(lesson.content, lesson.points, lesson.tip);

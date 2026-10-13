@@ -119,6 +119,12 @@ export function stubMediaUrl(kind: 'image' | 'audio'): string {
   return `https://${bucket}.s3.amazonaws.com/fixtures/stub.${kind === 'image' ? 'jpg' : 'mp3'}`;
 }
 
+/** Returns true when a URL points to a stub fixture instead of real generated media.
+ *  Use this before caching any media URL to the DB — stub URLs must never be persisted. */
+export function isStubMediaUrl(url: string): boolean {
+  return url.includes('/fixtures/stub.');
+}
+
 /** Sentence-level speech marks with a ~60 ms/char timeline — stands in for Polly's
  *  speech-marks response in stub mode so carousel/class slide timing keeps working. */
 export function syntheticSpeechMarks(text: string): Array<{ time: number; value: string }> {
