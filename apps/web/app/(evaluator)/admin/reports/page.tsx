@@ -13,6 +13,7 @@ import { HeatMapCard } from './_components/HeatMapCard';
 import { RecommendationsCard } from './_components/RecommendationsCard';
 import { ModuleStatsTable } from './_components/ModuleStatsTable';
 import { ExportBar } from './_components/ExportBar';
+import { NarrativeReportCard } from './_components/NarrativeReportCard';
 
 type Mode = 'master' | 'student' | 'course';
 
@@ -288,6 +289,14 @@ ${data.analysis.slice(0, 5).map((a: any) => `
                 </div>
               ))}
             </div>
+
+            {mode === 'student' && filterStudentId && (
+              <NarrativeReportCard
+                studentId={filterStudentId}
+                courseId={filterStudentCourseId || undefined}
+                studentName={studentOptions.find((s) => s.userId === filterStudentId)?.studentName}
+              />
+            )}
 
             <StudentProgressTable
               studentProgress={data.studentProgress}

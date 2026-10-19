@@ -512,6 +512,8 @@ export const api = {
     },
     sendReportEmail: (body: { to: string; subject: string; htmlBody: string }) =>
       request<any>('/reports/email', { method: 'POST', body: JSON.stringify(body) }),
+    narrativeReport: (body: { studentId: string; courseId?: string }) =>
+      request<any>('/reports/narrative', { method: 'POST', body: JSON.stringify(body) }),
     getRecommendations: (moduleId: string) => request<any>(`/reports/recommendations/${moduleId}`),
     updateRecommendations: (moduleId: string, items: any[]) =>
       request<any>(`/reports/recommendations/${moduleId}`, { method: 'PUT', body: JSON.stringify({ items }) }),

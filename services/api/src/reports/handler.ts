@@ -1,6 +1,8 @@
 import type { APIGatewayProxyEventV2WithRequestContext, APIGatewayEventRequestContextV2 } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { trackBedrockUsage } from '../shared/bedrock-usage';
 import { getPrismaClient } from '../shared/db-neon';
 import {
   getAllReflections, getAllLessonProgress, getAllQuizAttempts, getAllEnrollments,
@@ -12,6 +14,8 @@ import { createId } from '@paralleldrive/cuid2';
 
 const ses = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
+const BEDROCK_MODEL = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'https://luxlearning.academy';
@@ -377,6 +381,97 @@ export const handler = async (event: Event) => {
       }));
       await saveRecommendations(moduleId, sanitized);
       return ok({ saved: true });
+    }
+
+    // ── POST /reports/narrative ──────────────────────────────────────────────
+    if (method === 'POST' && path === '/reports/narrative') {
+      const body = JSON.parse(event.body ?? '{}');
+      const { studentId, courseId } = body as { studentId?: string; courseId?: string };
+      if (!studentId) return badRequest('studentId required');
+
+      const studentName = await resolveName(studentId);
+
+      const [allReflections, allProgress, allAttempts, allEnrollments, courses] = await Promise.all([
+        getAllReflections(),
+        getAllLessonProgress(),
+        getAllQuizAttempts(),
+        getAllEnrollments(),
+        prisma.course.findMany({
+          include: { modules: { orderBy: { order: 'asc' }, select: { id: true, title: true } } },
+        }),
+      ]);
+
+      const enrolledCourseIds = new Set(
+        allEnrollments.filter((e) => e.userId === studentId).map((e) => e.courseId)
+      );
+      const relevantCourses = courseId
+        ? courses.filter((c) => c.id === courseId)
+        : courses.filter((c) => enrolledCourseIds.has(c.id));
+      const relevantModuleIds = new Set(relevantCourses.flatMap((c) => c.modules.map((m) => m.id)));
+
+      const studentReflections = allReflections.filter((r) => r.userId === studentId && relevantModuleIds.has(r.moduleId));
+      const studentProgress = allProgress.filter((p) => p.userId === studentId);
+      const studentAttempts = allAttempts.filter((a) => a.userId === studentId && relevantModuleIds.has(a.moduleId ?? ''));
+
+      const approvedReflections = studentReflections.filter((r) => r.status === 'APPROVED');
+      const pendingReflections = studentReflections.filter((r) => r.status === 'PENDING_EVAL');
+      const rejectedReflections = studentReflections.filter((r) => r.status === 'REJECTED');
+      const completedLessons = studentProgress.filter((p) => p.completed).length;
+
+      const moduleLines = relevantCourses.flatMap((c) => c.modules.map((m) => {
+        const refs = studentReflections.filter((r) => r.moduleId === m.id);
+        const attempts = studentAttempts.filter((a) => a.moduleId === m.id);
+        const bestScore = attempts.length > 0 ? Math.max(...attempts.map((a) => a.score ?? 0)) : null;
+        const refTexts = approvedReflections
+          .filter((r) => r.moduleId === m.id)
+          .slice(0, 2)
+          .map((r) => (r.text ?? '').slice(0, 300))
+          .join(' | ');
+        return `Módulo: ${m.title} (${c.title})\n  Reflexiones: ${refs.length} (aprobadas: ${refs.filter((r) => r.status === 'APPROVED').length})\n  Mejor quiz: ${bestScore != null ? bestScore + '%' : 'sin datos'}\n  Extracto reflexión: ${refTexts || 'sin reflexiones aprobadas'}`;
+      })).join('\n\n');
+
+      const prompt = `Eres un evaluador pedagógico experto. Genera un reporte narrativo cualitativo y detallado sobre el progreso de un estudiante.
+
+DATOS DEL ESTUDIANTE: ${studentName}
+Cursos evaluados: ${relevantCourses.map((c) => c.title).join(', ')}
+Lecciones completadas: ${completedLessons}
+Reflexiones totales: ${studentReflections.length} (aprobadas: ${approvedReflections.length}, pendientes: ${pendingReflections.length}, rechazadas: ${rejectedReflections.length})
+
+DETALLE POR MÓDULO:
+${moduleLines || 'Sin datos de módulos'}
+
+INSTRUCCIONES:
+Genera un reporte narrativo en español con estas secciones (usa ## para títulos de sección):
+## Perfil del Estudiante
+(párrafo introductorio sobre el estudiante basado en sus datos)
+
+## Fortalezas Identificadas
+(2-3 fortalezas concretas con evidencia de los datos)
+
+## Áreas de Oportunidad
+(2-3 áreas donde puede mejorar, con evidencia específica)
+
+## Evolución del Aprendizaje
+(análisis de la trayectoria: ¿está mejorando, estancado, en riesgo?)
+
+## Recomendaciones Personalizadas
+(3-4 acciones concretas para el evaluador y el estudiante)
+
+Sé específico, usa los datos reales. Evita generalidades. Máximo 400 palabras.`;
+
+      const res = await bedrock.send(new InvokeModelCommand({
+        modelId: BEDROCK_MODEL,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 1200,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      }));
+      const parsed = JSON.parse(new TextDecoder().decode(res.body));
+      const narrative = parsed.content?.[0]?.text ?? '';
+      return ok({ narrative, studentName, generatedAt: new Date().toISOString() });
     }
 
     return badRequest('Unknown route');
