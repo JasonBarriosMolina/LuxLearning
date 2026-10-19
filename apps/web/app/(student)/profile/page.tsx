@@ -166,7 +166,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setBasicSaving(true); setBasicError('');
     try {
-      const fullPhone = basicForm.phone.trim() ? `${basicForm.dialCode} ${basicForm.phone.trim()}` : '';
+      const fullPhone = basicForm.phone.trim() ? `${basicForm.dialCode}${basicForm.phone.trim().replace(/\s+/g, '')}` : '';
       await api.profile.update({ name: basicForm.name, phone: fullPhone, bio: basicForm.bio });
       setProfile((p) => p ? { ...p, name: basicForm.name, phone: fullPhone, bio: basicForm.bio } : p);
       setEditingBasic(false);
