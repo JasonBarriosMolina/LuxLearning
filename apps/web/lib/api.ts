@@ -517,6 +517,14 @@ export const api = {
     getRecommendations: (moduleId: string) => request<any>(`/reports/recommendations/${moduleId}`),
     updateRecommendations: (moduleId: string, items: any[]) =>
       request<any>(`/reports/recommendations/${moduleId}`, { method: 'PUT', body: JSON.stringify({ items }) }),
+    // Email module
+    email: {
+      send: (body: { to: string[]; subject: string; bodyHtml: string; bodyText?: string; courseId?: string }) =>
+        request<any>('/admin/email/send', { method: 'POST', body: JSON.stringify(body) }),
+      sent: () => request<any>('/admin/email/sent'),
+      recipients: (courseId?: string) => request<any>(`/admin/email/recipients${courseId ? '?courseId=' + courseId : ''}`),
+      courses: () => request<any>('/admin/email/courses'),
+    },
     // Users
     users: {
       list: () => request<any>('/admin/users'),

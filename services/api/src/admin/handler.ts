@@ -19,6 +19,7 @@ import { handleScheduler } from './scheduler';
 import { handleRooms } from './rooms';
 import { handleCosts } from './costs';
 import { handleCostsChat } from './costs-chat';
+import { handleEmail } from './email';
 
 export const handler = async (event: Event) => {
   // Self-invoked async workers land _action directly on the event (no requestContext/body)
@@ -68,6 +69,7 @@ export const handler = async (event: Event) => {
       await handleScheduler(ctx) ??
       await handleRooms(ctx) ??
       await handleCosts(ctx) ??
+      await handleEmail(ctx) ??
       notFound('Ruta no encontrada');
 
     return result;
