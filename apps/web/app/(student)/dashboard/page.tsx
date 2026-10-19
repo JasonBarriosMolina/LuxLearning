@@ -25,7 +25,7 @@ interface EnrichedModule {
 type EnrichedCourse = Omit<Course, 'modules'> & { modules: EnrichedModule[] };
 
 export default function StudentDashboardPage() {
-  const { email } = useAuth();
+  const { email, name } = useAuth();
   const { t, lang } = useLanguage();
   const [courses, setCourses] = useState<EnrichedCourse[]>([]);
   const [certs, setCerts] = useState<Certificate[]>([]);
@@ -68,7 +68,7 @@ export default function StudentDashboardPage() {
     }).catch(() => {});
   }, [lang]);
 
-  const firstName = email?.split('@')[0] ?? t.roles.student;
+  const firstName = name?.split(' ')[0] ?? email?.split('@')[0] ?? t.roles.student;
 
   // Calculate overall stats across all courses
   const stats = courses.reduce((acc, course) => {
@@ -161,7 +161,7 @@ export default function StudentDashboardPage() {
           },
           {
             label: t.studentDashboard.lessonsCompleted,
-            value: `${stats.completedLessons}/${stats.totalLessons}`,
+            value: stats.completedLessons,
             icon: <CheckCircle className="w-5 h-5 text-emerald-500" />,
             bg: 'bg-emerald-50',
             href: '/courses',
