@@ -6,6 +6,7 @@ import {
   AlertCircle, Check, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { StudyPlanModal } from '../students/_components/StudyPlanModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,15 +92,12 @@ export default function EvalStudyPlansPage() {
   const [rows, setRows] = useState<StudentPlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [generating, setGenerating] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState<string | null>(null);
   const [successId, setSuccessId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('status');
   const [sortAsc, setSortAsc] = useState(true);
-  // Per-row note expand state
-  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
-  const [noteValues, setNoteValues] = useState<Record<string, string>>({});
+  const [wizardStudent, setWizardStudent] = useState<{ userId: string; studentName?: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,33 +148,6 @@ export default function EvalStudyPlansPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleGenerateClick = (row: StudentPlanRow) => {
-    if (expandedNoteId === row.userId) {
-      // Already expanded → confirm generation
-      handleGenerateConfirm(row);
-    } else {
-      // First click → expand note textarea
-      setExpandedNoteId(row.userId);
-    }
-  };
-
-  const handleGenerateConfirm = async (row: StudentPlanRow) => {
-    setGenerating(row.userId);
-    setExpandedNoteId(null);
-    setError('');
-    try {
-      const note = noteValues[row.userId]?.trim() || undefined;
-      await api.evaluator.studyPlan.generate(row.userId, { note });
-      setSuccessId(row.userId);
-      setTimeout(() => setSuccessId(null), 3000);
-      await load();
-    } catch (e: any) {
-      setError(e?.body?.error ?? 'Error al generar el plan');
-    } finally {
-      setGenerating(null);
-    }
-  };
 
   const handleUnlock = async (row: StudentPlanRow) => {
     if (!row.weekOf) return;
@@ -320,7 +291,7 @@ export default function EvalStudyPlansPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-white/5">
                   {filtered.map(row => {
-                    const isBusy = generating === row.userId || unlocking === row.userId;
+                    const isBusy = unlocking === row.userId;
                     const isSuccess = successId === row.userId;
                     return (
                       <tr
@@ -360,49 +331,27 @@ export default function EvalStudyPlansPage() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex flex-col gap-1.5 items-end">
-                            <div className="flex items-center gap-2 justify-end">
-                              {(row.planStatus === 'locked' || row.planStatus === 'change_requested') && (
-                                <button
-                                  onClick={() => handleUnlock(row)}
-                                  disabled={isBusy}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50 transition-colors"
-                                >
-                                  {unlocking === row.userId
-                                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                                    : <Unlock className="w-3 h-3" />}
-                                  Desbloquear
-                                </button>
-                              )}
+                          <div className="flex items-center gap-2 justify-end">
+                            {(row.planStatus === 'locked' || row.planStatus === 'change_requested') && (
                               <button
-                                onClick={() => handleGenerateClick(row)}
+                                onClick={() => handleUnlock(row)}
                                 disabled={isBusy}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity disabled:opacity-50 ${expandedNoteId === row.userId ? 'bg-indigo-600 text-white hover:opacity-90' : 'bg-gradient-to-r from-[#7B2FBE] to-[#00B4D8] text-white hover:opacity-90'}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50 transition-colors"
                               >
-                                {generating === row.userId
+                                {unlocking === row.userId
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : <ListTodo className="w-3 h-3" />}
-                                {expandedNoteId === row.userId ? 'Confirmar' : row.planStatus === 'none' ? 'Generar plan' : 'Regenerar'}
+                                  : <Unlock className="w-3 h-3" />}
+                                Desbloquear
                               </button>
-                              {expandedNoteId === row.userId && (
-                                <button
-                                  onClick={() => setExpandedNoteId(null)}
-                                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                                >
-                                  Cancelar
-                                </button>
-                              )}
-                            </div>
-                            {expandedNoteId === row.userId && (
-                              <textarea
-                                autoFocus
-                                value={noteValues[row.userId] ?? ''}
-                                onChange={e => setNoteValues(prev => ({ ...prev, [row.userId]: e.target.value }))}
-                                placeholder="Nota de Mentor: ej. Enfócate en módulos 1–3…"
-                                rows={2}
-                                className="w-64 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0D0D1A] text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 resize-none"
-                              />
                             )}
+                            <button
+                              onClick={() => setWizardStudent({ userId: row.userId, studentName: row.studentName })}
+                              disabled={isBusy}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#7B2FBE] to-[#00B4D8] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                            >
+                              <ListTodo className="w-3 h-3" />
+                              {row.planStatus === 'none' ? 'Generar plan' : 'Regenerar'}
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -442,6 +391,14 @@ export default function EvalStudyPlansPage() {
           </div>
         )}
       </div>
+
+      {wizardStudent && (
+        <StudyPlanModal
+          student={wizardStudent}
+          onClose={() => setWizardStudent(null)}
+          onSuccess={() => { setWizardStudent(null); load(); }}
+        />
+      )}
     </div>
   );
 }
