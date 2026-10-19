@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import {
-  CheckCircle, Clock, Users, AlertTriangle, BookOpen, FileText, Loader2,
+  CheckCircle, Clock, Users, AlertTriangle, BookOpen, FileText, Loader2, BarChart2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
@@ -186,27 +186,34 @@ ${data.analysis.slice(0, 5).map((a: any) => `
       <div ref={printRef} className="max-w-6xl mx-auto space-y-8 animate-fade-in">
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
-          <div>
-            <h1 className="font-heading font-bold text-2xl text-charcoal">{t.admin.reportsPageTitle}</h1>
-            <p className="text-gray-500 mt-1 text-sm">{t.admin.reportsPageSubtitle}</p>
-          </div>
-          <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-semibold text-gray-600 hover:bg-surface transition-colors">
-            <FileText className="w-4 h-4" /> PDF
-          </button>
-        </div>
-
-        {/* Mode selector */}
-        <div className="flex gap-2 no-print">
-          {(['master', 'student', 'course'] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => { setMode(m); setFilterStudentId(''); setFilterCourseId(''); setFilterStudentCourseId(''); }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${mode === m ? 'bg-cta-from text-white' : 'bg-surface text-gray-600 hover:bg-gray-100'}`}
-            >
-              {m === 'master' ? t.admin.reportsModemaster : m === 'student' ? t.admin.reportsModeStudent : t.admin.reportsModeCourse}
+        <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 rounded-3xl p-6 text-white no-print">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+                <BarChart2 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">{t.admin.reportsPageTitle}</h1>
+                <p className="text-indigo-200 text-sm mt-0.5">{t.admin.reportsPageSubtitle}</p>
+              </div>
+            </div>
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-indigo-50 transition-all shrink-0">
+              <FileText className="w-4 h-4" /> Descargar PDF
             </button>
-          ))}
+          </div>
+
+          {/* Mode selector in header */}
+          <div className="flex gap-2 mt-5 flex-wrap">
+            {(['master', 'student', 'course'] as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setFilterStudentId(''); setFilterCourseId(''); setFilterStudentCourseId(''); }}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${mode === m ? 'bg-white text-indigo-700 shadow-sm' : 'bg-white/15 text-white hover:bg-white/25'}`}
+              >
+                {m === 'master' ? t.admin.reportsModemaster : m === 'student' ? t.admin.reportsModeStudent : t.admin.reportsModeCourse}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Filters */}
@@ -285,6 +292,7 @@ ${data.analysis.slice(0, 5).map((a: any) => `
             <StudentProgressTable
               studentProgress={data.studentProgress}
               lang={lang}
+              onSelectStudent={mode === 'master' ? (userId) => { setMode('student'); setFilterStudentId(userId); } : undefined}
               labels={{
                 title: t.admin.reportsIntegratedTitle,
                 hint: t.admin.reportsIntegratedHint,
