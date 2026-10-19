@@ -1,19 +1,53 @@
 // Submissions and interviews domain handler for lux-evaluator.
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { EvalCtx, s3Ev, SUBMISSIONS_BUCKET_EV, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV } from './ctx';
+import { EvalCtx, s3Ev, SUBMISSIONS_BUCKET_EV, webpush, VAPID_PUBLIC_EV, VAPID_PRIVATE_EV, resolveStudentName } from './ctx';
 import { listSubmissionsForModule, updateSubmissionGrade, listInterviewsForModule, updateInterviewGrade, getInterview, listClassSessionsForModule, updateClassSessionGrade, getClassSession, getPushSubscriptionsByUserId } from '../shared/db-dynamo';
 import { ok, badRequest, forbidden } from '../shared/response';
 
 export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
   const { event, method, path, userId, prisma, isAdminRole } = ctx;
 
+  // ── GET /evaluator/submissions/pending ──────────────────────────────────────
+  if (method === 'GET' && path === '/evaluator/submissions/pending') {
+    const courses = await prisma.course.findMany({
+      where: isAdminRole ? {} : { evaluatorId: userId },
+      select: { id: true, title: true, modules: { select: { id: true, title: true } } },
+    });
+    const moduleMap = new Map<string, { courseTitle: string; moduleTitle: string }>();
+    for (const c of courses) {
+      for (const m of c.modules) {
+        moduleMap.set(m.id, { courseTitle: c.title, moduleTitle: m.title });
+      }
+    }
+    const allSubs = (await Promise.all(
+      [...moduleMap.keys()].map((mid) => listSubmissionsForModule(mid))
+    )).flat();
+    const pending = allSubs.filter((s) => s.status === 'pending');
+    pending.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const uniqueUserIds = [...new Set(pending.map((s) => s.userId))];
+    const nameMap = Object.fromEntries(
+      await Promise.all(uniqueUserIds.map(async (uid) => [uid, await resolveStudentName(uid)]))
+    );
+    const enriched = pending.map((s) => ({
+      ...s,
+      studentName: nameMap[s.userId] ?? s.userId,
+      courseTitle: moduleMap.get(s.moduleId)?.courseTitle ?? '',
+      moduleTitle: moduleMap.get(s.moduleId)?.moduleTitle ?? '',
+    }));
+    return ok(enriched);
+  }
+
   // ── GET /evaluator/submissions?moduleId=X ────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/submissions') {
     const moduleId = event.queryStringParameters?.moduleId;
     if (!moduleId) return badRequest('moduleId required');
     const subs = await listSubmissionsForModule(moduleId);
-    return ok(subs);
+    const uniqueUserIds = [...new Set(subs.map((s) => s.userId))];
+    const nameMap = Object.fromEntries(
+      await Promise.all(uniqueUserIds.map(async (uid) => [uid, await resolveStudentName(uid)]))
+    );
+    return ok(subs.map((s) => ({ ...s, studentName: nameMap[s.userId] ?? s.userId })));
   }
 
   // ── PUT /evaluator/submissions/:submissionId/grade ───────────────────────────

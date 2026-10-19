@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Upload, FileCheck, Download, CheckCircle, Clock, ChevronDown } from 'lucide-react';
+import { Upload, FileCheck, Download, CheckCircle, Clock, ChevronDown, Inbox, Search, AlertTriangle, BookOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -14,57 +14,88 @@ interface GradeState {
   saved: boolean;
 }
 
+type ViewMode = 'pending' | 'browse';
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return 'hace menos de 1h';
+  if (h < 24) return `hace ${h}h`;
+  const d = Math.floor(h / 24);
+  return `hace ${d}d`;
+}
+
+function getUrgency(createdAt: string): 'urgent' | 'warning' | 'fresh' {
+  const h = (Date.now() - new Date(createdAt).getTime()) / 3600000;
+  if (h > 48) return 'urgent';
+  if (h > 24) return 'warning';
+  return 'fresh';
+}
+
+const urgencyBadge: Record<string, string> = {
+  urgent: 'bg-red-100 text-red-700',
+  warning: 'bg-amber-100 text-amber-700',
+  fresh: 'bg-emerald-100 text-emerald-700',
+};
+
 export default function EvaluatorSubmissionsPage() {
   const { t, lang } = useLanguage();
   const tS = t.evaluatorSubmissions;
 
+  const [viewMode, setViewMode] = useState<ViewMode>('pending');
+  const [pendingSubs, setPendingSubs] = useState<any[]>([]);
+  const [loadingPending, setLoadingPending] = useState(true);
+
   const [courses, setCourses] = useState<any[]>([]);
   const [selectedCourse, setSelectedCourse] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
-  const [submissions, setSubmissions] = useState<any[]>([]);
-  const [loadingSubs, setLoadingSubs] = useState(false);
+  const [browseSubs, setBrowseSubs] = useState<any[]>([]);
+  const [loadingBrowse, setLoadingBrowse] = useState(false);
+
   const [gradeStates, setGradeStates] = useState<Record<string, GradeState>>({});
   const [expandedSub, setExpandedSub] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState('');
 
+  const initGradeStates = (list: any[]) => {
+    const init: Record<string, GradeState> = {};
+    for (const sub of list) {
+      init[sub.submissionId] = {
+        grade: sub.grade != null ? String(sub.grade) : '',
+        feedback: sub.feedback ?? '',
+        saving: false,
+        saved: false,
+      };
+    }
+    setGradeStates((prev) => ({ ...init, ...prev }));
+  };
+
   useEffect(() => {
+    api.evaluator.submissions.pending().then((res: any) => {
+      const list = (res as any).data ?? [];
+      setPendingSubs(list);
+      initGradeStates(list);
+    }).catch(() => {}).finally(() => setLoadingPending(false));
+
     api.evaluator.myCourses().then((res: any) => {
-      const list: any[] = (res as any).data ?? [];
-      setCourses(list);
+      setCourses((res as any).data ?? []);
     }).catch(() => {});
   }, [lang]);
 
-  const course = courses.find((c) => c.id === selectedCourse);
-  const modules: any[] = course?.modules ?? [];
-
-  const loadSubmissions = useCallback(async (moduleId: string) => {
-    if (!moduleId) return;
-    setLoadingSubs(true);
-    setSubmissions([]);
+  const loadBrowse = useCallback(async (moduleId: string) => {
+    if (!moduleId) { setBrowseSubs([]); return; }
+    setLoadingBrowse(true);
     try {
       const res = await api.evaluator.submissions.list(moduleId);
-      const list: any[] = (res as any).data ?? [];
-      setSubmissions(list);
-      const init: Record<string, GradeState> = {};
-      for (const sub of list) {
-        init[sub.submissionId] = {
-          grade: sub.grade != null ? String(sub.grade) : '',
-          feedback: sub.feedback ?? '',
-          saving: false,
-          saved: false,
-        };
-      }
-      setGradeStates(init);
-    } catch {
-      setSubmissions([]);
-    } finally {
-      setLoadingSubs(false);
-    }
+      const list = (res as any).data ?? [];
+      setBrowseSubs(list);
+      initGradeStates(list);
+    } catch { setBrowseSubs([]); } finally { setLoadingBrowse(false); }
   }, []);
 
-  useEffect(() => {
-    if (selectedModule) loadSubmissions(selectedModule);
-  }, [selectedModule, loadSubmissions]);
+  useEffect(() => { if (selectedModule) loadBrowse(selectedModule); }, [selectedModule, loadBrowse]);
+
+  const course = courses.find((c) => c.id === selectedCourse);
+  const modules: any[] = course?.modules ?? [];
 
   const handleGrade = async (sub: any) => {
     const st = gradeStates[sub.submissionId];
@@ -79,10 +110,9 @@ export default function EvaluatorSubmissionsPage() {
         feedback: st.feedback,
       });
       setGradeStates((prev) => ({ ...prev, [sub.submissionId]: { ...prev[sub.submissionId]!, saving: false, saved: true } }));
-      setSubmissions((prev) => prev.map((s) =>
-        s.submissionId === sub.submissionId
-          ? { ...s, status: 'graded', grade: gradeNum, feedback: st.feedback }
-          : s
+      setPendingSubs((prev) => prev.filter((s) => s.submissionId !== sub.submissionId));
+      setBrowseSubs((prev) => prev.map((s) =>
+        s.submissionId === sub.submissionId ? { ...s, status: 'graded', grade: gradeNum, feedback: st.feedback } : s
       ));
       setTimeout(() => setGradeStates((prev) => ({ ...prev, [sub.submissionId]: { ...prev[sub.submissionId]!, saved: false } })), 2500);
     } catch {
@@ -102,102 +132,175 @@ export default function EvaluatorSubmissionsPage() {
     }
   };
 
+  const activeSubs = viewMode === 'pending' ? pendingSubs : browseSubs;
+  const isLoading = viewMode === 'pending' ? loadingPending : loadingBrowse;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      <div>
-        <h1 className="font-heading font-bold text-2xl text-charcoal">{tS.title}</h1>
-        <p className="text-gray-500 mt-1 text-sm">{tS.subtitle}</p>
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+
+      {/* Header */}
+      <div className="bg-gradient-to-br from-[#17527E] via-[#1A6494] to-[#0F3F62] rounded-3xl p-6 text-white">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+              <Inbox className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">{tS.title}</h1>
+              <p className="text-blue-200 text-sm mt-0.5">{tS.subtitle}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-5 flex-wrap">
+          {loadingPending ? (
+            <div className="bg-white/15 rounded-2xl px-4 py-2.5 animate-pulse w-28 h-14" />
+          ) : (
+            <div className={`rounded-2xl px-4 py-2.5 flex items-center gap-2.5 ${pendingSubs.length > 0 ? 'bg-amber-400/25 border border-amber-300/30' : 'bg-white/15'}`}>
+              {pendingSubs.length > 0 && <div className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />}
+              <div>
+                <p className={`text-lg font-bold leading-none ${pendingSubs.length > 0 ? 'text-amber-200' : ''}`}>{pendingSubs.length}</p>
+                <p className={`text-xs mt-0.5 ${pendingSubs.length > 0 ? 'text-amber-300' : 'text-blue-300'}`}>Por calificar</p>
+              </div>
+            </div>
+          )}
+          <div className="bg-white/15 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
+            <BookOpen className="w-4 h-4 text-blue-200" />
+            <div>
+              <p className="text-lg font-bold leading-none">{courses.length}</p>
+              <p className="text-xs text-blue-300 mt-0.5">Cursos asignados</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Selectors */}
-      <div className="card flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <label className="text-xs font-semibold text-gray-500 mb-1 block">{tS.selectCourse}</label>
-          <div className="relative">
-            <select
-              value={selectedCourse}
-              onChange={(e) => { setSelectedCourse(e.target.value); setSelectedModule(''); setSubmissions([]); }}
-              className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-charcoal bg-white pr-8 focus:outline-none focus:ring-2 focus:ring-cta-from/30"
-            >
-              <option value="">—</option>
-              {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-        </div>
-        <div className="flex-1">
-          <label className="text-xs font-semibold text-gray-500 mb-1 block">{tS.selectModule}</label>
-          <div className="relative">
-            <select
-              value={selectedModule}
-              onChange={(e) => setSelectedModule(e.target.value)}
-              disabled={!selectedCourse}
-              className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-charcoal bg-white pr-8 focus:outline-none focus:ring-2 focus:ring-cta-from/30 disabled:opacity-50"
-            >
-              <option value="">—</option>
-              {modules.map((m: any) => <option key={m.id} value={m.id}>{m.order}. {m.title}</option>)}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-        </div>
+      {/* View mode tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl w-fit">
+        <button
+          onClick={() => setViewMode('pending')}
+          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'pending' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Por calificar
+          {!loadingPending && pendingSubs.length > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${viewMode === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-amber-200 text-amber-700'}`}>
+              {pendingSubs.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setViewMode('browse')}
+          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all ${viewMode === 'browse' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          <Search className="w-3.5 h-3.5" />
+          Buscar por módulo
+        </button>
       </div>
+
+      {/* Browse selectors */}
+      {viewMode === 'browse' && (
+        <div className="flex flex-col sm:flex-row gap-4 bg-white rounded-2xl p-4 shadow-card">
+          <div className="flex-1">
+            <label className="text-xs font-semibold text-gray-500 mb-1.5 block">{tS.selectCourse}</label>
+            <div className="relative">
+              <select
+                value={selectedCourse}
+                onChange={(e) => { setSelectedCourse(e.target.value); setSelectedModule(''); setBrowseSubs([]); }}
+                className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-charcoal bg-white pr-8 focus:outline-none focus:ring-2 focus:ring-[#17527E]/30"
+              >
+                <option value="">—</option>
+                {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs font-semibold text-gray-500 mb-1.5 block">{tS.selectModule}</label>
+            <div className="relative">
+              <select
+                value={selectedModule}
+                onChange={(e) => setSelectedModule(e.target.value)}
+                disabled={!selectedCourse}
+                className="w-full appearance-none border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-charcoal bg-white pr-8 focus:outline-none focus:ring-2 focus:ring-[#17527E]/30 disabled:opacity-50"
+              >
+                <option value="">—</option>
+                {modules.map((m: any) => <option key={m.id} value={m.id}>{m.order}. {m.title}</option>)}
+              </select>
+              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {downloadError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">{downloadError}</div>
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600">{downloadError}</div>
       )}
 
       {/* Submissions list */}
-      {selectedModule && (
-        loadingSubs ? (
+      {(viewMode === 'pending' || selectedModule) && (
+        isLoading ? (
           <div className="space-y-3">
-            {[1, 2, 3].map((n) => <div key={n} className="card h-20 animate-pulse" />)}
+            {[1, 2, 3].map((n) => <div key={n} className="bg-white rounded-2xl h-20 animate-pulse shadow-card" />)}
           </div>
-        ) : submissions.length === 0 ? (
-          <div className="card text-center py-12">
+        ) : activeSubs.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-card text-center py-14">
             <Upload className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">{tS.noSubmissions}</p>
+            <p className="text-gray-400 text-sm font-medium">
+              {viewMode === 'pending' ? 'Sin entregas pendientes — al día' : tS.noSubmissions}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {submissions.map((sub) => {
+            {activeSubs.map((sub) => {
               const gs = gradeStates[sub.submissionId] ?? { grade: '', feedback: '', saving: false, saved: false };
               const isExpanded = expandedSub === sub.submissionId;
+              const urgency = sub.status === 'pending' ? getUrgency(sub.createdAt) : null;
+
               return (
-                <div key={sub.submissionId} className="card space-y-3">
-                  {/* Header row */}
+                <div
+                  key={sub.submissionId}
+                  className={`bg-white rounded-2xl shadow-card p-4 space-y-3 ${urgency === 'urgent' ? 'ring-2 ring-red-300' : urgency === 'warning' ? 'ring-2 ring-amber-300' : ''}`}
+                >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
                       <FileCheck className="w-4 h-4 text-orange-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-charcoal truncate">{sub.fileName}</p>
-                      <p className="text-xs text-gray-400">
-                        {tS.fileSize(sub.fileSize ?? 0)} · {new Date(sub.createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        {sub.userId && <span className="ml-2 text-gray-500">· {sub.userId}</span>}
+                      <p className="text-sm font-semibold text-charcoal truncate">
+                        {sub.studentName ?? sub.userId}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {sub.courseTitle && sub.moduleTitle
+                          ? `${sub.courseTitle} · ${sub.moduleTitle} · `
+                          : ''}{sub.fileName}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {urgency && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${urgencyBadge[urgency]}`}>
+                          {relativeTime(sub.createdAt)}
+                        </span>
+                      )}
                       {sub.status === 'graded'
                         ? <Badge variant="success">{tS.gradeLabel(sub.grade ?? 0)}</Badge>
                         : <Badge variant="pending">{tS.pending}</Badge>
                       }
                       <button
                         onClick={() => handleDownload(sub)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-cta-from hover:bg-blue-50 transition-colors"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-[#17527E] hover:bg-blue-50 transition-colors"
                         title={tS.download}
                       >
                         <Download className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setExpandedSub(isExpanded ? null : sub.submissionId)}
-                        className={`p-1.5 rounded-lg transition-colors ${isExpanded ? 'text-cta-from bg-blue-50' : 'text-gray-400 hover:text-cta-from hover:bg-blue-50'}`}
+                        className={`p-1.5 rounded-lg transition-colors ${isExpanded ? 'text-[#17527E] bg-blue-50' : 'text-gray-400 hover:text-[#17527E] hover:bg-blue-50'}`}
                       >
                         <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Grade form (expanded) */}
                   {isExpanded && (
                     <div className="border-t border-gray-100 pt-3 space-y-3">
                       <div className="flex gap-3">
@@ -209,7 +312,7 @@ export default function EvaluatorSubmissionsPage() {
                             max={100}
                             value={gs.grade}
                             onChange={(e) => setGradeStates((prev) => ({ ...prev, [sub.submissionId]: { ...prev[sub.submissionId]!, grade: e.target.value } }))}
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cta-from/30"
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#17527E]/30"
                             placeholder="0"
                           />
                         </div>
@@ -220,7 +323,7 @@ export default function EvaluatorSubmissionsPage() {
                             value={gs.feedback}
                             onChange={(e) => setGradeStates((prev) => ({ ...prev, [sub.submissionId]: { ...prev[sub.submissionId]!, feedback: e.target.value } }))}
                             placeholder={tS.gradePlaceholder}
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cta-from/30"
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#17527E]/30"
                           />
                         </div>
                       </div>
@@ -245,6 +348,13 @@ export default function EvaluatorSubmissionsPage() {
             })}
           </div>
         )
+      )}
+
+      {viewMode === 'browse' && !selectedModule && (
+        <div className="bg-white rounded-2xl shadow-card text-center py-14">
+          <Search className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">Selecciona un curso y módulo para ver las entregas</p>
+        </div>
       )}
     </div>
   );

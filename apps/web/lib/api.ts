@@ -278,6 +278,7 @@ export const api = {
     },
     evaluatorsList: () => request<any>('/evaluator/evaluators'),
     submissions: {
+      pending: () => request<any>('/evaluator/submissions/pending'),
       list: (moduleId: string) => request<any>(`/evaluator/submissions?moduleId=${moduleId}`),
       grade: (submissionId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/submissions/${submissionId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),
