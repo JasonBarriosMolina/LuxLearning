@@ -84,8 +84,8 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
   },
   {
     key: 'evaluations',
-    labelEs: 'Centro de Reflexiones',
-    labelEn: 'Reflections Center',
+    labelEs: 'Centro de Evaluaciones',
+    labelEn: 'Evaluations Center',
     icon: <ClipboardList className="w-5 h-5" />,
     items: [
       { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" /> },
@@ -155,8 +155,8 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
   },
   {
     key: 'evaluations',
-    labelEs: 'Centro de Reflexiones',
-    labelEn: 'Reflections Center',
+    labelEs: 'Centro de Evaluaciones',
+    labelEn: 'Evaluations Center',
     icon: <ClipboardList className="w-5 h-5" />,
     items: [
       { href: '/evaluator/reflections', labelKey: 'evaluations', icon: <ClipboardList className="w-5 h-5" /> },
