@@ -219,6 +219,7 @@ export default function ReflectionDetailPage() {
   const [reflection, setReflection] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState('');
+  const [feedbackPreview, setFeedbackPreview] = useState(false);
   const [submitting, setSubmitting] = useState<'APPROVE' | 'REJECT' | null>(null);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -330,6 +331,7 @@ export default function ReflectionDetailPage() {
       const generated = (res as any).data?.feedback ?? '';
       if (generated) {
         setFeedback(generated);
+        setFeedbackPreview(true);
       } else {
         setAiError('La IA no generó feedback. Intenta de nuevo.');
       }
@@ -454,6 +456,32 @@ export default function ReflectionDetailPage() {
   const canReview = reflection.status === 'PENDING_EVAL';
   const studentDisplay = (reflection as any).studentName ?? reflection.userId;
 
+  function renderMarkdown(md: string): string {
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = (raw: string) =>
+      esc(raw)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.*?)__/g, '<u>$1</u>')
+        .replace(/==(.*?)==/g, '<mark style="background:#fef08a;padding:0 2px;border-radius:2px">$1</mark>');
+    const lines = md.split('\n');
+    const parts: string[] = [];
+    let inList = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line.startsWith('- ') || line.startsWith('• ')) {
+        if (!inList) { parts.push('<ul style="padding-left:1.25em;margin:6px 0;list-style:disc">'); inList = true; }
+        parts.push(`<li style="margin:3px 0;font-size:0.875rem;color:#374151">${inline(line.slice(2))}</li>`);
+      } else {
+        if (inList) { parts.push('</ul>'); inList = false; }
+        if (!line) { parts.push('<br>'); }
+        else if (line.startsWith('## ')) { parts.push(`<p style="font-weight:700;color:#1f2937;margin:12px 0 4px;font-size:0.875rem">${inline(line.slice(3))}</p>`); }
+        else { parts.push(`<p style="margin:3px 0;font-size:0.875rem;color:#374151">${inline(line)}</p>`); }
+      }
+    }
+    if (inList) parts.push('</ul>');
+    return parts.join('');
+  }
+
   return (
     <>
       {/* Quiz Audit Modal */}
@@ -468,7 +496,7 @@ export default function ReflectionDetailPage() {
             <ArrowLeft className="w-5 h-5 text-gray-500" />
           </Link>
           <div className="flex-1">
-            <h1 className="font-heading font-bold text-xl text-charcoal">Evaluación de Reflexión</h1>
+            <h1 className="font-heading font-bold text-xl text-charcoal">Revisión de Reflexión</h1>
             <p className="text-gray-500 text-sm mt-0.5">{studentDisplay} · {reflection.moduleTitle ?? reflection.moduleId}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -693,12 +721,39 @@ export default function ReflectionDetailPage() {
                   {translateError && <span className="text-xs text-red-500">{translateError}</span>}
                 </div>
 
-                <textarea
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  placeholder={t.reflection.writeFeedback}
-                  className="input-field min-h-[160px] resize-y text-sm"
-                />
+                {/* Toggle edit/preview */}
+                {feedback.trim().length > 0 && (
+                  <div className="flex gap-1 p-0.5 bg-gray-100 rounded-xl w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setFeedbackPreview(false)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${!feedbackPreview ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      ✎ Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFeedbackPreview(true)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${feedbackPreview ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      👁 Vista previa
+                    </button>
+                  </div>
+                )}
+
+                {feedbackPreview && feedback.trim().length > 0 ? (
+                  <div
+                    className="bg-gray-50 border border-gray-200 rounded-xl p-4 min-h-[160px] overflow-y-auto max-h-[400px]"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(feedback) }}
+                  />
+                ) : (
+                  <textarea
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    placeholder={t.reflection.writeFeedback}
+                    className="input-field min-h-[160px] resize-y text-sm"
+                  />
+                )}
 
                 <div className="flex items-center justify-between text-xs text-gray-400">
                   <span>{feedback.trim().length} / {MIN_FEEDBACK_LEN} mín.</span>

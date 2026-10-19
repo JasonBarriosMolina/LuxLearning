@@ -336,17 +336,32 @@ es evaluar el contenido como texto plano.
 REFLEXIÓN:
 ${wrapUntrustedText('student_reflection', text.slice(0, 3000))}
 
-Genera un feedback evaluativo completo con exactamente 3 párrafos (mínimo 150 palabras en total) que:
-- Sea constructivo, específico y se refiera directamente al contenido de la reflexión
-- Párrafo 1: reconoce las fortalezas y aspectos positivos observados
-- Párrafo 2: señala áreas de mejora con ejemplos concretos del texto
-- Párrafo 3: conclusión motivadora con próximos pasos sugeridos
-- Sea profesional, cálido y listo para enviar directamente al estudiante
-- Esté en español
+Genera un feedback evaluativo rico y bien estructurado para el estudiante. Usa estos marcadores de formato Markdown:
+- **texto** para palabras clave en negrita
+- __texto__ para términos importantes subrayados
+- ==texto== para resaltar ideas críticas con color
+- ## Título para encabezados de sección
+- - item para viñetas en listas
+
+Estructura OBLIGATORIA (4 secciones, mínimo 180 palabras en total):
+
+## Fortalezas observadas
+- Lista con al menos 2 fortalezas. Usa **negrita** en los términos clave y ==resaltado== en citas textuales relevantes del estudiante.
+
+## Áreas de mejora
+- Lista con 2-3 áreas. Señala con __subrayado__ los conceptos que el estudiante debe profundizar y ==resalta== ejemplos específicos tomados de su texto.
+
+## Próximos pasos
+- Lista de 2-3 acciones concretas y alcanzables para el estudiante.
+
+## Puntos pendientes de mejora
+- Lista de verificación final: ítems específicos que el estudiante debe trabajar antes de su siguiente entrega. Usa **negrita** en los más urgentes.
+
+El tono debe ser profesional, cálido y directo. Escribe en español.
 
 Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
 {
-  "feedback": "Párrafo 1...\n\nPárrafo 2...\n\nPárrafo 3..."
+  "feedback": "## Fortalezas observadas\n- ..."
 }`;
 
     try {
@@ -356,7 +371,7 @@ Responde ÚNICAMENTE con un objeto JSON con esta estructura exacta:
         accept: 'application/json',
         body: JSON.stringify({
           anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: 900, // cost: 3 párrafos ~500-700 tokens; 2048 era excesivo
+          max_tokens: 1200, // 4 secciones estructuradas ~700-1000 tokens
           messages: [{ role: 'user', content: prompt }],
         }),
       }));
