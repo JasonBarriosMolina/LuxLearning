@@ -286,6 +286,7 @@ export const api = {
         request<any>(`/evaluator/submissions/${submissionId}/download?s3Key=${encodeURIComponent(s3Key)}`),
     },
     interviews: {
+      pending: () => request<any>('/evaluator/interviews/pending'),
       list: (moduleId: string) => request<any>(`/evaluator/interviews?moduleId=${moduleId}`),
       grade: (interviewId: string, body: { studentUserId: string; grade: number; feedback: string }) =>
         request<any>(`/evaluator/interviews/${interviewId}/grade`, { method: 'PUT', body: JSON.stringify(body) }),

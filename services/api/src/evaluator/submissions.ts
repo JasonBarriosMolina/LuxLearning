@@ -78,12 +78,46 @@ export async function handleSubmissions(ctx: EvalCtx): Promise<any | null> {
     return ok({ url });
   }
 
+  // ── GET /evaluator/interviews/pending ────────────────────────────────────────
+  if (method === 'GET' && path === '/evaluator/interviews/pending') {
+    const courses = await prisma.course.findMany({
+      where: isAdminRole ? {} : { evaluatorId: userId },
+      select: { id: true, title: true, modules: { select: { id: true, title: true } } },
+    });
+    const moduleMap = new Map<string, { courseTitle: string; moduleTitle: string }>();
+    for (const c of courses) {
+      for (const m of c.modules) {
+        moduleMap.set(m.id, { courseTitle: c.title, moduleTitle: m.title });
+      }
+    }
+    const allInterviews = (await Promise.all(
+      [...moduleMap.keys()].map((mid) => listInterviewsForModule(mid))
+    )).flat();
+    const pending = allInterviews.filter((iv) => iv.status === 'completed' && iv.grade == null);
+    pending.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const uniqueUserIds = [...new Set(pending.map((iv) => iv.userId))];
+    const nameMap = Object.fromEntries(
+      await Promise.all(uniqueUserIds.map(async (uid) => [uid, await resolveStudentName(uid)]))
+    );
+    const enriched = pending.map((iv) => ({
+      ...iv,
+      studentName: nameMap[iv.userId] ?? iv.userId,
+      courseTitle: moduleMap.get(iv.moduleId)?.courseTitle ?? '',
+      moduleTitle: moduleMap.get(iv.moduleId)?.moduleTitle ?? '',
+    }));
+    return ok(enriched);
+  }
+
   // ── GET /evaluator/interviews?moduleId=X ─────────────────────────────────────
   if (method === 'GET' && path === '/evaluator/interviews') {
     const moduleId = event.queryStringParameters?.moduleId;
     if (!moduleId) return badRequest('moduleId required');
     const interviews = await listInterviewsForModule(moduleId);
-    return ok(interviews);
+    const uniqueUserIds = [...new Set(interviews.map((iv) => iv.userId))];
+    const nameMap = Object.fromEntries(
+      await Promise.all(uniqueUserIds.map(async (uid) => [uid, await resolveStudentName(uid)]))
+    );
+    return ok(interviews.map((iv) => ({ ...iv, studentName: nameMap[iv.userId] ?? iv.userId })));
   }
 
   // ── PUT /evaluator/interviews/:interviewId/grade ─────────────────────────────
