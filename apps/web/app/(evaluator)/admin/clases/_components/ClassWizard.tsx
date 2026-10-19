@@ -124,7 +124,7 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#17527E] to-[#0F3F62] flex items-center justify-center">
               <BookOpen className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -141,12 +141,12 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
         <div className="px-6 py-3 shrink-0">
           <div className="flex gap-1.5">
             {[1, 2, 3].map((s) => (
-              <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${s <= step ? 'bg-indigo-500' : 'bg-gray-100'}`} />
+              <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${s <= step ? 'bg-[#17527E]' : 'bg-gray-100'}`} />
             ))}
           </div>
           <div className="flex justify-between mt-1.5">
             {['Información', 'Contenido', 'Confirmar'].map((label, i) => (
-              <span key={i} className={`text-xs transition-colors ${i + 1 === step ? 'text-indigo-600 font-semibold' : 'text-gray-400'}`}>
+              <span key={i} className={`text-xs transition-colors ${i + 1 === step ? 'text-[#17527E] font-semibold' : 'text-gray-400'}`}>
                 {label}
               </span>
             ))}
@@ -198,22 +198,22 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
               <div className="flex gap-3">
                 <button
                   onClick={() => setContentMode('ai')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${contentMode === 'ai' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${contentMode === 'ai' ? 'border-[#17527E] bg-[#17527E]/5' : 'border-gray-200 hover:border-gray-300'}`}
                 >
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#E2BA50] to-[#C9A130] flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-[#3A2A00]" />
                   </div>
-                  <span className={`text-sm font-semibold ${contentMode === 'ai' ? 'text-indigo-700' : 'text-gray-600'}`}>Lux Mentor IA</span>
+                  <span className={`text-sm font-semibold ${contentMode === 'ai' ? 'text-[#17527E]' : 'text-gray-600'}`}>Lux Mentor IA</span>
                   <span className="text-xs text-gray-400 text-center">Genera guión y prompt automáticamente</span>
                 </button>
                 <button
                   onClick={() => setContentMode('manual')}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${contentMode === 'manual' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${contentMode === 'manual' ? 'border-[#17527E] bg-[#17527E]/5' : 'border-gray-200 hover:border-gray-300'}`}
                 >
                   <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center">
                     <GraduationCap className="w-5 h-5 text-gray-600" />
                   </div>
-                  <span className={`text-sm font-semibold ${contentMode === 'manual' ? 'text-indigo-700' : 'text-gray-600'}`}>Manual</span>
+                  <span className={`text-sm font-semibold ${contentMode === 'manual' ? 'text-[#17527E]' : 'text-gray-600'}`}>Manual</span>
                   <span className="text-xs text-gray-400 text-center">Escribe tú el contenido</span>
                 </button>
               </div>
@@ -222,7 +222,7 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
                 <button
                   onClick={handleGenerate}
                   disabled={generating || !name}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold text-sm hover:opacity-90 disabled:opacity-60 transition-all"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-[#E2BA50] to-[#C9A130] text-[#3A2A00] font-semibold text-sm hover:opacity-90 disabled:opacity-60 transition-all"
                 >
                   {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   {generating ? 'Generando con Lux Mentor…' : 'Generar contenido con IA'}
@@ -271,9 +271,9 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
           {/* Step 3 — Confirmar */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-5 space-y-3 border border-indigo-100">
+              <div className="bg-gradient-to-br from-[#17527E]/5 to-[#17527E]/10 rounded-2xl p-5 space-y-3 border border-[#E2BA50]/30">
                 <div className="flex items-center gap-2 mb-1">
-                  <CheckCircle className="w-5 h-5 text-indigo-500" />
+                  <CheckCircle className="w-5 h-5 text-[#17527E]" />
                   <span className="font-bold text-gray-900">Resumen</span>
                 </div>
                 <div className="space-y-2 text-sm">
@@ -334,7 +334,7 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
             <button
               onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
               disabled={step === 1 && !step1Valid}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#17527E] text-white text-sm font-semibold hover:bg-[#0F3F62] disabled:opacity-50 transition-all"
             >
               Siguiente <ChevronRight className="w-4 h-4" />
             </button>
@@ -342,7 +342,7 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#17527E] to-[#0F3F62] text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 transition-all"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear clase'}

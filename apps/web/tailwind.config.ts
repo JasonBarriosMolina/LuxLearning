@@ -14,16 +14,18 @@ const config: Config = {
         charcoal: 'var(--charcoal)',
         surface: 'var(--surface)',
         border: 'var(--border)',
-        'cta-from': '#00B4D8',
-        'cta-to': '#7B2FBE',
+        'cta-from': '#17527E',
+        'cta-to': '#0F3F62',
+        'lux-gold': '#E2BA50',
+        'lux-gold-dark': '#C9A130',
       },
       fontFamily: {
         sans: ['Roboto', 'sans-serif'],
         heading: ['Montserrat', 'sans-serif'],
       },
       backgroundImage: {
-        'cta-gradient': 'linear-gradient(135deg, #00B4D8, #7B2FBE)',
-        'cta-gradient-r': 'linear-gradient(315deg, #00B4D8, #7B2FBE)',
+        'cta-gradient': 'linear-gradient(135deg, #17527E, #0F3F62)',
+        'cta-gradient-r': 'linear-gradient(315deg, #17527E, #0F3F62)',
       },
       borderRadius: {
         xl: '12px',
@@ -33,7 +35,7 @@ const config: Config = {
       boxShadow: {
         card: '0 2px 16px rgba(0, 0, 0, 0.08)',
         'card-hover': '0 8px 32px rgba(0, 0, 0, 0.12)',
-        glow: '0 0 24px rgba(0, 180, 216, 0.25)',
+        glow: '0 0 24px rgba(23, 82, 126, 0.25)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',

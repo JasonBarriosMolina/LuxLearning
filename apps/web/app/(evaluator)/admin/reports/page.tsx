@@ -186,7 +186,7 @@ ${data.analysis.slice(0, 5).map((a: any) => `
       <div ref={printRef} className="max-w-6xl mx-auto space-y-8 animate-fade-in">
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 rounded-3xl p-6 text-white no-print">
+        <div className="bg-gradient-to-br from-[#17527E] via-[#1A6494] to-[#0F3F62] rounded-3xl p-6 text-white no-print">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
@@ -194,10 +194,10 @@ ${data.analysis.slice(0, 5).map((a: any) => `
               </div>
               <div>
                 <h1 className="text-xl font-bold">{t.admin.reportsPageTitle}</h1>
-                <p className="text-indigo-200 text-sm mt-0.5">{t.admin.reportsPageSubtitle}</p>
+                <p className="text-blue-200 text-sm mt-0.5">{t.admin.reportsPageSubtitle}</p>
               </div>
             </div>
-            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-indigo-50 transition-all shrink-0">
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#17527E] font-semibold text-sm hover:bg-blue-50 transition-all shrink-0">
               <FileText className="w-4 h-4" /> Descargar PDF
             </button>
           </div>
@@ -208,7 +208,7 @@ ${data.analysis.slice(0, 5).map((a: any) => `
               <button
                 key={m}
                 onClick={() => { setMode(m); setFilterStudentId(''); setFilterCourseId(''); setFilterStudentCourseId(''); }}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${mode === m ? 'bg-white text-indigo-700 shadow-sm' : 'bg-white/15 text-white hover:bg-white/25'}`}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${mode === m ? 'bg-white text-[#17527E] shadow-sm' : 'bg-white/15 text-white hover:bg-white/25'}`}
               >
                 {m === 'master' ? t.admin.reportsModemaster : m === 'student' ? t.admin.reportsModeStudent : t.admin.reportsModeCourse}
               </button>

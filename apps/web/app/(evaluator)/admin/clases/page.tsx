@@ -93,7 +93,7 @@ export default function ClasesPage() {
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
 
       {/* Header card */}
-      <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 rounded-3xl p-6 text-white">
+      <div className="bg-gradient-to-br from-[#17527E] via-[#1A6494] to-[#0F3F62] rounded-3xl p-6 text-white">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
@@ -101,12 +101,12 @@ export default function ClasesPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold">{s('Lux Mentor — Clases', 'Lux Mentor — Classes')}</h1>
-              <p className="text-indigo-200 text-sm mt-0.5">{s('Crea y gestiona clases interactivas', 'Create and manage interactive classes')}</p>
+              <p className="text-blue-200 text-sm mt-0.5">{s('Crea y gestiona clases interactivas', 'Create and manage interactive classes')}</p>
             </div>
           </div>
           <button
             onClick={() => setShowWizard(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-indigo-50 transition-all shrink-0"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#17527E] font-semibold text-sm hover:bg-blue-50 transition-all shrink-0"
           >
             <Plus className="w-4 h-4" />
             {s('Nueva clase', 'New class')}
@@ -116,17 +116,17 @@ export default function ClasesPage() {
         {/* Stats row */}
         <div className="flex gap-3 mt-5 flex-wrap">
           <div className="bg-white/15 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
-            <LayoutGrid className="w-4 h-4 text-indigo-200" />
+            <LayoutGrid className="w-4 h-4 text-blue-200" />
             <div>
               <p className="text-lg font-bold leading-none">{classes.length}</p>
-              <p className="text-xs text-indigo-300 mt-0.5">{s('Clases', 'Classes')}</p>
+              <p className="text-xs text-blue-300 mt-0.5">{s('Clases', 'Classes')}</p>
             </div>
           </div>
           <div className="bg-white/15 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
-            <Star className="w-4 h-4 text-indigo-200" />
+            <Star className="w-4 h-4 text-blue-200" />
             <div>
               <p className="text-lg font-bold leading-none">{totalSubmissions}</p>
-              <p className="text-xs text-indigo-300 mt-0.5">{s('Sesiones', 'Sessions')}</p>
+              <p className="text-xs text-blue-300 mt-0.5">{s('Sesiones', 'Sessions')}</p>
             </div>
           </div>
           {pendingCount > 0 && (
@@ -166,7 +166,7 @@ export default function ClasesPage() {
         >
           {s('Gestionar', 'Manage')}
           {classes.length > 0 && (
-            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === 'gestionar' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'}`}>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === 'gestionar' ? 'bg-[#17527E]/10 text-[#17527E]' : 'bg-gray-200 text-gray-500'}`}>
               {classes.length}
             </span>
           )}

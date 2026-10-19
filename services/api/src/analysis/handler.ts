@@ -22,7 +22,7 @@ const SES_FROM = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 const bedrock = trackBedrockUsage(new BedrockRuntimeClient({ region: process.env.BEDROCK_REGION ?? 'us-east-1' }));
 const MODEL_ID = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
-const MIN_REFLECTIONS = 3; // minimum reflections needed to run AI analysis
+const MIN_REFLECTIONS = 2; // minimum reflections needed to run AI analysis
 
 async function callBedrock(prompt: string, maxTokens = 1024): Promise<string> {
   const res = await bedrock.send(new InvokeModelCommand({
