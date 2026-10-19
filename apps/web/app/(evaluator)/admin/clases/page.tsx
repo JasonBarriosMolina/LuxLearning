@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { BookOpen, Plus, Loader2 } from 'lucide-react';
+import { BookOpen, Plus, Loader2, LayoutGrid, Star } from 'lucide-react';
 import { api } from '@/lib/api';
 import { ClassWizard } from './_components/ClassWizard';
 import { ClassList } from './_components/ClassList';
@@ -22,6 +22,7 @@ interface ClassDef {
 export default function ClasesPage() {
   const { lang } = useLanguage();
   const isEN = lang === 'en';
+  const s = (es: string, en: string) => isEN ? en : es;
 
   const [tab, setTab] = useState<Tab>('gestionar');
   const [courses, setCourses] = useState<Course[]>([]);
@@ -80,46 +81,69 @@ export default function ClasesPage() {
     setShowWizard(true);
   }
 
-  function handleCancelEdit() {
-    setEditingClass(null);
+  function handleCloseWizard() {
     setShowWizard(false);
+    setEditingClass(null);
   }
 
-  const s = (es: string, en: string) => isEN ? en : es;
+  const pendingCount = sessions.filter((s: any) => s.grade == null).length;
+  const totalSubmissions = sessions.length;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center">
-            <BookOpen className="w-5 h-5 text-indigo-600" />
+
+      {/* Header card */}
+      <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 rounded-3xl p-6 text-white">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+              <BookOpen className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">{s('Lux Mentor — Clases', 'Lux Mentor — Classes')}</h1>
+              <p className="text-indigo-200 text-sm mt-0.5">{s('Crea y gestiona clases interactivas', 'Create and manage interactive classes')}</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{s('Lux Mentor — Clases', 'Lux Mentor — Classes')}</h1>
-            <p className="text-xs text-gray-400 mt-0.5">{s('Crea y gestiona clases interactivas · Revisa y califica sesiones', 'Create and manage interactive classes · Review and grade sessions')}</p>
+          <button
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-indigo-50 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            {s('Nueva clase', 'New class')}
+          </button>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex gap-3 mt-5 flex-wrap">
+          <div className="bg-white/15 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
+            <LayoutGrid className="w-4 h-4 text-indigo-200" />
+            <div>
+              <p className="text-lg font-bold leading-none">{classes.length}</p>
+              <p className="text-xs text-indigo-300 mt-0.5">{s('Clases', 'Classes')}</p>
+            </div>
           </div>
+          <div className="bg-white/15 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
+            <Star className="w-4 h-4 text-indigo-200" />
+            <div>
+              <p className="text-lg font-bold leading-none">{totalSubmissions}</p>
+              <p className="text-xs text-indigo-300 mt-0.5">{s('Sesiones', 'Sessions')}</p>
+            </div>
+          </div>
+          {pendingCount > 0 && (
+            <div className="bg-amber-400/25 border border-amber-300/30 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
+              <div className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
+              <div>
+                <p className="text-lg font-bold leading-none text-amber-200">{pendingCount}</p>
+                <p className="text-xs text-amber-300 mt-0.5">{s('Por calificar', 'Pending review')}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl w-fit">
-        {(['gestionar', 'revisar'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${
-              tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t === 'gestionar' ? s('Gestionar', 'Manage') : s('Revisar', 'Review')}
-          </button>
-        ))}
-      </div>
-
       {/* Course selector */}
-      <div>
-        <label className="block text-xs font-semibold text-gray-600 mb-1">{s('Curso', 'Course')}</label>
+      <div className="flex items-center gap-3">
+        <label className="text-xs font-semibold text-gray-600 shrink-0">{s('Curso:', 'Course:')}</label>
         {loadingCourses ? (
           <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-64" />
         ) : (
@@ -134,33 +158,39 @@ export default function ClasesPage() {
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-2xl w-fit">
+        <button
+          onClick={() => setTab('gestionar')}
+          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'gestionar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          {s('Gestionar', 'Manage')}
+          {classes.length > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === 'gestionar' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'}`}>
+              {classes.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab('revisar')}
+          className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'revisar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          {s('Revisar', 'Review')}
+          {pendingCount > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === 'revisar' ? 'bg-amber-100 text-amber-700' : 'bg-amber-200 text-amber-700'}`}>
+              {pendingCount}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Gestionar tab */}
       {tab === 'gestionar' && (
-        <div className="space-y-5">
-          <button
-            onClick={() => { if (showWizard) { handleCancelEdit(); } else { setShowWizard(true); } }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-              showWizard
-                ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                : 'border-dashed border-gray-200 text-gray-500 hover:border-indigo-400 hover:text-indigo-600'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            {showWizard ? s('Cancelar', 'Cancel') : s('Nueva clase', 'New class')}
-          </button>
-
-          {showWizard && (
-            <div className="bg-white border border-indigo-100 rounded-2xl shadow-sm p-5">
-              <h2 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-500" />
-                {editingClass ? s('Editar clase', 'Edit class') : s('Crear nueva clase', 'Create new class')}
-              </h2>
-              <ClassWizard courses={courses} onCreated={handleCreated} editingClass={editingClass} onCancelEdit={handleCancelEdit} />
-            </div>
-          )}
-
+        <div>
           {loadingClasses ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+            </div>
           ) : (
             <ClassList
               classes={classes}
@@ -178,7 +208,9 @@ export default function ClasesPage() {
       {tab === 'revisar' && (
         <div>
           {loadingSessions ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+            </div>
           ) : (
             <ClassReviewPanel
               sessions={sessions}
@@ -186,6 +218,16 @@ export default function ClasesPage() {
             />
           )}
         </div>
+      )}
+
+      {/* Wizard modal */}
+      {showWizard && (
+        <ClassWizard
+          courses={courses}
+          onCreated={handleCreated}
+          editingClass={editingClass}
+          onClose={handleCloseWizard}
+        />
       )}
     </div>
   );
