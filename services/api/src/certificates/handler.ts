@@ -6,8 +6,8 @@ import { ok, notFound, badRequest, forbidden, serverError, cors, setRequestOrigi
 import { setEnvironmentFromOrigin } from '../shared/env-context';
 
 const DEFAULT_TEMPLATE: CertTemplate = {
-  primaryColor: '#7B2FBE',
-  secondaryColor: '#00B4D8',
+  primaryColor: '#17527E',
+  secondaryColor: '#E2BA50',
   watermarkText: 'Lux Learning',
   footerText: 'Este certificado acredita la finalización exitosa del curso.',
   fields: { studentName: true, courseTitle: true, issuedAt: true },
@@ -166,6 +166,52 @@ export const handler = async (event: Event) => {
         },
         body: pdfBuffer.toString('base64'),
         isBase64Encoded: true,
+      };
+    }
+
+    // GET /certificates/:certId/badge — PUBLIC, Open Badges 2.0 assertion
+    const certBadgeMatch = path.match(/^\/certificates\/([^/]+)\/badge$/);
+    if (method === 'GET' && certBadgeMatch) {
+      const certId = certBadgeMatch[1]!;
+      const cert = await getCertificate(certId);
+      if (!cert) return notFound('Certificado no encontrado');
+      const baseUrl = 'https://luxlearning.academy';
+      const assertion = {
+        '@context': 'https://w3id.org/openbadges/v2',
+        type: 'Assertion',
+        id: `${baseUrl}/certificado/${certId}/badge`,
+        badge: {
+          type: 'BadgeClass',
+          id: `${baseUrl}/badge-class/${cert.courseId}`,
+          name: `Finalización: ${cert.courseTitle}`,
+          description: `Certificado de finalización exitosa del curso "${cert.courseTitle}" en Lux Learning.`,
+          image: `${baseUrl}/badge-icon.png`,
+          criteria: { narrative: 'Completar exitosamente todos los módulos, evaluaciones y reflexiones del curso.' },
+          issuer: {
+            type: 'Profile',
+            id: baseUrl,
+            name: 'Lux Learning',
+            url: baseUrl,
+            email: 'info@luxlearning.academy',
+          },
+        },
+        recipient: {
+          type: 'id',
+          identity: `${baseUrl}/student/${cert.userId}`,
+          hashed: false,
+        },
+        issuedOn: cert.issuedAt,
+        verification: { type: 'hosted' },
+        evidence: { id: `${baseUrl}/certificado/${certId}`, name: 'Certificado de Finalización' },
+      };
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/ld+json',
+          'Access-Control-Allow-Origin': getCorsOrigin(origin),
+          'Cache-Control': 'public, max-age=86400',
+        },
+        body: JSON.stringify(assertion),
       };
     }
 
