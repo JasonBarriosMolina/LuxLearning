@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, TrendingUp, ClipboardList, Users,
   UserCog, UserCircle, Settings2, BarChart2, CalendarCheck, CalendarDays,
   UserPlus, MessageSquare, Mail, FolderOpen, FolderKanban,
-  FileCheck, Mic, BookCheck, ListTodo, Download, CalendarClock,
+  FileCheck, Mic, BookCheck, ListTodo, Download, CalendarClock, Library, Award,
 } from 'lucide-react';
 import React from 'react';
 
@@ -16,7 +16,8 @@ export type NavKey =
   | 'evaluations' | 'students' | 'tasks' | 'contentMgmt' | 'reports'
   | 'assignCourses' | 'users' | 'emailTemplates' | 'myActivity' | 'myProfile'
   | 'communications' | 'myResources' | 'adminCerts' | 'groups' | 'submissions'
-  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases' | 'luxScheduler' | 'mentorAnalytics';
+  | 'interviews' | 'attendance' | 'studyPlan' | 'luxMentorClases' | 'luxScheduler' | 'mentorAnalytics'
+  | 'email' | 'library' | 'myCertificates';
 
 export interface NavItem {
   href: string;
@@ -42,9 +43,10 @@ export const STUDENT_NAV: NavItem[] = [
   { href: '/progress',        labelKey: 'myProgress',     icon: <TrendingUp      className="w-5 h-5" /> },
   { href: '/tasks',           labelKey: 'myTasks',        icon: <CalendarCheck   className="w-5 h-5" /> },
   { href: '/calendar',        labelKey: 'calendar',       icon: <CalendarDays    className="w-5 h-5" /> },
-  { href: '/communications',  labelKey: 'communications', icon: <MessageSquare   className="w-5 h-5" /> },
-  { href: '/activity',        labelKey: 'myActivity',     icon: <TrendingUp      className="w-5 h-5" /> },
-  { href: '/profile',         labelKey: 'myProfile',      icon: <UserCircle      className="w-5 h-5" /> },
+  { href: '/communications',  labelKey: 'communications',  icon: <MessageSquare   className="w-5 h-5" /> },
+  { href: '/certificates',    labelKey: 'myCertificates',  icon: <Award           className="w-5 h-5" /> },
+  { href: '/activity',        labelKey: 'myActivity',      icon: <TrendingUp      className="w-5 h-5" /> },
+  { href: '/profile',         labelKey: 'myProfile',       icon: <UserCircle      className="w-5 h-5" /> },
 ];
 
 // ─── EVALUATOR grouped (16 items → 4 accordion + 2 flat) ─────────────────────
@@ -79,6 +81,7 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
       { href: '/evaluator/my-courses',   labelKey: 'myCourses',       icon: <BookOpen   className="w-5 h-5" /> },
       { href: '/admin/clases',           labelKey: 'luxMentorClases',  icon: <BookOpen   className="w-5 h-5" /> },
       { href: '/evaluator/my-resources', labelKey: 'myResources',      icon: <FolderOpen className="w-5 h-5" /> },
+      { href: '/admin/library',          labelKey: 'library',          icon: <Library    className="w-5 h-5" /> },
       { href: '/admin/assign-courses',   labelKey: 'assignCourses',    icon: <UserPlus   className="w-5 h-5" /> },
     ],
   },
@@ -102,6 +105,7 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
     flat: true,
     items: [
       { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" /> },
+      { href: '/admin/email',              labelKey: 'email',          icon: <Mail          className="w-5 h-5" /> },
     ],
   },
   {
@@ -145,12 +149,13 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     labelEn: 'Academic Center',
     icon: <BookOpen className="w-5 h-5" />,
     items: [
-      { href: '/evaluator/my-courses',   labelKey: 'myCourses',      icon: <BookOpen   className="w-5 h-5" /> },
-      { href: '/admin/courses',          labelKey: 'contentMgmt',    icon: <Settings2  className="w-5 h-5" /> },
-      { href: '/admin/clases',           labelKey: 'luxMentorClases', icon: <BookOpen   className="w-5 h-5" /> },
-      { href: '/evaluator/my-resources', labelKey: 'myResources',    icon: <FolderOpen className="w-5 h-5" /> },
-      { href: '/admin/assign-courses',   labelKey: 'assignCourses',  icon: <UserPlus   className="w-5 h-5" /> },
-      { href: '/admin/scheduler',        labelKey: 'luxScheduler',   icon: <CalendarClock className="w-5 h-5" /> },
+      { href: '/evaluator/my-courses',   labelKey: 'myCourses',       icon: <BookOpen      className="w-5 h-5" /> },
+      { href: '/admin/courses',          labelKey: 'contentMgmt',     icon: <Settings2     className="w-5 h-5" /> },
+      { href: '/admin/clases',           labelKey: 'luxMentorClases',  icon: <BookOpen      className="w-5 h-5" /> },
+      { href: '/evaluator/my-resources', labelKey: 'myResources',      icon: <FolderOpen    className="w-5 h-5" /> },
+      { href: '/admin/library',          labelKey: 'library',          icon: <Library       className="w-5 h-5" /> },
+      { href: '/admin/assign-courses',   labelKey: 'assignCourses',    icon: <UserPlus      className="w-5 h-5" /> },
+      { href: '/admin/scheduler',        labelKey: 'luxScheduler',     icon: <CalendarClock className="w-5 h-5" /> },
     ],
   },
   {
@@ -174,6 +179,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     icon: <MessageSquare className="w-5 h-5" />,
     items: [
       { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" /> },
+      { href: '/admin/email',              labelKey: 'email',          icon: <Mail          className="w-5 h-5" /> },
       { href: '/admin/email-templates',    labelKey: 'emailTemplates', icon: <Mail          className="w-5 h-5" /> },
     ],
   },

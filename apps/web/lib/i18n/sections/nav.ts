@@ -33,6 +33,9 @@ export const navEs = {
     studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Clases',
     mentorAnalytics: 'Mentor Analytics',
+    email: 'Correos',
+    library: 'Biblioteca',
+    myCertificates: 'Mis Certificados',
   },
   roles: {
     superAdmin: 'Super Admin',
@@ -134,6 +137,9 @@ export const navEn = {
     studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Classes',
     mentorAnalytics: 'Mentor Analytics',
+    email: 'Emails',
+    library: 'Library',
+    myCertificates: 'My Certificates',
   },
   roles: {
     superAdmin: 'Super Admin',
