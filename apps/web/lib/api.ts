@@ -525,6 +525,14 @@ export const api = {
       recipients: (courseId?: string) => request<any>(`/admin/email/recipients${courseId ? '?courseId=' + courseId : ''}`),
       courses: () => request<any>('/admin/email/courses'),
     },
+    // Library
+    library: {
+      search: (q: string, sources?: string) => request<any>(`/admin/library/search?q=${encodeURIComponent(q)}${sources ? '&sources=' + sources : ''}`),
+      local: () => request<any>('/admin/library/local'),
+      save: (body: { title: string; authors?: string[]; year?: number; source?: string; url: string; doi?: string; abstract?: string }) =>
+        request<any>('/admin/library/save', { method: 'POST', body: JSON.stringify(body) }),
+      remove: (resourceId: string) => request<any>(`/admin/library/local/${resourceId}`, { method: 'DELETE' }),
+    },
     // Users
     users: {
       list: () => request<any>('/admin/users'),
