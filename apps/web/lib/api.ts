@@ -531,7 +531,13 @@ export const api = {
       local: () => request<any>('/admin/library/local'),
       save: (body: { title: string; authors?: string[]; year?: number; source?: string; url: string; doi?: string; abstract?: string }) =>
         request<any>('/admin/library/save', { method: 'POST', body: JSON.stringify(body) }),
+      update: (resourceId: string, body: { folder?: string; courseIds?: string[] }) =>
+        request<any>(`/admin/library/local/${resourceId}`, { method: 'PATCH', body: JSON.stringify(body) }),
       remove: (resourceId: string) => request<any>(`/admin/library/local/${resourceId}`, { method: 'DELETE' }),
+      folderMeta: () => request<any>('/admin/library/folder-meta'),
+      saveFolderMeta: (folderName: string, color: string) =>
+        request<any>('/admin/library/folder-meta', { method: 'PUT', body: JSON.stringify({ folderName, color }) }),
+      deleteFolder: (name: string) => request<any>(`/admin/library/folder-meta/${encodeURIComponent(name)}`, { method: 'DELETE' }),
     },
     // Users
     users: {

@@ -1,7 +1,18 @@
 // Biblioteca Unificada — searches OpenAlex, arXiv, CORE, SciELO in parallel; local save via LuxResources.
+import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { ddb, TABLES } from '../shared/db-core';
 import { AdminCtx } from './ctx';
 import { saveResource, getResourcesByEvaluator, updateResource } from '../shared/db-tasks';
 import { ok, badRequest } from '../shared/response';
+
+async function getFolderMeta(userId: string): Promise<Record<string, { color: string }>> {
+  const result = await ddb.send(new GetCommand({ TableName: TABLES.RESOURCES, Key: { evaluatorId: userId, resourceId: '__folder_meta__' } }));
+  return (result.Item as any)?.folderMeta ?? {};
+}
+
+async function saveFolderMeta(userId: string, meta: Record<string, { color: string }>): Promise<void> {
+  await ddb.send(new PutCommand({ TableName: TABLES.RESOURCES, Item: { evaluatorId: userId, resourceId: '__folder_meta__', fileType: 'meta/folders', folderMeta: meta, createdAt: new Date().toISOString() } }));
+}
 
 export interface LibraryResult {
   id: string;
@@ -134,11 +145,48 @@ export async function handleLibrary(ctx: AdminCtx): Promise<any | null> {
     return ok({ results, count: results.length });
   }
 
-  // ── GET /admin/library/local — saved resources in LuxResources ────────────────
+  // ── GET /admin/library/local — saved resources + folder metadata ─────────────
   if (method === 'GET' && path === '/admin/library/local') {
-    const all = await getResourcesByEvaluator(userId!);
-    const library = all.filter((r) => !r.archived && r.folder === '__library__');
-    return ok(library);
+    const [all, folderMeta] = await Promise.all([getResourcesByEvaluator(userId!), getFolderMeta(userId!)]);
+    const library = all.filter((r) => !r.archived && (r as any).fileType !== 'meta/folders');
+    return ok({ resources: library, folderMeta });
+  }
+
+  // ── GET /admin/library/folder-meta ───────────────────────────────────────────
+  if (method === 'GET' && path === '/admin/library/folder-meta') {
+    return ok(await getFolderMeta(userId!));
+  }
+
+  // ── PUT /admin/library/folder-meta — upsert folder colors ────────────────────
+  if (method === 'PUT' && path === '/admin/library/folder-meta') {
+    const { folderName, color } = ctx.body as { folderName?: string; color?: string };
+    if (!folderName?.trim()) return badRequest('folderName requerido');
+    const meta = await getFolderMeta(userId!);
+    meta[folderName.trim()] = { color: color ?? '#17527E' };
+    await saveFolderMeta(userId!, meta);
+    return ok(meta);
+  }
+
+  // ── DELETE /admin/library/folder-meta/:name — remove folder ──────────────────
+  const folderDeleteMatch = path.match(/^\/admin\/library\/folder-meta\/([^/]+)$/);
+  if (folderDeleteMatch && method === 'DELETE') {
+    const name = decodeURIComponent(folderDeleteMatch[1]!);
+    const meta = await getFolderMeta(userId!);
+    delete meta[name];
+    await saveFolderMeta(userId!, meta);
+    return ok(meta);
+  }
+
+  // ── PATCH /admin/library/local/:resourceId — update folder/courseIds ──────────
+  const libPatchMatch = path.match(/^\/admin\/library\/local\/([^/]+)$/);
+  if (libPatchMatch && method === 'PATCH') {
+    const resourceId = libPatchMatch[1]!;
+    const { folder, courseIds } = ctx.body as { folder?: string; courseIds?: string[] };
+    const updates: any = { updatedAt: new Date().toISOString() };
+    if (folder !== undefined) updates.folder = folder;
+    if (courseIds !== undefined) updates.courseIds = courseIds;
+    await updateResource(userId!, resourceId, updates);
+    return ok({ updated: true });
   }
 
   // ── POST /admin/library/save — save external result as local resource ─────────
