@@ -33,7 +33,7 @@ export const navEs = {
     studyPlan: "Mentor's Learning Path",
     luxMentorClases: 'Lux Mentor — Clases',
     mentorAnalytics: 'Mentor Analytics',
-    email: 'Correos',
+    email: 'Emails',
     library: 'Biblioteca',
     myCertificates: 'Mis Certificados',
   },

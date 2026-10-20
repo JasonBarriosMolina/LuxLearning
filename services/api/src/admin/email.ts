@@ -1,4 +1,53 @@
 // Email module domain handler for lux-admin.
+function brandedEmailHtml(bodyHtml: string, subject: string): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#17527E 0%,#0F3F62 100%);padding:28px 40px">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <table cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="background:rgba(255,255,255,0.15);border-radius:10px;padding:8px 12px">
+                        <span style="color:#E2BA50;font-size:18px;font-weight:900;letter-spacing:-0.5px">LUX</span>
+                        <span style="color:#ffffff;font-size:18px;font-weight:400;letter-spacing:-0.5px"> LEARNING</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Gold accent bar -->
+        <tr><td style="background:#E2BA50;height:4px;padding:0"></td></tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:36px 40px 28px;color:#2d3748;font-size:15px;line-height:1.7">
+            ${bodyHtml}
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f8fafc;border-top:1px solid #e8ecf0;padding:20px 40px;text-align:center">
+            <p style="margin:0 0 4px;font-size:12px;color:#718096">Este correo fue enviado por Lux Learning.</p>
+            <p style="margin:0;font-size:11px;color:#a0aec0">© ${new Date().getFullYear()} Lux Learning · luxlearning.academy</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 import { SendEmailCommand } from '@aws-sdk/client-ses';
 import { ListUsersInGroupCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { AdminCtx, ses, FROM_EMAIL, cognito, USER_POOL_ID, isAdmin } from './ctx';
@@ -105,7 +154,7 @@ export async function handleEmail(ctx: AdminCtx): Promise<any | null> {
           Message: {
             Subject: { Data: subject, Charset: 'UTF-8' },
             Body: {
-              Html: { Data: bodyHtml, Charset: 'UTF-8' },
+              Html: { Data: brandedEmailHtml(bodyHtml, subject), Charset: 'UTF-8' },
               ...(bodyText ? { Text: { Data: bodyText, Charset: 'UTF-8' } } : {}),
             },
           },

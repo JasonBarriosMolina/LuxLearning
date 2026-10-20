@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, TrendingUp, ClipboardList, Users,
   UserCog, UserCircle, Settings2, BarChart2, CalendarCheck, CalendarDays,
   UserPlus, MessageSquare, Mail, FolderOpen, FolderKanban,
-  FileCheck, Mic, BookCheck, ListTodo, Download, CalendarClock, Library, Award,
+  FileCheck, Mic, BookCheck, ListTodo, Download, CalendarClock, Library, Award, AtSign,
 } from 'lucide-react';
 import React from 'react';
 
@@ -105,7 +105,7 @@ export const EVALUATOR_NAV_GROUPS: NavGroup[] = [
     flat: true,
     items: [
       { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" /> },
-      { href: '/admin/email',              labelKey: 'email',          icon: <Mail          className="w-5 h-5" /> },
+      { href: '/admin/email',              labelKey: 'email',          icon: <AtSign        className="w-5 h-5" /> },
     ],
   },
   {
@@ -179,7 +179,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     icon: <MessageSquare className="w-5 h-5" />,
     items: [
       { href: '/evaluator/communications', labelKey: 'communications', icon: <MessageSquare className="w-5 h-5" /> },
-      { href: '/admin/email',              labelKey: 'email',          icon: <Mail          className="w-5 h-5" /> },
+      { href: '/admin/email',              labelKey: 'email',          icon: <AtSign        className="w-5 h-5" /> },
       { href: '/admin/email-templates',    labelKey: 'emailTemplates', icon: <Mail          className="w-5 h-5" /> },
     ],
   },
