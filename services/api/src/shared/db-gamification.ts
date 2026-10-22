@@ -32,7 +32,7 @@ export async function recordChallengeAnswer(
     TableName: TABLES.GAMIFICATION,
     Item: { userId, sk, challengeId, lessonId, moduleId, xpEarned: xpReward, earnedAt: new Date().toISOString() },
     ConditionExpression: 'attribute_not_exists(sk)',
-  }).catch(() => null as any));
+  })).catch(() => null);
 
   const res = await ddb.send(new UpdateCommand({
     TableName: TABLES.GAMIFICATION,

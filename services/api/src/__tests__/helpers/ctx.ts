@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
 /** Builds a mock Prisma client where every model method is a spy returning sensible defaults. */
-export function makePrisma(overrides: Record<string, Partial<ReturnType<typeof mockModel>>> = {}) {
+export function makePrisma(overrides: Record<string, Record<string, any>> = {}) {
   function mockModel() {
     return {
       findUnique: vi.fn().mockResolvedValue(null),

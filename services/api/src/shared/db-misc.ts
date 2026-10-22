@@ -26,7 +26,7 @@ export async function getReportAnalysis(moduleId: string): Promise<ReportAnalysi
 export async function saveReportAnalysis(analysis: ReportAnalysis): Promise<void> {
   await ddb.send(new PutCommand({
     TableName: TABLES.REPORT_ANALYSIS,
-    Item: { moduleId: analysis.moduleId, sk: 'ANALYSIS', ...analysis },
+    Item: { sk: 'ANALYSIS', ...analysis },
   }));
 }
 

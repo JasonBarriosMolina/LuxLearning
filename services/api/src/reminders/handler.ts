@@ -403,7 +403,7 @@ export const handler = async () => {
               where: { evaluatorId: calEv.creatorId },
               select: { id: true },
             });
-            const courseIds = courses.map((c) => c.id);
+            const courseIds = courses.map((c: any) => c.id);
             const enrollments = allEnrollments.filter((e) => courseIds.includes(e.courseId));
             for (const enrollment of enrollments) {
               try {

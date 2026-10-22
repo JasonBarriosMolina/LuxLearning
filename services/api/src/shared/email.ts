@@ -151,7 +151,7 @@ const DEFAULT_TEMPLATES: Record<EmailTemplateType, { subject: string; htmlBody: 
 
 // Render a template by replacing {{varName}} placeholders
 function renderTemplate(html: string, vars: Record<string, string>): string {
-  const frontendVars = { frontendUrl: FRONTEND_URL, ...vars };
+  const frontendVars: Record<string, string> = { frontendUrl: FRONTEND_URL, ...vars };
   return html.replace(/\{\{(\w+)\}\}/g, (_, key) => frontendVars[key] ?? '');
 }
 

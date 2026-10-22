@@ -327,7 +327,7 @@ export async function generateLessonImage(
     await s3Client.send(new PutObjectCommand({
       Bucket: S3_IMAGES_BUCKET,
       Key: key,
-      Body: imgBuffer,
+      Body: imgBuffer!,
       ContentType: 'image/jpeg',
     }));
     return `https://${S3_IMAGES_BUCKET}.s3.amazonaws.com/${key}`;
@@ -369,7 +369,7 @@ export async function generateCarouselInfographic(concept: string): Promise<stri
     const result = JSON.parse(new TextDecoder().decode(resp.body));
     const base64 = result.images?.[0];
     if (!base64) { console.error('[CarouselInfographic] Stability returned no image'); return null; }
-    let imgBuffer = Buffer.from(base64, 'base64');
+    let imgBuffer: Buffer = Buffer.from(base64, 'base64');
     imgBuffer = await applyLuxWatermark(imgBuffer).catch((err) => {
       console.error('[CarouselInfographic] Watermark failed, using unwatermarked:', err);
       return imgBuffer;

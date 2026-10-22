@@ -114,7 +114,7 @@ export const handler = async (event: Event) => {
         : allEnrollments;
 
       const visibleCourses = scopedCourseIds
-        ? courses.filter((c) => scopedCourseIds!.has(c.id))
+        ? courses.filter((c: any) => scopedCourseIds!.has(c.id))
         : courses;
 
       // ── Summary ──────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ export const handler = async (event: Event) => {
 
       // ── Module stats ─────────────────────────────────────────────────────
       const moduleMap = new Map<string, { title: string; courseTitle: string; total: number; approved: number; rejected: number; totalReviewTime: number; reviewedCount: number }>();
-      visibleCourses.forEach((c) => c.modules.forEach((m) =>
+      visibleCourses.forEach((c: any) => c.modules.forEach((m: any) =>
         moduleMap.set(m.id, { title: m.title, courseTitle: c.title, total: 0, approved: 0, rejected: 0, totalReviewTime: 0, reviewedCount: 0 })
       ));
       scopedReflections.forEach((r) => {
@@ -179,10 +179,10 @@ export const handler = async (event: Event) => {
       })).filter((m) => m.total > 0);
 
       // ── Heat map — quiz error rates per question per module ───────────────
-      const heatMap = visibleCourses.flatMap((c) => c.modules.map((mod) => {
+      const heatMap = visibleCourses.flatMap((c: any) => c.modules.map((mod: any) => {
         const attempts = scopedAttempts.filter((a) => a.moduleId === mod.id);
         if (!attempts.length || !mod.questions.length) return null;
-        const questions = mod.questions.map((q, i) => {
+        const questions = mod.questions.map((q: any, i: any) => {
           const total = attempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i).length;
           const errors = attempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i && a.answers[i] !== q.correctIndex).length;
           return {
@@ -252,8 +252,8 @@ export const handler = async (event: Event) => {
           // Signal 3: lesson completion rate inverted (0-20 pts)
           const myEnrollments = scopedEnrollments.filter((e) => e.userId === uid);
           const totalLessons = myEnrollments.reduce((sum, e) => {
-            const course = visibleCourses.find((c) => c.id === e.courseId);
-            return sum + (course?.modules?.flatMap((m) => m.lessons).length ?? 0);
+            const course = visibleCourses.find((c: any) => c.id === e.courseId);
+            return sum + (course?.modules?.flatMap((m: any) => m.lessons).length ?? 0);
           }, 0);
           const completedLessons = scopedProgress.filter((p) => p.userId === uid).length;
           const completionRate = totalLessons > 0 ? completedLessons / totalLessons : 0;
@@ -285,22 +285,22 @@ export const handler = async (event: Event) => {
       riskScores.sort((a, b) => b.riskScore - a.riskScore);
 
       // ── AI Analysis (from nightly job cache) ─────────────────────────────
-      const allModuleIds = visibleCourses.flatMap((c) => c.modules.map((m) => m.id));
-      const analysisResults = await Promise.allSettled(allModuleIds.map((id) => getReportAnalysis(id)));
+      const allModuleIds = visibleCourses.flatMap((c: any) => c.modules.map((m: any) => m.id));
+      const analysisResults = await Promise.allSettled(allModuleIds.map((id: any) => getReportAnalysis(id)));
       const analysis = analysisResults
         .map((r, i) => r.status === 'fulfilled' && r.value ? {
           moduleId: allModuleIds[i],
-          moduleTitle: visibleCourses.flatMap((c) => c.modules).find((m) => m.id === allModuleIds[i])?.title ?? '',
+          moduleTitle: visibleCourses.flatMap((c: any) => c.modules).find((m: any) => m.id === allModuleIds[i])?.title ?? '',
           ...r.value,
         } : null)
         .filter(Boolean);
 
       // ── Recommendations ───────────────────────────────────────────────────
-      const recsResults = await Promise.allSettled(allModuleIds.map((id) => getRecommendations(id)));
+      const recsResults = await Promise.allSettled(allModuleIds.map((id: any) => getRecommendations(id)));
       const recommendations = recsResults
         .map((r, i) => ({
           moduleId: allModuleIds[i],
-          moduleTitle: visibleCourses.flatMap((c) => c.modules).find((m) => m.id === allModuleIds[i])?.title ?? '',
+          moduleTitle: visibleCourses.flatMap((c: any) => c.modules).find((m: any) => m.id === allModuleIds[i])?.title ?? '',
           items: r.status === 'fulfilled' ? r.value : [],
         }))
         .filter((rec) => rec.items.length > 0);
@@ -405,9 +405,9 @@ export const handler = async (event: Event) => {
         allEnrollments.filter((e) => e.userId === studentId).map((e) => e.courseId)
       );
       const relevantCourses = courseId
-        ? courses.filter((c) => c.id === courseId)
-        : courses.filter((c) => enrolledCourseIds.has(c.id));
-      const relevantModuleIds = new Set(relevantCourses.flatMap((c) => c.modules.map((m) => m.id)));
+        ? courses.filter((c: any) => c.id === courseId)
+        : courses.filter((c: any) => enrolledCourseIds.has(c.id));
+      const relevantModuleIds = new Set(relevantCourses.flatMap((c: any) => c.modules.map((m: any) => m.id)));
 
       const studentReflections = allReflections.filter((r) => r.userId === studentId && relevantModuleIds.has(r.moduleId));
       const studentProgress = allProgress.filter((p) => p.userId === studentId);
@@ -416,9 +416,9 @@ export const handler = async (event: Event) => {
       const approvedReflections = studentReflections.filter((r) => r.status === 'APPROVED');
       const pendingReflections = studentReflections.filter((r) => r.status === 'PENDING_EVAL');
       const rejectedReflections = studentReflections.filter((r) => r.status === 'REJECTED');
-      const completedLessons = studentProgress.filter((p) => p.completed).length;
+      const completedLessons = studentProgress.filter((p) => !!p.completedAt).length;
 
-      const moduleLines = relevantCourses.flatMap((c) => c.modules.map((m) => {
+      const moduleLines = relevantCourses.flatMap((c: any) => c.modules.map((m: any) => {
         const refs = studentReflections.filter((r) => r.moduleId === m.id);
         const attempts = studentAttempts.filter((a) => a.moduleId === m.id);
         const bestScore = attempts.length > 0 ? Math.max(...attempts.map((a) => a.score ?? 0)) : null;
@@ -433,7 +433,7 @@ export const handler = async (event: Event) => {
       const prompt = `Eres un evaluador pedagógico experto. Genera un reporte narrativo cualitativo y detallado sobre el progreso de un estudiante.
 
 DATOS DEL ESTUDIANTE: ${studentName}
-Cursos evaluados: ${relevantCourses.map((c) => c.title).join(', ')}
+Cursos evaluados: ${relevantCourses.map((c: any) => c.title).join(', ')}
 Lecciones completadas: ${completedLessons}
 Reflexiones totales: ${studentReflections.length} (aprobadas: ${approvedReflections.length}, pendientes: ${pendingReflections.length}, rechazadas: ${rejectedReflections.length})
 

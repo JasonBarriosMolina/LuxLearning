@@ -218,7 +218,7 @@ export async function isOnboardingDone(userId: string): Promise<boolean> {
 
 // ─── AI Generation Jobs ───────────────────────────────────────────────────────
 
-export async function saveAiJob(jobId: string, data: { status: 'processing' | 'done' | 'error'; result?: any; error?: string }): Promise<void> {
+export async function saveAiJob(jobId: string, data: { status: 'processing' | 'done' | 'done_incomplete' | 'error'; result?: any; error?: string; [field: string]: any }): Promise<void> {
   await ddb.send(new PutCommand({
     TableName: TABLES.PROGRESS,
     Item: { userId: '_AIJOB', sk: jobId, ...data, updatedAt: new Date().toISOString() },
