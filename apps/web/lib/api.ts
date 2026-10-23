@@ -523,6 +523,7 @@ export const api = {
         request<any>('/admin/email/send', { method: 'POST', body: JSON.stringify(body) }),
       sent: () => request<any>('/admin/email/sent'),
       recipients: (courseId?: string) => request<any>(`/admin/email/recipients${courseId ? '?courseId=' + courseId : ''}`),
+      aiDraft: (prompt: string) => request<any>('/admin/email/ai-draft', { method: 'POST', body: JSON.stringify({ prompt }) }),
       courses: () => request<any>('/admin/email/courses'),
     },
     // Library

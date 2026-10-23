@@ -1,6 +1,8 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { api } from '@/lib/api';
+
+const SIG_KEY = 'lux_email_signature';
 
 interface Course { id: string; title: string }
 interface Recipient { userId: string; name: string; email: string }
@@ -53,8 +55,40 @@ export default function ComposeModal({ courses, onClose, onSent }: Props) {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  // AI draft
+  const [showAI, setShowAI] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  // Signature
+  const [signature, setSignature] = useState('');
+  const [editingSignature, setEditingSignature] = useState(false);
+  const [sigDraft, setSigDraft] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try { setSignature(localStorage.getItem(SIG_KEY) ?? ''); } catch { /* ignore */ }
+  }, []);
+
+  const saveSignature = () => {
+    try { localStorage.setItem(SIG_KEY, sigDraft); } catch { /* ignore */ }
+    setSignature(sigDraft);
+    setEditingSignature(false);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    try {
+      const r: any = await api.admin.email.aiDraft(aiPrompt.trim());
+      if (editorRef.current && r.data?.html) {
+        editorRef.current.innerHTML = r.data.html;
+      }
+      setShowAI(false);
+      setAiPrompt('');
+    } catch { /* ignore */ }
+    setAiLoading(false);
+  };
 
   const loadRecipients = async (cId: string) => {
     setLoadingRecipients(true);
@@ -97,11 +131,14 @@ export default function ComposeModal({ courses, onClose, onSent }: Props) {
 
   const getBodyHtml = useCallback(() => {
     const raw = editorRef.current?.innerHTML ?? '';
+    const sigHtml = signature.trim()
+      ? `<hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb"><div style="font-size:13px;color:#6b7280">${signature.replace(/\n/g, '<br>')}</div>`
+      : '';
     const attachHtml = attachments.length
       ? `<hr style="margin:16px 0"><p style="font-size:12px;color:#888">Adjuntos:</p><ul>${attachments.map((a) => `<li><a href="${a.url}">${a.name}</a></li>`).join('')}</ul>`
       : '';
-    return raw + attachHtml;
-  }, [attachments]);
+    return raw + sigHtml + attachHtml;
+  }, [attachments, signature]);
 
   const handleSend = async () => {
     const allTo = [...to];
@@ -195,7 +232,31 @@ export default function ComposeModal({ courses, onClose, onSent }: Props) {
             {uploadingFile ? 'Subiendo…' : 'Adjuntar'}
           </button>
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <button onClick={() => setShowAI(!showAI)}
+            className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded hover:bg-gray-100 font-medium transition-colors ${showAI ? 'text-[#17527E] bg-[#17527E]/5' : 'text-gray-500'}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m1.636 6.364l.707-.707M12 21v-1m-6.364-1.636l.707-.707M6.343 6.343l-.707-.707M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            IA
+          </button>
         </div>
+
+        {/* AI panel */}
+        {showAI && (
+          <div className="px-4 py-3 border-b border-gray-100 bg-[#17527E]/3 shrink-0">
+            <p className="text-[11px] font-semibold text-[#17527E] mb-2">Lux Mentor — Redactar con IA</p>
+            <div className="flex gap-2">
+              <input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAiGenerate()}
+                placeholder="Ej: Recordatorio del módulo 3, fecha límite viernes…"
+                className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#17527E] bg-white" />
+              <button onClick={handleAiGenerate} disabled={aiLoading || !aiPrompt.trim()}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#17527E] text-white disabled:opacity-40">
+                {aiLoading ? '…' : 'Generar'}
+              </button>
+              <button onClick={() => setShowAI(false)} className="text-xs text-gray-400 hover:text-gray-600 px-1">✕</button>
+            </div>
+          </div>
+        )}
 
         {/* Editor */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -206,6 +267,33 @@ export default function ComposeModal({ courses, onClose, onSent }: Props) {
             style={{ caretColor: '#17527E' }}
           />
           <style>{`[contenteditable]:empty:before{content:attr(data-placeholder);color:#ccc;pointer-events:none}`}</style>
+
+          {/* Signature */}
+          <div className="mt-4 border-t border-dashed border-gray-200 pt-3">
+            {!editingSignature ? (
+              <div className="flex items-start gap-2">
+                {signature ? (
+                  <p className="flex-1 text-xs text-gray-400 whitespace-pre-line leading-relaxed">{signature}</p>
+                ) : (
+                  <p className="flex-1 text-xs text-gray-300 italic">Sin firma — agrega una</p>
+                )}
+                <button onClick={() => { setSigDraft(signature); setEditingSignature(true); }}
+                  className="text-[10px] text-[#17527E] hover:underline shrink-0">
+                  {signature ? 'Editar firma' : '+ Agregar firma'}
+                </button>
+              </div>
+            ) : (
+              <div>
+                <textarea value={sigDraft} onChange={(e) => setSigDraft(e.target.value)} rows={3}
+                  placeholder="Tu nombre, cargo, contacto…"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#17527E] resize-none" />
+                <div className="flex gap-2 mt-1.5">
+                  <button onClick={saveSignature} className="text-[10px] font-semibold text-[#17527E] hover:underline">Guardar</button>
+                  <button onClick={() => setEditingSignature(false)} className="text-[10px] text-gray-400 hover:text-gray-600">Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Attachments */}
           {attachments.length > 0 && (

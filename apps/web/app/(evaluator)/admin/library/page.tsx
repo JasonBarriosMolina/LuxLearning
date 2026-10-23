@@ -134,6 +134,14 @@ export default function LibraryPage() {
     setMovingResource(null);
   };
 
+  // PDF viewer
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const isPdf = (url: string) => url.toLowerCase().includes('.pdf') || url.includes('arxiv.org/pdf') || url.includes('core.ac.uk');
+  const openResource = (url: string) => {
+    if (isPdf(url)) { setPdfUrl(url); }
+    else { window.open(url, '_blank', 'noopener,noreferrer'); }
+  };
+
   // Group resources by folder
   const allFolderNames = Array.from(new Set([DEFAULT_FOLDER, ...Object.keys(folderMeta), ...resources.map((r) => r.folder ?? DEFAULT_FOLDER)]));
   const grouped = allFolderNames.reduce<Record<string, LocalResource[]>>((acc, f) => {
@@ -215,8 +223,15 @@ export default function LibraryPage() {
                         {r.doi && <p className="text-[9px] text-gray-300 font-mono truncate">{r.doi}</p>}
                       </div>
                       <div className="px-4 pb-3 flex gap-2">
-                        {r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="flex-1 text-center text-[11px] font-medium py-1.5 rounded-lg text-[#17527E] bg-[#17527E]/5 hover:bg-[#17527E]/10 transition-colors">Ver →</a>}
-                        <button onClick={() => handleSave(r)} disabled={saved.has(r.id) || saving === r.id || !r.url}
+                        {r.url ? (
+                          <button onClick={() => openResource(r.url!)}
+                            className="flex-1 text-center text-[11px] font-medium py-1.5 rounded-lg text-[#17527E] bg-[#17527E]/5 hover:bg-[#17527E]/10 transition-colors">
+                            {r.openAccess ? 'Ver →' : '🔒 Ver →'}
+                          </button>
+                        ) : (
+                          <span className="flex-1 text-center text-[11px] text-gray-300 py-1.5">Sin enlace</span>
+                        )}
+                        <button onClick={() => handleSave(r)} disabled={saved.has(r.id) || saving === r.id}
                           className={`flex-1 text-[11px] font-medium py-1.5 rounded-lg transition-colors ${saved.has(r.id) ? 'bg-green-50 text-green-600 cursor-default' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40'}`}>
                           {saving === r.id ? '…' : saved.has(r.id) ? '✓' : 'Guardar'}
                         </button>
@@ -295,8 +310,10 @@ export default function LibraryPage() {
                               )}
                             </div>
                             <div className="px-3 pb-2.5 flex gap-1.5">
-                              <a href={r.fileUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex-1 text-center text-[10px] font-medium py-1 rounded-lg text-[#17527E] bg-[#17527E]/5 hover:bg-[#17527E]/10">Ver</a>
+                              <button onClick={() => openResource(r.fileUrl)}
+                                className="flex-1 text-center text-[10px] font-medium py-1 rounded-lg text-[#17527E] bg-[#17527E]/5 hover:bg-[#17527E]/10">
+                                {isPdf(r.fileUrl) ? '📄 Ver' : 'Ver'}
+                              </button>
                               <button onClick={() => { setMovingResource(r); setMoveFolder(r.folder ?? DEFAULT_FOLDER); setMoveCourses(r.courseIds ?? []); }}
                                 className="flex-1 text-[10px] font-medium py-1 rounded-lg text-gray-600 bg-gray-100 hover:bg-gray-200">Editar</button>
                               <button onClick={() => handleRemove(r.resourceId)}
@@ -343,6 +360,27 @@ export default function LibraryPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── PDF VIEWER MODAL ────────────────────────────────────────────────── */}
+      {pdfUrl && (
+        <div className="fixed inset-0 bg-black/70 flex flex-col z-50">
+          <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-gray-200 shrink-0">
+            <p className="text-sm font-semibold text-gray-800 truncate max-w-lg">Vista previa — PDF</p>
+            <div className="flex items-center gap-2">
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer"
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+                Abrir en nueva pestaña ↗
+              </a>
+              <button onClick={() => setPdfUrl(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none ml-2">×</button>
+            </div>
+          </div>
+          <iframe
+            src={`https://docs.google.com/viewer?url=${encodeURIComponent(pdfUrl)}&embedded=true`}
+            className="flex-1 w-full border-0"
+            title="PDF viewer"
+          />
         </div>
       )}
 

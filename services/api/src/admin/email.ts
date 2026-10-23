@@ -1,4 +1,25 @@
 // Email module domain handler for lux-admin.
+import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { bedrock } from './ctx';
+
+async function generateEmailDraft(prompt: string): Promise<string> {
+  const res = await bedrock.send(new InvokeModelCommand({
+    modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify({
+      anthropic_version: 'bedrock-2023-05-31',
+      max_tokens: 800,
+      messages: [{
+        role: 'user',
+        content: `Eres el asistente de comunicaciones de Lux Learning, una plataforma educativa. Redacta un email profesional, cordial y conciso en español basado en la siguiente instrucción:\n\n"${prompt}"\n\nDevuelve SOLO el cuerpo del email en HTML (párrafos <p>, listas <ul><li>). Sin saludos genéricos. Sin explicaciones adicionales.`,
+      }],
+    }),
+  }));
+  const parsed = JSON.parse(new TextDecoder().decode(res.body));
+  return parsed.content?.[0]?.text?.trim() ?? '';
+}
+
 function brandedEmailHtml(bodyHtml: string, subject: string): string {
   return `<!DOCTYPE html>
 <html lang="es">
@@ -179,6 +200,14 @@ export async function handleEmail(ctx: AdminCtx): Promise<any | null> {
     });
 
     return ok({ emailId, sent: status === 'sent', recipientCount: validAddresses.length });
+  }
+
+  // ── POST /admin/email/ai-draft ─────────────────────────────────────────────
+  if (method === 'POST' && path === '/admin/email/ai-draft') {
+    const { prompt } = body as { prompt?: string };
+    if (!prompt?.trim()) return badRequest('prompt required');
+    const html = await generateEmailDraft(prompt.trim());
+    return ok({ html });
   }
 
   return null;
