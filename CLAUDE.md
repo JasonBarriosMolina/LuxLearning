@@ -5,6 +5,7 @@
 > - `dynamo-tables.md` — esquema DynamoDB
 > - `business-flows.md` — flujos reflection/quiz/enrollment/certificate/async-AI
 > - `common-errors.md` — errores frecuentes y fixes
+> - `lux-hq.md` — consola Lux HQ: user pool propio, Lambda lux-platform, base de plataforma separada, rutas /hq y /public
 
 ## Stack
 
