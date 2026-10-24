@@ -1,0 +1,178 @@
+/* ── Public landing ────────────────────────────────────────────────
+   Scoped to `.lx` (see layout.tsx). Light only. Institutional colors are
+   white and blue; gold is reserved for small highlights (lit steps, a mark). */
+
+.lx {
+  color-scheme: light;
+  --charcoal: #1D3247;
+  --border: #DCE6EF;
+  --gold-gradient: linear-gradient(135deg, #F8DE94 0%, #E2BA50 55%, #D49A2E 100%);
+  --blue-gradient: linear-gradient(135deg, #3E8FD0 0%, #17527E 100%);
+}
+
+/* Global h1–h6 rule sets Montserrat + charcoal; here headings follow their container.
+   Element-level specificity so Tailwind text-* utilities still win. */
+:where(.lx) h1, :where(.lx) h2, :where(.lx) h3, :where(.lx) h4 {
+  font-family: inherit;
+  color: inherit;
+}
+
+.lx ::selection { background: #CFE4F6; color: #1D3247; }
+
+.lx :focus-visible:not(input, select, textarea) {
+  outline: 2px solid #17527E;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+/* Buttons */
+.lx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.95rem 1.6rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background-position 0.5s ease;
+}
+.lx-btn:hover { transform: translateY(-2px); }
+.lx-btn:active { transform: translateY(0); }
+
+
+.lx-btn-blue {
+  color: #fff;
+  background: linear-gradient(135deg, #4A9BDB 0%, #2672AD 45%, #17527E 75%, #3E8FD0 100%);
+  background-size: 200% 200%;
+  background-position: 0% 50%;
+  box-shadow: 0 10px 28px -12px rgba(23, 82, 126, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.lx-btn-blue:hover {
+  background-position: 100% 50%;
+  box-shadow: 0 14px 32px -12px rgba(23, 82, 126, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.lx-btn-ghost {
+  color: #1D3247;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: inset 0 0 0 1px #DCE6EF;
+}
+.lx-btn-ghost:hover { box-shadow: inset 0 0 0 1px #3E8FD0; }
+
+/* Soft light behind sections: white and sky, with one small warm spark in the hero */
+.lx-glow-hero {
+  background:
+    radial-gradient(ellipse 22% 26% at 88% 10%, rgba(248, 222, 148, 0.45), transparent 70%),
+    radial-gradient(ellipse 55% 65% at 95% 0%, rgba(190, 220, 245, 0.75), transparent 70%),
+    radial-gradient(ellipse 45% 55% at 0% 100%, rgba(207, 228, 246, 0.8), transparent 70%),
+    #FFFFFF;
+}
+.lx-glow-sky {
+  background:
+    radial-gradient(ellipse 60% 70% at 15% 0%, rgba(190, 220, 245, 0.6), transparent 70%),
+    #F5F9FD;
+}
+.lx-glow-final {
+  background:
+    radial-gradient(ellipse 70% 90% at 50% 0%, rgba(190, 220, 245, 0.9), transparent 72%),
+    radial-gradient(ellipse 18% 30% at 50% 0%, rgba(248, 222, 148, 0.35), transparent 70%),
+    #F5F9FD;
+}
+
+/* Color bands: the page alternates white with rich blues for rhythm */
+.lx-band-deep {
+  color: #FFFFFF;
+  background:
+    radial-gradient(ellipse 45% 60% at 85% 15%, rgba(47, 143, 219, 0.55), transparent 70%),
+    radial-gradient(ellipse 40% 50% at 10% 90%, rgba(31, 162, 199, 0.35), transparent 70%),
+    linear-gradient(135deg, #0F2D4A 0%, #17527E 55%, #1F6FB2 100%);
+}
+.lx-band-bright {
+  color: #FFFFFF;
+  background:
+    radial-gradient(ellipse 30% 45% at 50% 0%, rgba(248, 222, 148, 0.28), transparent 70%),
+    radial-gradient(ellipse 50% 70% at 0% 100%, rgba(31, 162, 199, 0.55), transparent 70%),
+    linear-gradient(120deg, #17527E 0%, #1F6FB2 45%, #2F8FDB 100%);
+}
+
+/* Subtle dot texture for decorative panels */
+.lx-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.22) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+}
+.lx-dots-blue {
+  background-image: radial-gradient(rgba(31, 111, 178, 0.16) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+}
+
+.lx-btn-white {
+  color: #17527E;
+  background: #FFFFFF;
+  box-shadow: 0 12px 30px -12px rgba(8, 30, 52, 0.55);
+}
+.lx-btn-white:hover { box-shadow: 0 16px 36px -12px rgba(8, 30, 52, 0.65); }
+.lx-btn-outline-white {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+.lx-btn-outline-white:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* Border that fades from blue to the hairline color */
+.lx-edge {
+  position: relative;
+  isolation: isolate;
+}
+.lx-edge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(140deg, rgba(62, 143, 208, 0.7), rgba(62, 143, 208, 0.12) 45%, rgba(220, 230, 239, 0.9));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.lx-gold-text {
+  background: linear-gradient(120deg, #B07E17, #D49A2E 50%, #B07E17);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Route in the hero: nodes light up one by one on load (gold = achieved) */
+.lx-node {
+  transition: background 0.45s ease, box-shadow 0.45s ease, border-color 0.45s ease, transform 0.25s ease;
+}
+.lx-node[data-on='true'] {
+  border-color: transparent;
+  background: var(--gold-gradient);
+  box-shadow: 0 0 0 6px rgba(226, 186, 80, 0.2), 0 0 22px rgba(226, 186, 80, 0.55);
+}
+.lx-node[data-current='true'] { transform: scale(1.12); }
+.lx-seg { transition: background 0.45s ease; }
+.lx-seg[data-on='true'] { background: linear-gradient(90deg, #E2BA50, #F3D27C); }
+
+.lx-panel-in { animation: lx-panel 0.35s ease both; }
+@keyframes lx-panel {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* FAQ disclosure */
+.lx-faq summary { list-style: none; cursor: pointer; }
+.lx-faq summary::-webkit-details-marker { display: none; }
+.lx-faq[open] .lx-faq-icon { transform: rotate(45deg); }
+.lx-faq-icon { transition: transform 0.25s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-btn, .lx-node, .lx-seg, .lx-faq-icon { transition: none; }
+  .lx-btn:hover { transform: none; }
+  .lx-panel-in { animation: none; }
+}

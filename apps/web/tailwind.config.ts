@@ -18,10 +18,26 @@ const config: Config = {
         'cta-to': '#0F3F62',
         'lux-gold': '#E2BA50',
         'lux-gold-dark': '#C9A130',
+        // Public landing palette (light, gold-forward)
+        'lx-ink': '#1D3247',
+        'lx-muted': '#4C6075',
+        'lx-soft': '#7A8DA0',
+        'lx-line': '#DCE6EF',
+        'lx-sky': '#EEF5FB',
+        'lx-dawn': '#FFF6DF',
+        'lx-paper': '#FFFFFF',
+        'lx-gold-deep': '#B07E17',
+        // Blue family: institutional color in several tones
+        'lx-navy': '#0F2D4A',
+        'lx-royal': '#1F6FB2',
+        'lx-bright': '#2F8FDB',
+        'lx-cyan': '#1FA2C7',
+        'lx-ice': '#EAF4FC',
       },
       fontFamily: {
         sans: ['Roboto', 'sans-serif'],
         heading: ['Montserrat', 'sans-serif'],
+        manrope: ['var(--font-manrope)', 'Manrope', 'sans-serif'],
       },
       backgroundImage: {
         'cta-gradient': 'linear-gradient(135deg, #17527E, #0F3F62)',

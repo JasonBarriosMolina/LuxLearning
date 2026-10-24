@@ -12,7 +12,7 @@ import type {
 
 const ENV_API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-function getApiUrl(): string {
+export function getApiUrl(): string {
   if (ENV_API_URL) return ENV_API_URL;
   if (typeof window === 'undefined') return '';
   const host = window.location.hostname;
