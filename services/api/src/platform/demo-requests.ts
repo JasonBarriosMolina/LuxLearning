@@ -1,6 +1,5 @@
-import { createHash } from 'crypto';
 import { created, badRequest } from '../shared/response';
-import type { PlatformCtx } from './ctx';
+import { hashIp, type PlatformCtx } from './ctx';
 import { sendSalesNotification, sendRequesterConfirmation } from './emails';
 
 // Options must match apps/web/components/landing/DemoForm.tsx
@@ -49,10 +48,6 @@ export function parseDemoRequest(body: Record<string, unknown>): { ok: true; val
   };
 }
 
-function hashIp(ip: string): string {
-  const salt = process.env.IP_HASH_SALT ?? process.env.AWS_LAMBDA_FUNCTION_NAME ?? 'lux';
-  return createHash('sha256').update(`${salt}:${ip}`).digest('hex');
-}
 
 /** POST /public/demo-requests — no auth. Stores the lead, then notifies sales and the requester. */
 export async function handleDemoRequests(ctx: PlatformCtx): Promise<any | null> {

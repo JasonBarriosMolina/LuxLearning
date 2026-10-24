@@ -109,9 +109,17 @@ export const TEACH_WITH_US = {
   title: 'Enseña con Lux',
   text: 'Buscamos profesionales con experiencia real que disfruten acompañar a otros a aprender. Tú pones tu conocimiento; nosotros, la plataforma y los estudiantes.',
   points: ['Trabaja de forma remota y con horarios flexibles', 'Revisa entregas y acompaña a estudiantes de tu área', 'Forma parte de una comunidad de profesionales'],
-  // TODO: replace with an application form stored in Lux HQ.
-  applyHref: 'mailto:sales@luxlearning.academy?subject=Quiero%20ense%C3%B1ar%20con%20Lux',
+  applyHref: '/profesores/postular',
 };
+
+// First draft of the teacher onboarding path; keep in sync with the confirmation email
+// (services/api/src/platform/emails.ts) until the onboarding is designed in detail.
+export const ONBOARDING_STEPS = [
+  { title: 'Revisamos tu perfil', text: 'Leemos tu postulación con calma. Te escribiremos en un máximo de 5 días hábiles.' },
+  { title: 'Conversamos contigo', text: 'Si tu perfil encaja, agendamos una entrevista corta para conocerte y hablar de tu curso.' },
+  { title: 'Onboarding', text: 'Te mostramos la plataforma y te acompañamos a diseñar tu primer curso paso a paso.' },
+  { title: 'Publicas tu curso', text: 'Cuando tu curso esté listo, lo publicamos y empiezas a acompañar a tus estudiantes.' },
+];
 
 // TODO: replace with an interest form stored in Lux HQ once mini apps pricing is defined.
 export const MINI_APPS_NOTIFY_HREF = 'mailto:sales@luxlearning.academy?subject=Quiero%20conocer%20las%20mini%20apps';

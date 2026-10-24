@@ -2,6 +2,8 @@ import { badRequest, notFound, serverError, cors, setRequestOrigin } from '../sh
 import { getSql, staffFromEvent, type PlatformCtx, type PlatformEvent } from './ctx';
 import { handleDemoRequests } from './demo-requests';
 import { handleLeads } from './leads';
+import { handleTeacherApplications } from './teacher-applications';
+import { handleTeachers } from './teachers';
 
 export const handler = async (event: PlatformEvent) => {
   setRequestOrigin(event.headers?.origin ?? event.headers?.Origin);
@@ -28,7 +30,13 @@ export const handler = async (event: PlatformEvent) => {
   };
 
   try {
-    return (await handleDemoRequests(ctx)) ?? (await handleLeads(ctx)) ?? notFound('Ruta no encontrada');
+    return (
+      (await handleDemoRequests(ctx)) ??
+      (await handleTeacherApplications(ctx)) ??
+      (await handleLeads(ctx)) ??
+      (await handleTeachers(ctx)) ??
+      notFound('Ruta no encontrada')
+    );
   } catch (err) {
     return serverError(err);
   }

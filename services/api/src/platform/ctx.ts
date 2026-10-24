@@ -1,14 +1,17 @@
+import { createHash } from 'crypto';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { SESClient } from '@aws-sdk/client-ses';
 
-// lux-platform serves Lux HQ (the owners' console) and the public demo form.
+// lux-platform serves Lux HQ (the owners' console) and the public forms
+// (institution demo requests, teacher applications).
 // It never touches the tenant database: its data lives in the platform DB whose
 // URL is in PLATFORM_DB_SECRET_ARN.
 
 export const REGION = process.env.AWS_REGION ?? 'us-east-1';
 export const SALES_EMAIL = process.env.SALES_EMAIL ?? 'sales@luxlearning.academy';
+export const TALENT_EMAIL = process.env.TALENT_EMAIL ?? 'talent@luxlearning.academy';
 export const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@luxlearning.academy';
 export const HQ_URL = process.env.HQ_URL ?? 'https://hq.luxlearning.academy';
 
@@ -68,4 +71,10 @@ export function staffFromEvent(event: PlatformEvent): Staff | null {
 
 export function hasGroup(staff: Staff | null, ...allowed: StaffGroup[]): boolean {
   return !!staff && staff.groups.some((g) => g === 'OWNER' || allowed.includes(g));
+}
+
+/** Rate limits key on a salted hash, never on the raw IP. */
+export function hashIp(ip: string): string {
+  const salt = process.env.IP_HASH_SALT ?? process.env.AWS_LAMBDA_FUNCTION_NAME ?? 'lux';
+  return createHash('sha256').update(`${salt}:${ip}`).digest('hex');
 }

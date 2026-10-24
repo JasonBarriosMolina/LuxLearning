@@ -1,6 +1,7 @@
 import { SendEmailCommand } from '@aws-sdk/client-ses';
-import { ses, FROM_EMAIL, SALES_EMAIL, HQ_URL } from './ctx';
+import { ses, FROM_EMAIL, SALES_EMAIL, TALENT_EMAIL, HQ_URL } from './ctx';
 import type { DemoRequest } from './demo-requests';
+import type { TeacherApplication } from './teacher-applications';
 
 function esc(value: string | null | undefined): string {
   return String(value ?? '')
@@ -61,6 +62,73 @@ export async function sendRequesterConfirmation(lead: DemoRequest): Promise<void
     ReplyToAddresses: [SALES_EMAIL],
     Message: {
       Subject: { Data: 'Recibimos tu solicitud de demo', Charset: 'UTF-8' },
+      Body: { Html: { Data: html, Charset: 'UTF-8' } },
+    },
+  }));
+}
+
+/** Tells the talent team a teacher applied, with the answers that matter for a first read. */
+export async function sendTalentNotification(app: TeacherApplication & { id: string }): Promise<void> {
+  const a = app.answers;
+  const areas = [...a.areas.filter((x) => x !== 'Otra'), ...(a.areaOther ? [a.areaOther] : [])].join(', ');
+  const html = layout(`
+    <p style="margin:0 0 16px;font-size:17px;"><strong>Nueva postulación de profesor</strong></p>
+    <table style="border-collapse:collapse;font-size:14px;">
+      ${ROW('Nombre', app.name)}
+      ${ROW('Correo', app.email)}
+      ${ROW('Teléfono', app.phone)}
+      ${ROW('Ubicación', [app.city, app.country].filter(Boolean).join(', '))}
+      ${ROW('Perfil', app.profileUrl)}
+      ${ROW('Áreas', areas)}
+      ${ROW('Experiencia', `${a.yearsProfessional} años profesional · ${a.yearsTeaching} enseñando`)}
+      ${ROW('Formación', a.education)}
+      ${ROW('Clases en vivo', a.liveInterest)}
+      ${ROW('Quiere', a.roles.join(', '))}
+      ${ROW('Disponibilidad', `${a.hoursPerWeek} horas por semana`)}
+      ${ROW('Primer curso', a.courseTopic)}
+      ${ROW('Para', a.courseAudience)}
+    </table>
+    <p style="margin:24px 0 0;"><a href="${HQ_URL}/talento/${app.id}" style="color:#17527E;font-weight:bold;">Ver la postulación completa en Lux HQ</a></p>`);
+  await ses.send(new SendEmailCommand({
+    Source: `Lux Learning <${FROM_EMAIL}>`,
+    Destination: { ToAddresses: [TALENT_EMAIL] },
+    ReplyToAddresses: [app.email],
+    Message: {
+      Subject: { Data: `Nueva postulación: ${app.name} · ${app.answers.courseTopic}`, Charset: 'UTF-8' },
+      Body: { Html: { Data: html, Charset: 'UTF-8' } },
+    },
+  }));
+}
+
+// First draft of the onboarding path; to be refined with the product owner.
+const ONBOARDING_STEPS = [
+  ['Revisamos tu perfil', 'Leemos tu postulación con calma. Te escribiremos en un máximo de 5 días hábiles.'],
+  ['Conversamos contigo', 'Si tu perfil encaja, agendamos una entrevista corta para conocerte y hablar de tu curso.'],
+  ['Onboarding', 'Te mostramos la plataforma y te acompañamos a diseñar tu primer curso paso a paso.'],
+  ['Publicas tu curso', 'Cuando tu curso esté listo, lo publicamos y empiezas a acompañar a tus estudiantes.'],
+];
+
+/** Confirms the application to the applicant and explains what happens next. */
+export async function sendApplicantConfirmation(app: TeacherApplication): Promise<void> {
+  const firstName = app.name.split(/\s+/)[0];
+  const steps = ONBOARDING_STEPS.map(([title, text], i) => `
+    <tr>
+      <td style="padding:8px 14px 8px 0;vertical-align:top;"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:13px;background:#17527E;color:#fff;text-align:center;font-weight:bold;font-size:13px;">${i + 1}</span></td>
+      <td style="padding:8px 0;"><strong>${title}</strong><br><span style="color:#4C6075;">${text}</span></td>
+    </tr>`).join('');
+  const html = layout(`
+    <p style="margin:0 0 16px;">Hola, ${esc(firstName)}:</p>
+    <p style="margin:0 0 16px;">Gracias por querer enseñar con Lux Learning. Recibimos tu postulación y la idea de tu curso <strong>${esc(app.answers.courseTopic)}</strong>.</p>
+    <p style="margin:0 0 8px;"><strong>Esto es lo que sigue:</strong></p>
+    <table style="border-collapse:collapse;font-size:14px;margin:0 0 16px;">${steps}</table>
+    <p style="margin:0 0 16px;">Si quieres contarnos algo más o compartir material, solo responde a este correo.</p>
+    <p style="margin:0;">El equipo de Lux Learning</p>`);
+  await ses.send(new SendEmailCommand({
+    Source: `Lux Learning <${FROM_EMAIL}>`,
+    Destination: { ToAddresses: [app.email] },
+    ReplyToAddresses: [TALENT_EMAIL],
+    Message: {
+      Subject: { Data: 'Recibimos tu postulación para enseñar con Lux', Charset: 'UTF-8' },
       Body: { Html: { Data: html, Charset: 'UTF-8' } },
     },
   }));

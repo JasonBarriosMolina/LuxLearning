@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ArrowRight, BarChart3, BookOpenCheck, Check, ClipboardCheck, Sparkles, type LucideIcon } from 'lucide-react';
 import { LandingNav } from '@/components/landing/LandingNav';
 import { LandingFooter } from '@/components/landing/LandingFooter';
@@ -50,7 +51,7 @@ export default function ProfesoresPage() {
           title="Enseña con mejores herramientas, o enseña con nosotros"
           subtitle="Usa nuestras mini apps para planear, evaluar y dar seguimiento en menos tiempo. O súmate al equipo de profesionales que acompaña a nuestros estudiantes."
           primary={{ label: 'Conocer las mini apps', href: '#mini-apps' }}
-          secondary={{ label: 'Quiero enseñar con Lux', href: '#ensena' }}
+          secondary={{ label: 'Quiero enseñar con Lux', href: '/profesores/postular' }}
           aside={<PlanPreview />}
         />
 
@@ -94,10 +95,10 @@ export default function ProfesoresPage() {
             <div>
               <h2 className={H2}>{TEACH_WITH_US.title}</h2>
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/80">{TEACH_WITH_US.text}</p>
-              <a href={TEACH_WITH_US.applyHref} className="lx-btn lx-btn-white mt-9">
+              <Link href={TEACH_WITH_US.applyHref} className="lx-btn lx-btn-white mt-9">
                 Postularme
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </a>
+              </Link>
             </div>
             <ul className="space-y-4">
               {TEACH_WITH_US.points.map((point) => (

@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 // Public marketing pages carry their own branding; the watermark would cover their content.
-const PUBLIC_PATHS = ['/', '/cursos', '/instituciones', '/profesores', '/evaluadores', '/demo'];
+const PUBLIC_PATHS = ['/', '/cursos', '/instituciones', '/profesores', '/profesores/postular', '/evaluadores', '/demo'];
 
 export function Watermark() {
   const pathname = usePathname();

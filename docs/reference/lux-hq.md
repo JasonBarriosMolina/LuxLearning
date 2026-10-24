@@ -45,9 +45,22 @@ JWT authorizer audience is the app client ID).
 | `GET /hq/leads/{id}` | JWT | OWNER, MARKETING |
 | `PATCH /hq/leads/{id}` `{status?, ownerEmail?}` | JWT | OWNER, MARKETING |
 | `POST /hq/leads/{id}/notes` `{body}` | JWT | OWNER, MARKETING |
+| `POST /public/teacher-applications` | none | Teacher application form (`/profesores/postular`) |
+| `GET /hq/teachers?status=&q=` | JWT | OWNER, MARKETING |
+| `GET /hq/teachers/{id}` | JWT | OWNER, MARKETING |
+| `PATCH /hq/teachers/{id}` `{status?, ownerEmail?}` | JWT | OWNER, MARKETING |
+| `POST /hq/teachers/{id}/notes` `{body}` | JWT | OWNER, MARKETING |
 
 Lead statuses: `NEW → CONTACTED → DEMO_SCHEDULED → WON | LOST`. Status changes go to
 `lead_status_history`; every staff write goes to `staff_audit_log`.
+
+Teacher application statuses (separate CRM tray): `NEW → REVIEWING → INTERVIEW →
+ONBOARDING → ACTIVE | REJECTED`, with their own notes and status history. The onboarding
+questionnaire is stored in `teacher_applications.answers` (JSONB, `form_version`) so the
+form can evolve and an onboarding agent can read it. Options are validated against
+`TEACHER_OPTIONS` (API) and must match `apps/web/components/landing/teacher-application-options.ts`.
+Applications notify `TALENT_EMAIL`; the applicant gets the onboarding next steps (first
+draft, kept in sync between `emails.ts` and `content.ts`). Limits: 5/hour per IP, 2/day per email.
 
 Demo form protection: hidden honeypot field (`website`), max 5 requests/hour per IP hash,
 max 3/day per email. On success: lead saved, email to `SALES_EMAIL`
@@ -60,6 +73,7 @@ request (the lead is already saved).
 |---|---|
 | `PLATFORM_DB_SECRET_ARN` | `arn:aws:secretsmanager:us-east-1:798694628803:secret:lux/platform-db-test-Rt5Ly4` |
 | `SALES_EMAIL` | `sales@luxlearning.academy` |
+| `TALENT_EMAIL` | `talent@luxlearning.academy` |
 | `SES_FROM_EMAIL` | `noreply@luxlearning.academy` (the IAM policy only allows this sender) |
 | `HQ_URL` | `https://hq-test.luxlearning.academy` |
 | `IP_HASH_SALT` | random, set at creation |
