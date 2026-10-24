@@ -22,6 +22,31 @@ role in the tenant pool — tenant ADMIN/SUPER_ADMIN must never see platform dat
 
 Staging/prod are not created yet. Promote only with explicit confirmation.
 
+## Frontend (`apps/hq`)
+
+Separate Next.js app (workspace `@lux/hq`), never part of `apps/web`: own domain, own
+Amplify config pointing at the HQ pool, so tenant and staff sessions can never mix.
+
+- Routes: `/login` (password → new password on first sign-in → TOTP setup with QR →
+  6-digit code on every later sign-in), `/prospectos` + `/prospectos/[id]` (institution
+  demos), `/talento` + `/talento/[id]` (teacher applications). Email links from
+  `emails.ts` use these paths.
+- Every request sends the Cognito **ID token** to `/hq/*`.
+- Local dev: `npm run dev --workspace=apps/hq` → http://localhost:3002 (CORS for
+  localhost:3002 is allowed on the test API and in `shared/response.ts`).
+  Env vars in `apps/hq/.env.example` (copy to `.env.local`).
+
+### Deploy to Vercel (one-time, done by the owner)
+
+1. New Vercel project from this repo, **Root Directory `apps/hq`**, framework Next.js.
+2. Env vars (test): `NEXT_PUBLIC_HQ_COGNITO_USER_POOL_ID=us-east-1_OGeDSEfbL`,
+   `NEXT_PUBLIC_HQ_COGNITO_CLIENT_ID=6ll4rfjfk73dre9ggg30v4gh4a`,
+   `NEXT_PUBLIC_HQ_API_URL=https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com`.
+3. Production branch `test`; add domain `hq-test.luxlearning.academy` and create the
+   CNAME Vercel shows at the DNS provider. CORS for that origin is already allowed.
+4. Sign in as `owner.demo@luxlearning.academy` (temporary password in
+   `.hq-test-credentials.local.txt`) and set up the authenticator app.
+
 ## Cognito pool rules
 
 - Admin-only sign-up (`AllowAdminCreateUserOnly`), email as username.

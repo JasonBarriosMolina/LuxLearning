@@ -50,6 +50,7 @@
 
 ```
 apps/web/                  Next.js frontend
+apps/hq/                   Lux HQ — owners' console (own domain + Cognito pool, see docs/reference/lux-hq.md)
   app/(student)/           Student views
   app/(evaluator)/         Evaluator/admin views
   lib/api.ts               All API calls

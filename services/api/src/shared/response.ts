@@ -49,6 +49,7 @@ const ALLOWED_ORIGINS = [
   'https://hq.luxlearning.academy',
   'https://hq-test.luxlearning.academy',
   'http://localhost:3000',
+  'http://localhost:3002', // Lux HQ (apps/hq) local dev
 ];
 
 export function getCorsOrigin(requestOrigin?: string): string {
