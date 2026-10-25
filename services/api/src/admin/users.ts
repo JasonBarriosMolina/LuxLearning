@@ -1,4 +1,5 @@
 // Users and enrollments domain handler for lux-admin.
+import type { UserType } from '@aws-sdk/client-cognito-identity-provider';
 import { randomInt } from 'crypto';
 import {
   ListUsersCommand,
@@ -30,7 +31,7 @@ export async function handleUsers(ctx: AdminCtx): Promise<any | null> {
 
     // Paginated fetch helpers
     const listAllUsers = async () => {
-      const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+      const all: UserType[] = [];
       let token: string | undefined;
       do {
         const res = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60, PaginationToken: token }));
@@ -40,7 +41,7 @@ export async function handleUsers(ctx: AdminCtx): Promise<any | null> {
       return all;
     };
     const listAllInGroup = async (GroupName: string) => {
-      const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+      const all: UserType[] = [];
       let token: string | undefined;
       do {
         const res = await cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName, Limit: 60, NextToken: token }));

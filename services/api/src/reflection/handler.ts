@@ -149,13 +149,13 @@ Responde ÚNICAMENTE con JSON válido:
 
       if (!module) return badRequest('Module not found');
 
-      const moduleRefs = module.course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: (m as any).lessons.map((l: any) => l.id) }));
-      const reflectionPlannedModuleIds = new Set(
+      const moduleRefs = module.course.modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: (m as any).lessons.map((l: any) => l.id) }));
+      const reflectionPlannedModuleIds = new Set<string>(
         ((module.course as any).evaluationEvents ?? [])
           .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
           .map((e: any) => e.moduleId as string),
       );
-      const quizPlannedModuleIds = new Set(
+      const quizPlannedModuleIds = new Set<string>(
         ((module.course as any).evaluationEvents ?? [])
           .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
           .map((e: any) => e.moduleId as string),
@@ -173,7 +173,7 @@ Responde ÚNICAMENTE con JSON válido:
       }
 
       const reflectionLessonProgress = await getLessonProgress(userId, module.course.id);
-      const completedLessonIds = new Set(reflectionLessonProgress.map((p) => p.lessonId));
+      const completedLessonIds = new Set<string>(reflectionLessonProgress.map((p) => p.lessonId));
       const unlocked = await isModuleUnlocked(userId, module.order, moduleRefs, {
         weeklyPacingEnabled: (module.course as any).weeklyPacingEnabled,
         courseStartDate: module.course.startDate,

@@ -50,7 +50,7 @@ export async function getAllEnrollments(): Promise<{ userId: string; courseId: s
 export async function saveCertificate(cert: Certificate) {
   await ddb.send(new PutCommand({
     TableName: TABLES.CERTIFICATES,
-    Item: { certId: cert.certId, ...cert },
+    Item: { ...cert },
   }));
 }
 

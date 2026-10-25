@@ -3,7 +3,7 @@
 import { PutCommand, GetCommand, QueryCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, TABLES } from './db-core';
 
-export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'LATE_JUSTIFIED' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED';
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'LATE_JUSTIFIED' | 'JUSTIFICATION_PENDING' | 'JUSTIFIED' | 'REJECTED' | 'ERROR';
 
 export interface AttendanceRecord {
   courseId: string;
@@ -15,6 +15,7 @@ export interface AttendanceRecord {
   observations?: string;
   justificationDeadline?: string;
   documentKey?: string;
+  aiOcrError?: string;
   aiOcrData?: {
     extractedName?: string;
     extractedDate?: string;

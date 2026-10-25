@@ -18,7 +18,7 @@ export async function markLessonComplete(data: LessonProgress) {
   const sk = `${data.courseId}#${data.moduleId}#${data.lessonId}`;
   await ddb.send(new PutCommand({
     TableName: TABLES.PROGRESS,
-    Item: { userId: data.userId, sk, ...data },
+    Item: { sk, ...data },
   }));
 }
 
@@ -58,7 +58,7 @@ export async function saveQuizAttempt(attempt: QuizAttempt) {
   const sk = `${attempt.moduleId}#${createId()}`;
   await ddb.send(new PutCommand({
     TableName: TABLES.QUIZ,
-    Item: { userId: attempt.userId, sk, ...attempt },
+    Item: { sk, ...attempt },
   }));
 }
 

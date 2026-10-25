@@ -87,6 +87,9 @@ $LAMBDAS = [ordered]@{
   "lux-push"        = @("$API_SRC\push\handler.ts",         $false)
   "lux-authorizer"   = @("$API_SRC\shared\authorizer.ts",      $false)
   "lux-study-plans"  = @("$API_SRC\study-plans\handler.ts",   $true)
+  # Lux HQ (owners' console) + public demo form. Own IAM role, own platform DB
+  # (lux/platform-db-<env>), no Prisma. See docs/reference/lux-hq.md.
+  "lux-platform"     = @("$API_SRC\platform\handler.ts",      $false)
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem

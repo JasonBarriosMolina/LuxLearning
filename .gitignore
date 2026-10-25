@@ -80,3 +80,9 @@ services/api/.env.test
 # Local MCP config (contains secrets)
 .mcp.json.disabled
 .codegraph/daemon.pid
+
+# Lux HQ example staff credentials (test only, never commit)
+.hq-test-credentials.local.txt
+
+# Local design screenshots
+.screenshots/

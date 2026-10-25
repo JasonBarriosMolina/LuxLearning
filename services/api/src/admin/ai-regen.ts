@@ -115,7 +115,7 @@ export async function handleAIRegen(ctx: AdminCtx): Promise<any | null> {
           select: { title: true, content: true },
         });
         infTitle = modTitle;
-        infContent = moduleLessons.map(l => {
+        infContent = moduleLessons.map((l: any) => {
           const body = (l.content ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
           return l.title + (body ? ': ' + body : '');
         }).join(' | ');

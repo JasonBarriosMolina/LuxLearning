@@ -12,7 +12,7 @@ import type {
 
 const ENV_API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-function getApiUrl(): string {
+export function getApiUrl(): string {
   if (ENV_API_URL) return ENV_API_URL;
   if (typeof window === 'undefined') return '';
   const host = window.location.hostname;
@@ -519,7 +519,7 @@ export const api = {
       request<any>(`/reports/recommendations/${moduleId}`, { method: 'PUT', body: JSON.stringify({ items }) }),
     // Email module
     email: {
-      send: (body: { to: string[]; subject: string; bodyHtml: string; bodyText?: string; courseId?: string }) =>
+      send: (body: { to: string[]; cc?: string[]; subject: string; bodyHtml: string; bodyText?: string; courseId?: string }) =>
         request<any>('/admin/email/send', { method: 'POST', body: JSON.stringify(body) }),
       sent: () => request<any>('/admin/email/sent'),
       recipients: (courseId?: string) => request<any>(`/admin/email/recipients${courseId ? '?courseId=' + courseId : ''}`),

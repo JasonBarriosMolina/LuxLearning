@@ -17,7 +17,7 @@ vi.mock('lucide-react', () => ({
   Lock: () => null, Download: () => null, Play: () => null, Pause: () => null,
   Maximize: () => null, Minimize: () => null, ChevronRight: () => null,
   Captions: () => null, FileText: () => null, ChevronDown: () => null, ChevronUp: () => null,
-  Music: () => null, VolumeX: () => null,
+  Music: () => null, VolumeX: () => null, BookOpen: () => null, X: () => null,
 }));
 const carouselRecapMock = vi.fn();
 vi.mock('@/lib/api', () => ({ api: { lessons: { carouselRecap: (...a: any[]) => carouselRecapMock(...a) } } }));
@@ -112,7 +112,8 @@ describe('LuxCarrouselPlayer — Lux Recap PDF (bug fix 2026-09-07, Mack: "ese b
     carouselRecapMock.mockResolvedValueOnce({ data: { pdfRecapUrl: 'https://s3.example.com/recap.pdf' } });
     render(<LuxCarrouselPlayer {...baseProps} hasCompletedBefore />);
     fireEvent.click(screen.getByText('Solicitar Lux Recap (PDF)'));
-    await waitFor(() => expect(screen.getByText('Descargar Lux Recap (PDF)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Ver Lux Recap (PDF)')).toBeInTheDocument());
+    expect(screen.getByText('Descargar').closest('a')).toHaveAttribute('href', 'https://s3.example.com/recap.pdf');
     expect(screen.queryByText('No se pudo generar el PDF. Intentá de nuevo.')).not.toBeInTheDocument();
   });
 });
