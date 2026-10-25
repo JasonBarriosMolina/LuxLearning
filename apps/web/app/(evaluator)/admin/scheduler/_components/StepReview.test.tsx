@@ -21,6 +21,7 @@ const result: GenerateResult = {
       { courseId: 'c3', evaluatorId: 'e2', dayOfWeek: 6, startTime: '10:00', endTime: '11:15', studentIds: ['s2', 's3'], modality: 'PRESENCIAL', classType: 'GRUPAL' },
     ],
     unscheduledCourseIds: [],
+    unscheduledReasons: {},
   }],
   courseTitles: { c1: 'Curso Sábado 1', c2: 'Curso Martes', c3: 'Curso Sábado 2' },
   teacherNames: { e1: 'Profe Uno', e2: 'Profe Dos' },

@@ -60,7 +60,7 @@ describe('StepCourses — editar/eliminar curso', () => {
     render(<StepCourses academicPeriod="2026-2" courses={[course]} overrides={{}} onLoaded={onLoaded} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
 
-    fireEvent.click(screen.getByTitle('Eliminar curso de Lux Learning por completo'));
+    fireEvent.click(screen.getByTitle('Eliminar curso de Lux Learning'));
 
     expect(window.confirm).toHaveBeenCalled();
     await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('c1'));
@@ -73,7 +73,7 @@ describe('StepCourses — editar/eliminar curso', () => {
     render(<StepCourses academicPeriod="2026-2" courses={[course]} overrides={{}} onLoaded={onLoaded} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
 
-    fireEvent.click(screen.getByTitle('Eliminar curso de Lux Learning por completo'));
+    fireEvent.click(screen.getByTitle('Eliminar curso de Lux Learning'));
 
     expect(deleteMock).not.toHaveBeenCalled();
   });
@@ -116,7 +116,7 @@ describe('StepCourses — editar/eliminar curso', () => {
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
 
     expect(screen.queryByPlaceholderText('min')).toBeNull(); // cerrado por defecto
-    fireEvent.click(screen.getByTitle('Excepción de duración para este curso'));
+    fireEvent.click(screen.getByTitle('Excepción de duración'));
     const input = screen.getByPlaceholderText('min');
     fireEvent.change(input, { target: { value: '90' } });
     expect(onOverrideChange).toHaveBeenCalledWith('c1', { durationOverrideMin: 90 });
@@ -168,14 +168,14 @@ describe('StepCourses — editar/eliminar curso', () => {
     const big = { ...course, modality: null, studentCount: 18, studentIds: Array.from({ length: 18 }, (_, i) => `s${i}`) };
     render(<StepCourses academicPeriod="2026-2" courses={[big]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
-    expect(screen.getByTitle('Curso con muchos estudiantes (15+) para modalidad virtual entre semana')).toBeTruthy();
+    expect(screen.getByTitle('15+ estudiantes en modalidad virtual')).toBeTruthy();
   });
 
   it('no muestra aviso de muchos estudiantes en un curso presencial', async () => {
     const big = { ...course, modality: null, engineModality: 'PRESENCIAL' as const, studentCount: 25, studentIds: Array.from({ length: 25 }, (_, i) => `s${i}`) };
     render(<StepCourses academicPeriod="2026-2" courses={[big]} overrides={{}} onLoaded={vi.fn()} onOverrideChange={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
-    expect(screen.queryByTitle('Curso con muchos estudiantes (15+) para modalidad virtual entre semana')).toBeNull();
+    expect(screen.queryByTitle('15+ estudiantes en modalidad virtual')).toBeNull();
   });
 
   // Trello *LUX SCHEDULER* (Mack, 2026-09-15): "si es asincrónico el curso,
@@ -192,7 +192,7 @@ describe('StepCourses — editar/eliminar curso', () => {
     await waitFor(() => expect(screen.getByText('Curso 1')).toBeTruthy());
     await waitFor(() => expect(roomsListMock).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByTitle('Fijar un aula para este curso'));
+    fireEvent.click(screen.getByTitle('Fijar aula'));
     const select = await screen.findByDisplayValue('— sin aula fija (auto-asignar) —');
     fireEvent.change(select, { target: { value: 'room-1' } });
 

@@ -63,7 +63,7 @@ describe('RoomsManager', () => {
     fireEvent.click(screen.getByText('Agregar aula'));
     fireEvent.change(screen.getByPlaceholderText('Nombre (ej. 101)'), { target: { value: '101' } });
     fireEvent.change(screen.getByPlaceholderText('Aforo'), { target: { value: '10' } });
-    fireEvent.change(screen.getByPlaceholderText('Nombre preferencial (opcional)'), { target: { value: 'Salón de ensayos' } });
+    fireEvent.change(screen.getByPlaceholderText('Descripción (ej. Sala de ensayos, opcional)'), { target: { value: 'Salón de ensayos' } });
     fireEvent.click(screen.getByText('Teórico'));
     fireEvent.click(screen.getByText('Crear aula'));
 
@@ -88,10 +88,11 @@ describe('RoomsManager', () => {
     buildingsListMock.mockResolvedValue({ data: [{ id: 'b1', name: 'Edificio A' }] });
     roomsListMock.mockResolvedValue({ data: [{ id: 'r1', name: '101', capacity: 10, buildingId: 'b1', floor: 1, preferredName: null, courseTypeTags: [] }] });
     render(<RoomsManager />);
-    await waitFor(() => expect(screen.getByText('Edificio A')).toBeTruthy());
+    // "Edificio A" aparece también como encabezado del grupo de aulas; el chip es el que tiene botones.
+    await waitFor(() => expect(screen.getAllByText('Edificio A').length).toBeGreaterThan(0));
 
-    const buildingChip = screen.getByText('Edificio A').closest('span')!;
-    fireEvent.click(buildingChip.querySelector('button')!);
+    const buildingChip = screen.getAllByText('Edificio A').map((el) => el.closest('span')).find((s) => s?.querySelector('button'))!;
+    fireEvent.click(buildingChip.querySelectorAll('button')[1]);
 
     await waitFor(() => expect(buildingsDeleteMock).toHaveBeenCalledWith('b1'));
     expect(screen.getByText('101')).toBeTruthy(); // el aula sigue en la lista

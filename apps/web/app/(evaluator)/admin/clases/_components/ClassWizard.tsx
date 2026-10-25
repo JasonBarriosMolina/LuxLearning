@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 
 interface Module { id: string; title: string; order: number; }
 interface Course { id: string; title: string; isActive: boolean; modules: Module[]; }
-interface ClassDef {
+export interface ClassDef {
   id: string; courseId: string; moduleId: string | null; name: string;
   dueDate: string | null; weight: number; vapiPrompt: string | null;
   vapiObjectives: string | null; lessonVideoUrl: string | null; lessonScript: string | null;
@@ -81,8 +81,11 @@ export function ClassWizard({ courses, onCreated, editingClass, onClose }: Props
     if (!file) return;
     setUploading(true);
     try {
-      const res = await api.admin.files.uploadVideo(file);
-      setLessonVideoUrl((res as any).data?.url ?? (res as any).url ?? '');
+      const presign: any = await api.admin.classes.presignVideo({ fileName: file.name, fileType: file.type });
+      const { uploadUrl, publicUrl } = presign.data ?? presign;
+      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (!put.ok) throw new Error(`S3 upload failed: ${put.status}`);
+      setLessonVideoUrl(publicUrl);
     } catch {
       setError('Error subiendo video.');
     } finally {
