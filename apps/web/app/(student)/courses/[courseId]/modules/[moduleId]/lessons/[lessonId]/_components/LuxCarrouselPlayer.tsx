@@ -235,11 +235,19 @@ export function LuxCarrouselPlayer({ courseId, moduleId, lessonId, audioUrl, sli
     <div className="rounded-2xl overflow-hidden border border-border bg-black">
       {/* Slide stage — keyword card design (Mack 2026-10-09: "palabras clave para aprendizaje") */}
       <div ref={stageRef} className="relative aspect-video overflow-hidden">
-        {/* Gradient background — cycles through Lux-brand indigo/blue hues per slide */}
+        {/* Background: Pexels photo when available, gradient fallback */}
         <div
-          className="absolute inset-0"
-          style={{ background: SLIDE_GRADIENTS[activeIdx % SLIDE_GRADIENTS.length] }}
+          className="absolute inset-0 transition-all duration-700"
+          style={
+            activeSlide?.imageUrl
+              ? { backgroundImage: `url(${activeSlide.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+              : { background: SLIDE_GRADIENTS[activeIdx % SLIDE_GRADIENTS.length] }
+          }
         />
+        {/* Dark overlay for readability when image is present */}
+        {activeSlide?.imageUrl && (
+          <div className="absolute inset-0 bg-black/55" />
+        )}
         {/* Keyword card content */}
         {activeSlide && (
           <div className="absolute inset-0 flex flex-col px-6 py-5">

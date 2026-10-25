@@ -1,9 +1,28 @@
 // ─── carousel-worker.ts ───────────────────────────────────────────────────────
 // Async asset generation for Lux Carrousel (Trello N1bbWdz0): narration audio +
 // speech marks (Polly), then saves the finished carousel as a new Lesson
-// (type="carousel") on the target module. Stock photos removed 2026-10-09 —
-// frontend now renders keyword cards with gradient backgrounds instead.
+// (type="carousel") on the target module.
+// Images: Pexels API (PEXELS_API_KEY env var) — falls back to null (gradient) if
+// key missing or search returns nothing.
 // The "Lux Recap" PDF is built later, on demand (see shared/carousel-pdf.ts).
+
+async function searchPexels(query: string): Promise<string | null> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=5&orientation=landscape`,
+      { headers: { Authorization: key }, signal: AbortSignal.timeout(5000) },
+    );
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    const photos: any[] = data.photos ?? [];
+    if (!photos.length) return null;
+    // Pick a photo varied by query hash so different slides get different photos
+    const idx = Math.abs(query.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % photos.length;
+    return photos[idx]?.src?.large2x ?? photos[idx]?.src?.large ?? null;
+  } catch { return null; }
+}
 import { createId } from '@paralleldrive/cuid2';
 import { AdminCtx, generateCarouselNarration, defaultVoiceForLanguage, isStubAudioUrl } from './ctx';
 import { saveAiJob, createNotification } from '../shared/db-dynamo';
@@ -109,11 +128,12 @@ export async function generateCarouselAssets(
 
   const timedSlides = computeSlideTiming(fittedSlides, narration.marks);
 
-  // imageUrl intentionally omitted — frontend renders keyword cards with gradient
-  // backgrounds instead of stock photos (redesign 2026-10-09).
-  const finalSlides = timedSlides.map((s) => ({
+  // Fetch Pexels images in parallel; falls back to null (gradient) if key missing or search fails.
+  const imageUrls = await Promise.all(timedSlides.map((s) => searchPexels(s.imagePrompt)));
+
+  const finalSlides = timedSlides.map((s, i) => ({
     order: s.order, onScreenText: s.onScreenText,
-    imageUrl: null,
+    imageUrl: imageUrls[i] ?? null,
     startMs: s.startMs, endMs: s.endMs,
   }));
 
