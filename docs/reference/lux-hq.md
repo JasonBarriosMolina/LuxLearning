@@ -9,18 +9,40 @@ role in the tenant pool — tenant ADMIN/SUPER_ADMIN must never see platform dat
 
 | | test | staging | prod |
 |---|---|---|---|
-| HQ domain | `hq-test.luxlearning.academy` (not set up yet) | — | `hq.luxlearning.academy` (not set up yet) |
-| Lambda | `lux-platform-test` | — | — |
-| IAM role | `lux-platform-test-role` (inline policy `lux-platform-test-inline`) | — | — |
-| Cognito pool | `lux-hq-staff-test` · `us-east-1_OGeDSEfbL` | — | — |
-| App client | `lux-hq-web` · `6ll4rfjfk73dre9ggg30v4gh4a` (SRP, no secret) | — | — |
-| API Gateway | `hxnd6tzmce` (shared with tenant test API) | — | — |
-| JWT authorizer | `lux-hq-jwt-test` · `x9xhqh` | — | — |
-| Integration | `da55fc3` | — | — |
-| DB secret | `lux/platform-db-test` | — | — |
-| Database | `lux_platform_test` on the test Neon endpoint, role `lux_platform_app_test` | — | — |
+| HQ domain | `hq-test.luxlearning.academy` (Vercel not set up yet) | `hq-staging.luxlearning.academy` (Vercel not set up yet) | `hq.luxlearning.academy` — not created |
+| Lambda | `lux-platform-test` | `lux-platform-staging` | `lux-platform` |
+| IAM role | `lux-platform-test-role` | `lux-platform-staging-role` | `lux-platform-prod-role` |
+| Cognito pool | `lux-hq-staff-test` · `us-east-1_OGeDSEfbL` | `lux-hq-staff-staging` · `us-east-1_ha9ec0sHi` | `lux-hq-staff-prod` |
+| App client `lux-hq-web` | `6ll4rfjfk73dre9ggg30v4gh4a` | `4h24g1fce52fhr8cklrfmribsa` | — |
+| API Gateway | `hxnd6tzmce` | `1ohrw48nii` | `v4vabtmerb` |
+| JWT authorizer | `lux-hq-jwt-test` · `x9xhqh` | `lux-hq-jwt-staging` · `f5479o` | `lux-hq-jwt-prod` |
+| Integration | `da55fc3` | `yvvgwo4` | — |
+| DB secret | `lux/platform-db-test` | `lux/platform-db-staging` | `lux/platform-db-prod` |
+| Database | `lux_platform_test` · role `lux_platform_app_test` | `lux_platform_staging` · role `lux_platform_app_staging` | `lux_platform_prod` |
 
-Staging/prod are not created yet. Promote only with explicit confirmation.
+Each database lives on that env's own Neon endpoint (the tenant DB's endpoint), but is a
+separate database with its own login role. Prod is **not created**: it needs explicit
+confirmation from the owner, then `HQ_CONFIRM_PROD=yes scripts/hq-provision-env.sh prod`.
+
+## Provisioning an environment
+
+```bash
+scripts/hq-provision-env.sh test|staging|prod
+```
+
+Idempotent (safe to re-run; on an existing env it only redeploys code and merges env vars).
+It creates the platform DB + secret and runs migrations, the Cognito pool (admin-only
+sign-up, TOTP required, groups, web client), the IAM role, the log group (30 days), the
+Lambda, and on API Gateway the integration, JWT authorizer, `/public/*` and `/hq/*` routes,
+invoke permissions and the HQ origin in CORS. It does **not** create staff users.
+`prod` refuses to run without `HQ_CONFIRM_PROD=yes` (same for the DB scripts).
+
+Creating a staff user (Cognito emails the temporary password):
+
+```bash
+aws cognito-idp admin-create-user --user-pool-id <pool> --username name@luxlearning.academy --user-attributes Name=email,Value=name@luxlearning.academy Name=email_verified,Value=true
+aws cognito-idp admin-add-user-to-group --user-pool-id <pool> --username name@luxlearning.academy --group-name OWNER
+```
 
 ## Frontend (`apps/hq`)
 
@@ -42,6 +64,9 @@ Amplify config pointing at the HQ pool, so tenant and staff sessions can never m
 2. Env vars (test): `NEXT_PUBLIC_HQ_COGNITO_USER_POOL_ID=us-east-1_OGeDSEfbL`,
    `NEXT_PUBLIC_HQ_COGNITO_CLIENT_ID=6ll4rfjfk73dre9ggg30v4gh4a`,
    `NEXT_PUBLIC_HQ_API_URL=https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com`.
+   For **staging** use pool `us-east-1_ha9ec0sHi`, client `4h24g1fce52fhr8cklrfmribsa`
+   and API `https://1ohrw48nii.execute-api.us-east-1.amazonaws.com` (branch `staging`,
+   domain `hq-staging.luxlearning.academy`).
 3. Production branch `test`; add domain `hq-test.luxlearning.academy` and create the
    CNAME Vercel shows at the DNS provider. CORS for that origin is already allowed.
 4. Sign in as `owner.demo@luxlearning.academy` (temporary password in
@@ -116,14 +141,9 @@ in `schema_migrations`.
 
 ## Deploy
 
-`lux-platform` is in `scripts/deploy-lambda.ps1` (no Prisma). On macOS, without PowerShell:
+Code only: `scripts/deploy-platform.sh test|staging|prod`. `lux-platform` is also in
+`scripts/deploy-lambda.ps1` for Windows, but that script does not set the platform env vars;
+`hq-provision-env.sh` owns them.
 
-```bash
-node_modules/.bin/esbuild services/api/src/platform/handler.ts --bundle --platform=node --target=node20 '--external:@aws-sdk/*' --outfile=services/api/dist/platform/_stage/index.js --minify
-(cd services/api/dist/platform/_stage && zip -qr ../lux-platform.zip index.js)
-aws lambda update-function-code --function-name lux-platform-test --zip-file fileb://services/api/dist/platform/lux-platform.zip
-```
-
-New HQ routes on API Gateway need `--authorization-type JWT --authorizer-id x9xhqh
---target integrations/da55fc3` (test). Lambda invoke permissions already cover `/hq/*`
-and `/public/*`.
+New HQ routes must be added to the route list in `scripts/hq-provision-env.sh` and the
+script re-run for each env.

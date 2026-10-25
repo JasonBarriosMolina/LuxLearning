@@ -14,6 +14,10 @@ if (!['test', 'staging', 'prod'].includes(env)) {
   console.error('Usage: node scripts/platform-db-migrate.mjs test|staging|prod');
   process.exit(1);
 }
+if (env === 'prod' && process.env.HQ_CONFIRM_PROD !== 'yes') {
+  console.error('Refusing to touch prod without HQ_CONFIRM_PROD=yes');
+  process.exit(1);
+}
 
 neonConfig.webSocketConstructor = ws;
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'services', 'api', 'platform-db');
