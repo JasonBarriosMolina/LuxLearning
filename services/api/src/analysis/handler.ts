@@ -76,11 +76,11 @@ export const handler = async () => {
 
         // Compute quiz weak topics (no AI needed — pure math)
         const modAttempts = allAttempts.filter((a) => a.moduleId === mod.id);
-        const weakQuizTopics = mod.questions.map((q, i) => {
+        const weakQuizTopics = mod.questions.map((q: any, i: any) => {
           const total = modAttempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i).length;
           const errors = modAttempts.filter((a) => Array.isArray(a.answers) && a.answers.length > i && a.answers[i] !== q.correctIndex).length;
           return { questionText: q.text.slice(0, 120), errorRate: total > 0 ? Math.round((errors / total) * 100) : 0 };
-        }).filter((q) => q.errorRate > 30).sort((a, b) => b.errorRate - a.errorRate).slice(0, 5);
+        }).filter((q: any) => q.errorRate > 30).sort((a: any, b: any) => b.errorRate - a.errorRate).slice(0, 5);
 
         if (modReflections.length < MIN_REFLECTIONS) {
           // Still save quiz weak topics even without enough reflections
@@ -158,7 +158,7 @@ Responde ÚNICAMENTE con JSON válido:
         if (weakQuizTopics.length > 0) {
           const recsPrompt = `Eres un experto en diseño curricular. El módulo "${mod.title}" del curso "${mod.course.title}" tiene los siguientes conceptos donde los estudiantes cometen errores frecuentes:
 
-${weakQuizTopics.map((t) => `- "${t.questionText}" (${t.errorRate}% de error)`).join('\n')}
+${weakQuizTopics.map((t: any) => `- "${t.questionText}" (${t.errorRate}% de error)`).join('\n')}
 
 Sugiere 3-5 recursos de aprendizaje específicos y accesibles (artículos online reales, libros reconocidos, videos de YouTube o plataformas educativas). Deben ser directamente relevantes a los conceptos débiles identificados.
 

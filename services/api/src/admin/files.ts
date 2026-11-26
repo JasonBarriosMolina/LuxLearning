@@ -43,7 +43,7 @@ export async function handleFiles(ctx: AdminCtx): Promise<any | null> {
       .replace(/<embed[^>]*>/gi, '')
       .replace(/javascript\s*:/gi, 'nojavascript:')
       .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
-    await saveEmailTemplate(type, subject, safeHtml, userId);
+    await saveEmailTemplate(type, subject, safeHtml, userId!);
     return ok({ saved: true });
   }
 

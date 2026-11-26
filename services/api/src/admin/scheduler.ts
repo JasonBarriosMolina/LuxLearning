@@ -256,7 +256,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
       prisma.teacherAvailability.findMany({ where: { evaluatorId: { in: evaluatorIds } } }),
       prisma.teacherWorkload.findMany({ where: { evaluatorId: { in: evaluatorIds } } }),
     ]);
-    const workloadByTeacher = new Map(workloadRows.map((w: any) => [w.evaluatorId, w.maxCoursesPerWeek as number]));
+    const workloadByTeacher = new Map<string, number>(workloadRows.map((w: any) => [w.evaluatorId as string, w.maxCoursesPerWeek as number] as [string, number]));
     const teachers: TeacherInput[] = evaluatorIds.map((evaluatorId) => ({
       evaluatorId,
       availability: availabilityRows
@@ -501,7 +501,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     if (checkWorkload) {
       const evaluatorIds = [...new Set(sessions.map((s) => s.evaluatorId))];
       const workloadRows = await prisma.teacherWorkload.findMany({ where: { evaluatorId: { in: evaluatorIds } } });
-      const capByTeacher = new Map(workloadRows.map((w: any) => [w.evaluatorId, w.maxCoursesPerWeek as number]));
+      const capByTeacher = new Map<string, number>(workloadRows.map((w: any) => [w.evaluatorId as string, w.maxCoursesPerWeek as number] as [string, number]));
       teachers = evaluatorIds.map((evaluatorId) => ({ evaluatorId, availability: [], maxCoursesPerWeek: capByTeacher.get(evaluatorId) ?? 5 }));
     }
     return ok({ conflicts: findConflicts({ sessions, lunchBreak, teachers, presencialDays, institutionalOpen, institutionalClose }) });
@@ -528,7 +528,7 @@ export async function handleScheduler(ctx: AdminCtx): Promise<any | null> {
     const evaluatorIds = [...new Set(classes.map((c: any) => c.evaluatorId as string))] as string[];
     const teacherNames: Record<string, string> = {};
     await Promise.all(evaluatorIds.map(async (id) => { teacherNames[id] = await resolveDisplayName(id); }));
-    const generatedByName = await resolveDisplayName(userId);
+    const generatedByName = await resolveDisplayName(userId!);
 
     const docxRows = classes.map((c: any) => ({
       dayOfWeek: c.dayOfWeek,

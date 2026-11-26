@@ -139,8 +139,9 @@ export async function handleEmail(ctx: AdminCtx): Promise<any | null> {
 
   // ── POST /admin/email/send ──────────────────────────────────────────────────
   if (method === 'POST' && path === '/admin/email/send') {
-    const { to, subject, bodyHtml, bodyText, courseId } = body as {
+    const { to, cc, subject, bodyHtml, bodyText, courseId } = body as {
       to?: string[];
+      cc?: string[];
       subject?: string;
       bodyHtml?: string;
       bodyText?: string;
@@ -149,29 +150,37 @@ export async function handleEmail(ctx: AdminCtx): Promise<any | null> {
     if (!to || to.length === 0) return badRequest('to (array) required');
     if (!subject?.trim()) return badRequest('subject required');
     if (!bodyHtml?.trim()) return badRequest('bodyHtml required');
-    if (to.length > 100) return badRequest('max 100 recipients per send');
+    if (to.length + (cc?.length ?? 0) > 100) return badRequest('max 100 recipients per send');
+    if ((cc?.length ?? 0) > 20) return badRequest('max 20 cc recipients per send');
 
     // Resolve email addresses for userIds that aren't already emails
-    const resolvedAddresses = await Promise.all(
-      to.map(async (recipient) => {
-        if (recipient.includes('@')) return recipient;
-        return resolveEmailAddress(recipient);
-      })
-    );
-    const validAddresses = resolvedAddresses.filter((e): e is string => !!e);
+    const resolveAddresses = async (list: string[]) => {
+      const resolved = await Promise.all(
+        list.map(async (recipient) => (recipient.includes('@') ? recipient : resolveEmailAddress(recipient))),
+      );
+      return resolved.filter((e): e is string => !!e);
+    };
+    const validAddresses = await resolveAddresses(to);
     if (validAddresses.length === 0) return badRequest('no valid email addresses found');
+    // CC goes out once, visible to everyone, on the first SES call; skip addresses already in `to`.
+    const ccAddresses = (await resolveAddresses(cc ?? [])).filter((a) => !validAddresses.includes(a));
 
     const emailId = createId();
     let status: 'sent' | 'failed' = 'sent';
 
-    // SES has 50-recipient limit per send — batch if needed
+    // SES has 50-recipient limit per send (to + cc + bcc) — batch if needed
     const BATCH = 50;
-    for (let i = 0; i < validAddresses.length; i += BATCH) {
-      const batch = validAddresses.slice(i, i + BATCH);
+    let first = true;
+    for (let i = 0; i < validAddresses.length;) {
+      const size = first ? BATCH - ccAddresses.length : BATCH;
+      const batch = validAddresses.slice(i, i + size);
+      const batchCc = first && ccAddresses.length ? { CcAddresses: ccAddresses } : {};
+      first = false;
+      i += size;
       try {
         await ses.send(new SendEmailCommand({
           Source: FROM_EMAIL,
-          Destination: { BccAddresses: batch },
+          Destination: { BccAddresses: batch, ...batchCc },
           Message: {
             Subject: { Data: subject, Charset: 'UTF-8' },
             Body: {
@@ -190,16 +199,17 @@ export async function handleEmail(ctx: AdminCtx): Promise<any | null> {
       sentBy: userId!,
       emailId,
       to: validAddresses,
+      ...(ccAddresses.length ? { cc: ccAddresses } : {}),
       subject,
       bodyHtml,
       bodyText,
       courseId,
       sentAt: new Date().toISOString(),
       status,
-      recipientCount: validAddresses.length,
+      recipientCount: validAddresses.length + ccAddresses.length,
     });
 
-    return ok({ emailId, sent: status === 'sent', recipientCount: validAddresses.length });
+    return ok({ emailId, sent: status === 'sent', recipientCount: validAddresses.length + ccAddresses.length });
   }
 
   // ── POST /admin/email/ai-draft ─────────────────────────────────────────────

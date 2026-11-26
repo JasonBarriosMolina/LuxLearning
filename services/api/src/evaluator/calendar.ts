@@ -65,7 +65,7 @@ export async function handleCalendar(ctx: EvalCtx): Promise<any | null> {
     // a quienes no les está mostrando los sábados como horario laborable" —
     // incluir también sesiones asignadas en días sin bloque de disponibilidad
     // declarado (p.ej. sábado presencial que se generó igual).
-    const coveredSessionIds = new Set(items.flatMap((item) => item.classes.map((c: any) => c.courseId + '#' + c.startTime + '#' + item.dayOfWeek)));
+    const coveredSessionIds = new Set(items.flatMap((item: any) => item.classes.map((c: any) => c.courseId + '#' + c.startTime + '#' + item.dayOfWeek)));
     const orphansByDay = new Map<number, any[]>();
     for (const s of sessions) {
       const key = s.courseId + '#' + s.startTime + '#' + s.dayOfWeek;
@@ -83,7 +83,7 @@ export async function handleCalendar(ctx: EvalCtx): Promise<any | null> {
         classes: sorted.map(mapSession),
       });
     }
-    items.sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.blockStart.localeCompare(b.blockStart));
+    items.sort((a: any, b: any) => a.dayOfWeek - b.dayOfWeek || a.blockStart.localeCompare(b.blockStart));
 
     return ok({ items, hasAvailability: blocks.length > 0 || sessions.length > 0 });
   }

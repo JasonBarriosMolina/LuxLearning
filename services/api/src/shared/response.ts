@@ -46,7 +46,11 @@ const ALLOWED_ORIGINS = [
   'https://lux-learning.vercel.app',
   'https://lux-learning-staging.vercel.app',
   'https://lux-learning-test.vercel.app',
+  'https://hq.luxlearning.academy',
+  'https://hq-test.luxlearning.academy',
+  'https://hq-staging.luxlearning.academy',
   'http://localhost:3000',
+  'http://localhost:3002', // Lux HQ (apps/hq) local dev
 ];
 
 export function getCorsOrigin(requestOrigin?: string): string {

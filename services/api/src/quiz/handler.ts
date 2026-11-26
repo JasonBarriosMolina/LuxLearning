@@ -64,7 +64,7 @@ export const handler = async (event: Event) => {
       // Verify all lessons are completed before allowing quiz
       const progress = await getLessonProgress(userId, courseId);
       const completedLessonIds = new Set(progress.map((p) => p.lessonId));
-      const allCompleted = module.lessons.every((l) => completedLessonIds.has(l.id));
+      const allCompleted = module.lessons.every((l: any) => completedLessonIds.has(l.id));
 
       if (!allCompleted) {
         return forbidden('Complete all lessons before taking the quiz');
@@ -72,7 +72,7 @@ export const handler = async (event: Event) => {
 
       // Grade
       let correctCount = 0;
-      module.questions.forEach((q, i) => {
+      module.questions.forEach((q: any, i: any) => {
         if (answers[i] === q.correctIndex) correctCount++;
       });
 
@@ -93,7 +93,7 @@ export const handler = async (event: Event) => {
         submittedAt: new Date().toISOString(),
       });
 
-      const results = module.questions.map((q, i) => ({
+      const results = module.questions.map((q: any, i: any) => ({
         questionText: q.text,
         options: q.options,
         selectedIndex: answers[i] ?? -1,

@@ -1,4 +1,5 @@
 // Courses and students domain handler for lux-evaluator.
+import type { UserType } from '@aws-sdk/client-cognito-identity-provider';
 import { ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { EvalCtx, getCognitoUser, cognito, USER_POOL_ID } from './ctx';
 import {
@@ -193,7 +194,7 @@ export async function handleCourses(ctx: EvalCtx): Promise<any | null> {
     // Filter out non-STUDENT users (evaluators, admins who may have enrollments/heartbeats) —
     // role lives in Cognito Groups, not a custom attribute, so list group members directly.
     const listAllInGroup = async (GroupName: string) => {
-      const all: NonNullable<Awaited<ReturnType<typeof cognito.send>>['Users']>[number][] = [];
+      const all: UserType[] = [];
       let token: string | undefined;
       do {
         const res = await cognito.send(new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName, Limit: 60, NextToken: token }));

@@ -184,7 +184,7 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
     let certId: string | null = null;
     if (action === 'APPROVE' && module?.course) {
       const { email: studentEmail } = await resolveStudentContact(studentId, reflection);
-      const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, studentEmail, studentLang);
+      const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, studentEmail, studentLang as 'es' | 'en');
       if (result) {
         certId = result.certId;
         console.log(`[Evaluator] Certificate generated: ${certId} for student ${studentId}`);
@@ -275,7 +275,7 @@ export async function handleReflections(ctx: EvalCtx): Promise<any | null> {
       const module = await prisma.module.findUnique({ where: { id: moduleId }, include: { course: true } });
       if (module?.course) {
         const { email: reconsiderStudentEmail } = await resolveStudentContact(studentId, reflection);
-        const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, reconsiderStudentEmail, reconsiderStudentLang);
+        const result = await checkAndCompleteCourse(prisma, studentId, module.courseId, reconsiderStudentEmail, reconsiderStudentLang as 'es' | 'en');
         if (result) {
           certId = result.certId;
         } else {

@@ -40,7 +40,7 @@ function parseDurationMin(raw?: string | null): number {
 
 /** Sync lesson/quiz completion from real DDB progress into plan items (in-memory only; persists if changed). */
 async function syncPlanCompletion(userId: string, plan: StudyPlan): Promise<StudyPlan> {
-  const courseIds = [...new Set(
+  const courseIds = [...new Set<string>(
     plan.days.flatMap((d) => d.items.map((i) => i.courseId).filter(Boolean) as string[])
   )];
   if (courseIds.length === 0) return plan;
@@ -49,8 +49,8 @@ async function syncPlanCompletion(userId: string, plan: StudyPlan): Promise<Stud
     Promise.all(courseIds.map((cid) => getLessonProgress(userId, cid))),
     getAllQuizAttemptsForUser(userId),
   ]);
-  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId as string));
-  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId as string));
+  const completedLessonIds = new Set<string>(progressResults.flat().map((p: any) => p.lessonId as string));
+  const passedModuleIds = new Set<string>(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId as string));
 
   let changed = false;
   const syncedDays = plan.days.map((d) => ({
@@ -94,8 +94,8 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
   });
 
   const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(userId, cid)));
-  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
-  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
+  const completedLessonIds = new Set<string>(progressResults.flat().map((p: any) => p.lessonId));
+  const passedModuleIds = new Set<string>(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
 
   const promptLines: string[] = [];
   let dayIndex = 0;
@@ -103,12 +103,12 @@ async function buildPlanItems(userId: string): Promise<{ days: DayPlan[]; prompt
   for (const course of courses) {
     promptLines.push(`Curso: ${course.title}`);
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
-    const reflectionPlannedModuleIds = new Set(
+    const reflectionPlannedModuleIds = new Set<string>(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
         .map((e: any) => e.moduleId as string),
     );
-    const quizPlannedModuleIds = new Set(
+    const quizPlannedModuleIds = new Set<string>(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
         .map((e: any) => e.moduleId as string),

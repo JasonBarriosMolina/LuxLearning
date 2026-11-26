@@ -94,6 +94,10 @@ export interface Reflection {
   deadline?: string;       // ISO — submittedAt + 48h
   analyzedAt?: string;
   reviewedAt?: string;
+  evaluatorId?: string;
+  studentEmail?: string;
+  moduleTitle?: string;
+  courseTitle?: string;
 }
 
 export interface AIDetectionResult {
@@ -109,7 +113,8 @@ export interface Notification {
   type: 'REFLECTION_APPROVED' | 'REFLECTION_REJECTED' | 'MODULE_UNLOCKED' | 'GENERAL'
     | 'TASK_SUBMITTED' | 'REFLECTION_RECONSIDERED' | 'COURSE_UPDATED' | 'MESSAGE_UNREAD'
     | 'INACTIVITY_REMINDER' | 'STUDY_PLAN_LOCKED' | 'STUDY_PLAN_UNLOCKED' | 'STUDY_PLAN_CHANGE_REQUEST'
-    | 'COURSE_STARTED' | 'COURSE_WEEK_STARTED' | 'COURSE_READY_FOR_REVIEW';
+    | 'COURSE_STARTED' | 'COURSE_WEEK_STARTED' | 'COURSE_READY_FOR_REVIEW'
+    | 'STUDY_PLAN_NO_PROGRESS' | 'STUDY_PLAN_NEW_WEEK' | 'STUDY_PLAN_COMPLIANCE';
   message: string;
   read: boolean;
   createdAt: string;

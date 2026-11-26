@@ -3,16 +3,43 @@
   "configurations": [
     {
       "name": "lux-web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
-      "port": 3000
+      "runtimeExecutable": "/Users/mackbarrios/.local/node-v24.22.1/bin/npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace=apps/web"
+      ],
+      "port": 3000,
+      "env": {
+        "PATH": "/Users/mackbarrios/.local/node-v24.22.1/bin:/usr/local/bin:/usr/bin:/bin"
+      }
     },
     {
       "name": "lux-web-test-api",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=apps/web"],
+      "runtimeExecutable": "/Users/mackbarrios/.local/node-v24.22.1/bin/npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace=apps/web"
+      ],
       "port": 3000,
-      "env": { "NEXT_PUBLIC_API_URL": "https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com" }
+      "env": {
+        "NEXT_PUBLIC_API_URL": "https://hxnd6tzmce.execute-api.us-east-1.amazonaws.com",
+        "PATH": "/Users/mackbarrios/.local/node-v24.22.1/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    {
+      "name": "lux-hq",
+      "runtimeExecutable": "/Users/mackbarrios/.local/node-v24.22.1/bin/npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace=apps/hq"
+      ],
+      "port": 3002,
+      "env": {
+        "PATH": "/Users/mackbarrios/.local/node-v24.22.1/bin:/usr/local/bin:/usr/bin:/bin"
+      }
     }
   ]
 }

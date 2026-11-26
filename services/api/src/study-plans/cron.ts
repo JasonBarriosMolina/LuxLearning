@@ -112,18 +112,18 @@ async function generatePlanForStudent(userId: string, weekOf: string): Promise<v
   });
 
   const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(userId, cid)));
-  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
-  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
+  const completedLessonIds = new Set<string>(progressResults.flat().map((p: any) => p.lessonId));
+  const passedModuleIds = new Set<string>(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
 
   let dayIndex = 0;
   for (const course of courses) {
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
-    const reflectionPlannedModuleIds = new Set(
+    const reflectionPlannedModuleIds = new Set<string>(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
         .map((e: any) => e.moduleId as string),
     );
-    const quizPlannedModuleIds = new Set(
+    const quizPlannedModuleIds = new Set<string>(
       ((course as any).evaluationEvents ?? [])
         .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
         .map((e: any) => e.moduleId as string),
@@ -276,15 +276,15 @@ export async function runComplianceCron(): Promise<void> {
 
   // Get all enrollments and current week plans once
   const allEnrollments = await getAllEnrollments().catch(() => [] as any[]);
-  const allStudentIds = [...new Set(allEnrollments.map((e: any) => e.userId as string))];
+  const allStudentIds = [...new Set<string>(allEnrollments.map((e: any) => e.userId as string))];
   const allPlans = await getStudyPlansBatch(allStudentIds, weekOf);
   const planByUser = new Map(allPlans.map((p) => [p.userId, p]));
 
   const THRESHOLD = 0.5;
 
   for (const [evaluatorId, courseIds] of Object.entries(evalCourses)) {
-    const courseSet = new Set(courseIds);
-    const evalStudentIds = [...new Set(
+    const courseSet = new Set<string>(courseIds);
+    const evalStudentIds = [...new Set<string>(
       allEnrollments
         .filter((e: any) => courseSet.has(e.courseId))
         .map((e: any) => e.userId as string)

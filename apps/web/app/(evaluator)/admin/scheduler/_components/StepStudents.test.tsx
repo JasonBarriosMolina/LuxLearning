@@ -15,7 +15,10 @@ const removeEnrollmentMock = vi.fn().mockResolvedValue({});
 const groupsMembersMock = vi.fn().mockResolvedValue({ data: [{ userId: 's1', name: 'Estudiante Uno' }, { userId: 's2', name: 'Estudiante Dos' }] });
 vi.mock('@/lib/api', () => ({
   api: {
-    admin: { users: { addEnrollment: (...a: any[]) => addEnrollmentMock(...a), removeEnrollment: (...a: any[]) => removeEnrollmentMock(...a) } },
+    admin: {
+      users: { addEnrollment: (...a: any[]) => addEnrollmentMock(...a), removeEnrollment: (...a: any[]) => removeEnrollmentMock(...a) },
+      groups: { list: vi.fn().mockResolvedValue({ data: [{ id: 'g1', name: 'Grupo A', memberCount: 2 }] }) },
+    },
     evaluator: {
       groups: {
         studentPool: vi.fn().mockResolvedValue({ data: [
@@ -77,6 +80,8 @@ describe('StepStudents — matrícula por curso (dos columnas)', () => {
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Agregar estudiantes'));
     await waitFor(() => expect(screen.getByText('Estudiante Dos')).toBeTruthy());
+    // El roster está colapsado por defecto; se expande para ver a los ya inscritos.
+    fireEvent.click(screen.getByText(/^Ver 1 estudiante/));
 
     // "Estudiante Uno" solo aparece en el roster de arriba (ya inscrito), no
     // en la columna Disponibles del panel.
@@ -98,6 +103,8 @@ describe('StepStudents — matrícula por curso (dos columnas)', () => {
     const course = { ...baseCourse, studentIds: ['s1'], studentCount: 1 };
     const onCourseUpdated = vi.fn();
     render(<StepStudents courses={[course]} studentNames={studentNames} onCourseUpdated={onCourseUpdated} />);
+    // El roster está colapsado por defecto; se expande para ver a los ya inscritos.
+    fireEvent.click(screen.getByText(/^Ver 1 estudiante/));
     await waitFor(() => expect(screen.getAllByText('Estudiante Uno').length).toBeGreaterThan(0));
 
     fireEvent.click(screen.getByTitle('Quitar del curso'));

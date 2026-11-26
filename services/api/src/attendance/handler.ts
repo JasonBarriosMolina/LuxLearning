@@ -90,7 +90,7 @@ export const handler = async (event: Event) => {
       });
       // Augment each session with attendance summary
       const matrix = await getAttendanceMatrix(courseId);
-      const summaries = sessions.map((s) => {
+      const summaries = sessions.map((s: any) => {
         const records = matrix.filter((r) => r.sessionId === s.id);
         const present = records.filter((r) => r.status === 'PRESENT').length;
         const absent = records.filter((r) => r.status === 'ABSENT' || r.status === 'JUSTIFICATION_PENDING' || r.status === 'REJECTED').length;
@@ -397,7 +397,7 @@ export const handler = async (event: Event) => {
         where: { isActive: true, isDraft: false },
         select: { id: true, title: true },
       });
-      const summaries = await Promise.all(courses.map(async (c) => {
+      const summaries = await Promise.all(courses.map(async (c: any) => {
         const riskData = await getRiskScores(c.id);
         const scores = riskData?.scores ?? [];
         const high = scores.filter((s: any) => s.riskLevel === 'HIGH').length;
@@ -428,7 +428,7 @@ export const handler = async (event: Event) => {
         prisma.courseSession.findMany({ where: { courseId }, orderBy: { order: 'asc' } }),
         getAttendanceMatrix(courseId),
       ]);
-      const sessionMap = Object.fromEntries(sessions.map((s) => [s.id, s]));
+      const sessionMap = Object.fromEntries(sessions.map((s: any) => [s.id, s]));
       const escape = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
       const header = ['Fecha', 'Sesión', 'UserId', 'Estado', 'Actualizado', 'Reemplazado por', 'Motivo override', 'Documento', 'Recomendación IA']
         .map(escape).join(',');

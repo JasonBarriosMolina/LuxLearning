@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, CheckCircle, Lightbulb, ChevronRight,
-  Star, FileText, ChevronDown, ChevronUp, Loader2, X, Send, AlertCircle, UsersRound, NotebookPen, Music, VolumeX,
+  Star, FileText, ChevronDown, ChevronUp, Loader2, X, Send, AlertCircle, UsersRound, NotebookPen, Music, VolumeX, MessageCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCourseDuration } from '@/lib/utils';

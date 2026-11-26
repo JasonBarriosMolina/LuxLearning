@@ -10,7 +10,7 @@ import { ddb, TABLES } from './db-core';
 export async function createNotification(notif: Notification) {
   await ddb.send(new PutCommand({
     TableName: TABLES.NOTIFS,
-    Item: { userId: notif.userId, sk: notif.notifId, ...notif },
+    Item: { sk: notif.notifId, ...notif },
   }));
 }
 

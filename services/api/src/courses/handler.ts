@@ -99,23 +99,23 @@ export const handler = async (event: Event) => {
       });
 
       const translations = lang !== 'es' ? await batchTranslate([
-        ...courses.map((c) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
-        ...courses.flatMap((c) => c.modules.map((m) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } }))),
+        ...courses.map((c: any) => ({ type: 'course' as const, id: c.id, fields: { title: c.title, description: c.description } })),
+        ...courses.flatMap((c: any) => c.modules.map((m: any) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } }))),
       ], lang) : undefined;
 
       // Enrich with student progress if user is authenticated
       if (userId) {
         const enriched = await Promise.all(
-          courses.map(async (course) => {
+          courses.map(async (course: any) => {
             const progress = await getLessonProgress(userId, course.id);
-            const completedLessonIds = new Set(progress.map((p) => p.lessonId));
-            const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l) => l.id) }));
-            const reflectionPlannedModuleIds = new Set(
+            const completedLessonIds = new Set<string>(progress.map((p) => p.lessonId));
+            const moduleRefs = course.modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
+            const reflectionPlannedModuleIds = new Set<string>(
               ((course as any).evaluationEvents ?? [])
                 .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
                 .map((e: any) => e.moduleId as string),
             );
-            const quizPlannedModuleIds = new Set(
+            const quizPlannedModuleIds = new Set<string>(
               ((course as any).evaluationEvents ?? [])
                 .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
                 .map((e: any) => e.moduleId as string),
@@ -124,15 +124,15 @@ export const handler = async (event: Event) => {
             // previous-module quiz check below can reuse it instead of re-querying
             // DynamoDB for a module whose quiz status this same request already fetched
             // (code-review finding, 2026-09-03).
-            const quizPassedByModuleId = new Map(
-              await Promise.all(course.modules.map(async (m) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
+            const quizPassedByModuleId = new Map<string, boolean>(
+              await Promise.all(course.modules.map(async (m: any) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
             );
-            const quizPassedModuleIds = new Set(
+            const quizPassedModuleIds = new Set<string>(
               [...quizPassedByModuleId].filter(([, passed]) => passed).map(([id]) => id),
             );
 
             const enrichedModules = await Promise.all(
-              course.modules.map(async (mod) => {
+              course.modules.map(async (mod: any) => {
                 const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
                   weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
                   courseStartDate: course.startDate,
@@ -153,7 +153,7 @@ export const handler = async (event: Event) => {
                   qualityScore: (reflection as any)?.qualityScore ?? null,
                   evaluatorFeedback: (reflection as any)?.evaluatorFeedback ?? null,
                   reviewedAt: (reflection as any)?.reviewedAt ?? null,
-                  lessons: mod.lessons.map((l) => ({ ...l, completed: completedLessonIds.has(l.id) })),
+                  lessons: mod.lessons.map((l: any) => ({ ...l, completed: completedLessonIds.has(l.id) })),
                 };
               })
             );
@@ -166,12 +166,12 @@ export const handler = async (event: Event) => {
       }
 
       const translatedCourses = await Promise.all((translations
-        ? courses.map((c) => ({
+        ? courses.map((c: any) => ({
             ...c,
             ...(translations!.get(`course#${c.id}`) ?? {}),
             modules: applyTranslations(c.modules, 'module', translations!),
           }))
-        : courses).map(async (c) => ({ ...c, imageUrl: await signImageUrl(c.imageUrl) })));
+        : courses).map(async (c: any) => ({ ...c, imageUrl: await signImageUrl(c.imageUrl) })));
       return ok(translatedCourses);
     }
 
@@ -197,9 +197,9 @@ export const handler = async (event: Event) => {
 
       const translations = lang !== 'es' ? await batchTranslate([
         { type: 'course', id: course.id, fields: { title: course.title, description: course.description } },
-        ...course.modules.map((m) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } })),
-        ...course.modules.flatMap((m) => m.lessons.map((l) => ({ type: 'lesson' as const, id: l.id, fields: { title: l.title, content: l.content, points: l.points, tip: l.tip } }))),
-        ...course.modules.flatMap((m) => m.questions.map((q) => ({ type: 'question' as const, id: q.id, fields: { text: q.text, options: q.options } }))),
+        ...course.modules.map((m: any) => ({ type: 'module' as const, id: m.id, fields: { title: m.title, description: m.description } })),
+        ...course.modules.flatMap((m: any) => m.lessons.map((l: any) => ({ type: 'lesson' as const, id: l.id, fields: { title: l.title, content: l.content, points: l.points, tip: l.tip } }))),
+        ...course.modules.flatMap((m: any) => m.questions.map((q: any) => ({ type: 'question' as const, id: q.id, fields: { text: q.text, options: q.options } }))),
       ], lang) : undefined;
 
       if (userId) {
@@ -209,19 +209,19 @@ export const handler = async (event: Event) => {
           if (!enrolled.includes(courseId)) return forbidden('No estás inscrito en este curso');
         }
         // Enrich with unlock status
-        const moduleRefs = course.modules.map((m) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l) => l.id) }));
-        const reflectionPlannedModuleIds = new Set(
+        const moduleRefs = course.modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
+        const reflectionPlannedModuleIds = new Set<string>(
           (course.evaluationEvents ?? [])
-            .filter((e) => e.type === 'REFLECTION' && e.moduleId)
-            .map((e) => e.moduleId as string),
+            .filter((e: any) => e.type === 'REFLECTION' && e.moduleId)
+            .map((e: any) => e.moduleId as string),
         );
-        const quizPlannedModuleIds = new Set(
+        const quizPlannedModuleIds = new Set<string>(
           (course.evaluationEvents ?? [])
-            .filter((e) => e.type === 'QUIZ' && e.moduleId)
-            .map((e) => e.moduleId as string),
+            .filter((e: any) => e.type === 'QUIZ' && e.moduleId)
+            .map((e: any) => e.moduleId as string),
         );
         const lessonProgress = await getLessonProgress(userId, courseId);
-        const completedLessonIds = new Set(lessonProgress.map((p) => p.lessonId));
+        const completedLessonIds = new Set<string>(lessonProgress.map((p) => p.lessonId));
         // One Query for every class session in the course (not one per module) — used to
         // gate the dashboard's "Presentar"/"Ir al quiz" buttons on the class actually being
         // done, same as the module page's blockingStep (Trello DmPpbrff item 3).
@@ -230,14 +230,14 @@ export const handler = async (event: Event) => {
         // previous-module quiz check below can reuse it instead of re-querying
         // DynamoDB for a module whose quiz status this same request already fetched
         // (code-review finding, 2026-09-03).
-        const quizPassedByModuleId = new Map(
-          await Promise.all(course.modules.map(async (m) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
+        const quizPassedByModuleId = new Map<string, boolean>(
+          await Promise.all(course.modules.map(async (m: any) => [m.id, await hasPassedQuiz(userId, m.id)] as const)),
         );
-        const quizPassedModuleIds = new Set(
+        const quizPassedModuleIds = new Set<string>(
           [...quizPassedByModuleId].filter(([, passed]) => passed).map(([id]) => id),
         );
         const enriched = await Promise.all(
-          course.modules.map(async (mod) => {
+          course.modules.map(async (mod: any) => {
             const unlocked = await isModuleUnlocked(userId, mod.order, moduleRefs, {
               weeklyPacingEnabled: (course as any).weeklyPacingEnabled,
               courseStartDate: course.startDate,
@@ -288,7 +288,7 @@ export const handler = async (event: Event) => {
 
       if (translations) {
         const ct = translations.get(`course#${course.id}`);
-        const modules = course.modules.map((mod) => ({
+        const modules = course.modules.map((mod: any) => ({
           ...mod,
           ...(translations!.get(`module#${mod.id}`) ?? {}),
           lessons: applyTranslations(mod.lessons, 'lesson', translations!),
@@ -353,7 +353,7 @@ export const handler = async (event: Event) => {
       const body = JSON.parse(event.body ?? '{}');
       const { courseId, moduleId, fileName, fileType } = body;
       if (!courseId || !moduleId || !fileName || !fileType) return badRequest('courseId, moduleId, fileName, fileType required');
-      const ALLOWED_SUBMIT_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'application/zip']);
+      const ALLOWED_SUBMIT_TYPES = new Set<string>(['application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'application/zip']);
       if (!ALLOWED_SUBMIT_TYPES.has(fileType)) return badRequest('Tipo de archivo no permitido');
       const submissionId = randomUUID();
       const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
@@ -428,7 +428,7 @@ export const handler = async (event: Event) => {
         const lessonIds = moduleForInterview.lessons.map((l: any) => l.id);
         if (lessonIds.length > 0) {
           const lessonProgress = await getLessonProgress(userId, courseId);
-          const completedIds = new Set(lessonProgress.map((p) => p.lessonId));
+          const completedIds = new Set<string>(lessonProgress.map((p) => p.lessonId));
           const allDone = lessonIds.every((id: string) => completedIds.has(id));
           if (!allDone) return badRequest('Debes completar todas las lecciones del módulo antes de la entrevista');
         }

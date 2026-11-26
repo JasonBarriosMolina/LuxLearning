@@ -26,31 +26,31 @@ beforeEach(() => setAvailabilityMock.mockClear());
 describe('AvailabilityEditor — 6pm es sugerencia, no obligatoria', () => {
   it('un bloque nuevo arranca en 6pm por defecto (sugerido)', async () => {
     render(<AvailabilityEditor username="eval-1" />);
-    await waitFor(() => expect(screen.getByText('Agregar bloque')).toBeTruthy());
-    fireEvent.click(screen.getByText('Agregar bloque'));
+    await waitFor(() => expect(screen.getByText('Agregar bloque virtual')).toBeTruthy());
+    fireEvent.click(screen.getByText('Agregar bloque virtual'));
     const startInput = screen.getAllByDisplayValue('18:00')[0] as HTMLInputElement;
     expect(startInput).toBeTruthy();
   });
 
   it('permite guardar un bloque de semana antes de las 6pm sin bloquear', async () => {
     render(<AvailabilityEditor username="eval-1" />);
-    await waitFor(() => expect(screen.getByText('Agregar bloque')).toBeTruthy());
-    fireEvent.click(screen.getByText('Agregar bloque'));
+    await waitFor(() => expect(screen.getByText('Agregar bloque virtual')).toBeTruthy());
+    fireEvent.click(screen.getByText('Agregar bloque virtual'));
 
     const startInput = screen.getAllByDisplayValue('18:00')[0] as HTMLInputElement;
     fireEvent.change(startInput, { target: { value: '14:00' } });
     fireEvent.click(screen.getByText('Guardar disponibilidad'));
 
     await waitFor(() => expect(setAvailabilityMock).toHaveBeenCalledWith('eval-1', {
-      blocks: [{ dayOfWeek: 1, startTime: '14:00', endTime: '16:00' }],
+      blocks: [{ dayOfWeek: 1, startTime: '14:00', endTime: '16:00', modality: 'VIRTUAL' }],
       maxCoursesPerWeek: 5,
     }));
   });
 
   it('no sube automáticamente la hora al cambiar de sábado a un día de semana', async () => {
     render(<AvailabilityEditor username="eval-1" />);
-    await waitFor(() => expect(screen.getByText('Agregar bloque')).toBeTruthy());
-    fireEvent.click(screen.getByText('Agregar bloque'));
+    await waitFor(() => expect(screen.getByText('Agregar bloque virtual')).toBeTruthy());
+    fireEvent.click(screen.getByText('Agregar bloque virtual'));
 
     fireEvent.change(screen.getByDisplayValue('Lunes'), { target: { value: '6' } });
     const startInput = screen.getAllByDisplayValue('18:00')[0] as HTMLInputElement;
@@ -59,7 +59,7 @@ describe('AvailabilityEditor — 6pm es sugerencia, no obligatoria', () => {
 
     fireEvent.click(screen.getByText('Guardar disponibilidad'));
     await waitFor(() => expect(setAvailabilityMock).toHaveBeenCalledWith('eval-1', {
-      blocks: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }], // se mantiene la hora elegida, sin forzar 18:00
+      blocks: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00', modality: 'VIRTUAL' }], // se mantiene la hora elegida, sin forzar 18:00
       maxCoursesPerWeek: 5,
     }));
   });

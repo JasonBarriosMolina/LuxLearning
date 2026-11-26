@@ -170,7 +170,7 @@ export async function handleCourses(ctx: AdminCtx): Promise<any | null> {
         })
       ),
       Promise.allSettled(
-        suggestedLinks.map(async (s) => {
+        suggestedLinks.map(async (s: any) => {
           const ok = await isYoutubeVideoAvailable(s.videoId);
           return { lessonId: s.lessonId, title: s.label || s.lessonTitle, youtubeId: s.videoId, source: 'suggestion', ok, status: ok ? 200 : 0 };
         })

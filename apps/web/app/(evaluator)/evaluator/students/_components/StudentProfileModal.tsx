@@ -19,7 +19,7 @@ const PRESENCE_LABEL: Record<string, { label: string; color: string }> = {
 export function StudentProfileModal({ student, onClose }: Props) {
   const name = student.studentName ?? 'Sin nombre';
   const initial = name[0]?.toUpperCase() ?? '?';
-  const presence = PRESENCE_LABEL[student.presenceStatus] ?? PRESENCE_LABEL.never_active!;
+  const presence = PRESENCE_LABEL[student.presenceStatus ?? 'never_active'] ?? PRESENCE_LABEL.never_active!;
 
   const totalModules = student.courses.reduce((s, c) => s + c.modules.length, 0);
   const approvedModules = student.courses.reduce((s, c) => s + c.modulesApproved, 0);

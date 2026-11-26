@@ -7,7 +7,7 @@ import { ddb, TABLES } from './db-core';
 export async function saveReflection(reflection: Reflection) {
   await ddb.send(new PutCommand({
     TableName: TABLES.REFLECTIONS,
-    Item: { userId: reflection.userId, sk: reflection.moduleId, ...reflection },
+    Item: { sk: reflection.moduleId, ...reflection },
   }));
 }
 

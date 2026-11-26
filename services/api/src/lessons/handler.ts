@@ -76,7 +76,7 @@ export const handler = async (event: Event) => {
         ]);
         if (module) {
           const completedIds = new Set(progress.map((p) => p.lessonId));
-          const allDone = module.lessons.every((l) => completedIds.has(l.id));
+          const allDone = module.lessons.every((l: any) => completedIds.has(l.id));
           if (allDone) {
             const email = event.requestContext.authorizer?.lambda?.email;
             const courseTitle = module.course?.title ?? courseId;
@@ -540,7 +540,7 @@ Tono motivador y cercano. Máximo 350 palabras. Solo en español.`;
     // ── POST /lessons/challenge-answer ───────────────────────────────────────
     // Records XP silently; returns { xpEarned, totalXp }.
     if (method === 'POST' && path.includes('/challenge-answer')) {
-      const { challengeId, lessonId, moduleId, isCorrect } = body as { challengeId?: string; lessonId?: string; moduleId?: string; isCorrect?: boolean };
+      const { challengeId, lessonId, moduleId, isCorrect } = JSON.parse(event.body ?? '{}') as { challengeId?: string; lessonId?: string; moduleId?: string; isCorrect?: boolean };
       if (!challengeId || !lessonId || !moduleId) return badRequest('challengeId, lessonId, moduleId requeridos');
       const prisma = await getPrismaClient();
       const challenge = await prisma.lessonChallenge.findUnique({ where: { id: challengeId }, select: { xpReward: true } });

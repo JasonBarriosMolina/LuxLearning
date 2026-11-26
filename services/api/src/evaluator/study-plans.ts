@@ -54,8 +54,8 @@ async function buildStudyPlanForStudent(
       })
     : [];
   const progressResults = await Promise.all(courseIds.map((cid: string) => getLessonProgress(studentId, cid)));
-  const completedLessonIds = new Set(progressResults.flat().map((p: any) => p.lessonId));
-  const passedModuleIds = new Set(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
+  const completedLessonIds = new Set<string>(progressResults.flat().map((p: any) => p.lessonId));
+  const passedModuleIds = new Set<string>(quizAttempts.filter((a: any) => a.passed).map((a: any) => a.moduleId));
   const days = buildEmptyDays(weekOf);
   const maxMinutesPerDay = wp.hoursPerDay * 60;
   const maxDayIdx = wp.pace === 'catchup' ? 6 : 4;
@@ -63,8 +63,8 @@ async function buildStudyPlanForStudent(
   const pendingWork: PendingWork[] = [];
   for (const course of courses) {
     const moduleRefs = (course as any).modules.map((m: any) => ({ id: m.id, order: m.order, lessonIds: m.lessons.map((l: any) => l.id) }));
-    const reflectionPlannedModuleIds = new Set(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'REFLECTION' && e.moduleId).map((e: any) => e.moduleId as string));
-    const quizPlannedModuleIds = new Set(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'QUIZ' && e.moduleId).map((e: any) => e.moduleId as string));
+    const reflectionPlannedModuleIds = new Set<string>(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'REFLECTION' && e.moduleId).map((e: any) => e.moduleId as string));
+    const quizPlannedModuleIds = new Set<string>(((course as any).evaluationEvents ?? []).filter((e: any) => e.type === 'QUIZ' && e.moduleId).map((e: any) => e.moduleId as string));
     for (const mod of (course as any).modules) {
       const unlocked = await isModuleUnlocked(studentId, mod.order, moduleRefs, {
         weeklyPacingEnabled: (course as any).weeklyPacingEnabled, courseStartDate: (course as any).startDate,
@@ -231,12 +231,12 @@ export async function handleEvalStudyPlans(ctx: EvalCtx): Promise<any | null> {
       where: isAdminRole ? {} : { evaluatorId: userId },
       select: { id: true, title: true },
     });
-    const courseIds = new Set(courses.map((c: any) => c.id));
+    const courseIds = new Set<string>(courses.map((c: any) => c.id));
     if (courseIds.size === 0) return ok({ weekOf, compliance: [] });
 
     // Get all enrolled students for those courses
     const allEnrollments = await getAllEnrollments().catch(() => [] as any[]);
-    const studentIds = [...new Set(
+    const studentIds = [...new Set<string>(
       allEnrollments
         .filter((e: any) => courseIds.has(e.courseId))
         .map((e: any) => e.userId as string)
