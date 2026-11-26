@@ -12,14 +12,14 @@ Entrada: ruta de spec `docs/specs/<card-id>.md`.
 2. Implementa por modulo. Dominio exporta UN `handleX(ctx)` que devuelve `null` si no maneja la ruta. Importa todos los hooks de React usados.
 3. Respeta limites de tamano (ver spec). Si te pasas, parte en archivo hermano.
 4. Anade/actualiza UTs en `services/api/src/__tests__/`.
-5. Corre `cd services/api; npx vitest run --reporter=verbose` y `npx tsc --noEmit`. Todo verde antes de entregar.
-6. Commit en rama `test`: un commit por grupo logico (backend / frontend).
+5. Corre `cd services/api; npx vitest run --reporter=verbose` y `npx tsc --noEmit`. Si tocaste `apps/web`: `cd apps/web; npx tsc --noEmit` (el CI corre `npm run build --workspace=apps/web`) y sus tests si existen. Todo verde antes de entregar.
+6. Commit en rama `test` (verifica la rama antes): un commit por grupo logico (backend / frontend), con rutas EXPLICITAS en `git add` (nunca `-A` ni `.`; hay cambios ajenos como `.claude/settings.local.json`). Mensaje convencional (`feat:`/`fix:`) y co-author. NO hagas push.
 7. Entrega: lista de archivos cambiados + resultado de tests. NO despliegas.
 
 ## Modo B: corregir bugs de QA
 Entrada: `docs/qa/<card-id>-bugs.md`.
 1. Corrige bug por bug, de CRITICO a BAJO. Por cada uno: fix + UT que lo cubra + vitest verde.
-2. En el reporte, cambia el estado del bug de `ABIERTO` a `CORREGIDO` y agrega en "Fix" el commit y que cambiaste. NO marques `VERIFICADO`: eso solo lo hace QA.
+2. Commitea los fixes (rutas explicitas, sin push; incluye el reporte `docs/qa/<card-id>-bugs.md` solo si el orquestador lo pide). En el reporte, cambia el estado del bug de `ABIERTO` a `CORREGIDO` y agrega en "Fix" el commit y que cambiaste. NO marques `VERIFICADO`: eso solo lo hace QA.
 3. Si discrepas con un bug (falso positivo), ponlo en `DISPUTADO` con evidencia concreta (archivo:linea o test). No lo ignores en silencio.
 
 ## Sin contacto humano

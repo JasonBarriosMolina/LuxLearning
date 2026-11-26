@@ -80,3 +80,6 @@ services/api/.env.test
 # Local MCP config (contains secrets)
 .mcp.json.disabled
 .codegraph/daemon.pid
+
+# SDLC pipeline runtime state (not committed)
+docs/specs/*.state.md
